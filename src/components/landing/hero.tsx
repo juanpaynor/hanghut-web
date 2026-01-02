@@ -1,48 +1,82 @@
-import Image from "next/image";
+"use client";
+
 import { Button } from "@/components/ui/button";
-import { PlaceHolderImages } from "@/lib/placeholder-images";
-import { ArrowRight } from "lucide-react";
+import { ArrowDown } from "lucide-react";
+import dynamic from 'next/dynamic';
+import { motion, useScroll, useTransform } from "framer-motion";
+import { useRef } from "react";
+
+const PhysicsActivities = dynamic(() => import('./physics-activities'), {
+  ssr: false,
+  loading: () => <div className="w-full h-full bg-background" />
+});
 
 export default function Hero() {
-  const heroImage = PlaceHolderImages.find(p => p.id === 'iphone-mockup');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start start", "end start"]
+  });
+
+  const y = useTransform(scrollYProgress, [0, 1], ["0%", "50%"]);
+  const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
 
   return (
-    <section className="w-full py-24 md:py-32 lg:py-40 bg-background overflow-hidden">
-      <div className="container mx-auto px-4 md:px-6">
-        <div className="grid items-center gap-12 lg:grid-cols-2">
-          <div className="space-y-6 text-center lg:text-left">
-            <h1 className="font-headline text-4xl font-bold tracking-tighter text-foreground sm:text-5xl md:text-6xl lg:text-7xl">
-              Dining is Better Together
-            </h1>
-            <p className="max-w-xl mx-auto text-lg text-muted-foreground lg:mx-0 md:text-xl">
-              Discover amazing food and even better company. Bitemates connects you with local foodies for unforgettable dining experiences.
-            </p>
-            <div className="flex justify-center lg:justify-start">
-              <Button size="lg" className="shadow-lg shadow-primary/50 hover:shadow-xl hover:shadow-primary/60 transition-shadow rounded-full px-8 py-3 h-auto text-lg font-semibold">
-                Get Started
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-            </div>
-          </div>
-          <div className="relative flex items-center justify-center animate-float">
-            {heroImage && (
-              <div className="relative w-[300px] h-[600px] lg:w-[320px] lg:h-[640px]">
-                <div className="absolute -inset-4 bg-gradient-to-br from-primary/20 to-transparent rounded-[60px] blur-2xl"></div>
-                <div className="relative w-full h-full p-2 bg-white/60 rounded-[50px] shadow-2xl backdrop-blur-lg border border-white/30">
-                  <Image
-                    src={heroImage.imageUrl}
-                    alt={heroImage.description}
-                    data-ai-hint={heroImage.imageHint}
-                    fill
-                    className="rounded-[40px] object-cover"
-                    priority
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+    <section ref={containerRef} className="relative w-full h-[100dvh] bg-background overflow-hidden flex flex-col items-center justify-center">
+      {/* Background Physics Layer */}
+      <div className="absolute inset-0 z-0 opacity-60">
+        <PhysicsActivities />
       </div>
+
+      {/* Content Layer */}
+      <motion.div
+        style={{ y, opacity }}
+        className="relative z-10 container mx-auto px-4 flex flex-col items-center text-center space-y-8"
+      >
+        <div className="space-y-4 perspective-1000 relative z-20">
+          <motion.div
+            initial={{ scale: 2.5, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{
+              duration: 0.5,
+              ease: [0.34, 1.56, 0.64, 1], // Custom overshoot for "Stamp" hit
+              delay: 0.2
+            }}
+            className="inline-block bg-primary px-8 py-4 sm:px-12 sm:py-6 rounded-none transform -rotate-1 shadow-[10px_10px_0px_0px_rgba(0,0,0,1)]"
+          >
+            <h1 className="font-headline font-bold text-5xl sm:text-7xl md:text-8xl tracking-tighter text-primary-foreground">
+              HANGHUT
+            </h1>
+          </motion.div>
+
+          <motion.p
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 1.0, duration: 0.8 }}
+            className="max-w-xl mx-auto text-xl md:text-2xl text-muted-foreground font-light tracking-wide bg-background/80 backdrop-blur-sm p-4 rounded-xl mt-8"
+          >
+            REAL CONNECTIONS. UNFORGETTABLE EXPERIENCES.
+          </motion.p>
+        </div>
+
+        <Button
+          size="lg"
+          className="rounded-full px-12 py-8 text-xl font-medium shadow-glow hover:scale-105 transition-transform bg-primary text-primary-foreground border-0"
+        >
+          Find Your Crowd
+        </Button>
+      </motion.div>
+
+      {/* Scroll Indicator */}
+      <motion.div
+        style={{ opacity }}
+        className="absolute bottom-10 left-1/2 -translate-x-1/2 z-10 animate-bounce"
+      >
+        <ArrowDown className="text-muted-foreground w-6 h-6" />
+      </motion.div>
+
+      {/* Gradient Overlay for smooth transition */}
+      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-background to-transparent pointer-events-none z-10" />
     </section>
   );
 }

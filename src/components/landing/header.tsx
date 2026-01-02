@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { MagneticButton } from "@/components/ui/magnetic-button";
 
 export default function Header() {
   return (
@@ -16,7 +17,7 @@ export default function Header() {
             >
               <path d="M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128ZM200,96a24,24,0,1,0-24,24A24,24,0,0,0,200,96ZM80,96a24,24,0,1,0-24,24A24,24,0,0,0,80,96Zm96,88H80a56,56,0,0,1,96,0Z" />
             </svg>
-            <span className="font-bold font-headline">Bitemates</span>
+            <span className="font-bold font-headline">HangHut</span>
           </a>
         </div>
         <nav className="flex flex-1 items-center justify-end space-x-2">

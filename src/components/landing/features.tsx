@@ -1,59 +1,93 @@
-import { BadgeCheck, MapPin, Users } from "lucide-react";
+"use client";
 
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useRef } from "react";
+import { motion, useScroll, useTransform } from "framer-motion";
+import { BadgeCheck, MapPin, Users, Globe } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const features = [
   {
-    icon: <MapPin className="h-8 w-8 text-primary" />,
-    title: "Map View",
-    description: "Explore restaurants and dining groups near you on an interactive map.",
+    icon: <MapPin className="h-12 w-12 text-primary mb-4" />,
+    title: "Live Activity Map",
+    description: "See what’s happening around you in real time. Hiking. Gaming. Art. If people are there, it shows.",
+    color: "bg-indigo-50/50"
   },
   {
-    icon: <Users className="h-8 w-8 text-primary" />,
-    title: "Group Chats",
-    description: "Coordinate plans, share recommendations, and get to know your bitemates before you meet.",
+    icon: <Users className="h-12 w-12 text-primary mb-4" />,
+    title: "Focused Social Feed",
+    description: "No noise. No doomscrolling. Just threads and updates from the activities you actually join.",
+    color: "bg-blue-50/50"
   },
   {
-    icon: <BadgeCheck className="h-8 w-8 text-primary" />,
-    title: "Verified Profiles",
-    description: "Dine with confidence. Our verification process ensures a safe and friendly community.",
+    icon: <Globe className="h-12 w-12 text-primary mb-4" />,
+    title: "Open Crews",
+    description: "Jump into public hangouts or start your own. No matchmaking. No pressure. Just show up.",
+    color: "bg-purple-50/50"
+  },
+  {
+    icon: <BadgeCheck className="h-12 w-12 text-primary mb-4" />,
+    title: "Profiles That Matter",
+    description: "Interests over selfies. Earn badges, host events, and build a real reputation.",
+    color: "bg-pink-50/50"
   },
 ];
 
 export default function Features() {
   return (
-    <section id="features" className="w-full py-20 md:py-32 bg-secondary">
-      <div className="container mx-auto space-y-12 px-4 md:px-6">
-        <div className="flex flex-col items-center justify-center space-y-4 text-center">
-          <div className="space-y-2">
-            <div className="inline-block rounded-lg bg-muted px-3 py-1 text-sm">Key Features</div>
-            <h2 className="font-headline text-3xl font-bold tracking-tighter sm:text-5xl text-foreground">
-              Everything you need to dine out
-            </h2>
-            <p className="max-w-[900px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
-              Bitemates is packed with features to make finding and joining dining experiences seamless and enjoyable.
-            </p>
-          </div>
+    <section className="relative w-full py-24 bg-background">
+      <div className="container mx-auto px-4">
+
+        {/* Header Section */}
+        <div className="max-w-4xl mx-auto mb-20 text-center space-y-6">
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-5xl md:text-7xl font-headline font-bold tracking-tighter"
+          >
+            Real life. <br />
+            Real people. <br />
+            <span className="text-primary">Right now.</span>
+          </motion.h2>
+
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.2 }}
+            className="text-xl md:text-2xl text-muted-foreground font-light"
+          >
+            Find events. Get tickets. Live the experience. <br />
+            <span className="text-foreground font-medium">HangHut pulls you out of endless scrolling and into actual meetups.</span>
+          </motion.p>
         </div>
-        <div className="mx-auto grid max-w-5xl items-start gap-8 sm:grid-cols-2 md:grid-cols-3 md:gap-12 lg:max-w-none">
-          {features.map((feature) => (
-            <Card key={feature.title} className="bg-card rounded-lg shadow-md hover:shadow-xl transition-shadow border-transparent">
-              <CardHeader className="items-center text-center gap-4 p-8">
-                <div className="bg-primary/10 p-4 rounded-full">
+
+        {/* Feature Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {features.map((feature, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 40 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              transition={{ delay: i * 0.1, duration: 0.5 }}
+            >
+              <Card className={`h-full p-8 rounded-[40px] border-0 shadow-sm hover:shadow-md transition-shadow ${feature.color}`}>
+                <CardHeader>
                   {feature.icon}
-                </div>
-                <CardTitle className="font-headline text-2xl">{feature.title}</CardTitle>
-                <CardDescription className="text-base">{feature.description}</CardDescription>
-              </CardHeader>
-            </Card>
+                  <CardTitle className="text-3xl font-headline font-bold">{feature.title}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xl text-muted-foreground leading-relaxed">
+                    {feature.description}
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
           ))}
         </div>
+
       </div>
     </section>
-  )
+  );
 }
