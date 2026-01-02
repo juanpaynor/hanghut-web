@@ -4,8 +4,11 @@ import { Toaster } from '@/components/ui/toaster';
 import { SmoothScroll } from '@/components/landing/smooth-scroll';
 
 export const metadata: Metadata = {
-  title: 'HangHut | Dining is Better Together',
-  description: 'Discover new restaurants, join dining groups, and meet new people. HangHut makes every meal a social experience.',
+  title: 'HangHut | Real Connections. Right Now.',
+  description: 'Find events. Get tickets. Live the experience. HangHut pulls you out of endless scrolling and into actual meetups.',
+  icons: {
+    icon: '/favicon.ico',
+  },
 };
 
 export default function RootLayout({
