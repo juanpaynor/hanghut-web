@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Footer() {
   return (
     <footer className="w-full py-6 md:px-8 md:py-8 border-t bg-background">
@@ -6,12 +8,12 @@ export default function Footer() {
           © {new Date().getFullYear()} HangHut. All rights reserved.
         </p>
         <div className="flex gap-4">
-          <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <Link href="/terms-of-service" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Terms of Service
-          </a>
-          <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+          </Link>
+          <Link href="/privacy-policy" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Privacy Policy
-          </a>
+          </Link>
         </div>
       </div>
     </footer>

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { SmoothScroll } from '@/components/landing/smooth-scroll';
+import { CookieConsent } from '@/components/ui/cookie-consent';
 
 export const metadata: Metadata = {
   title: 'HangHut | Real Connections. Right Now.',
@@ -28,6 +29,7 @@ export default function RootLayout({
           <div className="bg-noise" />
           {children}
           <Toaster />
+          <CookieConsent />
         </SmoothScroll>
       </body>
     </html>

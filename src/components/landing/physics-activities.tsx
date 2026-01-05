@@ -179,5 +179,5 @@ export default function PhysicsActivities() {
         };
     }, []);
 
-    return <div ref={sceneRef} className="absolute inset-0 pointer-events-auto" />;
+    return <div ref={sceneRef} className="absolute inset-0 pointer-events-none md:pointer-events-auto" />;
 }
