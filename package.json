@@ -40,6 +40,8 @@
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@studio-freight/lenis": "^1.0.42",
+    "@supabase/ssr": "^0.8.0",
+    "@supabase/supabase-js": "^2.90.1",
     "@types/matter-js": "^0.20.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -62,9 +64,11 @@
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
     "three": "^0.182.0",
+    "use-debounce": "^10.1.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/google.maps": "^3.58.1",
     "@types/node": "^20",
     "@types/react": "^19.2.1",
     "@types/react-dom": "^19.2.1",
