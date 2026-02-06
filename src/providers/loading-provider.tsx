@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
 import { LoadingOverlay } from "@/components/ui/loading-overlay";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 interface LoadingContextType {
     isLoading: boolean;
@@ -17,14 +17,13 @@ export function LoadingProvider({ children }: { children: ReactNode }) {
     const [isLoading, setIsLoading] = useState(false);
     const [message, setMessage] = useState("Loading...");
     const pathname = usePathname();
-    const searchParams = useSearchParams();
 
-    // Reset loading state when path or search params change (navigation complete)
+    // Reset loading state when path changes (navigation complete)
     useEffect(() => {
         setIsLoading(false);
         const timer = setTimeout(() => setMessage("Loading..."), 300);
         return () => clearTimeout(timer);
-    }, [pathname, searchParams]);
+    }, [pathname]);
 
     // Intercept clicks to trigger loading for internal links
     useEffect(() => {
