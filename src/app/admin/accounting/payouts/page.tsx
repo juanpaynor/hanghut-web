@@ -16,7 +16,7 @@ async function getPendingPayouts() {
       partner:partners(
         id,
         business_name,
-        user:users(
+        user:users!partners_user_id_fkey(
           display_name,
           email
         )

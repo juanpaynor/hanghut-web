@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic'
 export default async function CheckoutPage({
     searchParams,
 }: {
-    searchParams: Promise<{ eventId: string; quantity: string }>
+    searchParams: Promise<{ eventId: string; quantity: string; tierId?: string }>
 }) {
     // 1. Validate params
-    const { eventId, quantity } = await searchParams
+    const { eventId, quantity, tierId } = await searchParams
     const qty = parseInt(quantity || '0')
 
     if (!eventId || qty < 1) {
@@ -19,7 +19,7 @@ export default async function CheckoutPage({
 
     const supabase = await createClient()
 
-    // 2. Fetch Event Details
+    // 2. Fetch Event Details with Ticket Tiers
     const { data: event } = await supabase
         .from('events')
         .select(`
@@ -33,6 +33,14 @@ export default async function CheckoutPage({
             tickets_sold,
             organizer:partners (
                 business_name
+            ),
+            ticket_tiers (
+                id,
+                name,
+                price,
+                quantity_total,
+                quantity_sold,
+                is_active
             )
         `)
         .eq('id', eventId)
@@ -42,11 +50,38 @@ export default async function CheckoutPage({
         redirect('/')
     }
 
-    // 3. User State
+    // 3. Resolve Tier
+    let tierToUse = null
+
+    if (tierId) {
+        tierToUse = event.ticket_tiers?.find((t: any) => t.id === tierId) || null
+    }
+
+    // Fallback: If no tierId specified, check if event has tiers and use the first one (General Admission usually)
+    // Or if event has no tiers, use event-level data
+    if (!tierToUse) {
+        // If tiers exist, default to the cheapest active one? Or just the first one?
+        const activeTiers = event.ticket_tiers?.filter((t: any) => t.is_active) || []
+        if (activeTiers.length > 0) {
+            tierToUse = activeTiers[0]
+        } else {
+            // Backward compatibility for old events without tiers
+            tierToUse = {
+                id: null,
+                name: 'General Admission',
+                price: event.ticket_price,
+                quantity_total: event.capacity,
+                quantity_sold: event.tickets_sold
+            }
+        }
+    }
+
+    // 4. User State
     const { data: { user } } = await supabase.auth.getUser()
 
-    // 4. Check Availability
-    if (event.capacity - event.tickets_sold < qty) {
+    // 5. Check Availability (use tier-specific availability)
+    const availableTickets = tierToUse.quantity_total - tierToUse.quantity_sold
+    if (availableTickets < qty) {
         redirect(`/events/${eventId}?error=sold_out`)
     }
 
@@ -68,6 +103,7 @@ export default async function CheckoutPage({
                     event={event}
                     quantity={qty}
                     user={user}
+                    tier={tierToUse}
                 />
             </main>
         </div>

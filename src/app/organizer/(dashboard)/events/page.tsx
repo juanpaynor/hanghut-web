@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Plus, Calendar, Users, DollarSign } from 'lucide-react'
 import { format } from 'date-fns'
 
@@ -16,8 +17,24 @@ async function getOrganizerEvents(partnerId: string) {
         .select('*')
         .eq('organizer_id', partnerId)
         .order('start_datetime', { ascending: false })
+        .eq('organizer_id', partnerId)
+        .order('start_datetime', { ascending: false })
 
-    return events || []
+    // [SMART SCALING FIX] Manually count sold tickets
+    const eventsWithCounts = await Promise.all((events || []).map(async (event) => {
+        const { count } = await supabase
+            .from('tickets')
+            .select('*', { count: 'exact', head: true })
+            .eq('event_id', event.id)
+            .neq('status', 'available')
+
+        return {
+            ...event,
+            tickets_sold: count || 0
+        }
+    }))
+
+    return eventsWithCounts
 }
 
 export default async function OrganizerEventsPage() {
@@ -84,10 +101,13 @@ export default async function OrganizerEventsPage() {
                             <Card className="overflow-hidden hover:shadow-lg transition-shadow group">
                                 <div className="relative h-48 bg-muted">
                                     {event.cover_image_url ? (
-                                        <img
+                                        <Image
                                             src={event.cover_image_url}
                                             alt={event.title}
-                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                            fill
+                                            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                                            className="object-cover group-hover:scale-105 transition-transform"
+                                            loading="lazy"
                                         />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center">

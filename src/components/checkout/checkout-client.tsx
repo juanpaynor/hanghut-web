@@ -13,29 +13,71 @@ import { useToast } from '@/hooks/use-toast'
 import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 
+import { validatePromoCode } from '@/lib/organizer/promo-actions'
+
 interface CheckoutClientProps {
     event: any
     quantity: number
     user: any
+    tier: {
+        id: string | null
+        name: string
+        price: number
+        quantity_total: number
+        quantity_sold: number
+    }
 }
 
-export function CheckoutClient({ event, quantity, user }: CheckoutClientProps) {
+export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientProps) {
     const router = useRouter()
     const { toast } = useToast()
     const [isLoading, setIsLoading] = useState(false)
 
-    // Guest State
+    // Promo Code State
+    const [promoCodeInput, setPromoCodeInput] = useState('')
+    const [appliedPromo, setAppliedPromo] = useState<{ code: string, discountAmount: number } | null>(null)
+    const [promoError, setPromoError] = useState('')
+
     const [guestDetails, setGuestDetails] = useState({
         name: '',
         email: '',
         phone: ''
     })
 
-    const subtotal = event.ticket_price * quantity
+    // [NEW] Terms & Newsletter State
+    const [termsAccepted, setTermsAccepted] = useState(false)
+    const [newsletterSubscribed, setNewsletterSubscribed] = useState(false)
+
+    const subtotal = tier.price * quantity
     const total = subtotal
+    const discount = appliedPromo ? appliedPromo.discountAmount : 0
 
     const handleGuestChange = (field: string, value: string) => {
         setGuestDetails(prev => ({ ...prev, [field]: value }))
+    }
+
+    const applyPromo = async () => {
+        setPromoError('')
+        setIsLoading(true)
+        const result = await validatePromoCode(event.id, promoCodeInput, subtotal)
+        setIsLoading(false)
+
+        if (result.error) {
+            setPromoError(result.error)
+            setAppliedPromo(null)
+        } else if (result.success) {
+            setAppliedPromo({
+                code: result.code!,
+                discountAmount: result.discountAmount!
+            })
+            toast({ title: "Promo Code Applied", description: `You saved ₱${result.discountAmount}` })
+        }
+    }
+
+    const removePromo = () => {
+        setAppliedPromo(null)
+        setPromoCodeInput('')
+        setPromoError('')
     }
 
     const handlePayment = async () => {
@@ -49,6 +91,16 @@ export function CheckoutClient({ event, quantity, user }: CheckoutClientProps) {
             return
         }
 
+        // [NEW] Validate Terms Validation
+        if (!termsAccepted) {
+            toast({
+                title: "Terms Required",
+                description: "You must accept the Terms of Service to proceed.",
+                variant: "destructive"
+            })
+            return
+        }
+
         setIsLoading(true)
         const supabase = createClient()
 
@@ -56,8 +108,11 @@ export function CheckoutClient({ event, quantity, user }: CheckoutClientProps) {
             const requestPayload = {
                 event_id: event.id,
                 quantity: quantity,
+                tier_id: tier.id, // Include tier_id for tier-based purchases
                 // channel_code removed for Payment Sessions API
                 guest_details: !user ? guestDetails : undefined,
+                promo_code: appliedPromo ? appliedPromo.code : undefined,
+                subscribed_to_newsletter: newsletterSubscribed, // [NEW] Send subscription status
                 success_url: `${window.location.origin}/checkout/success`,
                 failure_url: `${window.location.origin}/events/${event.id}`
             }
@@ -201,11 +256,11 @@ export function CheckoutClient({ event, quantity, user }: CheckoutClientProps) {
                                         <span>
                                             {(() => {
                                                 try {
-                                                    return event.start_date
-                                                        ? format(new Date(event.start_date), 'MMMM d, yyyy • h:mm a')
+                                                    return event.start_datetime
+                                                        ? format(new Date(event.start_datetime), 'MMMM d, yyyy • h:mm a')
                                                         : 'Date TBA'
                                                 } catch (e) {
-                                                    return event.start_date || 'Date TBA'
+                                                    return event.start_datetime || 'Date TBA'
                                                 }
                                             })()}
                                         </span>
@@ -222,7 +277,7 @@ export function CheckoutClient({ event, quantity, user }: CheckoutClientProps) {
                             <div className="space-y-2">
                                 <div className="flex justify-between text-sm">
                                     <span className="text-muted-foreground">Ticket type</span>
-                                    <span className="font-medium">General Admission</span>
+                                    <span className="font-medium">{tier.name}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                     <span className="text-muted-foreground">Quantity</span>
@@ -234,10 +289,66 @@ export function CheckoutClient({ event, quantity, user }: CheckoutClientProps) {
 
                             <div className="flex justify-between items-center pt-2">
                                 <span className="font-semibold text-base">Total</span>
-                                <span className="font-bold text-2xl text-primary">₱{total.toLocaleString()}</span>
+                                <span className="font-bold text-2xl text-primary">₱{(total - discount).toLocaleString()}</span>
                             </div>
                         </CardContent>
                         <CardFooter className="flex-col gap-3 bg-muted/20 pt-6">
+                            {/* Promo Code Input */}
+                            <div className="w-full flex gap-2 mb-2">
+                                <Input
+                                    placeholder="Promo Code"
+                                    value={promoCodeInput}
+                                    onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                                    disabled={!!appliedPromo || isLoading}
+                                />
+                                {appliedPromo ? (
+                                    <Button variant="outline" onClick={removePromo} disabled={isLoading}>
+                                        Remove
+                                    </Button>
+                                ) : (
+                                    <Button variant="secondary" onClick={applyPromo} disabled={!promoCodeInput || isLoading}>
+                                        Apply
+                                    </Button>
+                                )}
+                            </div>
+                            {promoError && <p className="text-xs text-destructive w-full">{promoError}</p>}
+                            {appliedPromo && (
+                                <div className="w-full flex justify-between text-sm text-green-600 bg-green-50 p-2 rounded border border-green-200">
+                                    <span>Discount applied ({appliedPromo.code})</span>
+                                    <span>-₱{discount.toLocaleString()}</span>
+                                </div>
+                            )}
+
+                            <Separator className="my-2" />
+
+                            {/* [NEW] Terms & Newsletter Checkboxes */}
+                            <div className="space-y-3 mb-4">
+                                <Label className="flex items-start gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={termsAccepted}
+                                        onChange={(e) => setTermsAccepted(e.target.checked)}
+                                        className="mt-1 h-4 w-4 rounded border-primary text-primary focus:ring-primary"
+                                    />
+                                    <span className="text-sm">
+                                        I accept the <a href="/terms" target="_blank" className="underline text-primary hover:text-primary/80">Terms of Service</a>
+                                        <span className="text-destructive">*</span>
+                                    </span>
+                                </Label>
+
+                                <Label className="flex items-start gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={newsletterSubscribed}
+                                        onChange={(e) => setNewsletterSubscribed(e.target.checked)}
+                                        className="mt-1 h-4 w-4 rounded border-primary text-primary focus:ring-primary"
+                                    />
+                                    <span className="text-sm text-muted-foreground">
+                                        Subscribe to news & event updates from the organizer
+                                    </span>
+                                </Label>
+                            </div>
+
                             <Button
                                 className="w-full h-12 text-lg font-semibold shadow-md hover:shadow-lg transition-all"
                                 onClick={handlePayment}
@@ -250,7 +361,7 @@ export function CheckoutClient({ event, quantity, user }: CheckoutClientProps) {
                                     </>
                                 ) : (
                                     <>
-                                        Proceed to Payment
+                                        Pay ₱{(total - discount).toLocaleString()}
                                         <ArrowRight className="ml-2 h-5 w-5" />
                                     </>
                                 )}

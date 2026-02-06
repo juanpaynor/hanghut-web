@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Calendar, MapPin, Ticket, ArrowUpRight } from 'lucide-react'
 import { format } from 'date-fns'
@@ -23,10 +24,13 @@ export function PublicEventCard({ event }: PublicEventCardProps) {
                 {/* Image Container */}
                 <div className="relative aspect-[4/3] overflow-hidden">
                     {event.cover_image_url ? (
-                        <img
+                        <Image
                             src={event.cover_image_url}
                             alt={event.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 will-change-transform"
+                            fill
+                            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                            className="object-cover group-hover:scale-105 transition-transform duration-500 will-change-transform"
+                            loading="lazy"
                         />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center bg-muted">

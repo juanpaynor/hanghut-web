@@ -35,7 +35,7 @@ interface EventFormData {
     sales_end_datetime: string
     cover_image: File | null
     additional_images: File[]
-    status: 'draft' | 'active'
+    status: 'draft' | 'active' | 'paused' | 'cancelled' | 'hidden'
 }
 
 interface EventFormProps {
@@ -80,7 +80,8 @@ export function EventForm({ partnerId, commissionRate, initialData, eventId }: E
     // Calculate pricing preview
     const ticketPrice = parseFloat(formData.ticket_price) || 0
     const platformFee = ticketPrice * commissionRate
-    const organizerPayout = ticketPrice - platformFee
+    const processingFee = ticketPrice * 0.03
+    const organizerPayout = ticketPrice - platformFee - processingFee
 
     const handleInputChange = (field: keyof EventFormData, value: any) => {
         setFormData(prev => ({ ...prev, [field]: value }))
@@ -211,7 +212,7 @@ export function EventForm({ partnerId, commissionRate, initialData, eventId }: E
         return Object.keys(newErrors).length === 0
     }
 
-    const handleSubmit = async (status: 'draft' | 'active') => {
+    const handleSubmit = async (status: 'draft' | 'active' | 'paused' | 'cancelled' | 'hidden') => {
         setFormData(prev => ({ ...prev, status }))
 
         if (!validateForm()) {
@@ -504,6 +505,10 @@ export function EventForm({ partnerId, commissionRate, initialData, eventId }: E
                                         <span>Platform Fee ({(commissionRate * 100).toFixed(1)}%):</span>
                                         <span className="font-medium">-₱{platformFee.toFixed(2)}</span>
                                     </div>
+                                    <div className="flex justify-between text-red-600">
+                                        <span>Processing Fee (3%):</span>
+                                        <span className="font-medium">-₱{processingFee.toFixed(2)}</span>
+                                    </div>
                                     <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">
                                         <span>You'll receive:</span>
                                         <span>₱{organizerPayout.toFixed(2)} per ticket</span>
@@ -645,6 +650,70 @@ export function EventForm({ partnerId, commissionRate, initialData, eventId }: E
                     </div>
                 </Card>
 
+                {isEditing && (
+                    <Card className="p-6 border-orange-200 bg-orange-50/30">
+                        <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                            Manage Event Status
+                        </h2>
+                        <div className="flex flex-col gap-4">
+                            <div className="flex items-center justify-between p-4 border rounded-lg bg-background">
+                                <div>
+                                    <h3 className="font-semibold">Visibility</h3>
+                                    <p className="text-sm text-muted-foreground">
+                                        {formData.status === 'hidden'
+                                            ? 'Event is hidden from public pages.'
+                                            : 'Event is visible to everyone.'}
+                                    </p>
+                                </div>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => handleSubmit(formData.status === 'hidden' ? 'active' : 'hidden')}
+                                >
+                                    {formData.status === 'hidden' ? 'Make Public' : 'Hide Event'}
+                                </Button>
+                            </div>
+
+                            <div className="flex items-center justify-between p-4 border rounded-lg bg-background">
+                                <div>
+                                    <h3 className="font-semibold">Sales Status</h3>
+                                    <p className="text-sm text-muted-foreground">
+                                        {formData.status === 'paused'
+                                            ? 'Ticket sales are currently paused.'
+                                            : formData.status === 'cancelled'
+                                                ? 'Event is cancelled.'
+                                                : 'Ticket sales are active.'}
+                                    </p>
+                                </div>
+                                <div className="flex gap-2">
+                                    {formData.status !== 'cancelled' && (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() => handleSubmit(formData.status === 'paused' ? 'active' : 'paused')}
+                                        >
+                                            {formData.status === 'paused' ? 'Resume Sales' : 'Pause Sales'}
+                                        </Button>
+                                    )}
+                                    {formData.status !== 'cancelled' && (
+                                        <Button
+                                            type="button"
+                                            variant="destructive"
+                                            onClick={() => {
+                                                if (confirm('Are you sure you want to cancel this event? This action cannot be undone.')) {
+                                                    handleSubmit('cancelled')
+                                                }
+                                            }}
+                                        >
+                                            Cancel Event
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </Card>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex gap-4 sticky bottom-0 bg-background pt-4 border-t">
                     <Button
@@ -653,7 +722,7 @@ export function EventForm({ partnerId, commissionRate, initialData, eventId }: E
                         size="lg"
                         className="flex-1"
                         onClick={() => handleSubmit('draft')}
-                        disabled={isLoading}
+                        disabled={isLoading || formData.status === 'cancelled'}
                     >
                         {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Save as Draft'}
                     </Button>
@@ -662,7 +731,7 @@ export function EventForm({ partnerId, commissionRate, initialData, eventId }: E
                         size="lg"
                         className="flex-1 bg-primary"
                         onClick={() => handleSubmit('active')}
-                        disabled={isLoading}
+                        disabled={isLoading || formData.status === 'cancelled'}
                     >
                         {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (isEditing ? 'Update Event' : 'Publish Event')}
                     </Button>

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useDebounce } from '@/hooks/use-debounce'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -65,21 +66,34 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
     const searchParams = useSearchParams()
     const [isPending, startTransition] = useTransition()
     const [search, setSearch] = useState(searchQuery)
+    const debouncedSearch = useDebounce(search, 500)
 
     const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE)
 
-    const handleSearch = (value: string) => {
-        setSearch(value)
+    // Sync input with prop if it changes externally
+    // useEffect(() => setSearch(searchQuery), [searchQuery]) 
+
+    // Update URL when debounced search changes
+    useEffect(() => {
+        // Only trigger if the debounced value is different from what's potentially in the URL (handled by parent prop, but good check)
+        // Actually, we just push based on debounced value.
+        // We need to avoid initial run if it matches searchQuery.
+        if (debouncedSearch === searchQuery) return
+
         const params = new URLSearchParams(searchParams.toString())
-        if (value) {
-            params.set('search', value)
+        if (debouncedSearch) {
+            params.set('search', debouncedSearch)
         } else {
             params.delete('search')
         }
-        params.delete('page')
+        params.delete('page') // Reset to page 1
         startTransition(() => {
             router.push(`?${params.toString()}`)
         })
+    }, [debouncedSearch, router, searchParams, searchQuery])
+
+    const handleSearch = (value: string) => {
+        setSearch(value)
     }
 
     const handleStatusFilter = (value: string) => {

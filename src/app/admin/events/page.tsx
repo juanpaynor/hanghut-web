@@ -48,7 +48,21 @@ async function getEvents(page: number, status?: string, eventType?: string, sear
         return { events: [], total: 0 }
     }
 
-    return { events: events || [], total: count || 0 }
+    // [SMART SCALING FIX] Manually count sold tickets
+    const eventsWithCounts = await Promise.all((events || []).map(async (event) => {
+        const { count } = await supabase
+            .from('tickets')
+            .select('*', { count: 'exact', head: true })
+            .eq('event_id', event.id)
+            .neq('status', 'available')
+
+        return {
+            ...event,
+            tickets_sold: count || 0
+        }
+    }))
+
+    return { events: eventsWithCounts || [], total: count || 0 }
 }
 
 export default async function EventsPage({

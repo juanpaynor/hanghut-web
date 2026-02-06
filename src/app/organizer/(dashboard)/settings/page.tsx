@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { PartnerSettingsForm } from '@/components/organizer/partner-settings-form'
+import { BrandingForm } from '@/components/organizer/branding-form'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Settings, Palette } from 'lucide-react'
 
 export default async function SettingsPage() {
     const supabase = await createClient()
@@ -12,20 +15,38 @@ export default async function SettingsPage() {
 
     const { data: partner } = await supabase
         .from('partners')
-        .select('*') // Select all including new columns
+        .select('*')
         .eq('user_id', user.id)
         .single()
-
-    console.log('[SettingsPage] Loaded partner:', partner ? { id: partner.id, slug: partner.slug, name: partner.business_name } : 'None')
 
     if (!partner) {
         redirect('/organizer/register')
     }
 
-    // Pass data to client form
     return (
         <div className="container mx-auto px-4 py-8">
-            <PartnerSettingsForm initialData={partner} />
+            <h1 className="text-3xl font-bold mb-6">Settings</h1>
+
+            <Tabs defaultValue="general" className="w-full">
+                <TabsList className="mb-6">
+                    <TabsTrigger value="general" className="flex items-center gap-2">
+                        <Settings className="h-4 w-4" />
+                        General
+                    </TabsTrigger>
+                    <TabsTrigger value="branding" className="flex items-center gap-2">
+                        <Palette className="h-4 w-4" />
+                        Branding
+                    </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="general">
+                    <PartnerSettingsForm initialData={partner} />
+                </TabsContent>
+
+                <TabsContent value="branding">
+                    <BrandingForm partner={partner} />
+                </TabsContent>
+            </Tabs>
         </div>
     )
 }

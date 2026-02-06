@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { LayoutDashboard, Calendar, Wallet, LogOut, Briefcase } from 'lucide-react'
+import { LayoutDashboard, Calendar, Wallet, LogOut, Briefcase, Mail, ScanLine } from 'lucide-react'
 
 export default async function OrganizerLayout({
     children,
@@ -17,14 +17,28 @@ export default async function OrganizerLayout({
         redirect('/organizer/login')
     }
 
-    // Check if user has an approved partner account
-    const { data: partner } = await supabase
+    // Check if user is a direct partner (Owner)
+    let { data: partner } = await supabase
         .from('partners')
         .select('*')
         .eq('user_id', user.id)
         .single()
 
-    // If no partner account or not approved, redirect
+    // If not direct owner, check if they are a team member
+    if (!partner) {
+        const { data: teamMember } = await supabase
+            .from('partner_team_members')
+            .select('partner_id, partners(*)')
+            .eq('user_id', user.id)
+            .single()
+
+        if (teamMember && teamMember.partners) {
+            // @ts-ignore
+            partner = teamMember.partners
+        }
+    }
+
+    // If still no partner or not approved
     if (!partner || partner.status !== 'approved') {
         return (
             <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -33,7 +47,7 @@ export default async function OrganizerLayout({
                     <h1 className="text-2xl font-bold">Partner Access Required</h1>
                     <p className="text-muted-foreground">
                         {!partner
-                            ? "You don't have a partner account yet. Apply through the mobile app to become an event organizer."
+                            ? "You don't have a partner account. Apply to become an organizer or ask your team admin to invite you."
                             : partner.status === 'pending'
                                 ? "Your partner application is pending approval. We'll notify you once it's reviewed."
                                 : "Your partner account has been rejected or suspended. Contact support for more information."}
@@ -85,6 +99,26 @@ export default async function OrganizerLayout({
                                     className="text-sm font-medium text-foreground hover:text-primary transition-colors"
                                 >
                                     Payouts
+                                </Link>
+                                <Link
+                                    href="/organizer/marketing"
+                                    className="text-sm font-medium text-foreground hover:text-primary transition-colors flex items-center gap-2"
+                                >
+                                    Email
+                                </Link>
+                                <Link
+                                    href="/organizer/team"
+                                    className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+                                >
+                                    Team
+                                </Link>
+                                <Link
+                                    href="/scan"
+                                    target="_blank"
+                                    className="text-sm font-medium text-foreground hover:text-primary transition-colors flex items-center gap-2"
+                                >
+                                    <ScanLine className="w-4 h-4" />
+                                    Scanner
                                 </Link>
                                 <Link
                                     href="/organizer/settings"

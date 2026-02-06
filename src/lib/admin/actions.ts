@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/client'
 
 // Edge Function integration for admin actions
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://rahhezqtkpvkialnduft.supabase.co'
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://api.hanghut.com'
 const SUPABASE_FUNCTIONS_URL = `${SUPABASE_URL}/functions/v1`
 
 export type BanAction = 'ban' | 'suspend' | 'activate'

@@ -61,6 +61,7 @@ async function getEventTickets(eventId: string) {
       )
     `)
         .eq('event_id', eventId)
+        .neq('status', 'available') // Filter out unsold tickets
         .order('created_at', { ascending: false })
         .limit(50)
 

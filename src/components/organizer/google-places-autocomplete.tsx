@@ -27,35 +27,69 @@ export function GooglePlacesAutocomplete({ onPlaceSelected, error }: GooglePlace
     const placesService = useRef<google.maps.places.PlacesService | null>(null)
     const debounceTimer = useRef<NodeJS.Timeout | null>(null)
 
-    // Initialize Google Places services with retry
+    // Initialize Google Places services
     useEffect(() => {
-        const initService = () => {
-            if (typeof window !== 'undefined' && window.google && window.google.maps && window.google.maps.places) {
-                autocompleteService.current = new google.maps.places.AutocompleteService()
-                // Create a dummy div for PlacesService (required by Google API)
-                const dummyDiv = document.createElement('div')
-                placesService.current = new google.maps.places.PlacesService(dummyDiv)
-                return true
+        let isMounted = true
+
+        const initService = async () => {
+            try {
+                // Dynamic import of the Places library
+                // This is the modern way to load the library and might bypass the strict "script tag" checks
+                // or at least properly initialize the new environment.
+                const placesLib = await google.maps.importLibrary("places") as google.maps.PlacesLibrary
+
+                if (isMounted) {
+                    // Try to instantiate the service. If it fails due to deprecation, we'll catch it.
+                    // Note: AutocompleteService is technically deprecated for new customers, 
+                    // but often works via importLibrary during the transition period better than script tags.
+                    // If this fails, we would need to switch to the class-based Place API completely.
+                    autocompleteService.current = new placesLib.AutocompleteService()
+
+                    const dummyDiv = document.createElement('div')
+                    placesService.current = new placesLib.PlacesService(dummyDiv)
+                }
+            } catch (error) {
+                console.error("Google Maps Places Library Init Error:", error)
             }
-            return false
         }
 
-        if (!initService()) {
-            const checkInterval = setInterval(() => {
-                if (initService()) {
-                    clearInterval(checkInterval)
-                }
-            }, 500) // Check every 500ms
+        // We need the main Google Maps API loader. 
+        // Since we removed the script tag, we need to inject the loader or use a loader package.
+        // Wait, standard practice is to have the loader. We removed the script tag.
+        // We should use @googlemaps/js-api-loader if installed, or just inject the script dynamically here 
+        // with the correct parameters for the NEW API version.
 
-            // Stop checking after 10 seconds
-            const timeout = setTimeout(() => {
-                clearInterval(checkInterval)
-            }, 10000)
+        const loadScript = () => {
+            const scriptId = 'google-maps-script'
+            const callbackName = 'initGoogleMaps'
 
-            return () => {
-                clearInterval(checkInterval)
-                clearTimeout(timeout)
+            // Define global callback
+            window[callbackName as any] = () => {
+                initService()
             }
+
+            if (document.getElementById(scriptId)) {
+                if (window.google?.maps && window.google.maps.importLibrary) {
+                    initService()
+                }
+                return
+            }
+
+            const script = document.createElement('script')
+            script.id = scriptId
+            // Use 'loading=async' and 'callback=initGoogleMaps'
+            // We removed v=weekly hoping default is stable, but can add back if needed.
+            // Added v=weekly to force newer version which has importLibrary
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}&libraries=places&v=weekly&loading=async&callback=${callbackName}`
+            script.async = true
+            script.defer = true
+            document.head.appendChild(script)
+        }
+
+        loadScript()
+
+        return () => {
+            isMounted = false
         }
     }, [])
 
@@ -68,22 +102,21 @@ export function GooglePlacesAutocomplete({ onPlaceSelected, error }: GooglePlace
 
         setIsLoading(true)
 
-        autocompleteService.current.getPlacePredictions(
-            {
-                input: searchQuery,
-                componentRestrictions: { country: 'ph' }, // Restrict to Philippines
-                types: ['establishment', 'geocode'], // Allow both places and addresses
-            },
-            (predictions, status) => {
-                setIsLoading(false)
-                if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
-                    setPredictions(predictions)
-                    setShowPredictions(true)
-                } else {
-                    setPredictions([])
-                }
+        const request = {
+            input: searchQuery,
+            componentRestrictions: { country: 'ph' },
+            types: ['establishment', 'geocode'],
+        }
+
+        autocompleteService.current.getPlacePredictions(request, (results: google.maps.places.AutocompletePrediction[] | null, status: google.maps.places.PlacesServiceStatus) => {
+            setIsLoading(false)
+            if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+                setPredictions(results)
+                setShowPredictions(true)
+            } else {
+                setPredictions([])
             }
-        )
+        })
     }, [])
 
     // Handle input change with debounce
@@ -101,7 +134,6 @@ export function GooglePlacesAutocomplete({ onPlaceSelected, error }: GooglePlace
         }, 500)
     }
 
-    // Handle place selection
     const handlePlaceSelect = (placeId: string, description: string) => {
         if (!placesService.current) return
 
@@ -114,10 +146,10 @@ export function GooglePlacesAutocomplete({ onPlaceSelected, error }: GooglePlace
                 placeId,
                 fields: ['name', 'formatted_address', 'geometry', 'address_components'],
             },
-            (place, status) => {
+            (place: google.maps.places.PlaceResult | null, status: google.maps.places.PlacesServiceStatus) => {
                 setIsLoading(false)
                 if (status === google.maps.places.PlacesServiceStatus.OK && place) {
-                    // Extract city from address components
+                    // Extract city...
                     let city = ''
                     const cityComponent = place.address_components?.find(
                         (component) =>
@@ -130,7 +162,7 @@ export function GooglePlacesAutocomplete({ onPlaceSelected, error }: GooglePlace
 
                     const result: PlaceResult = {
                         address: place.formatted_address || description,
-                        city: city || 'Manila', // Fallback to Manila
+                        city: city || 'Manila',
                         latitude: place.geometry?.location?.lat() || 0,
                         longitude: place.geometry?.location?.lng() || 0,
                         venue_name: place.name,

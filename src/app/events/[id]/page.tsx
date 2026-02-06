@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
+import Image from 'next/image'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -8,7 +10,7 @@ import { format } from 'date-fns'
 import { Calendar, MapPin, Users, Share2, ShieldCheck, Clock, ArrowLeft } from 'lucide-react'
 import type { Metadata } from 'next'
 import { TicketSelector } from '@/components/events/ticket-selector'
-import Link from 'next/link'
+import { EventGallery } from '@/components/events/event-gallery'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +27,8 @@ async function getEvent(eventId: string) {
         verified,
         profile_photo_url,
         slug
-      )
+      ),
+      ticket_tiers(*)
     `)
         .eq('id', eventId)
         .eq('status', 'active')
@@ -97,10 +100,13 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                 <div className="relative w-full h-[50vh] min-h-[400px] overflow-hidden bg-muted">
                     {event.cover_image_url ? (
                         <>
-                            <img
+                            <Image
                                 src={event.cover_image_url}
                                 alt={event.title}
-                                className="w-full h-full object-cover"
+                                fill
+                                sizes="100vw"
+                                className="object-cover"
+                                priority
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
                         </>
@@ -201,6 +207,13 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                                     {event.description || "No description provided."}
                                 </p>
                             </div>
+
+                            {/* Event Gallery */}
+                            {event.images && event.images.length > 0 && (
+                                <div className="pt-8 border-t border-border/50">
+                                    <EventGallery images={event.images} title={event.title} />
+                                </div>
+                            )}
                         </div>
 
                         {/* RIGHT COLUMN: Sticky Ticket Card */}
@@ -220,6 +233,7 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                                             minTickets={event.min_tickets_per_purchase}
                                             maxTickets={event.max_tickets_per_purchase}
                                             isSoldOut={isSoldOut}
+                                            tiers={event.ticket_tiers}
                                         />
                                     </div>
                                     <div className="p-6 space-y-6">
@@ -249,6 +263,7 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                                                 minTickets={event.min_tickets_per_purchase}
                                                 maxTickets={event.max_tickets_per_purchase}
                                                 isSoldOut={isSoldOut}
+                                                tiers={event.ticket_tiers}
                                                 fullWidth
                                             />
                                             <p className="text-center text-xs text-muted-foreground mt-3">

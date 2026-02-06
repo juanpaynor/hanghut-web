@@ -125,6 +125,26 @@ export async function createEvent(formData: FormData) {
             return { error: 'Failed to create event: ' + eventError.message }
         }
 
+        // 5. Create default "General Admission" ticket tier
+        const { error: tierError } = await adminSupabase
+            .from('ticket_tiers')
+            .insert({
+                event_id: event.id,
+                name: 'General Admission',
+                description: 'Standard entry ticket',
+                price: parseFloat(formData.get('ticket_price') as string),
+                quantity_total: parseInt(formData.get('capacity') as string),
+                quantity_sold: 0,
+                is_active: true,
+                sort_order: 0,
+            })
+
+        if (tierError) {
+            console.error('Ticket tier creation error:', tierError)
+            // Don't fail the entire operation if tier creation fails
+            // The event is still valid, we can add tiers later
+        }
+
         revalidatePath('/organizer/events')
         return { success: true, eventId: event.id }
 

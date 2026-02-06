@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/select'
 import { format } from 'date-fns'
 import { CheckCircle, XCircle, Ban, DollarSign } from 'lucide-react'
-import { approvePartner, rejectPartner, setCustomPricing, suspendPartner } from '@/lib/admin/partner-actions'
+import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, resetToStandardPricing } from '@/lib/admin/partner-actions'
 import { useRouter } from 'next/navigation'
 
 interface Partner {
@@ -52,7 +52,8 @@ interface PartnerDetailModalProps {
 export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetailModalProps) {
     const router = useRouter()
     const [isLoading, setIsLoading] = useState(false)
-    const [customPercentage, setCustomPercentage] = useState(partner.custom_percentage?.toString() || '10')
+    const [pricingModel, setPricingModel] = useState(partner.pricing_model || 'standard')
+    const [customPercentage, setCustomPercentage] = useState(partner.custom_percentage?.toString() || '15') // Default custom to 15 if not set
     const [adminNotes, setAdminNotes] = useState('')
 
     const handleApprove = async () => {
@@ -108,15 +109,19 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
     }
 
     const handleUpdatePricing = async () => {
-        const percentage = parseFloat(customPercentage)
-        if (isNaN(percentage) || percentage < 0 || percentage > 100) {
-            alert('Please enter a valid percentage between 0 and 100')
-            return
-        }
-
         setIsLoading(true)
         try {
-            await setCustomPricing(partner.id, percentage)
+            if (pricingModel === 'standard') {
+                await resetToStandardPricing(partner.id)
+            } else {
+                const percentage = parseFloat(customPercentage)
+                if (isNaN(percentage) || percentage < 0 || percentage > 100) {
+                    alert('Please enter a valid percentage between 0 and 100')
+                    setIsLoading(false)
+                    return
+                }
+                await setCustomPricing(partner.id, percentage)
+            }
             router.refresh()
             onOpenChange(false)
         } catch (error) {
@@ -196,44 +201,52 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                             Pricing Configuration
                         </h3>
                         <div className="space-y-3">
-                            <div>
-                                <Label htmlFor="pricing-model" className="text-slate-400">Pricing Model</Label>
-                                <Select value={partner.pricing_model} disabled>
-                                    <SelectTrigger className="bg-slate-800 border-slate-700">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="standard">Standard (10%)</SelectItem>
-                                        <SelectItem value="custom">Custom</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div>
-                                <Label htmlFor="custom-percentage" className="text-slate-400">Platform Fee (%)</Label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        id="custom-percentage"
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        step="0.5"
-                                        value={customPercentage}
-                                        onChange={(e) => setCustomPercentage(e.target.value)}
-                                        className="bg-slate-800 border-slate-700 text-white"
+                            <div className="space-y-4">
+                                <div>
+                                    <Label htmlFor="pricing-model" className="text-slate-400 mb-2 block">Pricing Model</Label>
+                                    <Select
+                                        value={pricingModel}
+                                        onValueChange={setPricingModel}
                                         disabled={partner.status !== 'approved'}
-                                    />
-                                    <Button
-                                        onClick={handleUpdatePricing}
-                                        disabled={isLoading || partner.status !== 'approved'}
-                                        className="bg-blue-600 hover:bg-blue-700"
                                     >
-                                        Update
-                                    </Button>
+                                        <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="standard">Standard (15%)</SelectItem>
+                                            <SelectItem value="custom">Custom</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Standard rate is 10%. Enter custom percentage for special deals.
-                                </p>
+
+                                {pricingModel === 'custom' && (
+                                    <div className="space-y-2">
+                                        <Label htmlFor="custom-percentage" className="text-slate-400">Custom Fee (%)</Label>
+                                        <Input
+                                            id="custom-percentage"
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            step="0.5"
+                                            value={customPercentage}
+                                            onChange={(e) => setCustomPercentage(e.target.value)}
+                                            className="bg-slate-800 border-slate-700 text-white"
+                                            disabled={partner.status !== 'approved'}
+                                            placeholder="e.g. 5.0"
+                                        />
+                                        <p className="text-xs text-slate-500">
+                                            Enter the percentage share HangHut takes from ticket sales.
+                                        </p>
+                                    </div>
+                                )}
+
+                                <Button
+                                    onClick={handleUpdatePricing}
+                                    disabled={isLoading || partner.status !== 'approved'}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 mt-2"
+                                >
+                                    Save Configuration
+                                </Button>
                             </div>
                         </div>
                     </div>

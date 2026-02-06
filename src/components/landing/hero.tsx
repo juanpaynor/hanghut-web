@@ -5,6 +5,7 @@ import { ArrowDown } from "lucide-react";
 import dynamic from 'next/dynamic';
 import { motion, useScroll, useTransform } from "framer-motion";
 import { useRef } from "react";
+import { WaitlistDialog } from "./waitlist-dialog";
 
 const PhysicsActivities = dynamic(() => import('./physics-activities'), {
   ssr: false,
@@ -59,12 +60,14 @@ export default function Hero() {
           </motion.p>
         </div>
 
-        <Button
-          size="lg"
-          className="rounded-full px-12 py-8 text-xl font-medium shadow-glow hover:scale-105 transition-transform bg-primary text-primary-foreground border-0"
-        >
-          Find Your Crowd
-        </Button>
+        <WaitlistDialog>
+          <Button
+            size="lg"
+            className="rounded-full px-12 py-8 text-xl font-medium shadow-glow hover:scale-105 transition-transform bg-primary text-primary-foreground border-0"
+          >
+            Find Your Crowd
+          </Button>
+        </WaitlistDialog>
       </motion.div>
 
       {/* Scroll Indicator */}

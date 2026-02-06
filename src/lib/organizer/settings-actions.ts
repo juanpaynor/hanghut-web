@@ -13,6 +13,28 @@ const profileSchema = z.object({
         .regex(/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens')
         .optional()
         .or(z.literal('')),
+    branding: z.object({
+        colors: z.object({
+            primary: z.string().optional(),
+            secondary: z.string().optional(),
+            accent: z.string().optional(),
+        }).optional(),
+        design: z.object({
+            layout: z.enum(['modern', 'classic']).optional(),
+            font: z.enum(['sans', 'serif', 'mono']).optional(),
+            enable_animations: z.boolean().optional(),
+            show_footer: z.boolean().optional(),
+        }).optional(),
+        announcement: z.object({
+            enabled: z.boolean().optional(),
+            text: z.string().optional(),
+            link: z.string().optional(),
+        }).optional(),
+        content: z.object({
+            sort_by: z.enum(['upcoming', 'newest', 'alpha']).optional(),
+            show_past_events: z.boolean().optional(),
+        }).optional(),
+    }).optional(),
     social_links: z.object({
         facebook: z.string().optional(),
         instagram: z.string().optional(),
@@ -46,6 +68,14 @@ export async function updatePartnerProfile(
     }
 
     // Parse raw data with safe defaults
+    let branding = {}
+    try {
+        const brandingRaw = formData.get('branding') as string
+        if (brandingRaw) branding = JSON.parse(brandingRaw)
+    } catch (e) {
+        console.error('Failed to parse branding JSON', e)
+    }
+
     const rawData = {
         business_name: formData.get('business_name') as string || '',
         description: formData.get('description') as string || '',
@@ -57,7 +87,8 @@ export async function updatePartnerProfile(
             instagram: formData.get('instagram') as string || '',
             twitter: formData.get('twitter') as string || '',
             website: formData.get('website') as string || '',
-        }
+        },
+        branding
     }
 
     // Validate
@@ -134,6 +165,7 @@ export async function updatePartnerProfile(
         description: data.description,
         slug: data.slug || null,
         social_links: data.social_links,
+        branding: data.branding,
         profile_photo_url: profilePhotoUrl,
         cover_image_url: coverImageUrl,
         updated_at: new Date().toISOString(),
