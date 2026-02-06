@@ -63,7 +63,7 @@ export default async function PartnersPage({
             <div className="max-w-7xl mx-auto">
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold mb-2">Event Partners</h1>
-                    <p className="text-slate-400">Manage event organizer applications and partnerships</p>
+                    <p className="text-muted-foreground">Manage event organizer applications and partnerships</p>
                 </div>
 
                 <Suspense key={`${page}-${status}-${search}`} fallback={<SkeletonTable rows={20} />}>

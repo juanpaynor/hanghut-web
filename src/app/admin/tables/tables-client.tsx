@@ -88,54 +88,54 @@ export function TablesClient({ tables, currentPage, totalCount, searchQuery }: T
             <div className="flex items-center gap-4">
                 <div className="flex-1">
                     <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
                             placeholder="Search by title or location..."
                             value={search}
                             onChange={(e) => handleSearch(e.target.value)}
-                            className="pl-10 bg-slate-800 border-slate-700 text-white"
+                            className="pl-10 bg-card border-border text-foreground"
                         />
                     </div>
                 </div>
             </div>
 
             {/* Results count */}
-            <div className="text-sm text-slate-400">
+            <div className="text-sm text-muted-foreground">
                 Showing {tables.length} of {totalCount} tables
                 {searchQuery && ` (filtered by "${searchQuery}")`}
             </div>
 
             {/* Tables Table */}
-            <div className="rounded-md border border-slate-700">
+            <div className="rounded-md border border-border">
                 <Table>
                     <TableHeader>
-                        <TableRow className="border-slate-700 hover:bg-slate-800/50">
-                            <TableHead className="text-slate-400">Title</TableHead>
-                            <TableHead className="text-slate-400">Host</TableHead>
-                            <TableHead className="text-slate-400">Date/Time</TableHead>
-                            <TableHead className="text-slate-400">Location</TableHead>
-                            <TableHead className="text-slate-400">Status</TableHead>
-                            <TableHead className="text-slate-400">Capacity</TableHead>
-                            <TableHead className="text-slate-400">Actions</TableHead>
+                        <TableRow className="border-border hover:bg-card/50">
+                            <TableHead className="text-muted-foreground">Title</TableHead>
+                            <TableHead className="text-muted-foreground">Host</TableHead>
+                            <TableHead className="text-muted-foreground">Date/Time</TableHead>
+                            <TableHead className="text-muted-foreground">Location</TableHead>
+                            <TableHead className="text-muted-foreground">Status</TableHead>
+                            <TableHead className="text-muted-foreground">Capacity</TableHead>
+                            <TableHead className="text-muted-foreground">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {tables.length === 0 ? (
-                            <TableRow className="border-slate-700">
-                                <TableCell colSpan={7} className="text-center text-slate-400 py-8">
+                            <TableRow className="border-border">
+                                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                                     {searchQuery ? 'No tables found matching your search' : 'No tables found'}
                                 </TableCell>
                             </TableRow>
                         ) : (
                             tables.map((table) => (
-                                <TableRow key={table.id} className="border-slate-700 hover:bg-slate-800/50">
+                                <TableRow key={table.id} className="border-border hover:bg-card/50">
                                     <TableCell className="text-slate-300 font-medium">
                                         {table.title || 'Untitled'}
                                     </TableCell>
                                     <TableCell className="text-slate-300">
                                         {table.host?.display_name || 'Unknown'}
                                     </TableCell>
-                                    <TableCell className="text-slate-400 text-sm">
+                                    <TableCell className="text-muted-foreground text-sm">
                                         {format(new Date(table.datetime), 'MMM d, yyyy h:mm a')}
                                     </TableCell>
                                     <TableCell className="text-slate-300">
@@ -150,12 +150,12 @@ export function TablesClient({ tables, currentPage, totalCount, searchQuery }: T
                                             {table.status.toUpperCase()}
                                         </span>
                                     </TableCell>
-                                    <TableCell className="text-slate-400 text-sm">
+                                    <TableCell className="text-muted-foreground text-sm">
                                         {table.current_capacity} / {table.max_guests}
                                     </TableCell>
                                     <TableCell>
                                         <Link href={`/admin/tables/${table.id}`}>
-                                            <Button size="sm" variant="ghost" className="hover:bg-slate-700">
+                                            <Button size="sm" variant="ghost" className="hover:bg-muted">
                                                 <Eye className="h-4 w-4" />
                                             </Button>
                                         </Link>
@@ -170,7 +170,7 @@ export function TablesClient({ tables, currentPage, totalCount, searchQuery }: T
             {/* Pagination */}
             {totalPages > 1 && (
                 <div className="flex items-center justify-between">
-                    <div className="text-sm text-slate-400">
+                    <div className="text-sm text-muted-foreground">
                         Page {currentPage} of {totalPages}
                     </div>
                     <div className="flex gap-2">
@@ -179,7 +179,7 @@ export function TablesClient({ tables, currentPage, totalCount, searchQuery }: T
                             size="sm"
                             onClick={() => handlePageChange(currentPage - 1)}
                             disabled={currentPage === 1 || isPending}
-                            className="border-slate-700 hover:bg-slate-700"
+                            className="border-border hover:bg-muted"
                         >
                             Previous
                         </Button>
@@ -188,7 +188,7 @@ export function TablesClient({ tables, currentPage, totalCount, searchQuery }: T
                             size="sm"
                             onClick={() => handlePageChange(currentPage + 1)}
                             disabled={currentPage === totalPages || isPending}
-                            className="border-slate-700 hover:bg-slate-700"
+                            className="border-border hover:bg-muted"
                         >
                             Next
                         </Button>

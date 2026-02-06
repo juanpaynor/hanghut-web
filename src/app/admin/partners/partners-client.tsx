@@ -120,9 +120,9 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
             case 'rejected':
                 return 'bg-red-500/10 text-red-500'
             case 'suspended':
-                return 'bg-slate-500/10 text-slate-500'
+                return 'bg-slate-500/10 text-muted-foreground'
             default:
-                return 'bg-slate-500/10 text-slate-500'
+                return 'bg-slate-500/10 text-muted-foreground'
         }
     }
 
@@ -133,18 +133,18 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
                 <div className="flex flex-col md:flex-row gap-4">
                     <div className="flex-1">
                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
                                 placeholder="Search by business name..."
                                 value={search}
                                 onChange={(e) => handleSearch(e.target.value)}
-                                className="pl-10 bg-slate-800 border-slate-700 text-white"
+                                className="pl-10 bg-card border-border text-foreground"
                             />
                         </div>
                     </div>
 
                     <Select value={statusFilter} onValueChange={handleStatusFilter}>
-                        <SelectTrigger className="w-[200px] bg-slate-800 border-slate-700 text-white">
+                        <SelectTrigger className="w-[200px] bg-card border-border text-foreground">
                             <SelectValue placeholder="Filter by status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -158,27 +158,27 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
                 </div>
 
                 {/* Results count */}
-                <div className="text-sm text-slate-400">
+                <div className="text-sm text-muted-foreground">
                     Showing {partners.length} of {totalCount} partners
                 </div>
 
                 {/* Partners Table */}
-                <div className="rounded-md border border-slate-700">
+                <div className="rounded-md border border-border">
                     <Table>
                         <TableHeader>
-                            <TableRow className="border-slate-700 hover:bg-slate-800/50">
-                                <TableHead className="text-slate-400">Business Name</TableHead>
-                                <TableHead className="text-slate-400">Owner</TableHead>
-                                <TableHead className="text-slate-400">Type</TableHead>
-                                <TableHead className="text-slate-400">Status</TableHead>
-                                <TableHead className="text-slate-400">Pricing</TableHead>
-                                <TableHead className="text-slate-400">Joined</TableHead>
+                            <TableRow className="border-border hover:bg-card/50">
+                                <TableHead className="text-muted-foreground">Business Name</TableHead>
+                                <TableHead className="text-muted-foreground">Owner</TableHead>
+                                <TableHead className="text-muted-foreground">Type</TableHead>
+                                <TableHead className="text-muted-foreground">Status</TableHead>
+                                <TableHead className="text-muted-foreground">Pricing</TableHead>
+                                <TableHead className="text-muted-foreground">Joined</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {partners.length === 0 ? (
-                                <TableRow className="border-slate-700">
-                                    <TableCell colSpan={6} className="text-center text-slate-400 py-8">
+                                <TableRow className="border-border">
+                                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                                         No partners found
                                     </TableCell>
                                 </TableRow>
@@ -186,7 +186,7 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
                                 partners.map((partner) => (
                                     <TableRow
                                         key={partner.id}
-                                        className="border-slate-700 hover:bg-slate-800/50 cursor-pointer"
+                                        className="border-border hover:bg-card/50 cursor-pointer"
                                         onClick={() => setSelectedPartner(partner)}
                                     >
                                         <TableCell className="text-slate-300 font-medium">
@@ -202,11 +202,11 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
                                         <TableCell>
                                             <div>
                                                 <p className="text-slate-300 text-sm">{partner.user?.display_name || 'Unknown'}</p>
-                                                <p className="text-slate-500 text-xs">{partner.user?.email}</p>
+                                                <p className="text-muted-foreground text-xs">{partner.user?.email}</p>
                                             </div>
                                         </TableCell>
                                         <TableCell>
-                                            <span className="text-slate-400 text-sm capitalize">
+                                            <span className="text-muted-foreground text-sm capitalize">
                                                 {partner.business_type?.replace('_', ' ') || 'N/A'}
                                             </span>
                                         </TableCell>
@@ -219,13 +219,13 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
                                             </Badge>
                                         </TableCell>
                                         <TableCell>
-                                            <span className="text-slate-400 text-sm">
+                                            <span className="text-muted-foreground text-sm">
                                                 {partner.pricing_model === 'custom'
                                                     ? `${partner.custom_percentage}%`
                                                     : '10% (Standard)'}
                                             </span>
                                         </TableCell>
-                                        <TableCell className="text-slate-400 text-sm">
+                                        <TableCell className="text-muted-foreground text-sm">
                                             {format(new Date(partner.created_at), 'MMM d, yyyy')}
                                         </TableCell>
                                     </TableRow>
@@ -238,7 +238,7 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
                 {/* Pagination */}
                 {totalPages > 1 && (
                     <div className="flex items-center justify-between">
-                        <div className="text-sm text-slate-400">
+                        <div className="text-sm text-muted-foreground">
                             Page {currentPage} of {totalPages}
                         </div>
                         <div className="flex gap-2">
@@ -247,7 +247,7 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
                                 size="sm"
                                 onClick={() => handlePageChange(currentPage - 1)}
                                 disabled={currentPage === 1 || isPending}
-                                className="border-slate-700 hover:bg-slate-700"
+                                className="border-border hover:bg-muted"
                             >
                                 Previous
                             </Button>
@@ -256,7 +256,7 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
                                 size="sm"
                                 onClick={() => handlePageChange(currentPage + 1)}
                                 disabled={currentPage === totalPages || isPending}
-                                className="border-slate-700 hover:bg-slate-700"
+                                className="border-border hover:bg-muted"
                             >
                                 Next
                             </Button>

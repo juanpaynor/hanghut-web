@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
-interface WebScannerProps {
+export interface WebScannerProps {
     events: { id: string, title: string, start_datetime: string | null }[] // Fixed column
 }
 
@@ -34,6 +34,12 @@ export function WebScanner({ events }: WebScannerProps) {
     // Buffer for Bluetooth Scanner
     const bufferRef = useRef('')
     const lastKeyTimeRef = useRef(Date.now())
+
+    // Scan Cooldown Refs
+    const lastScannedCodeRef = useRef<string>('')
+    const lastScanTimeRef = useRef<number>(0)
+    const isProcessingRef = useRef(false)
+    const isResultDisplayedRef = useRef(false)
 
     const eventIdRef = useRef(selectedEventId)
     useEffect(() => { eventIdRef.current = selectedEventId }, [selectedEventId])
@@ -91,6 +97,11 @@ export function WebScanner({ events }: WebScannerProps) {
             if (e.key === 'Enter') {
                 if (bufferRef.current.length > 5) { // QR codes are usually UUIDs (36 chars) or Signed strings
                     console.log('Bluetooth Scan Detected:', bufferRef.current)
+
+                    // Force unlock for bluetooth rapid scanning
+                    isResultDisplayedRef.current = false
+                    setLastResult(null)
+
                     handleScan(bufferRef.current)
                 }
                 bufferRef.current = ''
@@ -104,6 +115,19 @@ export function WebScanner({ events }: WebScannerProps) {
     }, [selectedEventId])
 
     const handleScan = async (code: string) => {
+        const now = Date.now()
+
+        // 1. Pause Check: If result is open, ignore everything
+        if (isResultDisplayedRef.current) return
+
+        // 2. Cooldown Check (Prevent duplicate scans of SAME code within 3 seconds)
+        if (code === lastScannedCodeRef.current && (now - lastScanTimeRef.current < 3000)) {
+            return
+        }
+
+        // 3. Process Lock
+        if (loading || isProcessingRef.current) return
+
         const targetEventId = eventIdRef.current
 
         if (!targetEventId) {
@@ -115,14 +139,20 @@ export function WebScanner({ events }: WebScannerProps) {
             return
         }
 
-        if (loading) return
+        // Lock
+        isProcessingRef.current = true
         setLoading(true)
         setLastResult(null)
+
+        // Update Refs
+        lastScannedCodeRef.current = code
+        lastScanTimeRef.current = now
 
         try {
             // Optimistic UI?
             const result = await processScan(code, targetEventId)
             setLastResult(result)
+            isResultDisplayedRef.current = true // Pause!
 
             if (result.success) {
                 toast({
@@ -148,6 +178,7 @@ export function WebScanner({ events }: WebScannerProps) {
             })
         } finally {
             setLoading(false)
+            isProcessingRef.current = false
         }
     }
 
@@ -176,6 +207,12 @@ export function WebScanner({ events }: WebScannerProps) {
     const handleManualSubmit = (e: React.FormEvent) => {
         e.preventDefault()
         if (manualCode) handleScan(manualCode)
+    }
+
+    // Helper to clear result and unpause
+    const clearResult = () => {
+        setLastResult(null)
+        isResultDisplayedRef.current = false
     }
 
     if (events.length === 0) {
@@ -284,7 +321,7 @@ export function WebScanner({ events }: WebScannerProps) {
                     )}
 
                     <Button
-                        onClick={() => setLastResult(null)}
+                        onClick={clearResult}
                         variant="outline"
                         className="mt-6 w-full bg-white/50 hover:bg-white/80 border-0"
                         autoFocus

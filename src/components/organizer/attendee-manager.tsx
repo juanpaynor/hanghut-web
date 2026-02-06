@@ -23,7 +23,9 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Search, RefreshCw, AlertCircle } from 'lucide-react'
+import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet } from 'lucide-react'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { format } from 'date-fns'
 import { useToast } from '@/hooks/use-toast'
 import {
@@ -126,6 +128,61 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
 
     const selectedAttendeesData = attendees.filter(a => selectedAttendees.has(a.id))
 
+    const downloadCSV = () => {
+        const headers = ['Ticket ID', 'Name', 'Email', 'Tier', 'Price', 'Status', 'Check-in Time']
+        const rows = attendees.map(a => [
+            a.id,
+            a.user?.display_name || a.guest_info?.name || 'Guest',
+            a.user?.email || a.guest_info?.email || '-',
+            a.tier?.name || 'General',
+            a.tier?.price?.toString() || '0',
+            a.status,
+            a.created_at ? new Date(a.created_at).toLocaleString() : '-'
+        ])
+
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+        ].join('\n')
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+        const link = document.createElement('a')
+        link.href = URL.createObjectURL(blob)
+        link.download = `${eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_attendees.csv`
+        link.click()
+    }
+
+    const downloadPDF = () => {
+        const doc = new jsPDF()
+
+        doc.setFontSize(18)
+        doc.text(eventTitle, 14, 20)
+
+        doc.setFontSize(10)
+        doc.text(`Date: ${eventDate}`, 14, 30)
+        doc.text(`Venue: ${eventVenue}`, 14, 35)
+        doc.text(`Total Attendees: ${total}`, 14, 40)
+
+        const tableColumn = ["Ticket ID", "Name", "Tier", "Status", "Email"]
+        const tableRows = attendees.map(attendee => [
+            attendee.id.slice(0, 8) + '...',
+            attendee.user?.display_name || attendee.guest_info?.name || 'Guest',
+            attendee.tier?.name || 'General',
+            attendee.status,
+            attendee.user?.email || attendee.guest_info?.email || '-'
+        ])
+
+        autoTable(doc, {
+            head: [tableColumn],
+            body: tableRows,
+            startY: 45,
+            theme: 'striped',
+            headStyles: { fillColor: [66, 66, 66] }
+        })
+
+        doc.save(`${eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_attendees.pdf`)
+    }
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -147,6 +204,26 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                             eventVenue={eventVenue}
                         />
                     )}
+
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm">
+                                <Download className="w-4 h-4 mr-2" />
+                                Export
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                            <DropdownMenuItem onClick={downloadCSV}>
+                                <FileText className="w-4 h-4 mr-2" />
+                                Export as CSV
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={downloadPDF}>
+                                <Sheet className="w-4 h-4 mr-2" />
+                                Export as PDF
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
                     <Button
                         variant="outline"
                         size="sm"

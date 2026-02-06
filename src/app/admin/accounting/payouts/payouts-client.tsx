@@ -73,38 +73,38 @@ export function PayoutsClient({ payouts }: PayoutsClientProps) {
 
     return (
         <div className="space-y-6">
-            <div className="text-sm text-slate-400">
+            <div className="text-sm text-muted-foreground">
                 {payouts.length} pending payout request{payouts.length !== 1 ? 's' : ''}
             </div>
 
-            <div className="rounded-md border border-slate-700">
+            <div className="rounded-md border border-border">
                 <Table>
                     <TableHeader>
-                        <TableRow className="border-slate-700 hover:bg-slate-800/50">
-                            <TableHead className="text-slate-400">Partner</TableHead>
-                            <TableHead className="text-slate-400">Amount</TableHead>
-                            <TableHead className="text-slate-400">Bank Details</TableHead>
-                            <TableHead className="text-slate-400">Requested</TableHead>
-                            <TableHead className="text-slate-400">Status</TableHead>
-                            <TableHead className="text-slate-400">Actions</TableHead>
+                        <TableRow className="border-border hover:bg-card/50">
+                            <TableHead className="text-muted-foreground">Partner</TableHead>
+                            <TableHead className="text-muted-foreground">Amount</TableHead>
+                            <TableHead className="text-muted-foreground">Bank Details</TableHead>
+                            <TableHead className="text-muted-foreground">Requested</TableHead>
+                            <TableHead className="text-muted-foreground">Status</TableHead>
+                            <TableHead className="text-muted-foreground">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {payouts.length === 0 ? (
-                            <TableRow className="border-slate-700">
-                                <TableCell colSpan={6} className="text-center text-slate-400 py-8">
+                            <TableRow className="border-border">
+                                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                                     No pending payout requests
                                 </TableCell>
                             </TableRow>
                         ) : (
                             payouts.map((payout) => (
-                                <TableRow key={payout.id} className="border-slate-700 hover:bg-slate-800/50">
+                                <TableRow key={payout.id} className="border-border hover:bg-card/50">
                                     <TableCell>
                                         <div>
                                             <p className="text-slate-300 font-medium">
                                                 {payout.partner?.business_name || 'Unknown'}
                                             </p>
-                                            <p className="text-slate-500 text-sm">
+                                            <p className="text-muted-foreground text-sm">
                                                 {payout.partner?.user?.email}
                                             </p>
                                         </div>
@@ -115,11 +115,11 @@ export function PayoutsClient({ payouts }: PayoutsClientProps) {
                                     <TableCell>
                                         <div className="text-sm">
                                             <p className="text-slate-300">{payout.bank_name}</p>
-                                            <p className="text-slate-500">{payout.bank_account_number}</p>
-                                            <p className="text-slate-500">{payout.bank_account_name}</p>
+                                            <p className="text-muted-foreground">{payout.bank_account_number}</p>
+                                            <p className="text-muted-foreground">{payout.bank_account_name}</p>
                                         </div>
                                     </TableCell>
-                                    <TableCell className="text-slate-400 text-sm">
+                                    <TableCell className="text-muted-foreground text-sm">
                                         {format(new Date(payout.requested_at), 'MMM d, yyyy')}
                                     </TableCell>
                                     <TableCell>

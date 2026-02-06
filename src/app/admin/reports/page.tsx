@@ -17,7 +17,7 @@ export default async function ReportsPage({
             <div className="max-w-7xl mx-auto">
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold mb-2">Reports</h1>
-                    <p className="text-slate-400">Manage user reports and moderation</p>
+                    <p className="text-muted-foreground">Manage user reports and moderation</p>
                 </div>
 
                 <Suspense

@@ -62,7 +62,7 @@ export default async function AccountingPage() {
                 <div className="flex items-center justify-between mb-8">
                     <div>
                         <h1 className="text-4xl font-bold mb-2">Accounting</h1>
-                        <p className="text-slate-400">Financial overview and transaction management</p>
+                        <p className="text-muted-foreground">Financial overview and transaction management</p>
                     </div>
                     <Link href="/admin/accounting/payouts">
                         <Button className="bg-blue-600 hover:bg-blue-700">
@@ -91,45 +91,45 @@ async function AccountingStatsWrapper() {
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <Card className="p-6 bg-slate-800 border-slate-700">
+            <Card className="p-6 bg-card border-border">
                 <div className="flex items-center justify-between">
                     <div>
-                        <p className="text-slate-400 text-sm mb-1">Total Revenue</p>
+                        <p className="text-muted-foreground text-sm mb-1">Total Revenue</p>
                         <p className="text-3xl font-bold">₱{stats.totalRevenue.toLocaleString()}</p>
-                        <p className="text-slate-500 text-xs mt-1">{stats.transactionCount} transactions</p>
+                        <p className="text-muted-foreground text-xs mt-1">{stats.transactionCount} transactions</p>
                     </div>
                     <DollarSign className="h-10 w-10 text-green-500" />
                 </div>
             </Card>
 
-            <Card className="p-6 bg-slate-800 border-slate-700">
+            <Card className="p-6 bg-card border-border">
                 <div className="flex items-center justify-between">
                     <div>
-                        <p className="text-slate-400 text-sm mb-1">Platform Fees</p>
+                        <p className="text-muted-foreground text-sm mb-1">Platform Fees</p>
                         <p className="text-3xl font-bold">₱{stats.platformFees.toLocaleString()}</p>
-                        <p className="text-slate-500 text-xs mt-1">HangHut revenue</p>
+                        <p className="text-muted-foreground text-xs mt-1">HangHut revenue</p>
                     </div>
                     <TrendingUp className="h-10 w-10 text-blue-500" />
                 </div>
             </Card>
 
-            <Card className="p-6 bg-slate-800 border-slate-700">
+            <Card className="p-6 bg-card border-border">
                 <div className="flex items-center justify-between">
                     <div>
-                        <p className="text-slate-400 text-sm mb-1">Partner Payouts</p>
+                        <p className="text-muted-foreground text-sm mb-1">Partner Payouts</p>
                         <p className="text-3xl font-bold">₱{stats.partnerPayouts.toLocaleString()}</p>
-                        <p className="text-slate-500 text-xs mt-1">Paid to organizers</p>
+                        <p className="text-muted-foreground text-xs mt-1">Paid to organizers</p>
                     </div>
                     <Users className="h-10 w-10 text-purple-500" />
                 </div>
             </Card>
 
-            <Card className="p-6 bg-slate-800 border-slate-700">
+            <Card className="p-6 bg-card border-border">
                 <div className="flex items-center justify-between">
                     <div>
-                        <p className="text-slate-400 text-sm mb-1">Pending Payouts</p>
+                        <p className="text-muted-foreground text-sm mb-1">Pending Payouts</p>
                         <p className="text-3xl font-bold">₱{stats.pendingPayouts.toLocaleString()}</p>
-                        <p className="text-slate-500 text-xs mt-1">Awaiting approval</p>
+                        <p className="text-muted-foreground text-xs mt-1">Awaiting approval</p>
                     </div>
                     <CreditCard className="h-10 w-10 text-yellow-500" />
                 </div>

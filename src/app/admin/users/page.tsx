@@ -69,7 +69,7 @@ export default async function UsersPage({
             <div className="max-w-7xl mx-auto">
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold mb-2">Users</h1>
-                    <p className="text-slate-400">Manage user accounts and view profiles</p>
+                    <p className="text-muted-foreground">Manage user accounts and view profiles</p>
                 </div>
 
                 <Suspense

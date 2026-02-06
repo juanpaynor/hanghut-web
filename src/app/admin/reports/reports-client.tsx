@@ -82,10 +82,10 @@ export function ReportsClient({
                     placeholder="Search by user..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="max-w-sm bg-slate-800 border-slate-700 text-white"
+                    className="max-w-sm bg-card border-border text-foreground"
                 />
                 <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger className="w-48 bg-slate-800 border-slate-700 text-white">
+                    <SelectTrigger className="w-48 bg-card border-border text-foreground">
                         <SelectValue placeholder="Filter by status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -96,35 +96,35 @@ export function ReportsClient({
                         <SelectItem value="dismissed">Dismissed</SelectItem>
                     </SelectContent>
                 </Select>
-                <div className="ml-auto text-sm text-slate-400">
+                <div className="ml-auto text-sm text-muted-foreground">
                     {totalCount} total reports
                 </div>
             </div>
 
             {/* Table */}
-            <div className="rounded-md border border-slate-700">
+            <div className="rounded-md border border-border">
                 <Table>
                     <TableHeader>
-                        <TableRow className="border-slate-700 hover:bg-slate-800/50">
-                            <TableHead className="text-slate-400">ID</TableHead>
-                            <TableHead className="text-slate-400">Reporter</TableHead>
-                            <TableHead className="text-slate-400">Reported User</TableHead>
-                            <TableHead className="text-slate-400">Reason</TableHead>
-                            <TableHead className="text-slate-400">Status</TableHead>
-                            <TableHead className="text-slate-400">Date</TableHead>
-                            <TableHead className="text-slate-400">Actions</TableHead>
+                        <TableRow className="border-border hover:bg-card/50">
+                            <TableHead className="text-muted-foreground">ID</TableHead>
+                            <TableHead className="text-muted-foreground">Reporter</TableHead>
+                            <TableHead className="text-muted-foreground">Reported User</TableHead>
+                            <TableHead className="text-muted-foreground">Reason</TableHead>
+                            <TableHead className="text-muted-foreground">Status</TableHead>
+                            <TableHead className="text-muted-foreground">Date</TableHead>
+                            <TableHead className="text-muted-foreground">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {reports.length === 0 ? (
-                            <TableRow className="border-slate-700">
-                                <TableCell colSpan={7} className="text-center text-slate-400 py-8">
+                            <TableRow className="border-border">
+                                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                                     No reports found
                                 </TableCell>
                             </TableRow>
                         ) : (
                             reports.map((report) => (
-                                <TableRow key={report.id} className="border-slate-700 hover:bg-slate-800/50">
+                                <TableRow key={report.id} className="border-border hover:bg-card/50">
                                     <TableCell className="font-mono text-sm text-slate-300">
                                         {report.id.slice(0, 8)}...
                                     </TableCell>
@@ -144,12 +144,12 @@ export function ReportsClient({
                                     <TableCell>
                                         <StatusBadge status={report.status} />
                                     </TableCell>
-                                    <TableCell className="text-slate-400 text-sm">
+                                    <TableCell className="text-muted-foreground text-sm">
                                         {format(new Date(report.created_at), 'MMM d, yyyy')}
                                     </TableCell>
                                     <TableCell>
                                         <Link href={`/admin/reports/${report.id}`}>
-                                            <Button size="sm" variant="ghost" className="hover:bg-slate-700">
+                                            <Button size="sm" variant="ghost" className="hover:bg-muted">
                                                 <Eye className="h-4 w-4" />
                                             </Button>
                                         </Link>
@@ -164,7 +164,7 @@ export function ReportsClient({
             {/* Pagination */}
             {totalPages > 1 && (
                 <div className="flex items-center justify-between">
-                    <div className="text-sm text-slate-400">
+                    <div className="text-sm text-muted-foreground">
                         Page {currentPage} of {totalPages}
                     </div>
                     <div className="flex gap-2">
@@ -173,7 +173,7 @@ export function ReportsClient({
                             size="sm"
                             onClick={() => handlePageChange(currentPage - 1)}
                             disabled={currentPage === 1}
-                            className="border-slate-700 hover:bg-slate-700 disabled:opacity-50"
+                            className="border-border hover:bg-muted disabled:opacity-50"
                         >
                             <ChevronLeft className="h-4 w-4 mr-1" />
                             Previous
@@ -183,7 +183,7 @@ export function ReportsClient({
                             size="sm"
                             onClick={() => handlePageChange(currentPage + 1)}
                             disabled={currentPage === totalPages}
-                            className="border-slate-700 hover:bg-slate-700 disabled:opacity-50"
+                            className="border-border hover:bg-muted disabled:opacity-50"
                         >
                             Next
                             <ChevronRight className="h-4 w-4 ml-1" />

@@ -45,11 +45,11 @@ function UserProfileSkeleton() {
     return (
         <div className="space-y-6">
             <div className="flex gap-6">
-                <Skeleton className="h-32 w-32 rounded-full bg-slate-700" />
+                <Skeleton className="h-32 w-32 rounded-full bg-muted" />
                 <div className="space-y-2 flex-1">
-                    <Skeleton className="h-8 w-64 bg-slate-700" />
-                    <Skeleton className="h-4 w-32 bg-slate-700" />
-                    <Skeleton className="h-24 w-full bg-slate-700" />
+                    <Skeleton className="h-8 w-64 bg-muted" />
+                    <Skeleton className="h-4 w-32 bg-muted" />
+                    <Skeleton className="h-24 w-full bg-muted" />
                 </div>
             </div>
         </div>
@@ -68,7 +68,7 @@ export default async function UserProfilePage({
             <div className="max-w-5xl mx-auto">
                 <div className="mb-6">
                     <Link href="/admin/users">
-                        <Button variant="ghost" className="hover:bg-slate-700 mb-4">
+                        <Button variant="ghost" className="hover:bg-muted mb-4">
                             <ArrowLeft className="h-4 w-4 mr-2" />
                             Back to Users
                         </Button>
@@ -92,12 +92,12 @@ async function UserProfileContent({ id }: { id: string }) {
     return (
         <div className="space-y-8">
             {/* Header Profile Card */}
-            <Card className="bg-slate-800 border-slate-700">
+            <Card className="bg-card border-border">
                 <CardContent className="p-6">
                     <div className="flex flex-col md:flex-row gap-8 items-start">
-                        <Avatar className="h-32 w-32 border-4 border-slate-700">
+                        <Avatar className="h-32 w-32 border-4 border-border">
                             <AvatarImage src={avatarUrl} alt={user.display_name} />
-                            <AvatarFallback className="text-4xl bg-slate-600 text-white">
+                            <AvatarFallback className="text-4xl bg-secondary text-foreground">
                                 {initials}
                             </AvatarFallback>
                         </Avatar>
@@ -106,19 +106,19 @@ async function UserProfileContent({ id }: { id: string }) {
                             <div className="flex justify-between items-start">
                                 <div>
                                     <div className="flex items-center gap-3 mb-1">
-                                        <h1 className="text-3xl font-bold text-white">{user.display_name}</h1>
+                                        <h1 className="text-3xl font-bold text-foreground">{user.display_name}</h1>
                                         <UserStatusBadge status={user.status || 'active'} />
                                     </div>
-                                    <p className="text-slate-400 flex items-center gap-2 mt-1">
+                                    <p className="text-muted-foreground flex items-center gap-2 mt-1">
                                         <UserIcon className="h-4 w-4" />
                                         User ID: <span className="font-mono text-xs">{user.id}</span>
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-900/50 rounded-lg">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-card/50 rounded-lg">
                                 <div>
-                                    <p className="text-slate-400 text-xs uppercase tracking-wider">Trust Score</p>
+                                    <p className="text-muted-foreground text-xs uppercase tracking-wider">Trust Score</p>
                                     <p className={`text-2xl font-bold ${user.trust_score >= 80 ? 'text-green-500' :
                                         user.trust_score >= 50 ? 'text-yellow-500' :
                                             'text-red-500'
@@ -127,20 +127,20 @@ async function UserProfileContent({ id }: { id: string }) {
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-slate-400 text-xs uppercase tracking-wider">Joined</p>
-                                    <p className="text-xl font-semibold text-white">
+                                    <p className="text-muted-foreground text-xs uppercase tracking-wider">Joined</p>
+                                    <p className="text-xl font-semibold text-foreground">
                                         {format(new Date(user.created_at), 'MMM yyyy')}
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-slate-400 text-xs uppercase tracking-wider">Gender</p>
-                                    <p className="text-xl font-semibold text-white capitalize">
+                                    <p className="text-muted-foreground text-xs uppercase tracking-wider">Gender</p>
+                                    <p className="text-xl font-semibold text-foreground capitalize">
                                         {user.gender_identity || 'N/A'}
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-slate-400 text-xs uppercase tracking-wider">Role</p>
-                                    <p className="text-xl font-semibold text-white">
+                                    <p className="text-muted-foreground text-xs uppercase tracking-wider">Role</p>
+                                    <p className="text-xl font-semibold text-foreground">
                                         {user.is_admin ? 'Admin' : 'User'}
                                     </p>
                                 </div>
@@ -148,7 +148,7 @@ async function UserProfileContent({ id }: { id: string }) {
 
                             {user.bio && (
                                 <div>
-                                    <h3 className="text-sm font-medium text-slate-400 mb-1">Bio</h3>
+                                    <h3 className="text-sm font-medium text-muted-foreground mb-1">Bio</h3>
                                     <p className="text-slate-300">{user.bio}</p>
                                 </div>
                             )}
@@ -158,7 +158,7 @@ async function UserProfileContent({ id }: { id: string }) {
             </Card>
 
             {/* User Actions */}
-            <Card className="bg-slate-800 border-slate-700">
+            <Card className="bg-card border-border">
                 <CardContent className="p-6">
                     <UserActions
                         userId={id}
@@ -171,17 +171,17 @@ async function UserProfileContent({ id }: { id: string }) {
 
             {/* Activity Tabs */}
             <Tabs defaultValue="tables" className="w-full">
-                <TabsList className="bg-slate-800 border border-slate-700 text-slate-400">
+                <TabsList className="bg-card border border-border text-muted-foreground">
                     <TabsTrigger
                         value="tables"
-                        className="data-[state=active]:bg-slate-700 data-[state=active]:text-white"
+                        className="data-[state=active]:bg-muted data-[state=active]:text-foreground"
                     >
                         <MapPin className="h-4 w-4 mr-2" />
                         Tables Hosted
                     </TabsTrigger>
                     <TabsTrigger
                         value="reports"
-                        className="data-[state=active]:bg-slate-700 data-[state=active]:text-white"
+                        className="data-[state=active]:bg-muted data-[state=active]:text-foreground"
                     >
                         <Shield className="h-4 w-4 mr-2" />
                         Reports Against
@@ -189,13 +189,13 @@ async function UserProfileContent({ id }: { id: string }) {
                 </TabsList>
 
                 <TabsContent value="tables" className="mt-6">
-                    <Suspense fallback={<Skeleton className="h-48 w-full bg-slate-800" />}>
+                    <Suspense fallback={<Skeleton className="h-48 w-full bg-card" />}>
                         <TablesList hostId={id} />
                     </Suspense>
                 </TabsContent>
 
                 <TabsContent value="reports" className="mt-6">
-                    <Suspense fallback={<Skeleton className="h-48 w-full bg-slate-800" />}>
+                    <Suspense fallback={<Skeleton className="h-48 w-full bg-card" />}>
                         <UserReportsList userId={id} />
                     </Suspense>
                 </TabsContent>

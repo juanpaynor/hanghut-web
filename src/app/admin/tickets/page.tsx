@@ -65,7 +65,7 @@ export default async function TicketsPage({
             <div className="max-w-7xl mx-auto">
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold mb-2">Support Tickets</h1>
-                    <p className="text-slate-400">Manage user appeals and support requests</p>
+                    <p className="text-muted-foreground">Manage user appeals and support requests</p>
                 </div>
 
                 <Suspense key={`${page}-${status}-${type}-${search}`} fallback={<SkeletonTable rows={20} />}>

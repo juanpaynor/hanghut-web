@@ -26,27 +26,27 @@ function UserProfileCard({
     const initials = user?.display_name?.slice(0, 2).toUpperCase() || '??'
 
     return (
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-card border-border">
             <CardHeader>
-                <CardTitle className="text-sm font-medium text-slate-400">{label}</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
             </CardHeader>
             <CardContent className="flex items-start gap-4">
                 {user ? (
                     <>
                         <Avatar className="h-16 w-16">
                             <AvatarImage src={avatarUrl} alt={user.display_name} />
-                            <AvatarFallback className="bg-slate-700 text-white">{initials}</AvatarFallback>
+                            <AvatarFallback className="bg-muted text-foreground">{initials}</AvatarFallback>
                         </Avatar>
                         <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-white">{user.display_name}</h3>
-                            <p className="text-sm text-slate-400">Trust Score: {user.trust_score || 'N/A'}</p>
+                            <h3 className="text-lg font-semibold text-foreground">{user.display_name}</h3>
+                            <p className="text-sm text-muted-foreground">Trust Score: {user.trust_score || 'N/A'}</p>
                             {reportCount !== undefined && (
-                                <p className="text-sm text-slate-400 mt-1">
+                                <p className="text-sm text-muted-foreground mt-1">
                                     Reports Against: <span className="text-orange-400 font-medium">{reportCount}</span>
                                 </p>
                             )}
                             <Link href={`/admin/users/${user.id}`} className="mt-2 inline-block">
-                                <Button size="sm" variant="outline" className="border-slate-600 hover:bg-slate-700">
+                                <Button size="sm" variant="outline" className="border-border hover:bg-muted">
                                     <User className="h-4 w-4 mr-2" />
                                     View Profile
                                 </Button>
@@ -54,7 +54,7 @@ function UserProfileCard({
                         </div>
                     </>
                 ) : (
-                    <div className="text-slate-400 italic">User information not available or not a user.</div>
+                    <div className="text-muted-foreground italic">User information not available or not a user.</div>
                 )}
             </CardContent>
         </Card>
@@ -65,10 +65,10 @@ function ReportDetailsSkeleton() {
     return (
         <div className="space-y-6">
             <div className="flex gap-4">
-                <Skeleton className="h-48 flex-1 bg-slate-700" />
-                <Skeleton className="h-48 flex-1 bg-slate-700" />
+                <Skeleton className="h-48 flex-1 bg-muted" />
+                <Skeleton className="h-48 flex-1 bg-muted" />
             </div>
-            <Skeleton className="h-64 bg-slate-700" />
+            <Skeleton className="h-64 bg-muted" />
         </div>
     )
 }
@@ -85,13 +85,13 @@ export default async function ReportDetailsPage({
             <div className="max-w-5xl mx-auto">
                 <div className="mb-6">
                     <Link href="/admin/reports">
-                        <Button variant="ghost" className="hover:bg-slate-700 mb-4">
+                        <Button variant="ghost" className="hover:bg-muted mb-4">
                             <ArrowLeft className="h-4 w-4 mr-2" />
                             Back to Reports
                         </Button>
                     </Link>
                     <h1 className="text-4xl font-bold mb-2">Report Details</h1>
-                    <p className="text-slate-400">ID: {id}</p>
+                    <p className="text-muted-foreground">ID: {id}</p>
                 </div>
 
                 <Suspense fallback={<ReportDetailsSkeleton />}>
@@ -114,13 +114,13 @@ async function ReportDetailsContent({ id }: { id: string }) {
         <div className="space-y-6">
             {/* Target Information (if not user) */}
             {report.target_type !== 'user' && (
-                <Card className="bg-slate-800 border-slate-700">
+                <Card className="bg-card border-border">
                     <CardHeader>
                         <CardTitle>Report Target</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-white">Target Type: <span className="font-bold uppercase">{report.target_type}</span></p>
-                        <p className="text-slate-400 text-sm mt-1">ID: {report.target_id}</p>
+                        <p className="text-foreground">Target Type: <span className="font-bold uppercase">{report.target_type}</span></p>
+                        <p className="text-muted-foreground text-sm mt-1">ID: {report.target_id}</p>
                     </CardContent>
                 </Card>
             )}
@@ -138,7 +138,7 @@ async function ReportDetailsContent({ id }: { id: string }) {
             </div>
 
             {/* Report Details */}
-            <Card className="bg-slate-800 border-slate-700">
+            <Card className="bg-card border-border">
                 <CardHeader>
                     <div className="flex items-center justify-between">
                         <CardTitle>Report Information</CardTitle>
@@ -147,28 +147,28 @@ async function ReportDetailsContent({ id }: { id: string }) {
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div>
-                        <h3 className="text-sm font-medium text-slate-400 mb-1">Reason Category</h3>
-                        <p className="text-white capitalize">{report.reason_category}</p>
+                        <h3 className="text-sm font-medium text-muted-foreground mb-1">Reason Category</h3>
+                        <p className="text-foreground capitalize">{report.reason_category}</p>
                     </div>
 
                     {report.description && (
                         <div>
-                            <h3 className="text-sm font-medium text-slate-400 mb-1">Description</h3>
-                            <p className="text-white">{report.description}</p>
+                            <h3 className="text-sm font-medium text-muted-foreground mb-1">Description</h3>
+                            <p className="text-foreground">{report.description}</p>
                         </div>
                     )}
 
                     <div>
-                        <h3 className="text-sm font-medium text-slate-400 mb-1">Submitted</h3>
-                        <p className="text-white">
+                        <h3 className="text-sm font-medium text-muted-foreground mb-1">Submitted</h3>
+                        <p className="text-foreground">
                             {format(new Date(report.created_at), 'MMMM d, yyyy \'at\' h:mm a')}
                         </p>
                     </div>
 
                     {report.evidence_url && (
                         <div>
-                            <h3 className="text-sm font-medium text-slate-400 mb-1">Evidence</h3>
-                            <div className="mt-2 relative aspect-video max-w-md rounded-lg overflow-hidden bg-slate-700">
+                            <h3 className="text-sm font-medium text-muted-foreground mb-1">Evidence</h3>
+                            <div className="mt-2 relative aspect-video max-w-md rounded-lg overflow-hidden bg-muted">
                                 <Image
                                     src={report.evidence_url}
                                     alt="Report evidence"

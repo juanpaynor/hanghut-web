@@ -98,7 +98,7 @@ export function AuditClient({
             {/* Filters */}
             <div className="flex gap-4 items-center">
                 <Select value={actionType} onValueChange={setActionType}>
-                    <SelectTrigger className="w-48 bg-slate-800 border-slate-700 text-white">
+                    <SelectTrigger className="w-48 bg-card border-border text-foreground">
                         <SelectValue placeholder="Filter by action" />
                     </SelectTrigger>
                     <SelectContent>
@@ -110,34 +110,34 @@ export function AuditClient({
                         <SelectItem value="delete">Delete Account</SelectItem>
                     </SelectContent>
                 </Select>
-                <div className="ml-auto text-sm text-slate-400">
+                <div className="ml-auto text-sm text-muted-foreground">
                     {totalCount} total actions
                 </div>
             </div>
 
             {/* Table */}
-            <div className="rounded-md border border-slate-700">
+            <div className="rounded-md border border-border">
                 <Table>
                     <TableHeader>
-                        <TableRow className="border-slate-700 hover:bg-slate-800/50">
-                            <TableHead className="text-slate-400">Date</TableHead>
-                            <TableHead className="text-slate-400">Admin</TableHead>
-                            <TableHead className="text-slate-400">Action</TableHead>
-                            <TableHead className="text-slate-400">Target User</TableHead>
-                            <TableHead className="text-slate-400">Reason</TableHead>
+                        <TableRow className="border-border hover:bg-card/50">
+                            <TableHead className="text-muted-foreground">Date</TableHead>
+                            <TableHead className="text-muted-foreground">Admin</TableHead>
+                            <TableHead className="text-muted-foreground">Action</TableHead>
+                            <TableHead className="text-muted-foreground">Target User</TableHead>
+                            <TableHead className="text-muted-foreground">Reason</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {actions.length === 0 ? (
-                            <TableRow className="border-slate-700">
-                                <TableCell colSpan={5} className="text-center text-slate-400 py-8">
+                            <TableRow className="border-border">
+                                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                                     No audit actions found
                                 </TableCell>
                             </TableRow>
                         ) : (
                             actions.map((action) => (
-                                <TableRow key={action.id} className="border-slate-700 hover:bg-slate-800/50">
-                                    <TableCell className="text-slate-400 text-sm">
+                                <TableRow key={action.id} className="border-border hover:bg-card/50">
+                                    <TableCell className="text-muted-foreground text-sm">
                                         {format(new Date(action.created_at), 'MMM d, yyyy h:mm a')}
                                     </TableCell>
                                     <TableCell className="text-slate-300">
@@ -149,7 +149,7 @@ export function AuditClient({
                                     <TableCell className="text-slate-300">
                                         {action.target_user?.display_name || 'Unknown User'}
                                     </TableCell>
-                                    <TableCell className="text-slate-400 text-sm max-w-md truncate">
+                                    <TableCell className="text-muted-foreground text-sm max-w-md truncate">
                                         {action.reason}
                                     </TableCell>
                                 </TableRow>
@@ -162,7 +162,7 @@ export function AuditClient({
             {/* Pagination */}
             {totalPages > 1 && (
                 <div className="flex items-center justify-between">
-                    <div className="text-sm text-slate-400">
+                    <div className="text-sm text-muted-foreground">
                         Page {currentPage} of {totalPages}
                     </div>
                     <div className="flex gap-2">
@@ -171,7 +171,7 @@ export function AuditClient({
                             size="sm"
                             onClick={() => handlePageChange(currentPage - 1)}
                             disabled={currentPage === 1}
-                            className="border-slate-700 hover:bg-slate-700 disabled:opacity-50"
+                            className="border-border hover:bg-muted disabled:opacity-50"
                         >
                             <ChevronLeft className="h-4 w-4 mr-1" />
                             Previous
@@ -181,7 +181,7 @@ export function AuditClient({
                             size="sm"
                             onClick={() => handlePageChange(currentPage + 1)}
                             disabled={currentPage === totalPages}
-                            className="border-slate-700 hover:bg-slate-700 disabled:opacity-50"
+                            className="border-border hover:bg-muted disabled:opacity-50"
                         >
                             Next
                             <ChevronRight className="h-4 w-4 ml-1" />

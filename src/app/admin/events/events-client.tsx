@@ -133,7 +133,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'draft':
-                return 'bg-slate-500/10 text-slate-500'
+                return 'bg-slate-500/10 text-muted-foreground'
             case 'active':
                 return 'bg-green-500/10 text-green-500'
             case 'sold_out':
@@ -143,7 +143,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
             case 'completed':
                 return 'bg-blue-500/10 text-blue-500'
             default:
-                return 'bg-slate-500/10 text-slate-500'
+                return 'bg-slate-500/10 text-muted-foreground'
         }
     }
 
@@ -159,18 +159,18 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
             <div className="flex flex-col md:flex-row gap-4">
                 <div className="flex-1">
                     <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
                             placeholder="Search by title or venue..."
                             value={search}
                             onChange={(e) => handleSearch(e.target.value)}
-                            className="pl-10 bg-slate-800 border-slate-700 text-white"
+                            className="pl-10 bg-card border-border text-foreground"
                         />
                     </div>
                 </div>
 
                 <Select value={statusFilter} onValueChange={handleStatusFilter}>
-                    <SelectTrigger className="w-[200px] bg-slate-800 border-slate-700 text-white">
+                    <SelectTrigger className="w-[200px] bg-card border-border text-foreground">
                         <SelectValue placeholder="Filter by status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -184,7 +184,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                 </Select>
 
                 <Select value={typeFilter} onValueChange={handleTypeFilter}>
-                    <SelectTrigger className="w-[200px] bg-slate-800 border-slate-700 text-white">
+                    <SelectTrigger className="w-[200px] bg-card border-border text-foreground">
                         <SelectValue placeholder="Filter by type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -200,28 +200,28 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
             </div>
 
             {/* Results count */}
-            <div className="text-sm text-slate-400">
+            <div className="text-sm text-muted-foreground">
                 Showing {events.length} of {totalCount} events
             </div>
 
             {/* Events Table */}
-            <div className="rounded-md border border-slate-700">
+            <div className="rounded-md border border-border">
                 <Table>
                     <TableHeader>
-                        <TableRow className="border-slate-700 hover:bg-slate-800/50">
-                            <TableHead className="text-slate-400">Event</TableHead>
-                            <TableHead className="text-slate-400">Organizer</TableHead>
-                            <TableHead className="text-slate-400">Date</TableHead>
-                            <TableHead className="text-slate-400">Type</TableHead>
-                            <TableHead className="text-slate-400">Tickets</TableHead>
-                            <TableHead className="text-slate-400">Status</TableHead>
-                            <TableHead className="text-slate-400">Actions</TableHead>
+                        <TableRow className="border-border hover:bg-card/50">
+                            <TableHead className="text-muted-foreground">Event</TableHead>
+                            <TableHead className="text-muted-foreground">Organizer</TableHead>
+                            <TableHead className="text-muted-foreground">Date</TableHead>
+                            <TableHead className="text-muted-foreground">Type</TableHead>
+                            <TableHead className="text-muted-foreground">Tickets</TableHead>
+                            <TableHead className="text-muted-foreground">Status</TableHead>
+                            <TableHead className="text-muted-foreground">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {events.length === 0 ? (
-                            <TableRow className="border-slate-700">
-                                <TableCell colSpan={7} className="text-center text-slate-400 py-8">
+                            <TableRow className="border-border">
+                                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                                     No events found
                                 </TableCell>
                             </TableRow>
@@ -229,7 +229,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                             events.map((event) => (
                                 <TableRow
                                     key={event.id}
-                                    className="border-slate-700 hover:bg-slate-800/50"
+                                    className="border-border hover:bg-card/50"
                                 >
                                     <TableCell className="text-slate-300">
                                         <div className="flex items-start gap-3">
@@ -240,8 +240,8 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                                                     className="w-16 h-16 object-cover rounded"
                                                 />
                                             ) : (
-                                                <div className="w-16 h-16 bg-slate-700 rounded flex items-center justify-center">
-                                                    <Calendar className="h-6 w-6 text-slate-500" />
+                                                <div className="w-16 h-16 bg-muted rounded flex items-center justify-center">
+                                                    <Calendar className="h-6 w-6 text-muted-foreground" />
                                                 </div>
                                             )}
                                             <div>
@@ -251,7 +251,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                                                         <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
                                                     )}
                                                 </div>
-                                                <div className="text-sm text-slate-500 flex items-center gap-1 mt-1">
+                                                <div className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                                                     <MapPin className="h-3 w-3" />
                                                     {event.venue_name || 'No venue'}
                                                 </div>
@@ -270,26 +270,26 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                                             </p>
                                         </div>
                                     </TableCell>
-                                    <TableCell className="text-slate-400 text-sm">
+                                    <TableCell className="text-muted-foreground text-sm">
                                         {format(new Date(event.start_datetime), 'MMM d, yyyy')}
                                         <br />
-                                        <span className="text-xs text-slate-500">
+                                        <span className="text-xs text-muted-foreground">
                                             {format(new Date(event.start_datetime), 'h:mm a')}
                                         </span>
                                     </TableCell>
                                     <TableCell>
-                                        <span className="text-slate-400 text-sm">
+                                        <span className="text-muted-foreground text-sm">
                                             {formatEventType(event.event_type)}
                                         </span>
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex items-center gap-2 text-sm">
-                                            <Users className="h-4 w-4 text-slate-500" />
+                                            <Users className="h-4 w-4 text-muted-foreground" />
                                             <span className="text-slate-300">
                                                 {event.tickets_sold} / {event.capacity}
                                             </span>
                                         </div>
-                                        <div className="text-xs text-slate-500 mt-1">
+                                        <div className="text-xs text-muted-foreground mt-1">
                                             ₱{event.ticket_price.toLocaleString()}
                                         </div>
                                     </TableCell>
@@ -300,7 +300,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                                     </TableCell>
                                     <TableCell>
                                         <Link href={`/admin/events/${event.id}`}>
-                                            <Button size="sm" variant="ghost" className="hover:bg-slate-700">
+                                            <Button size="sm" variant="ghost" className="hover:bg-muted">
                                                 <Eye className="h-4 w-4" />
                                             </Button>
                                         </Link>
@@ -315,7 +315,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
             {/* Pagination */}
             {totalPages > 1 && (
                 <div className="flex items-center justify-between">
-                    <div className="text-sm text-slate-400">
+                    <div className="text-sm text-muted-foreground">
                         Page {currentPage} of {totalPages}
                     </div>
                     <div className="flex gap-2">
@@ -324,7 +324,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                             size="sm"
                             onClick={() => handlePageChange(currentPage - 1)}
                             disabled={currentPage === 1 || isPending}
-                            className="border-slate-700 hover:bg-slate-700"
+                            className="border-border hover:bg-muted"
                         >
                             Previous
                         </Button>
@@ -333,7 +333,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                             size="sm"
                             onClick={() => handlePageChange(currentPage + 1)}
                             disabled={currentPage === totalPages || isPending}
-                            className="border-slate-700 hover:bg-slate-700"
+                            className="border-border hover:bg-muted"
                         >
                             Next
                         </Button>

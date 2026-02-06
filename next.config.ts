@@ -47,13 +47,6 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
-      // Allow assets from custom domain
-      {
-        protocol: 'https',
-        hostname: 'api.hanghut.com',
-        port: '',
-        pathname: '/**',
-      },
     ],
   },
   async headers() {
@@ -83,7 +76,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=(self)'
+            value: 'camera=(self), microphone=(), geolocation=(self)'
           }
         ]
       }

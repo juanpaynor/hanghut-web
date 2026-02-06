@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { WebScanner } from '@/components/scanner/web-scanner'
+import { LazyWebScanner } from '@/components/scanner/lazy-scanner'
 
 export default async function ScanPage() {
     const supabase = await createClient()
@@ -70,7 +70,7 @@ export default async function ScanPage() {
 
                 <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100 relative">
                     {/* Pass events to scanner for selection */}
-                    <WebScanner events={events || []} />
+                    <LazyWebScanner events={events || []} />
                 </div>
             </div>
         </div>

@@ -36,37 +36,37 @@ export function TransactionsClient({ transactions }: TransactionsClientProps) {
             case 'failed':
                 return 'bg-red-500/10 text-red-500'
             case 'refunded':
-                return 'bg-slate-500/10 text-slate-500'
+                return 'bg-slate-500/10 text-muted-foreground'
             default:
-                return 'bg-slate-500/10 text-slate-500'
+                return 'bg-slate-500/10 text-muted-foreground'
         }
     }
 
     return (
-        <div className="rounded-md border border-slate-700">
+        <div className="rounded-md border border-border">
             <Table>
                 <TableHeader>
-                    <TableRow className="border-slate-700 hover:bg-slate-800/50">
-                        <TableHead className="text-slate-400">Date</TableHead>
-                        <TableHead className="text-slate-400">Event</TableHead>
-                        <TableHead className="text-slate-400">Partner</TableHead>
-                        <TableHead className="text-slate-400">Gross Amount</TableHead>
-                        <TableHead className="text-slate-400">Platform Fee</TableHead>
-                        <TableHead className="text-slate-400">Partner Payout</TableHead>
-                        <TableHead className="text-slate-400">Status</TableHead>
+                    <TableRow className="border-border hover:bg-card/50">
+                        <TableHead className="text-muted-foreground">Date</TableHead>
+                        <TableHead className="text-muted-foreground">Event</TableHead>
+                        <TableHead className="text-muted-foreground">Partner</TableHead>
+                        <TableHead className="text-muted-foreground">Gross Amount</TableHead>
+                        <TableHead className="text-muted-foreground">Platform Fee</TableHead>
+                        <TableHead className="text-muted-foreground">Partner Payout</TableHead>
+                        <TableHead className="text-muted-foreground">Status</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {transactions.length === 0 ? (
-                        <TableRow className="border-slate-700">
-                            <TableCell colSpan={7} className="text-center text-slate-400 py-8">
+                        <TableRow className="border-border">
+                            <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                                 No transactions found
                             </TableCell>
                         </TableRow>
                     ) : (
                         transactions.map((transaction) => (
-                            <TableRow key={transaction.id} className="border-slate-700 hover:bg-slate-800/50">
-                                <TableCell className="text-slate-400 text-sm">
+                            <TableRow key={transaction.id} className="border-border hover:bg-card/50">
+                                <TableCell className="text-muted-foreground text-sm">
                                     {format(new Date(transaction.created_at), 'MMM d, yyyy')}
                                 </TableCell>
                                 <TableCell className="text-slate-300">

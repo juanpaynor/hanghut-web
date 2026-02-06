@@ -97,8 +97,11 @@ export async function submitKYCVerification(
     const timestamp = Date.now()
 
     try {
+        // Sanitize filename to prevent 'Invalid key' errors (e.g. spaces, special chars)
+        const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9.-]/g, '_')
+
         // ID Document
-        const idPath = `${user.id}/id-${timestamp}-${idFile.name}`
+        const idPath = `${user.id}/id-${timestamp}-${sanitize(idFile.name)}`
         const { error: idError, data: idData } = await adminSupabase.storage
             .from('kyc-documents')
             .upload(idPath, idFile, { upsert: true, contentType: idFile.type })
@@ -108,7 +111,7 @@ export async function submitKYCVerification(
 
         // Business Document (if provided)
         if (businessFile && businessFile.size > 0) {
-            const bizPath = `${user.id}/business-${timestamp}-${businessFile.name}`
+            const bizPath = `${user.id}/business-${timestamp}-${sanitize(businessFile.name)}`
             const { error: bizError, data: bizData } = await adminSupabase.storage
                 .from('kyc-documents')
                 .upload(bizPath, businessFile, { upsert: true, contentType: businessFile.type })

@@ -120,9 +120,9 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
             case 'normal':
                 return 'bg-blue-500/10 text-blue-500 border-blue-500/20'
             case 'low':
-                return 'bg-slate-500/10 text-slate-500 border-slate-500/20'
+                return 'bg-slate-500/10 text-muted-foreground border-slate-500/20'
             default:
-                return 'bg-slate-500/10 text-slate-500 border-slate-500/20'
+                return 'bg-slate-500/10 text-muted-foreground border-slate-500/20'
         }
     }
 
@@ -150,9 +150,9 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
             case 'resolved':
                 return 'bg-green-500/10 text-green-500'
             case 'closed':
-                return 'bg-slate-500/10 text-slate-500'
+                return 'bg-slate-500/10 text-muted-foreground'
             default:
-                return 'bg-slate-500/10 text-slate-500'
+                return 'bg-slate-500/10 text-muted-foreground'
         }
     }
 
@@ -163,18 +163,18 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
                 <div className="flex flex-col md:flex-row gap-4">
                     <div className="flex-1">
                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
                                 placeholder="Search by subject, user name, or email..."
                                 value={search}
                                 onChange={(e) => handleSearch(e.target.value)}
-                                className="pl-10 bg-slate-800 border-slate-700 text-white"
+                                className="pl-10 bg-card border-border text-foreground"
                             />
                         </div>
                     </div>
 
                     <Select value={statusFilter} onValueChange={handleStatusFilter}>
-                        <SelectTrigger className="w-[200px] bg-slate-800 border-slate-700 text-white">
+                        <SelectTrigger className="w-[200px] bg-card border-border text-foreground">
                             <SelectValue placeholder="Filter by status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -187,7 +187,7 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
                     </Select>
 
                     <Select value={typeFilter} onValueChange={handleTypeFilter}>
-                        <SelectTrigger className="w-[200px] bg-slate-800 border-slate-700 text-white">
+                        <SelectTrigger className="w-[200px] bg-card border-border text-foreground">
                             <SelectValue placeholder="Filter by type" />
                         </SelectTrigger>
                         <SelectContent>
@@ -201,27 +201,27 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
                 </div>
 
                 {/* Results count */}
-                <div className="text-sm text-slate-400">
+                <div className="text-sm text-muted-foreground">
                     Showing {tickets.length} of {totalCount} tickets
                 </div>
 
                 {/* Tickets Table */}
-                <div className="rounded-md border border-slate-700">
+                <div className="rounded-md border border-border">
                     <Table>
                         <TableHeader>
-                            <TableRow className="border-slate-700 hover:bg-slate-800/50">
-                                <TableHead className="text-slate-400">Priority</TableHead>
-                                <TableHead className="text-slate-400">Subject</TableHead>
-                                <TableHead className="text-slate-400">User</TableHead>
-                                <TableHead className="text-slate-400">Type</TableHead>
-                                <TableHead className="text-slate-400">Status</TableHead>
-                                <TableHead className="text-slate-400">Created</TableHead>
+                            <TableRow className="border-border hover:bg-card/50">
+                                <TableHead className="text-muted-foreground">Priority</TableHead>
+                                <TableHead className="text-muted-foreground">Subject</TableHead>
+                                <TableHead className="text-muted-foreground">User</TableHead>
+                                <TableHead className="text-muted-foreground">Type</TableHead>
+                                <TableHead className="text-muted-foreground">Status</TableHead>
+                                <TableHead className="text-muted-foreground">Created</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {tickets.length === 0 ? (
-                                <TableRow className="border-slate-700">
-                                    <TableCell colSpan={6} className="text-center text-slate-400 py-8">
+                                <TableRow className="border-border">
+                                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                                         No tickets found
                                     </TableCell>
                                 </TableRow>
@@ -229,7 +229,7 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
                                 tickets.map((ticket) => (
                                     <TableRow
                                         key={ticket.id}
-                                        className="border-slate-700 hover:bg-slate-800/50 cursor-pointer"
+                                        className="border-border hover:bg-card/50 cursor-pointer"
                                         onClick={() => setSelectedTicket(ticket)}
                                     >
                                         <TableCell>
@@ -243,11 +243,11 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
                                         <TableCell>
                                             <div>
                                                 <p className="text-slate-300 text-sm">{ticket.user_display_name}</p>
-                                                <p className="text-slate-500 text-xs">{ticket.user_email}</p>
+                                                <p className="text-muted-foreground text-xs">{ticket.user_email}</p>
                                             </div>
                                         </TableCell>
                                         <TableCell>
-                                            <span className="text-slate-400 text-sm capitalize">
+                                            <span className="text-muted-foreground text-sm capitalize">
                                                 {ticket.ticket_type.replace('_', ' ')}
                                             </span>
                                         </TableCell>
@@ -259,7 +259,7 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
                                                 </span>
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="text-slate-400 text-sm">
+                                        <TableCell className="text-muted-foreground text-sm">
                                             {format(new Date(ticket.created_at), 'MMM d, yyyy h:mm a')}
                                         </TableCell>
                                     </TableRow>
@@ -272,7 +272,7 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
                 {/* Pagination */}
                 {totalPages > 1 && (
                     <div className="flex items-center justify-between">
-                        <div className="text-sm text-slate-400">
+                        <div className="text-sm text-muted-foreground">
                             Page {currentPage} of {totalPages}
                         </div>
                         <div className="flex gap-2">
@@ -281,7 +281,7 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
                                 size="sm"
                                 onClick={() => handlePageChange(currentPage - 1)}
                                 disabled={currentPage === 1 || isPending}
-                                className="border-slate-700 hover:bg-slate-700"
+                                className="border-border hover:bg-muted"
                             >
                                 Previous
                             </Button>
@@ -290,7 +290,7 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
                                 size="sm"
                                 onClick={() => handlePageChange(currentPage + 1)}
                                 disabled={currentPage === totalPages || isPending}
-                                className="border-slate-700 hover:bg-slate-700"
+                                className="border-border hover:bg-muted"
                             >
                                 Next
                             </Button>

@@ -3,7 +3,8 @@
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
-import { Users, UserCheck, Clock, TrendingUp } from 'lucide-react'
+import { Users, UserCheck, Clock, TrendingUp, RefreshCw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -25,6 +26,7 @@ export function CheckInStats({ eventId }: CheckInStatsProps) {
         tierBreakdown: [] as TierStats[]
     })
     const [loading, setLoading] = useState(true)
+    const [refreshing, setRefreshing] = useState(false)
     const supabase = createClient()
 
     useEffect(() => {
@@ -35,21 +37,23 @@ export function CheckInStats({ eventId }: CheckInStatsProps) {
         return () => clearInterval(interval)
     }, [eventId])
 
-    async function loadStats() {
+    async function loadStats(isRefresh = false) {
+        if (isRefresh) setRefreshing(true)
+
         try {
-            // Get total tickets sold
+            // Get total tickets sold (All valid tickets including used)
             const { count: totalCount } = await supabase
                 .from('tickets')
                 .select('*', { count: 'exact', head: true })
                 .eq('event_id', eventId)
-                .eq('status', 'valid')
+                .neq('status', 'cancelled')
+                .neq('status', 'refunded')
 
             // Get checked in count
             const { count: checkedInCount } = await supabase
                 .from('tickets')
                 .select('*', { count: 'exact', head: true })
                 .eq('event_id', eventId)
-                .eq('status', 'valid')
                 .not('checked_in_at', 'is', null)
 
             // Get tier breakdown
@@ -59,10 +63,12 @@ export function CheckInStats({ eventId }: CheckInStatsProps) {
                     tier:tier_id (
                         name
                     ),
+                    status,
                     checked_in_at
                 `)
                 .eq('event_id', eventId)
-                .eq('status', 'valid')
+                .neq('status', 'cancelled')
+                .neq('status', 'refunded')
 
             // Aggregate tier stats
             const tierMap = new Map<string, { total: number, checked_in: number }>()
@@ -95,6 +101,7 @@ export function CheckInStats({ eventId }: CheckInStatsProps) {
             console.error('Failed to load check-in stats:', error)
         } finally {
             setLoading(false)
+            setRefreshing(false)
         }
     }
 
@@ -106,6 +113,18 @@ export function CheckInStats({ eventId }: CheckInStatsProps) {
 
     return (
         <div className="space-y-6">
+            <div className="flex justify-end">
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => loadStats(true)}
+                    disabled={refreshing}
+                >
+                    <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                    Refresh Stats
+                </Button>
+            </div>
+
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card className="p-6">

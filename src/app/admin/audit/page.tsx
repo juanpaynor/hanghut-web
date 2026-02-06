@@ -72,7 +72,7 @@ export default async function AuditLogPage({
             <div className="max-w-7xl mx-auto">
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold mb-2">Audit Log</h1>
-                    <p className="text-slate-400">Track all admin actions and moderation history</p>
+                    <p className="text-muted-foreground">Track all admin actions and moderation history</p>
                 </div>
 
                 <Suspense

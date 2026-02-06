@@ -62,18 +62,18 @@ export function ReportActions({ reportId, currentStatus }: ReportActionsProps) {
     }
 
     return (
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-card border-border">
             <CardHeader>
                 <CardTitle>Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="flex gap-4 items-end">
                     <div className="flex-1">
-                        <label className="text-sm font-medium text-slate-400 mb-2 block">
+                        <label className="text-sm font-medium text-muted-foreground mb-2 block">
                             Update Status
                         </label>
                         <Select value={status} onValueChange={setStatus}>
-                            <SelectTrigger className="bg-slate-900 border-slate-700 text-white">
+                            <SelectTrigger className="bg-card border-border text-foreground">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -93,16 +93,16 @@ export function ReportActions({ reportId, currentStatus }: ReportActionsProps) {
                     </Button>
                 </div>
 
-                <div className="pt-4 border-t border-slate-700">
-                    <p className="text-sm text-slate-400 mb-2">Future Actions</p>
+                <div className="pt-4 border-t border-border">
+                    <p className="text-sm text-muted-foreground mb-2">Future Actions</p>
                     <div className="flex gap-2">
-                        <Button variant="outline" className="border-slate-600" disabled>
+                        <Button variant="outline" className="border-border" disabled>
                             Warn User
                         </Button>
-                        <Button variant="outline" className="border-slate-600" disabled>
+                        <Button variant="outline" className="border-border" disabled>
                             Ban User
                         </Button>
-                        <Button variant="outline" className="border-slate-600" disabled>
+                        <Button variant="outline" className="border-border" disabled>
                             Delete Content
                         </Button>
                     </div>

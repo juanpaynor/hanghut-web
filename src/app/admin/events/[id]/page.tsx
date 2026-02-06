@@ -103,7 +103,7 @@ export default async function EventDetailPage({
                                     <Star className="h-6 w-6 text-yellow-500 fill-yellow-500" />
                                 )}
                             </div>
-                            <p className="text-slate-400">Event ID: {event.id}</p>
+                            <p className="text-muted-foreground">Event ID: {event.id}</p>
                         </div>
                         <Badge
                             variant="outline"
@@ -114,7 +114,7 @@ export default async function EventDetailPage({
                                         ? 'bg-yellow-500/10 text-yellow-500'
                                         : event.status === 'cancelled'
                                             ? 'bg-red-500/10 text-red-500'
-                                            : 'bg-slate-500/10 text-slate-500'
+                                            : 'bg-slate-500/10 text-muted-foreground'
                             }
                         >
                             {event.status.replace('_', ' ').toUpperCase()}
@@ -152,11 +152,11 @@ async function EventDetailsContent({ event }: { event: any }) {
 
             {/* Key Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Card className="p-6 bg-slate-800 border-slate-700">
+                <Card className="p-6 bg-card border-border">
                     <div className="flex items-center gap-3">
                         <Users className="h-8 w-8 text-blue-500" />
                         <div>
-                            <p className="text-slate-400 text-sm">Tickets Sold</p>
+                            <p className="text-muted-foreground text-sm">Tickets Sold</p>
                             <p className="text-2xl font-bold">
                                 {event.tickets_sold} / {event.capacity}
                             </p>
@@ -164,31 +164,31 @@ async function EventDetailsContent({ event }: { event: any }) {
                     </div>
                 </Card>
 
-                <Card className="p-6 bg-slate-800 border-slate-700">
+                <Card className="p-6 bg-card border-border">
                     <div className="flex items-center gap-3">
                         <DollarSign className="h-8 w-8 text-green-500" />
                         <div>
-                            <p className="text-slate-400 text-sm">Ticket Price</p>
+                            <p className="text-muted-foreground text-sm">Ticket Price</p>
                             <p className="text-2xl font-bold">₱{event.ticket_price.toLocaleString()}</p>
                         </div>
                     </div>
                 </Card>
 
-                <Card className="p-6 bg-slate-800 border-slate-700">
+                <Card className="p-6 bg-card border-border">
                     <div className="flex items-center gap-3">
                         <CheckCircle className="h-8 w-8 text-purple-500" />
                         <div>
-                            <p className="text-slate-400 text-sm">Checked In</p>
+                            <p className="text-muted-foreground text-sm">Checked In</p>
                             <p className="text-2xl font-bold">{ticketsUsed}</p>
                         </div>
                     </div>
                 </Card>
 
-                <Card className="p-6 bg-slate-800 border-slate-700">
+                <Card className="p-6 bg-card border-border">
                     <div className="flex items-center gap-3">
                         <DollarSign className="h-8 w-8 text-yellow-500" />
                         <div>
-                            <p className="text-slate-400 text-sm">Gross Revenue</p>
+                            <p className="text-muted-foreground text-sm">Gross Revenue</p>
                             <p className="text-2xl font-bold">
                                 ₱{(event.tickets_sold * event.ticket_price).toLocaleString()}
                             </p>
@@ -198,12 +198,12 @@ async function EventDetailsContent({ event }: { event: any }) {
             </div>
 
             {/* Event Details */}
-            <Card className="p-6 bg-slate-800 border-slate-700">
+            <Card className="p-6 bg-card border-border">
                 <h2 className="text-xl font-bold mb-4">Event Details</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <p className="text-slate-400 text-sm mb-1">Date & Time</p>
-                        <p className="text-white flex items-center gap-2">
+                        <p className="text-muted-foreground text-sm mb-1">Date & Time</p>
+                        <p className="text-foreground flex items-center gap-2">
                             <Calendar className="h-4 w-4" />
                             {format(new Date(event.start_datetime), 'MMMM d, yyyy')} at{' '}
                             {format(new Date(event.start_datetime), 'h:mm a')}
@@ -211,22 +211,22 @@ async function EventDetailsContent({ event }: { event: any }) {
                     </div>
 
                     <div>
-                        <p className="text-slate-400 text-sm mb-1">Venue</p>
-                        <p className="text-white flex items-center gap-2">
+                        <p className="text-muted-foreground text-sm mb-1">Venue</p>
+                        <p className="text-foreground flex items-center gap-2">
                             <MapPin className="h-4 w-4" />
                             {event.venue_name || 'No venue specified'}
                         </p>
                     </div>
 
                     <div>
-                        <p className="text-slate-400 text-sm mb-1">Event Type</p>
-                        <p className="text-white capitalize">{event.event_type.replace('_', ' ')}</p>
+                        <p className="text-muted-foreground text-sm mb-1">Event Type</p>
+                        <p className="text-foreground capitalize">{event.event_type.replace('_', ' ')}</p>
                     </div>
 
                     <div>
-                        <p className="text-slate-400 text-sm mb-1">Organizer</p>
+                        <p className="text-muted-foreground text-sm mb-1">Organizer</p>
                         <div>
-                            <p className="text-white flex items-center gap-2">
+                            <p className="text-foreground flex items-center gap-2">
                                 {event.organizer?.business_name}
                                 {event.organizer?.verified && (
                                     <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
@@ -234,41 +234,41 @@ async function EventDetailsContent({ event }: { event: any }) {
                                     </Badge>
                                 )}
                             </p>
-                            <p className="text-slate-500 text-sm">{event.organizer?.user?.email}</p>
+                            <p className="text-muted-foreground text-sm">{event.organizer?.user?.email}</p>
                         </div>
                     </div>
 
                     {event.address && (
                         <div className="md:col-span-2">
-                            <p className="text-slate-400 text-sm mb-1">Address</p>
-                            <p className="text-white">{event.address}</p>
+                            <p className="text-muted-foreground text-sm mb-1">Address</p>
+                            <p className="text-foreground">{event.address}</p>
                         </div>
                     )}
 
                     {event.description && (
                         <div className="md:col-span-2">
-                            <p className="text-slate-400 text-sm mb-1">Description</p>
-                            <p className="text-white">{event.description}</p>
+                            <p className="text-muted-foreground text-sm mb-1">Description</p>
+                            <p className="text-foreground">{event.description}</p>
                         </div>
                     )}
                 </div>
             </Card>
 
             {/* Recent Tickets */}
-            <Card className="p-6 bg-slate-800 border-slate-700">
+            <Card className="p-6 bg-card border-border">
                 <h2 className="text-xl font-bold mb-4">Recent Tickets ({tickets.length})</h2>
                 {tickets.length === 0 ? (
-                    <p className="text-slate-400 text-center py-8">No tickets sold yet</p>
+                    <p className="text-muted-foreground text-center py-8">No tickets sold yet</p>
                 ) : (
                     <div className="space-y-2">
                         {tickets.slice(0, 10).map((ticket: any) => (
                             <div
                                 key={ticket.id}
-                                className="flex items-center justify-between p-3 bg-slate-900 rounded-lg"
+                                className="flex items-center justify-between p-3 bg-card rounded-lg"
                             >
                                 <div>
-                                    <p className="text-white text-sm">{ticket.user?.display_name}</p>
-                                    <p className="text-slate-500 text-xs">{ticket.ticket_number}</p>
+                                    <p className="text-foreground text-sm">{ticket.user?.display_name}</p>
+                                    <p className="text-muted-foreground text-xs">{ticket.ticket_number}</p>
                                 </div>
                                 <Badge
                                     variant="outline"
@@ -289,10 +289,10 @@ async function EventDetailsContent({ event }: { event: any }) {
             </Card>
 
             {/* Admin Actions */}
-            <Card className="p-6 bg-slate-800 border-slate-700">
+            <Card className="p-6 bg-card border-border">
                 <h2 className="text-xl font-bold mb-4">Admin Actions</h2>
                 <div className="flex gap-3">
-                    <Button variant="outline" className="border-slate-600 hover:bg-slate-700">
+                    <Button variant="outline" className="border-border hover:bg-muted">
                         <Star className="h-4 w-4 mr-2" />
                         {event.is_featured ? 'Remove from Featured' : 'Feature Event'}
                     </Button>

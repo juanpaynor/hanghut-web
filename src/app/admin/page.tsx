@@ -54,15 +54,15 @@ async function DashboardStats() {
             {stats.map((stat) => {
                 const Icon = stat.icon
                 return (
-                    <Card key={stat.title} className="bg-slate-800 border-slate-700">
+                    <Card key={stat.title} className="bg-card border-border">
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
-                            <CardTitle className="text-sm font-medium text-slate-400">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">
                                 {stat.title}
                             </CardTitle>
                             <Icon className={`h-5 w-5 ${stat.color}`} />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-3xl font-bold text-white">{stat.value}</div>
+                            <div className="text-3xl font-bold text-foreground">{stat.value}</div>
                         </CardContent>
                     </Card>
                 )
@@ -75,12 +75,12 @@ function StatsSkeleton() {
     return (
         <>
             {Array.from({ length: 4 }).map((_, i) => (
-                <Card key={i} className="bg-slate-800 border-slate-700">
+                <Card key={i} className="bg-card border-border">
                     <CardHeader className="pb-2">
-                        <Skeleton className="h-4 w-24 bg-slate-700" />
+                        <Skeleton className="h-4 w-24 bg-muted" />
                     </CardHeader>
                     <CardContent>
-                        <Skeleton className="h-8 w-16 bg-slate-700" />
+                        <Skeleton className="h-8 w-16 bg-muted" />
                     </CardContent>
                 </Card>
             ))}
@@ -94,7 +94,7 @@ export default function AdminPage() {
             <div className="max-w-7xl mx-auto">
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold mb-2">Dashboard</h1>
-                    <p className="text-slate-400">Welcome to the HangHut admin control panel</p>
+                    <p className="text-muted-foreground">Welcome to the HangHut admin control panel</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -103,7 +103,7 @@ export default function AdminPage() {
                     </Suspense>
                 </div>
 
-                <Card className="bg-slate-800 border-slate-700">
+                <Card className="bg-card border-border">
                     <CardHeader>
                         <CardTitle>Quick Actions</CardTitle>
                     </CardHeader>
@@ -114,7 +114,7 @@ export default function AdminPage() {
                             </Button>
                         </Link>
                         <Link href="/admin/users">
-                            <Button variant="outline" className="border-slate-600 hover:bg-slate-700">
+                            <Button variant="outline" className="border-border hover:bg-muted">
                                 Manage Users
                             </Button>
                         </Link>

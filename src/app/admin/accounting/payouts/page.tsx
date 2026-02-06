@@ -40,7 +40,7 @@ export default async function PayoutsPage() {
                         ← Back to Accounting
                     </Link>
                     <h1 className="text-4xl font-bold mb-2">Payout Requests</h1>
-                    <p className="text-slate-400">Review and approve partner payout requests</p>
+                    <p className="text-muted-foreground">Review and approve partner payout requests</p>
                 </div>
 
                 <Suspense fallback={<SkeletonTable rows={10} />}>

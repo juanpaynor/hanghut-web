@@ -46,7 +46,7 @@ export default async function DebugPartnersPage() {
                     )}
                 </div>
 
-                <div className="bg-slate-800 p-4 rounded">
+                <div className="bg-card p-4 rounded">
                     <h2 className="text-lg font-semibold mb-2">Recent Users (Last 5)</h2>
                     {usersError ? (
                         <pre className="text-red-500">{JSON.stringify(usersError, null, 2)}</pre>
@@ -55,7 +55,7 @@ export default async function DebugPartnersPage() {
                     )}
                 </div>
 
-                <div className="bg-slate-800 p-4 rounded">
+                <div className="bg-card p-4 rounded">
                     <h2 className="text-lg font-semibold mb-2">Recent Partners (Last 10)</h2>
                     {partnersError ? (
                         <pre className="text-red-500">{JSON.stringify(partnersError, null, 2)}</pre>

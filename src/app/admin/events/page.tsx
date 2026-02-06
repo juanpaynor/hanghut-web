@@ -81,7 +81,7 @@ export default async function EventsPage({
             <div className="max-w-7xl mx-auto">
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold mb-2">Events</h1>
-                    <p className="text-slate-400">Manage ticketed events across the platform</p>
+                    <p className="text-muted-foreground">Manage ticketed events across the platform</p>
                 </div>
 
                 <Suspense key={`${page}-${status}-${eventType}-${search}`} fallback={<SkeletonTable rows={20} />}>
