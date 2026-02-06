@@ -2,6 +2,11 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '5mb',
+    },
+  },
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -32,6 +37,13 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: '**.supabase.co',
+        port: '',
+        pathname: '/**',
+      },
+      // Custom API domain for HangHut
+      {
+        protocol: 'https',
+        hostname: 'api.hanghut.com',
         port: '',
         pathname: '/**',
       },

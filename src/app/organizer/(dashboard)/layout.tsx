@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { LayoutDashboard, Calendar, Wallet, LogOut, Briefcase, Mail, ScanLine } from 'lucide-react'
+import { LayoutDashboard, Calendar, Wallet, LogOut, Briefcase, Mail, ScanLine, ShieldCheck } from 'lucide-react'
 
 export default async function OrganizerLayout({
     children,
@@ -38,25 +38,21 @@ export default async function OrganizerLayout({
         }
     }
 
-    // If still no partner or not approved
-    if (!partner || partner.status !== 'approved') {
+    // If still no partner (User hasn't registered as partner yet)
+    if (!partner) {
         return (
             <div className="min-h-screen bg-background flex items-center justify-center p-4">
                 <div className="max-w-md text-center space-y-4">
                     <Briefcase className="h-16 w-16 mx-auto text-primary" />
                     <h1 className="text-2xl font-bold">Partner Access Required</h1>
                     <p className="text-muted-foreground">
-                        {!partner
-                            ? "You don't have a partner account. Apply to become an organizer or ask your team admin to invite you."
-                            : partner.status === 'pending'
-                                ? "Your partner application is pending approval. We'll notify you once it's reviewed."
-                                : "Your partner account has been rejected or suspended. Contact support for more information."}
+                        You don't have a partner account. Apply to become an organizer or ask your team admin to invite you.
                     </p>
                     <Button onClick={async () => {
                         'use server'
                         const supabase = await createClient()
                         await supabase.auth.signOut()
-                        redirect('/login')
+                        redirect('/organizer/login')
                     }}>
                         Back to Login
                     </Button>
@@ -64,6 +60,11 @@ export default async function OrganizerLayout({
             </div>
         )
     }
+
+    // KYC / Verification Check
+    // We allow access if status is 'approved' OR if they are in the verification process
+    const isVerified = partner.kyc_status === 'verified' // OR partner.status === 'approved' (legacy)
+    // Note: We use 'verified' as the gatekeeper now.
 
     return (
         <div className="min-h-screen bg-background">
@@ -82,56 +83,47 @@ export default async function OrganizerLayout({
                             </Link>
 
                             <nav className="hidden md:flex items-center gap-6">
+                                {isVerified ? (
+                                    <>
+                                        <Link href="/organizer" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
+                                            Dashboard
+                                        </Link>
+                                        <Link href="/organizer/events" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
+                                            My Events
+                                        </Link>
+                                        <Link href="/organizer/payouts" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
+                                            Payouts
+                                        </Link>
+                                        <Link href="/organizer/marketing" className="text-sm font-medium text-foreground hover:text-primary transition-colors flex items-center gap-2">
+                                            Email
+                                        </Link>
+                                        <Link href="/organizer/team" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
+                                            Team
+                                        </Link>
+                                        <Link href="/scan" target="_blank" className="text-sm font-medium text-foreground hover:text-primary transition-colors flex items-center gap-2">
+                                            <ScanLine className="w-4 h-4" />
+                                            Scanner
+                                        </Link>
+                                        <Link href="/organizer/settings" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
+                                            Settings
+                                        </Link>
+                                    </>
+                                ) : (
+                                    <span className="text-sm text-muted-foreground italic px-2">
+                                        Verify account to unlock features
+                                    </span>
+                                )}
+
                                 <Link
-                                    href="/organizer"
-                                    className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+                                    href="/organizer/verification"
+                                    className={`text-sm font-medium flex items-center gap-2 transition-colors ${!isVerified ? 'text-primary font-bold animate-pulse' : 'text-foreground hover:text-primary'}`}
                                 >
-                                    Dashboard
+                                    <ShieldCheck className="w-4 h-4" />
+                                    Verification
                                 </Link>
-                                <Link
-                                    href="/organizer/events"
-                                    className="text-sm font-medium text-foreground hover:text-primary transition-colors"
-                                >
-                                    My Events
-                                </Link>
-                                <Link
-                                    href="/organizer/payouts"
-                                    className="text-sm font-medium text-foreground hover:text-primary transition-colors"
-                                >
-                                    Payouts
-                                </Link>
-                                <Link
-                                    href="/organizer/marketing"
-                                    className="text-sm font-medium text-foreground hover:text-primary transition-colors flex items-center gap-2"
-                                >
-                                    Email
-                                </Link>
-                                <Link
-                                    href="/organizer/team"
-                                    className="text-sm font-medium text-foreground hover:text-primary transition-colors"
-                                >
-                                    Team
-                                </Link>
-                                <Link
-                                    href="/scan"
-                                    target="_blank"
-                                    className="text-sm font-medium text-foreground hover:text-primary transition-colors flex items-center gap-2"
-                                >
-                                    <ScanLine className="w-4 h-4" />
-                                    Scanner
-                                </Link>
-                                <Link
-                                    href="/organizer/settings"
-                                    className="text-sm font-medium text-foreground hover:text-primary transition-colors"
-                                >
-                                    Settings
-                                </Link>
-                                {partner.slug && (
-                                    <Link
-                                        href={`/${partner.slug}`}
-                                        target="_blank"
-                                        className="text-sm font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
-                                    >
+
+                                {isVerified && partner.slug && (
+                                    <Link href={`/${partner.slug}`} target="_blank" className="text-sm font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1">
                                         My Storefront
                                         <span className="text-[10px] leading-none">↗</span>
                                     </Link>
@@ -147,7 +139,7 @@ export default async function OrganizerLayout({
                                 'use server'
                                 const supabase = await createClient()
                                 await supabase.auth.signOut()
-                                redirect('/login')
+                                redirect('/organizer/login')
                             }}>
                                 <Button variant="ghost" size="sm" type="submit">
                                     <LogOut className="h-4 w-4" />
@@ -160,6 +152,11 @@ export default async function OrganizerLayout({
 
             {/* Main Content */}
             <main className="container mx-auto px-4 py-8">
+                {/* 
+                   If not verified, we can restrict content here too, 
+                   but usually better to let the page handle it or redirect.
+                   For now, we just unlocked the layout so they can SEE the nav to click Verification.
+                */}
                 {children}
             </main>
         </div>

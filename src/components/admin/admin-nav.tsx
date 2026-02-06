@@ -15,6 +15,11 @@ const navItems = [
         icon: LayoutDashboard,
     },
     {
+        title: 'Verifications',
+        href: '/admin/verifications',
+        icon: Shield,
+    },
+    {
         title: 'Partners',
         href: '/admin/partners',
         icon: Briefcase,
@@ -69,7 +74,7 @@ export function AdminNav() {
 
     return (
         <nav className="flex-1 flex flex-col">
-            <div className="flex-1 py-4">
+            <div className="flex-1 py-4 px-3 space-y-1">
                 {navItems.map((item) => {
                     const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
                     const Icon = item.icon
@@ -79,24 +84,24 @@ export function AdminNav() {
                             key={item.href}
                             href={item.href}
                             className={cn(
-                                'flex items-center gap-3 px-6 py-3 text-sm transition-colors',
+                                'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-all',
                                 isActive
-                                    ? 'bg-slate-700 text-white border-l-4 border-blue-500'
-                                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                                    ? 'bg-indigo-50 text-indigo-700 shadow-sm'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                             )}
                         >
-                            <Icon className="h-5 w-5" />
+                            <Icon className={cn("h-5 w-5", isActive ? "text-indigo-600" : "text-slate-400")} />
                             {item.title}
                         </Link>
                     )
                 })}
             </div>
 
-            <div className="p-4 border-t border-slate-700">
+            <div className="p-4 border-t border-slate-100">
                 <Button
                     onClick={handleLogout}
                     variant="ghost"
-                    className="w-full justify-start text-slate-400 hover:text-white hover:bg-slate-700"
+                    className="w-full justify-start text-slate-500 hover:text-red-600 hover:bg-red-50"
                 >
                     <LogOut className="h-5 w-5 mr-3" />
                     Logout

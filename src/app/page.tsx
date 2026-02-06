@@ -1,9 +1,13 @@
+import dynamic from "next/dynamic";
 import Header from "@/components/landing/header";
-import Features from "@/components/landing/features";
 import Footer from "@/components/landing/footer";
 import Hero from "@/components/landing/hero";
-import StatsStrip from "@/components/landing/stats-strip";
-import PartnerCTA from "@/components/landing/partner-cta";
+import Marquee from "@/components/landing/marquee";
+
+// Lazy load below-the-fold components for better performance
+const Features = dynamic(() => import("@/components/landing/features"), { ssr: true });
+const SocialCircleSection = dynamic(() => import("@/components/landing/social-circle-section"), { ssr: true });
+const PartnerCTA = dynamic(() => import("@/components/landing/partner-cta"), { ssr: true });
 
 export default function Home() {
   return (
@@ -11,8 +15,9 @@ export default function Home() {
       <Header />
       <main className="flex-1">
         <Hero />
-        <StatsStrip />
+        <Marquee />
         <Features />
+        <SocialCircleSection />
         <PartnerCTA />
       </main>
       <Footer />

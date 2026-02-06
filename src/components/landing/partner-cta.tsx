@@ -75,7 +75,7 @@ export default function PartnerCTA() {
                             viewport={{ once: true }}
                             transition={{ delay: 0.4 }}
                         >
-                            <Link href="/organizer/login">
+                            <Link href="/organizer/register">
                                 <Button
                                     size="lg"
                                     className="bg-white text-primary hover:bg-white/90 rounded-full px-12 py-8 text-2xl font-bold shadow-2xl transition-all hover:scale-105 active:scale-95"

@@ -9,16 +9,18 @@ import { format } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
 
-async function getOrganizerEvents(partnerId: string) {
+async function getOrganizerEvents(partnerId: string, page: number = 1) {
     const supabase = await createClient()
+    const ITEMS_PER_PAGE = 20
+    const from = (page - 1) * ITEMS_PER_PAGE
+    const to = from + ITEMS_PER_PAGE - 1
 
-    const { data: events } = await supabase
+    const { data: events, count } = await supabase
         .from('events')
-        .select('*')
+        .select('*', { count: 'exact' })
         .eq('organizer_id', partnerId)
         .order('start_datetime', { ascending: false })
-        .eq('organizer_id', partnerId)
-        .order('start_datetime', { ascending: false })
+        .range(from, to)
 
     // [SMART SCALING FIX] Manually count sold tickets
     const eventsWithCounts = await Promise.all((events || []).map(async (event) => {
@@ -34,11 +36,16 @@ async function getOrganizerEvents(partnerId: string) {
         }
     }))
 
-    return eventsWithCounts
+    return { events: eventsWithCounts, total: count || 0 }
 }
 
-export default async function OrganizerEventsPage() {
+type Props = {
+    searchParams: { page?: string }
+}
+
+export default async function OrganizerEventsPage({ searchParams }: Props) {
     const supabase = await createClient()
+    const page = parseInt(searchParams.page || '1')
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
@@ -51,7 +58,8 @@ export default async function OrganizerEventsPage() {
 
     if (!partner) return null
 
-    const events = await getOrganizerEvents(partner.id)
+    const { events, total } = await getOrganizerEvents(partner.id, page)
+    const totalPages = Math.ceil(total / 20)
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -147,6 +155,31 @@ export default async function OrganizerEventsPage() {
                             </Card>
                         </Link>
                     ))}
+                </div>
+            )}
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-8">
+                    <Link
+                        href={`/organizer/events?page=${page - 1}`}
+                        className={page === 1 ? 'pointer-events-none opacity-50' : ''}
+                    >
+                        <Button variant="outline" size="sm" disabled={page === 1}>
+                            Previous
+                        </Button>
+                    </Link>
+                    <span className="text-sm text-muted-foreground px-4">
+                        Page {page} of {totalPages}
+                    </span>
+                    <Link
+                        href={`/organizer/events?page=${page + 1}`}
+                        className={page === totalPages ? 'pointer-events-none opacity-50' : ''}
+                    >
+                        <Button variant="outline" size="sm" disabled={page === totalPages}>
+                            Next
+                        </Button>
+                    </Link>
                 </div>
             )}
         </div>

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import { getDashboardStats } from '@/lib/organizer/dashboard-actions'
 import { SalesDashboardClient } from '@/components/organizer/sales-dashboard'
@@ -21,6 +22,15 @@ export default async function OrganizerDashboard() {
         .single()
 
     if (!partner) return null
+
+    // Force redirect to verification if not verified
+    // This ensures new signups go straight to KYC
+    if (partner.kyc_status !== 'verified') {
+        // Optional: specific logic for 'pending_review' vs 'not_started' could go here
+        // For now, simple blockade to the verification page
+        redirect('/organizer/verification')
+    }
+
 
     // Fetch granular dashboard stats
     const dashboardData = await getDashboardStats(partner.id)
