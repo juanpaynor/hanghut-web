@@ -1,10 +1,10 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function updateSession(request: NextRequest) {
-    let supabaseResponse = NextResponse.next({
-        request,
-    })
+export async function updateSession(request: NextRequest, rewriteUrl?: URL) {
+    let supabaseResponse = rewriteUrl
+        ? NextResponse.rewrite(rewriteUrl, { request })
+        : NextResponse.next({ request })
 
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
