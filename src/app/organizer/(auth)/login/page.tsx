@@ -9,6 +9,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { Briefcase, Mail, Lock, ArrowRight } from 'lucide-react'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog'
 
 export default function OrganizerLoginPage() {
     const router = useRouter()
@@ -16,6 +24,11 @@ export default function OrganizerLoginPage() {
     const [password, setPassword] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
+    const [forgotPasswordEmail, setForgotPasswordEmail] = useState('')
+    const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false)
+    const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false)
+    const [forgotPasswordError, setForgotPasswordError] = useState('')
+    const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -59,6 +72,28 @@ export default function OrganizerLoginPage() {
         // Success - redirect to organizer dashboard
         router.push('/organizer')
         router.refresh()
+    }
+
+    const handleForgotPassword = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setForgotPasswordError('')
+        setForgotPasswordSuccess(false)
+        setForgotPasswordLoading(true)
+
+        const supabase = createClient()
+
+        const { error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
+            redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`
+        })
+
+        setForgotPasswordLoading(false)
+
+        if (error) {
+            setForgotPasswordError(error.message)
+            return
+        }
+
+        setForgotPasswordSuccess(true)
     }
 
     return (
@@ -119,6 +154,71 @@ export default function OrganizerLoginPage() {
                                         required
                                         disabled={loading}
                                     />
+                                </div>
+                                <div className="text-right">
+                                    <Dialog
+                                        open={forgotPasswordOpen}
+                                        onOpenChange={(open) => {
+                                            setForgotPasswordOpen(open)
+                                            if (open) {
+                                                // Pre-fill with login email when opening
+                                                setForgotPasswordEmail(email)
+                                                setForgotPasswordSuccess(false)
+                                                setForgotPasswordError('')
+                                            }
+                                        }}
+                                    >
+                                        <DialogTrigger asChild>
+                                            <button
+                                                type="button"
+                                                className="text-sm text-primary hover:underline"
+                                            >
+                                                Forgot password?
+                                            </button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                            <DialogHeader>
+                                                <DialogTitle>Reset Password</DialogTitle>
+                                                <DialogDescription>
+                                                    Enter your email address and we'll send you a link to reset your password.
+                                                </DialogDescription>
+                                            </DialogHeader>
+                                            {forgotPasswordSuccess ? (
+                                                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                                                    <p className="text-sm text-green-800">
+                                                        Password reset link sent! Check your email inbox.
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <form onSubmit={handleForgotPassword} className="space-y-4">
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="resetEmail">Email</Label>
+                                                        <Input
+                                                            id="resetEmail"
+                                                            type="email"
+                                                            placeholder="your@email.com"
+                                                            value={forgotPasswordEmail}
+                                                            onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                                                            required
+                                                            disabled={forgotPasswordLoading}
+                                                        />
+                                                    </div>
+                                                    {forgotPasswordError && (
+                                                        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+                                                            <p className="text-sm text-destructive">{forgotPasswordError}</p>
+                                                        </div>
+                                                    )}
+                                                    <Button
+                                                        type="submit"
+                                                        className="w-full"
+                                                        disabled={forgotPasswordLoading}
+                                                    >
+                                                        {forgotPasswordLoading ? 'Sending...' : 'Send Reset Link'}
+                                                    </Button>
+                                                </form>
+                                            )}
+                                        </DialogContent>
+                                    </Dialog>
                                 </div>
                             </div>
 

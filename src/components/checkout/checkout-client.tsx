@@ -108,7 +108,7 @@ export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientPr
             const requestPayload = {
                 event_id: event.id,
                 quantity: quantity,
-                tier_id: tier.id, // Include tier_id for tier-based purchases
+                tier_id: tier.id || undefined, // Include tier_id for tier-based purchases
                 // channel_code removed for Payment Sessions API
                 guest_details: !user ? guestDetails : undefined,
                 promo_code: appliedPromo ? appliedPromo.code : undefined,

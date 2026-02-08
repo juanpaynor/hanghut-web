@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { Loader2, Send, AlertCircle, Eye, Edit } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { RichTextEditor } from './rich-text-editor'
 
 export function CampaignComposer() {
     const [subject, setSubject] = useState('')
@@ -108,14 +109,6 @@ export function CampaignComposer() {
                     </TabsList>
 
                     <TabsContent value="write" className="space-y-4 animate-in fade-in-50 duration-300">
-                        <Alert className="bg-muted/50 border-input">
-                            <AlertCircle className="h-4 w-4 text-primary" />
-                            <AlertTitle className="text-primary font-medium">Rich Text Editor</AlertTitle>
-                            <AlertDescription className="text-muted-foreground text-xs">
-                                For advanced formatting (images, bold, links), please ask your developer to install the <code>tiptap</code> package. Currently using basic text/HTML mode.
-                            </AlertDescription>
-                        </Alert>
-
                         <div className="space-y-2">
                             <Label htmlFor="subject">Email Subject</Label>
                             <Input
@@ -128,13 +121,11 @@ export function CampaignComposer() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="content">Email Body (HTML supported)</Label>
-                            <Textarea
-                                id="content"
-                                placeholder="<p>Write your message here...</p>"
+                            <Label>Email Body</Label>
+                            <RichTextEditor
                                 value={content}
-                                onChange={(e) => setContent(e.target.value)}
-                                className="min-h-[400px] font-mono text-sm leading-relaxed"
+                                onChange={setContent}
+                                disabled={sending}
                             />
                         </div>
                     </TabsContent>
