@@ -26,6 +26,36 @@ export async function processScan(code: string, eventId?: string): Promise<ScanR
     // Use Admin Client to bypass RLS for lookup
     const adminClient = createAdminClient()
 
+    // 2. Fetch Ticket (Optimized RPC)
+    try {
+        console.log('[Scan] Attempting RPC scan_ticket...')
+        const { data: rpcResult, error: rpcError } = await adminClient.rpc('scan_ticket', {
+            p_code: code,
+            p_user_id: user.id,
+            p_event_id: eventId || null
+        })
+
+        if (!rpcError && rpcResult) {
+            console.log('[Scan] RPC Success:', rpcResult.success)
+            // RPC returns { success, message, ticket, details } matches ScanResult structure mostly
+            // but we might need to map it if exact types differ.
+            // Our RPC returns jsonb which maps to any.
+            return rpcResult as ScanResult
+        } else {
+            console.warn('[Scan] RPC Failed or Returned Null:', rpcError)
+            // If RPC doesn't exist or fails unexpectedly, fall back to legacy
+        }
+    } catch (err) {
+        console.error('[Scan] RPC Exception:', err)
+        // Fallback
+    }
+
+    console.log('[Scan] Falling back to Legacy Logic...')
+    return processScanLegacy(adminClient, user.id, code, eventId)
+}
+
+// Legacy Logic (Refactored from original processScan)
+async function processScanLegacy(adminClient: any, userId: string, code: string, eventId?: string): Promise<ScanResult> {
     // 2. Fetch Ticket (Enhanced Lookup)
     let query = adminClient
         .from('tickets')
@@ -90,7 +120,7 @@ export async function processScan(code: string, eventId?: string): Promise<ScanR
 
                 if (retryTicket) {
                     console.log('[Scan] Calling validation for retry ticket')
-                    return handleTicketValidation(retryTicket, eventId, user.id, adminClient)
+                    return handleTicketValidation(retryTicket, eventId, userId, adminClient)
                 } else {
                     console.log('[Scan] FAIL - Retry ticket not found')
                 }
@@ -100,7 +130,7 @@ export async function processScan(code: string, eventId?: string): Promise<ScanR
         return { success: false, message: 'Ticket Not Found' }
     }
 
-    return handleTicketValidation(ticket, eventId, user.id, adminClient)
+    return handleTicketValidation(ticket, eventId, userId, adminClient)
 }
 
 // 3. Validation Logic
