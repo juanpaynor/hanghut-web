@@ -51,20 +51,19 @@ export default async function ScanPage() {
         )
     }
 
-    // 2. Fetch Events for THESE Partners
-    // 2. Fetch Events for THESE Partners
-    // Events that are Active AND Not yet finished (end_datetime > now)
-    // We optionally include events ending in the last 24h just in case of late scans, 
-    // but user asked for "finished or done", so let's stick to future/current.
-    const now = new Date().toISOString()
+    // Get start of today (midnight) to show all events from today onwards
+    // This allows scanning for events that may have technically ended but happened today
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const todayStart = today.toISOString()
 
     const { data: events } = await supabase
         .from('events')
-        .select('id, title, start_datetime, end_datetime') // Added end_datetime
+        .select('id, title, start_datetime, end_datetime')
         .in('organizer_id', partnerIds)
-        .eq('status', 'active') // Ensure only active events are shown
-        .gt('end_datetime', now) // Only show events that haven't ended yet
-        .order('start_datetime', { ascending: true }) // Upcoming first (Ascending makes more sense for "Next event")
+        .eq('status', 'active')
+        .gte('start_datetime', todayStart) // Show events starting from today onwards
+        .order('start_datetime', { ascending: true })
 
     console.log('[ScanPage] Events Found:', events?.length)
 
