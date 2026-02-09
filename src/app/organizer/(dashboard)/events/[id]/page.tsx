@@ -62,12 +62,22 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
     // Fetch ticket stats
     const { count: ticketsSold, data: soldTickets } = await supabase
         .from('tickets')
-        .select('price_paid, checked_in_at, status')
+        .select(`
+            checked_in_at,
+            status,
+            purchase_intent:purchase_intents (
+                unit_price
+            )
+        `, { count: 'exact' })
         .eq('event_id', id)
         .neq('status', 'cancelled')
         .neq('status', 'refunded')
+        .neq('status', 'available')
 
-    const totalRevenue = soldTickets?.reduce((sum, ticket) => sum + (ticket.price_paid || 0), 0) || 0
+    const totalRevenue = soldTickets?.reduce((sum, ticket: any) => {
+        const price = ticket.purchase_intent?.unit_price || 0
+        return sum + price
+    }, 0) || 0
     const checkedInCount = soldTickets?.filter(t => t.checked_in_at).length || 0
 
     return (

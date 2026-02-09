@@ -28,6 +28,8 @@ async function getOrganizerEvents(partnerId: string, page: number = 1) {
             .from('tickets')
             .select('*', { count: 'exact', head: true })
             .eq('event_id', event.id)
+            .neq('status', 'cancelled')
+            .neq('status', 'refunded')
             .neq('status', 'available')
 
         return {

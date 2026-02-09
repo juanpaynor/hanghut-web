@@ -6,6 +6,8 @@ import { format } from 'date-fns'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BankSettingsForm } from '@/components/organizer/payouts/bank-settings-form'
 import { RequestPayoutCard } from '@/components/organizer/payouts/request-payout-card'
+import { TransactionsHistory } from '@/components/organizer/payouts/transactions-history'
+import { FileText } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,6 +61,22 @@ async function getBankAccounts(partnerId: string) {
     return data || []
 }
 
+async function getTransactions(partnerId: string) {
+    const supabase = await createClient()
+    const { data: transactions } = await supabase
+        .from('transactions')
+        .select(`
+            *,
+            event:events (
+                title
+            )
+        `)
+        .eq('partner_id', partnerId)
+        .order('created_at', { ascending: false })
+
+    return transactions || []
+}
+
 export default async function OrganizerPayoutsPage() {
     const supabase = await createClient()
 
@@ -76,6 +94,7 @@ export default async function OrganizerPayoutsPage() {
     const stats = await getPayoutStats(partner.id)
     const payouts = await getPayoutHistory(partner.id)
     const bankAccounts = await getBankAccounts(partner.id)
+    const transactions = await getTransactions(partner.id)
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -96,9 +115,12 @@ export default async function OrganizerPayoutsPage() {
             </div>
 
             <Tabs defaultValue="overview" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 max-w-[400px] mb-8">
+                <TabsList className="grid w-full grid-cols-3 max-w-[600px] mb-8">
                     <TabsTrigger value="overview" className="flex items-center gap-2">
                         <Wallet className="w-4 h-4" /> Overview
+                    </TabsTrigger>
+                    <TabsTrigger value="transactions" className="flex items-center gap-2">
+                        <FileText className="w-4 h-4" /> Transactions
                     </TabsTrigger>
                     <TabsTrigger value="settings" className="flex items-center gap-2">
                         <Settings className="w-4 h-4" /> Bank Settings
@@ -152,9 +174,9 @@ export default async function OrganizerPayoutsPage() {
                         hasBank={bankAccounts.some((b: any) => b.is_primary)}
                     />
 
-                    {/* Payout History */}
+                    {/* Withdrawal History */}
                     <Card className="p-6">
-                        <h2 className="text-2xl font-bold mb-6">Payout History</h2>
+                        <h2 className="text-2xl font-bold mb-6">Withdrawal History</h2>
                         {payouts.length === 0 ? (
                             <div className="text-center py-12">
                                 <DollarSign className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
@@ -189,6 +211,10 @@ export default async function OrganizerPayoutsPage() {
                             </div>
                         )}
                     </Card>
+                </TabsContent>
+
+                <TabsContent value="transactions">
+                    <TransactionsHistory transactions={transactions} />
                 </TabsContent>
 
                 <TabsContent value="settings">

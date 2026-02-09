@@ -37,18 +37,18 @@ async function getPartnerAndEvents(slug: string) {
     const showPast = partner.branding?.content?.show_past_events ?? false
 
     // Parallel fetch for events
-    const upcomingPromise = supabase
-        .from('events')
-        .select('*')
-        .eq('organizer_id', partner.id)
-        .eq('status', 'active')
-        .gte('start_datetime', now)
-        .order('start_datetime', { ascending: true })
-
-    const promises: Promise<any>[] = [upcomingPromise]
+    const queries = [
+        supabase
+            .from('events')
+            .select('*')
+            .eq('organizer_id', partner.id)
+            .eq('status', 'active')
+            .gte('start_datetime', now)
+            .order('start_datetime', { ascending: true })
+    ]
 
     if (showPast) {
-        promises.push(
+        queries.push(
             supabase
                 .from('events')
                 .select('*')
@@ -60,9 +60,9 @@ async function getPartnerAndEvents(slug: string) {
         )
     }
 
-    const results = await Promise.all(promises)
-    const upcoming = results[0].data || []
-    const past = (showPast && results[1]) ? (results[1].data || []) : []
+    const results = await Promise.all(queries)
+    const upcoming = results[0]?.data || []
+    const past = showPast && results[1] ? (results[1].data || []) : []
 
     return { partner, upcoming, past }
 }

@@ -32,7 +32,13 @@ export async function createEvent(formData: FormData) {
         return { error: 'Server configuration error' }
     }
 
-    const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey)
+    const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey, {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+            detectSessionInUrl: false
+        }
+    })
 
     try {
         // 1. Upload cover image
@@ -41,8 +47,10 @@ export async function createEvent(formData: FormData) {
             return { error: 'Cover image is required' }
         }
 
-        const coverFileName = `${partner.id}/${Date.now()}-${coverImage.name}`
-        const { data: coverData, error: coverError } = await adminSupabase.storage
+        // Sanitize filename: remove spaces and special characters
+        const sanitizedCoverName = coverImage.name.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '')
+        const coverFileName = `${partner.id}/${Date.now()}-${sanitizedCoverName}`
+        const { data: coverData, error: coverError } = await supabase.storage
             .from('event-covers')
             .upload(coverFileName, coverImage, {
                 contentType: coverImage.type,
@@ -54,7 +62,7 @@ export async function createEvent(formData: FormData) {
             return { error: 'Failed to upload cover image' }
         }
 
-        const { data: { publicUrl: coverUrl } } = adminSupabase.storage
+        const { data: { publicUrl: coverUrl } } = supabase.storage
             .from('event-covers')
             .getPublicUrl(coverData.path)
 
@@ -64,8 +72,9 @@ export async function createEvent(formData: FormData) {
         while (formData.has(`additional_image_${imageIndex}`)) {
             const image = formData.get(`additional_image_${imageIndex}`) as File
             if (image) {
-                const fileName = `${partner.id}/${Date.now()}-${imageIndex}-${image.name}`
-                const { data: imageData, error: imageError } = await adminSupabase.storage
+                const sanitizedImageName = image.name.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '')
+                const fileName = `${partner.id}/${Date.now()}-${imageIndex}-${sanitizedImageName}`
+                const { data: imageData, error: imageError } = await supabase.storage
                     .from('event-images')
                     .upload(fileName, image, {
                         contentType: image.type,
@@ -73,7 +82,7 @@ export async function createEvent(formData: FormData) {
                     })
 
                 if (!imageError && imageData) {
-                    const { data: { publicUrl } } = adminSupabase.storage
+                    const { data: { publicUrl } } = supabase.storage
                         .from('event-images')
                         .getPublicUrl(imageData.path)
                     additionalImageUrls.push(publicUrl)
@@ -174,7 +183,13 @@ export async function updateEvent(eventId: string, formData: FormData) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 
     if (!serviceRoleKey || !supabaseUrl) return { error: 'Server configuration error' }
-    const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey)
+    const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey, {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+            detectSessionInUrl: false
+        }
+    })
 
     // Verify ownership
     const { data: existingEvent } = await adminSupabase
@@ -193,14 +208,15 @@ export async function updateEvent(eventId: string, formData: FormData) {
         const coverImage = formData.get('cover_image') as File
 
         if (coverImage && coverImage.size > 0) {
-            const coverFileName = `${partner.id}/${Date.now()}-${coverImage.name}`
-            const { data: coverData, error: coverError } = await adminSupabase.storage
+            const sanitizedCoverName = coverImage.name.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '')
+            const coverFileName = `${partner.id}/${Date.now()}-${sanitizedCoverName}`
+            const { data: coverData, error: coverError } = await supabase.storage
                 .from('event-covers')
                 .upload(coverFileName, coverImage, { contentType: coverImage.type, upsert: false })
 
             if (coverError) throw new Error('Cover upload failed')
 
-            const { data: { publicUrl } } = adminSupabase.storage
+            const { data: { publicUrl } } = supabase.storage
                 .from('event-covers')
                 .getPublicUrl(coverData.path)
             coverUrl = publicUrl
@@ -216,13 +232,14 @@ export async function updateEvent(eventId: string, formData: FormData) {
         while (formData.has(`additional_image_${imageIndex}`)) {
             const image = formData.get(`additional_image_${imageIndex}`) as File
             if (image) {
-                const fileName = `${partner.id}/${Date.now()}-${imageIndex}-${image.name}`
-                const { data: imageData, error: imageError } = await adminSupabase.storage
+                const sanitizedImageName = image.name.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '')
+                const fileName = `${partner.id}/${Date.now()}-${imageIndex}-${sanitizedImageName}`
+                const { data: imageData, error: imageError } = await supabase.storage
                     .from('event-images')
                     .upload(fileName, image, { contentType: image.type, upsert: false })
 
                 if (!imageError && imageData) {
-                    const { data: { publicUrl } } = adminSupabase.storage
+                    const { data: { publicUrl } } = supabase.storage
                         .from('event-images')
                         .getPublicUrl(imageData.path)
                     finalImages.push(publicUrl)

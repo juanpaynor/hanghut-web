@@ -91,7 +91,7 @@ export function EventDashboardTabs({
                 <div className="grid gap-8">
                     <div>
                         <h3 className="text-xl font-semibold mb-4">Ticket Tiers</h3>
-                        <TicketTiersManager eventId={eventId} tiers={tiers} />
+                        <TicketTiersManager eventId={eventId} tiers={tiers} commissionRate={commissionRate} />
                     </div>
                     <div className="border-t pt-8">
                         <h3 className="text-xl font-semibold mb-4">Promo Codes</h3>

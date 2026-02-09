@@ -46,9 +46,10 @@ interface TicketTier {
 interface TicketTiersManagerProps {
     eventId: string
     tiers: TicketTier[]
+    commissionRate: number
 }
 
-export function TicketTiersManager({ eventId, tiers: initialTiers }: TicketTiersManagerProps) {
+export function TicketTiersManager({ eventId, tiers: initialTiers, commissionRate }: TicketTiersManagerProps) {
     const { toast } = useToast()
     const router = useRouter()
     const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -326,6 +327,28 @@ export function TicketTiersManager({ eventId, tiers: initialTiers }: TicketTiers
                                         setFormData({ ...formData, price: e.target.value })
                                     }
                                 />
+                                {formData.price && !isNaN(parseFloat(formData.price)) && (
+                                    <div className="text-xs text-muted-foreground bg-muted p-2 rounded-md space-y-1 mt-1">
+                                        <div className="flex justify-between">
+                                            <span>Platform Fee ({(commissionRate * 100).toFixed(0)}%)</span>
+                                            <span>-₱{(parseFloat(formData.price) * commissionRate).toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>Processing (3% + ₱15)</span>
+                                            <span>-₱{((parseFloat(formData.price) * 0.03) + 15).toFixed(2)}</span>
+                                        </div>
+                                        <div className="border-t border-border/50 pt-1 flex justify-between font-medium text-foreground">
+                                            <span>Net Earnings</span>
+                                            <span className="text-green-600">
+                                                ₱{(
+                                                    parseFloat(formData.price) -
+                                                    (parseFloat(formData.price) * commissionRate) -
+                                                    ((parseFloat(formData.price) * 0.03) + 15)
+                                                ).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="grid gap-2">
