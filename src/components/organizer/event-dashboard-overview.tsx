@@ -7,7 +7,8 @@ import {
     Calendar, MapPin, Users, DollarSign,
     Ticket, QrCode, ExternalLink, Edit,
     MoreHorizontal,
-    TrendingUp
+    TrendingUp,
+    RefreshCw
 } from "lucide-react"
 import Link from "next/link"
 import { Progress } from "@/components/ui/progress"
@@ -19,6 +20,7 @@ interface DashboardOverviewProps {
         ticketsSold: number
         totalCapacity: number
         checkedInCount: number
+        refundedAmount?: number
     }
 }
 
@@ -119,13 +121,13 @@ export function EventDashboardOverview({ event, stats }: DashboardOverviewProps)
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Page Views</CardTitle>
-                        <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                        <CardTitle className="text-sm font-medium">Refund Amount</CardTitle>
+                        <RefreshCw className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">-</div>
+                        <div className="text-2xl font-bold">₱{(stats.refundedAmount || 0).toLocaleString()}</div>
                         <p className="text-xs text-muted-foreground">
-                            Coming soon
+                            Processed refunds
                         </p>
                     </CardContent>
                 </Card>

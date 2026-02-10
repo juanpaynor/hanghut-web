@@ -40,19 +40,32 @@ export function CampaignHistory() {
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) return
 
-            // Get partner ID (assuming connected to user)
-            const { data: partner } = await supabase
+            // Get partner ID (Check Owner OR Team Member)
+            let { data: partner } = await supabase
                 .from('partners')
                 .select('id')
-                .eq('owner_id', user.id)
-                .single()
+                .eq('user_id', user.id)
+                .maybeSingle()
 
-            if (!partner) return
+            let partnerId = partner?.id
+
+            if (!partnerId) {
+                // Check if team member
+                const { data: teamMember } = await supabase
+                    .from('partner_team_members')
+                    .select('partner_id')
+                    .eq('user_id', user.id)
+                    .maybeSingle()
+
+                partnerId = teamMember?.partner_id
+            }
+
+            if (!partnerId) return
 
             const { data, error } = await supabase
                 .from('email_campaigns')
                 .select('*')
-                .eq('partner_id', partner.id)
+                .eq('partner_id', partnerId)
                 .order('created_at', { ascending: false })
 
             if (error) throw error

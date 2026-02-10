@@ -24,6 +24,10 @@ export interface Attendee {
     } | null
     payment_id: string | null
     purchase_intent_id: string | null
+    payment_status: string | null
+    payment_method: string | null
+    refunded_amount: number | null
+    refunded_at: string | null
 }
 
 export async function getEventAttendees(
@@ -51,7 +55,11 @@ export async function getEventAttendees(
                 unit_price,
                 guest_name,
                 guest_email,
-                guest_phone
+                guest_phone,
+                status,
+                payment_method,
+                refunded_amount,
+                refunded_at
             ),
             user:users!tickets_user_id_fkey (
                 email,
@@ -67,15 +75,7 @@ export async function getEventAttendees(
 
     // Search Filter
     if (search) {
-        // Note: Searching across related tables (users) in Supabase is tricky with simple OR
-        // We will focus on fields on the ticket itself or try to filter broadly.
-        // For MVP performance on large datasets, strict exact filtering or just ticket_number/guest_email is safer.
-        // But users want name search. 
-        // We will try a flexible ILIKE on the fields we have access to via views or just limit to Guest Info/Ticket ID for now to allow Index usage
-        // OR filtering: ticket_number, guest_email, guest_name.
-        // Accessing user.email via relation in filter is complex in one go without a View.
-
-        // Let's search Ticket Fields + Guest Fields.
+        // ... (Keep existing search logic)
         query = query.or(`ticket_number.ilike.%${search}%,guest_name.ilike.%${search}%,guest_email.ilike.%${search}%`)
     }
 
@@ -100,6 +100,10 @@ export async function getEventAttendees(
         user_id: t.user_id,
         payment_id: t.purchase_intent?.xendit_invoice_id || null,
         purchase_intent_id: t.purchase_intent_id,
+        payment_status: t.purchase_intent?.status || null,
+        payment_method: t.purchase_intent?.payment_method || null,
+        refunded_amount: t.purchase_intent?.refunded_amount || 0,
+        refunded_at: t.purchase_intent?.refunded_at || null,
         // Prefer explicit tier relation, fallback to legacy text column
         tier: t.tier ? t.tier : {
             name: t.legacy_tier_name || 'General Admission',
@@ -174,6 +178,58 @@ export async function refundTicket(ticketId: string, eventId: string) {
     // 5. TODO: Trigger Xendit Refund via Edge Function or API here
     // For now, we rely on the Admin to process the actual money return if it's not automated.
     // Or we assume the SOP where "Mark as Refunded" triggers a payout deduction.
+
+    revalidatePath(`/organizer/events/${eventId}`)
+    return { success: true }
+}
+
+export async function markIntentAsRefunded(intentId: string, eventId: string) {
+    const supabase = await createClient()
+
+    // 1. Get all tickets for this intent
+    const { data: tickets } = await supabase
+        .from('tickets')
+        .select('id, tier_id, status')
+        .eq('purchase_intent_id', intentId)
+
+    if (!tickets || tickets.length === 0) return { success: true }
+
+    // Filter mainly to handle inventory correctly (avoid double count)
+    const ticketsToRefund = tickets.filter(t => t.status !== 'refunded')
+
+    if (ticketsToRefund.length === 0) return { success: true }
+
+    // 2. Update status for ALL tickets (safe to re-run)
+    const { error: updateError } = await supabase
+        .from('tickets')
+        .update({ status: 'refunded', updated_at: new Date().toISOString() })
+        .eq('purchase_intent_id', intentId)
+
+    if (updateError) {
+        console.error('Failed to update ticket status', updateError)
+        throw new Error('Failed to update ticket status')
+    }
+
+    // 3. Decrement Inventory
+    const tierCounts = new Map<string, number>()
+    for (const t of ticketsToRefund) {
+        // Only count if it has a tier_id
+        if (t.tier_id) {
+            tierCounts.set(t.tier_id, (tierCounts.get(t.tier_id) || 0) + 1)
+        }
+    }
+
+    for (const [tierId, count] of Array.from(tierCounts.entries())) {
+        try {
+            // Optimistic call, ignore error if SP doesn't exist
+            await supabase.rpc('decrement_tier_sold', {
+                row_id: tierId,
+                amount: count
+            })
+        } catch (e) {
+            console.error('Failed to decrement tier sold', e)
+        }
+    }
 
     revalidatePath(`/organizer/events/${eventId}`)
     return { success: true }

@@ -16,6 +16,7 @@ import {
     Ban,
 } from 'lucide-react'
 import Link from 'next/link'
+import { AdminTicketList } from './admin-ticket-list'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,6 +59,12 @@ async function getEventTickets(eventId: string) {
         id,
         display_name,
         email
+      ),
+      purchase_intent:purchase_intents(
+          status,
+          payment_method,
+          refunded_amount,
+          refunded_at
       )
     `)
         .eq('event_id', eventId)
@@ -257,35 +264,7 @@ async function EventDetailsContent({ event }: { event: any }) {
             {/* Recent Tickets */}
             <Card className="p-6 bg-card border-border">
                 <h2 className="text-xl font-bold mb-4">Recent Tickets ({tickets.length})</h2>
-                {tickets.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8">No tickets sold yet</p>
-                ) : (
-                    <div className="space-y-2">
-                        {tickets.slice(0, 10).map((ticket: any) => (
-                            <div
-                                key={ticket.id}
-                                className="flex items-center justify-between p-3 bg-card rounded-lg"
-                            >
-                                <div>
-                                    <p className="text-foreground text-sm">{ticket.user?.display_name}</p>
-                                    <p className="text-muted-foreground text-xs">{ticket.ticket_number}</p>
-                                </div>
-                                <Badge
-                                    variant="outline"
-                                    className={
-                                        ticket.status === 'used'
-                                            ? 'bg-green-500/10 text-green-500'
-                                            : ticket.status === 'valid'
-                                                ? 'bg-blue-500/10 text-blue-500'
-                                                : 'bg-red-500/10 text-red-500'
-                                    }
-                                >
-                                    {ticket.status.toUpperCase()}
-                                </Badge>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                <AdminTicketList tickets={tickets} eventId={event.id} />
             </Card>
 
             {/* Admin Actions */}

@@ -42,10 +42,11 @@ async function getOrganizerEvents(partnerId: string, page: number = 1) {
 }
 
 type Props = {
-    searchParams: { page?: string }
+    searchParams: Promise<{ page?: string }>
 }
 
-export default async function OrganizerEventsPage({ searchParams }: Props) {
+export default async function OrganizerEventsPage(props: Props) {
+    const searchParams = await props.searchParams
     const supabase = await createClient()
     const page = parseInt(searchParams.page || '1')
 

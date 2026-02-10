@@ -42,13 +42,34 @@ export function CampaignComposer() {
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) throw new Error("Not authenticated")
 
-            const { data: partner } = await supabase
+            // Check Owner
+            let { data: partner } = await supabase
                 .from('partners')
                 .select('id, business_name')
                 .eq('user_id', user.id)
-                .single()
+                .maybeSingle()
 
-            if (!partner) throw new Error("Partner profile not found")
+            if (!partner) {
+                // Check Team Member
+                const { data: tm } = await supabase
+                    .from('partner_team_members')
+                    .select('partner_id')
+                    .eq('user_id', user.id)
+                    .maybeSingle()
+
+                if (tm?.partner_id) {
+                    // Fetch partner details for sender name
+                    const { data: pDetails } = await supabase
+                        .from('partners')
+                        .select('id, business_name')
+                        .eq('id', tm.partner_id)
+                        .single()
+
+                    partner = pDetails
+                }
+            }
+
+            if (!partner) throw new Error("Partner profile not found or access denied")
 
             // Call Edge Function
             const { data, error } = await supabase.functions.invoke('send-promotional-email', {

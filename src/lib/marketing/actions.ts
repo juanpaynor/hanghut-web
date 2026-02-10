@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 interface UnsubscribeResult {
     success: boolean
@@ -82,5 +83,38 @@ export async function processUnsubscribe(token: string): Promise<UnsubscribeResu
         message: "Successfully unsubscribed.",
         organizer: subscription.partner?.business_name || "Organizer",
         email: subscription.email
+    }
+}
+
+export async function subscribeGuestToNewsletter(partnerId: string, email: string, name: string) {
+    if (!partnerId || !email) {
+        return { success: false, message: 'Missing fields' }
+    }
+
+    const supabase = createAdminClient()
+
+    try {
+        const { error } = await supabase
+            .from('partner_subscribers')
+            .upsert({
+                partner_id: partnerId,
+                email: email,
+                full_name: name,
+                source: 'checkout',
+                is_active: true,
+                unsubscribed_at: null // Clear unsubscribe if returning
+            }, {
+                onConflict: 'partner_id,email'
+            })
+
+        if (error) {
+            console.error('Error subscribing guest:', error)
+            return { success: false, message: 'Failed to subscribe' }
+        }
+
+        return { success: true }
+    } catch (err) {
+        console.error('Exception subscribing guest:', err)
+        return { success: false, message: 'System error' }
     }
 }

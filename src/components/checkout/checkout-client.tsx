@@ -14,6 +14,7 @@ import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 
 import { validatePromoCode } from '@/lib/organizer/promo-actions'
+import { subscribeGuestToNewsletter } from '@/lib/marketing/actions'
 
 interface CheckoutClientProps {
     event: any
@@ -99,6 +100,17 @@ export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientPr
                 variant: "destructive"
             })
             return
+        }
+
+        // [Workaround] Subscribe directly via server action since Edge Function might miss it
+        if (newsletterSubscribed && event.organizer_id) {
+            const email = user?.email || guestDetails.email
+            const name = user ? (user.user_metadata?.full_name || user.email) : guestDetails.name
+
+            // Execute in background
+            subscribeGuestToNewsletter(event.organizer_id, email, name).catch(err =>
+                console.error("Subscription background task failed:", err)
+            )
         }
 
         setIsLoading(true)

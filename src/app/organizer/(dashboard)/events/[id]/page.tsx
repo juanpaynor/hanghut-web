@@ -80,6 +80,22 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
     }, 0) || 0
     const checkedInCount = soldTickets?.filter(t => t.checked_in_at).length || 0
 
+    // Fetch refunded tickets for stats
+    const { data: refundedTickets } = await supabase
+        .from('tickets')
+        .select(`
+            purchase_intent:purchase_intents (
+                unit_price
+            )
+        `)
+        .eq('event_id', id)
+        .eq('status', 'refunded')
+
+    const refundedAmount = refundedTickets?.reduce((sum, ticket: any) => {
+        const price = ticket.purchase_intent?.unit_price || 0
+        return sum + price
+    }, 0) || 0
+
     return (
         <div className="p-8 pb-20">
             <div className="mb-6">
@@ -97,6 +113,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                 promoCodes={promoCodes || []}
                 stats={{
                     totalRevenue,
+                    refundedAmount,
                     ticketsSold: ticketsSold || 0,
                     totalCapacity: event.capacity || 0,
                     checkedInCount

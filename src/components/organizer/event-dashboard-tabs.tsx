@@ -25,6 +25,7 @@ interface EventDashboardTabsProps {
         ticketsSold: number
         totalCapacity: number
         checkedInCount: number
+        refundedAmount?: number
     }
 }
 
