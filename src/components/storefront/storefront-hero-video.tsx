@@ -45,6 +45,28 @@ export function StorefrontHeroVideo({ videoUrl }: StorefrontHeroVideoProps) {
         }
     }
 
+    // Autoplay Fallback Logic for Native Video
+    useEffect(() => {
+        if (!showYoutube && videoRef.current) {
+            const video = videoRef.current
+
+            // Try to play with current mute state (which starts as false/unmuted)
+            const playPromise = video.play()
+
+            if (playPromise !== undefined) {
+                playPromise.catch(() => {
+                    console.log("Autoplay with sound blocked. Fallback to muted.")
+                    // If blocked, mute and try again
+                    setIsMuted(true)
+                    if (video) {
+                        video.muted = true
+                        video.play().catch(e => console.error("Autoplay muted failed:", e))
+                    }
+                })
+            }
+        }
+    }, [showYoutube])
+
     return (
         <div className="relative w-full h-full group/video">
             {showYoutube ? (
@@ -59,7 +81,7 @@ export function StorefrontHeroVideo({ videoUrl }: StorefrontHeroVideoProps) {
                 <video
                     ref={videoRef}
                     src={videoUrl}
-                    autoPlay
+                    // Remove autoPlay prop to control manually via useEffect
                     muted={isMuted}
                     loop
                     playsInline
