@@ -9,6 +9,7 @@ import { Inter, Playfair_Display, Space_Mono } from 'next/font/google'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BrandingProvider } from '@/components/storefront/branding-provider'
+import { StorefrontHeroVideo } from '@/components/storefront/storefront-hero-video'
 import { cn, getYouTubeEmbedUrl } from '@/lib/utils'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
@@ -173,23 +174,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                             {branding.video_url ? (
                                 <>
                                     <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent z-10 pointer-events-none" />
-                                    {getYouTubeEmbedUrl(branding.video_url) ? (
-                                        <iframe
-                                            src={getYouTubeEmbedUrl(branding.video_url)!}
-                                            className="w-full h-full object-cover pointer-events-none"
-                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                            allowFullScreen
-                                        />
-                                    ) : (
-                                        <video
-                                            src={branding.video_url}
-                                            autoPlay
-                                            muted
-                                            loop
-                                            playsInline
-                                            className="w-full h-full object-cover"
-                                        />
-                                    )}
+                                    <StorefrontHeroVideo videoUrl={branding.video_url} />
                                 </>
                             ) : partner.cover_image_url ? (
                                 <>
@@ -347,23 +332,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                 {branding.video_url ? (
                                     <>
                                         <div className="absolute inset-0 bg-black/40 z-10 pointer-events-none" />
-                                        {getYouTubeEmbedUrl(branding.video_url) ? (
-                                            <iframe
-                                                src={getYouTubeEmbedUrl(branding.video_url)!}
-                                                className="w-full h-full object-cover pointer-events-none"
-                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                                allowFullScreen
-                                            />
-                                        ) : (
-                                            <video
-                                                src={branding.video_url}
-                                                autoPlay
-                                                muted
-                                                loop
-                                                playsInline
-                                                className="w-full h-full object-cover"
-                                            />
-                                        )}
+                                        <StorefrontHeroVideo videoUrl={branding.video_url} />
                                     </>
                                 ) : partner.cover_image_url ? (
                                     <>
