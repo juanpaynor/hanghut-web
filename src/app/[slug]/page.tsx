@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import { PublicEventCard } from '@/components/events/public-event-card'
-import { Globe, Instagram, Facebook, Twitter, Calendar, Share2, MapPin, Megaphone, X, History } from 'lucide-react'
+import { Globe, Instagram, Facebook, Twitter, Calendar, MapPin, Megaphone, X, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Metadata } from 'next'
 import { Inter, Playfair_Display, Space_Mono } from 'next/font/google'
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BrandingProvider } from '@/components/storefront/branding-provider'
 import { StorefrontHeroVideo } from '@/components/storefront/storefront-hero-video'
+import { ProfileActions } from '@/components/storefront/profile-actions'
 import { cn, getYouTubeEmbedUrl } from '@/lib/utils'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
@@ -202,7 +203,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                             <div className="flex flex-col lg:flex-row gap-8 items-start">
 
                                 {/* Left Column: Brand Identity Card */}
-                                <div className={cn("w-full lg:w-[350px] shrink-0 space-y-6 sticky top-24", animate('delay-100'))}>
+                                <div className={cn("w-full lg:w-[350px] shrink-0 space-y-6", animate('delay-100'))}>
                                     <div className="bg-card/80 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl dark:shadow-none overflow-hidden relative">
                                         <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 blur-[60px] rounded-full pointer-events-none" />
 
@@ -235,13 +236,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                             <SocialButtons />
 
                                             <div className="w-full space-y-2">
-                                                <Button className="w-full rounded-xl bg-primary hover:bg-primary/90 font-medium shadow-lg shadow-primary/20 transition-all hover:scale-[1.02]">
-                                                    Follow
-                                                </Button>
-                                                <Button variant="outline" className="w-full rounded-xl border-dashed">
-                                                    <Share2 className="h-4 w-4 mr-2" />
-                                                    Share Profile
-                                                </Button>
+                                                <ProfileActions shareUrl={`https://hanghut.com/${partner.slug}`} />
                                             </div>
                                         </div>
                                     </div>

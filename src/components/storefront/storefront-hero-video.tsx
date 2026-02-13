@@ -10,13 +10,18 @@ interface StorefrontHeroVideoProps {
 }
 
 export function StorefrontHeroVideo({ videoUrl }: StorefrontHeroVideoProps) {
-    const [isMuted, setIsMuted] = useState(true)
+    const [isMuted, setIsMuted] = useState(false)
     const videoRef = useRef<HTMLVideoElement>(null)
     const iframeRef = useRef<HTMLIFrameElement>(null)
 
     // Determine type
     const showYoutube = !!getYouTubeEmbedUrl(videoUrl)
-    const youtubeUrl = getYouTubeEmbedUrl(videoUrl)
+    let youtubeUrl = getYouTubeEmbedUrl(videoUrl)
+
+    // Adjust YouTube URL for initial mute state
+    if (youtubeUrl) {
+        youtubeUrl = youtubeUrl.replace('mute=1', `mute=${isMuted ? 1 : 0}`)
+    }
 
     const toggleMute = () => {
         const newMuted = !isMuted
@@ -55,7 +60,7 @@ export function StorefrontHeroVideo({ videoUrl }: StorefrontHeroVideoProps) {
                     ref={videoRef}
                     src={videoUrl}
                     autoPlay
-                    muted={true} // Always start muted for autoplay
+                    muted={isMuted}
                     loop
                     playsInline
                     className="w-full h-full object-cover"
