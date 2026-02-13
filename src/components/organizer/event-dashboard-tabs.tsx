@@ -8,7 +8,8 @@ import { AttendeeManager } from '@/components/organizer/attendee-manager'
 import { PromoCodeManager } from '@/components/organizer/promo-code-manager'
 import { CheckInStats } from '@/components/organizer/check-in-stats'
 import { EventDashboardOverview } from '@/components/organizer/event-dashboard-overview'
-import { FileText, Ticket, Users, LayoutDashboard, Settings } from 'lucide-react'
+import { StorefrontCustomizationForm } from '@/components/organizer/storefront-customization-form'
+import { FileText, Ticket, Users, LayoutDashboard, Settings, Palette } from 'lucide-react'
 import { Attendee } from '@/lib/organizer/attendee-actions'
 import { PromoCode } from '@/lib/organizer/promo-actions'
 
@@ -27,6 +28,8 @@ interface EventDashboardTabsProps {
         checkedInCount: number
         refundedAmount?: number
     }
+    passFeesToCustomer: boolean
+    fixedFeePerTicket: number
 }
 
 export function EventDashboardTabs({
@@ -37,7 +40,9 @@ export function EventDashboardTabs({
     tiers,
     initialAttendees,
     promoCodes,
-    stats
+    stats,
+    passFeesToCustomer,
+    fixedFeePerTicket
 }: EventDashboardTabsProps) {
     const [activeTab, setActiveTab] = useState('overview')
 
@@ -63,6 +68,10 @@ export function EventDashboardTabs({
                 <TabsTrigger value="settings" className="flex items-center gap-2" disabled>
                     <Settings className="h-4 w-4" />
                     Settings
+                </TabsTrigger>
+                <TabsTrigger value="design" className="flex items-center gap-2">
+                    <Palette className="h-4 w-4" />
+                    Design
                 </TabsTrigger>
             </TabsList>
 
@@ -92,7 +101,13 @@ export function EventDashboardTabs({
                 <div className="grid gap-8">
                     <div>
                         <h3 className="text-xl font-semibold mb-4">Ticket Tiers</h3>
-                        <TicketTiersManager eventId={eventId} tiers={tiers} commissionRate={commissionRate} />
+                        <TicketTiersManager
+                            eventId={eventId}
+                            tiers={tiers}
+                            commissionRate={commissionRate}
+                            passFeesToCustomer={passFeesToCustomer}
+                            fixedFeePerTicket={fixedFeePerTicket}
+                        />
                     </div>
                     <div className="border-t pt-8">
                         <h3 className="text-xl font-semibold mb-4">Promo Codes</h3>
@@ -107,14 +122,22 @@ export function EventDashboardTabs({
                     commissionRate={commissionRate}
                     initialData={event}
                     eventId={eventId}
+                    passFeesToCustomer={passFeesToCustomer}
+                    fixedFeePerTicket={fixedFeePerTicket}
                 />
             </TabsContent>
 
+            <TabsContent value="design" className="mt-6 animate-in fade-in-50 duration-300">
+                <StorefrontCustomizationForm
+                    eventId={eventId}
+                    initialData={event}
+                />
+            </TabsContent>
             <TabsContent value="settings" className="mt-6">
                 <div className="p-8 text-center text-muted-foreground">
                     Advanced settings coming soon.
                 </div>
             </TabsContent>
-        </Tabs>
+        </Tabs >
     )
 }

@@ -290,3 +290,73 @@ export async function updateEvent(eventId: string, formData: FormData) {
         return { error: 'Failed to update event: ' + error.message }
     }
 }
+
+export async function updateEventStorefront(eventId: string, data: {
+    video_url?: string | null
+    description_html?: string | null
+    theme_color?: string | null
+    layout_config?: any
+}) {
+    const supabase = await createClient()
+
+    // Get current user and partner
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { data: partner } = await supabase
+        .from('partners')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
+
+    if (!partner) return { error: 'Partner account not found' }
+
+    // Use service role for updates
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+
+    if (!serviceRoleKey || !supabaseUrl) return { error: 'Server configuration error' }
+    const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey, {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+            detectSessionInUrl: false
+        }
+    })
+
+    // Verify ownership
+    const { data: existingEvent } = await adminSupabase
+        .from('events')
+        .select('organizer_id')
+        .eq('id', eventId)
+        .single()
+
+    if (!existingEvent || existingEvent.organizer_id !== partner.id) {
+        return { error: 'Event not found or unauthorized' }
+    }
+
+    try {
+        const { error: updateError } = await adminSupabase
+            .from('events')
+            .update({
+                video_url: data.video_url,
+                description_html: data.description_html,
+                theme_color: data.theme_color,
+                layout_config: data.layout_config,
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', eventId)
+
+        if (updateError) throw updateError
+
+        revalidatePath('/organizer/events')
+        revalidatePath(`/organizer/events/${eventId}`)
+        revalidatePath(`/events/${eventId}`) // Revalidate public page
+
+        return { success: true }
+
+    } catch (error: any) {
+        console.error('Update error:', error)
+        return { error: 'Failed to update event: ' + error.message }
+    }
+}

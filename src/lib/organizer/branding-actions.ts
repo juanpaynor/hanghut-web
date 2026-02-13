@@ -23,6 +23,17 @@ export async function updatePartnerBranding(partnerId: string, branding: {
         email?: boolean
         phone?: boolean
     }
+    video_url?: string | null
+    description_html?: string | null
+    layout_config?: {
+        order: string[]
+        hidden: string[]
+    }
+    design?: {
+        layout?: 'modern' | 'classic'
+        font?: 'sans' | 'serif' | 'mono'
+        show_footer?: boolean
+    }
 }) {
     const supabase = await createClient()
 
@@ -33,9 +44,9 @@ export async function updatePartnerBranding(partnerId: string, branding: {
     }
 
     // Verify user owns this partner
-    const { data: partner } = await supabase
+    let { data: partner } = await supabase
         .from('partners')
-        .select('id, branding')
+        .select('id, branding, slug')
         .eq('id', partnerId)
         .eq('user_id', user.id)
         .single()
@@ -53,6 +64,15 @@ export async function updatePartnerBranding(partnerId: string, branding: {
         if (!teamMember) {
             return { error: 'Permission denied. Only owners can update branding.' }
         }
+
+        // Fetch partner data for team member
+        const { data: teamPartner } = await supabase
+            .from('partners')
+            .select('id, branding, slug')
+            .eq('id', partnerId)
+            .single()
+
+        partner = teamPartner
     }
 
     // Merge with existing branding
@@ -86,6 +106,9 @@ export async function updatePartnerBranding(partnerId: string, branding: {
     }
 
     revalidatePath('/organizer/settings')
+    if (partner?.slug) {
+        revalidatePath(`/${partner.slug}`)
+    }
     return { success: true }
 }
 

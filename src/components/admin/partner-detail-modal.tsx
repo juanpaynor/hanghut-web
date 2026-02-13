@@ -20,6 +20,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
 import { CheckCircle, XCircle, Ban, DollarSign } from 'lucide-react'
 import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, resetToStandardPricing } from '@/lib/admin/partner-actions'
@@ -34,6 +35,8 @@ interface Partner {
     verified: boolean
     pricing_model: string
     custom_percentage: number | null
+    pass_fees_to_customer: boolean
+    fixed_fee_per_ticket: number
     created_at: string
     approved_at: string | null
     user: {
@@ -108,11 +111,17 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
         }
     }
 
+    const [passFeesToCustomer, setPassFeesToCustomer] = useState(partner.pass_fees_to_customer ?? true)
+    const [fixedFeePerTicket, setFixedFeePerTicket] = useState(partner.fixed_fee_per_ticket?.toString() || '15.00')
+
     const handleUpdatePricing = async () => {
         setIsLoading(true)
         try {
             if (pricingModel === 'standard') {
                 await resetToStandardPricing(partner.id)
+                // Reset local state to defaults
+                setPassFeesToCustomer(true)
+                setFixedFeePerTicket('15.00')
             } else {
                 const percentage = parseFloat(customPercentage)
                 if (isNaN(percentage) || percentage < 0 || percentage > 100) {
@@ -120,7 +129,15 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                     setIsLoading(false)
                     return
                 }
-                await setCustomPricing(partner.id, percentage)
+
+                const fixedFee = parseFloat(fixedFeePerTicket)
+                if (isNaN(fixedFee) || fixedFee < 0) {
+                    alert('Please enter a valid fixed fee amount')
+                    setIsLoading(false)
+                    return
+                }
+
+                await setCustomPricing(partner.id, percentage, passFeesToCustomer, fixedFee)
             }
             router.refresh()
             onOpenChange(false)
@@ -220,23 +237,60 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                 </div>
 
                                 {pricingModel === 'custom' && (
-                                    <div className="space-y-2">
-                                        <Label htmlFor="custom-percentage" className="text-slate-400">Custom Fee (%)</Label>
-                                        <Input
-                                            id="custom-percentage"
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            step="0.5"
-                                            value={customPercentage}
-                                            onChange={(e) => setCustomPercentage(e.target.value)}
-                                            className="bg-slate-800 border-slate-700 text-white"
-                                            disabled={partner.status !== 'approved'}
-                                            placeholder="e.g. 5.0"
-                                        />
-                                        <p className="text-xs text-slate-500">
-                                            Enter the percentage share HangHut takes from ticket sales.
-                                        </p>
+                                    <div className="space-y-4 border border-slate-700 rounded-md p-4 bg-slate-800/50">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="custom-percentage" className="text-slate-400">Platform Fee Share (%)</Label>
+                                            <Input
+                                                id="custom-percentage"
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                step="0.5"
+                                                value={customPercentage}
+                                                onChange={(e) => setCustomPercentage(e.target.value)}
+                                                className="bg-slate-800 border-slate-700 text-white"
+                                                disabled={partner.status !== 'approved'}
+                                                placeholder="e.g. 5.0"
+                                            />
+                                            <p className="text-xs text-slate-500">
+                                                Percentage of ticket sales that goes to the platform.
+                                            </p>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <Label htmlFor="pass-fees" className="text-slate-400">Pass Fees to Customer</Label>
+                                                <Switch
+                                                    id="pass-fees"
+                                                    checked={passFeesToCustomer}
+                                                    onCheckedChange={setPassFeesToCustomer}
+                                                    disabled={partner.status !== 'approved'}
+                                                />
+                                            </div>
+                                            <p className="text-xs text-slate-500">
+                                                If enabled, the customer pays the Platform Fee + Processing Fee on top of the ticket price.
+                                                The organizer receives the full ticket price.
+                                            </p>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="fixed-fee" className="text-slate-400">Fixed Customer Fee (₱)</Label>
+                                            <Input
+                                                id="fixed-fee"
+                                                type="number"
+                                                min="0"
+                                                step="1.00"
+                                                value={fixedFeePerTicket}
+                                                onChange={(e) => setFixedFeePerTicket(e.target.value)}
+                                                className="bg-slate-800 border-slate-700 text-white"
+                                                disabled={partner.status !== 'approved'}
+                                                placeholder="e.g. 15.00"
+                                            />
+                                            <p className="text-xs text-slate-500">
+                                                A fixed amount added to the ticket price, paid by the customer to the platform.
+                                                Default is ₱15.00.
+                                            </p>
+                                        </div>
                                     </div>
                                 )}
 

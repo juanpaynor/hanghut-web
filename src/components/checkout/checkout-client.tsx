@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 
 import { validatePromoCode } from '@/lib/organizer/promo-actions'
 import { subscribeGuestToNewsletter } from '@/lib/marketing/actions'
+import { hexToHsl } from '@/lib/utils'
 
 interface CheckoutClientProps {
     event: any
@@ -49,9 +50,36 @@ export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientPr
     const [termsAccepted, setTermsAccepted] = useState(false)
     const [newsletterSubscribed, setNewsletterSubscribed] = useState(false)
 
+    // Fee Logic
+    const organizer = event.organizer || {}
+    const passFees = organizer.pass_fees_to_customer || false
+    const commissionRate = organizer.pricing_model === 'custom' && organizer.custom_percentage !== null
+        ? organizer.custom_percentage / 100
+        : 0.15
+    const fixedFeePerTicket = parseFloat(organizer.fixed_fee_per_ticket || '15')
+
     const subtotal = tier.price * quantity
-    const total = subtotal
     const discount = appliedPromo ? appliedPromo.discountAmount : 0
+
+    // Calculate Fees (if passed)
+    let platformFee = 0
+    let fixedFeeTotal = 0
+    let processingFee = 0
+
+    // Calculate Fees (if passed)
+    if (passFees) {
+        // User Request: "15 pesos (Fixed Fee) should be paid by the customer, but the 3% processing fee is still paid by the organizer"
+        // We only add the Fixed Fee to the customer's total.
+        fixedFeeTotal = fixedFeePerTicket * quantity
+
+        // Platform Fee and Processing % are NOT added to the customer total in this model.
+        // They will be deducted from the organizer's payout on the backend.
+        platformFee = 0
+        processingFee = 0
+    }
+
+    const totalFees = fixedFeeTotal // Only the fixed fee is added
+    const total = subtotal + totalFees
 
     const handleGuestChange = (field: string, value: string) => {
         setGuestDetails(prev => ({ ...prev, [field]: value }))
@@ -120,11 +148,22 @@ export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientPr
             const requestPayload = {
                 event_id: event.id,
                 quantity: quantity,
-                tier_id: tier.id || undefined, // Include tier_id for tier-based purchases
-                // channel_code removed for Payment Sessions API
+                tier_id: tier.id || undefined,
                 guest_details: !user ? guestDetails : undefined,
                 promo_code: appliedPromo ? appliedPromo.code : undefined,
-                subscribed_to_newsletter: newsletterSubscribed, // [NEW] Send subscription status
+                subscribed_to_newsletter: newsletterSubscribed,
+                // [NEW] Fee Metadata for Edge Function
+                metadata: {
+                    pass_fees: passFees,
+                    commission_rate: commissionRate,
+                    fixed_fee_per_ticket: fixedFeePerTicket,
+                    calculated_fees: {
+                        platform_fee: platformFee,
+                        fixed_fee: fixedFeeTotal,
+                        processing_fee: processingFee,
+                        total_fees: totalFees
+                    }
+                },
                 success_url: `${window.location.origin}/checkout/success`,
                 failure_url: `${window.location.origin}/events/${event.id}`
             }
@@ -179,8 +218,14 @@ export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientPr
         }
     }
 
+    // Theme Logic
+    const themeStyle = event.theme_color ? {
+        '--primary': hexToHsl(event.theme_color),
+        '--ring': hexToHsl(event.theme_color),
+    } as React.CSSProperties : undefined;
+
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8" style={themeStyle}>
             <div className="lg:col-span-2 space-y-6">
 
                 {/* 1. Account / Guest Info */}
@@ -288,13 +333,17 @@ export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientPr
 
                             <div className="space-y-2">
                                 <div className="flex justify-between text-sm">
-                                    <span className="text-muted-foreground">Ticket type</span>
-                                    <span className="font-medium">{tier.name}</span>
+                                    <span className="text-muted-foreground">Tickets ({quantity}x)</span>
+                                    <span className="font-medium">₱{subtotal.toLocaleString()}</span>
                                 </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-muted-foreground">Quantity</span>
-                                    <span className="font-medium">x {quantity}</span>
-                                </div>
+                                {passFees && (
+                                    <div className="flex justify-between text-sm text-muted-foreground">
+                                        <div className="flex flex-col">
+                                            <span>Booking Fee</span>
+                                        </div>
+                                        <span>+₱{totalFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                )}
                             </div>
 
                             <Separator />

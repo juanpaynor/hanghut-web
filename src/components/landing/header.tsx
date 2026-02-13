@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import Image from "next/image";
 
 export default function Header() {
   return (
@@ -7,17 +8,13 @@ export default function Header() {
       <div className="container mx-auto px-6 md:px-12 flex h-20 max-w-7xl items-center justify-between">
         <div className="flex items-center gap-10">
           <Link href="/" className="flex items-center space-x-3 group">
-            <div className="bg-primary p-2 rounded-xl group-hover:scale-110 transition-transform">
-              <svg
-                role="img"
-                aria-label="HangHut logo"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 256 256"
-                className="h-6 w-6 text-primary-foreground"
-                fill="currentColor"
-              >
-                <path d="M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128ZM200,96a24,24,0,1,0-24,24A24,24,0,0,0,200,96ZM80,96a24,24,0,1,0-24,24A24,24,0,0,0,80,96Zm96,88H80a56,56,0,0,1,96,0Z" />
-              </svg>
+            <div className="relative h-10 w-10 overflow-hidden rounded-xl transition-transform group-hover:scale-110">
+              <Image
+                src="/logo.png"
+                alt="HangHut Logo"
+                fill
+                className="object-cover"
+              />
             </div>
             <span className="font-bold font-headline text-2xl tracking-tighter">HangHut</span>
           </Link>

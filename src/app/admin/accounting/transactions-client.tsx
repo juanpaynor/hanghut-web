@@ -15,6 +15,7 @@ interface Transaction {
     id: string
     gross_amount: number
     platform_fee: number
+    fixed_fee: number
     organizer_payout: number
     status: string
     created_at: string
@@ -47,44 +48,48 @@ export function TransactionsClient({ transactions }: TransactionsClientProps) {
             <Table>
                 <TableHeader>
                     <TableRow className="border-border hover:bg-card/50">
-                        <TableHead className="text-muted-foreground">Date</TableHead>
+                        <TableHead className="text-muted-foreground w-[100px]">Date</TableHead>
                         <TableHead className="text-muted-foreground">Event</TableHead>
                         <TableHead className="text-muted-foreground">Partner</TableHead>
-                        <TableHead className="text-muted-foreground">Gross Amount</TableHead>
-                        <TableHead className="text-muted-foreground">Platform Fee</TableHead>
-                        <TableHead className="text-muted-foreground">Partner Payout</TableHead>
-                        <TableHead className="text-muted-foreground">Status</TableHead>
+                        <TableHead className="text-muted-foreground text-right">Gross</TableHead>
+                        <TableHead className="text-muted-foreground text-right">Fixed Fee</TableHead>
+                        <TableHead className="text-muted-foreground text-right">Plat. Fee</TableHead>
+                        <TableHead className="text-muted-foreground text-right">Payout</TableHead>
+                        <TableHead className="text-muted-foreground text-center">Status</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {transactions.length === 0 ? (
                         <TableRow className="border-border">
-                            <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                            <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                                 No transactions found
                             </TableCell>
                         </TableRow>
                     ) : (
                         transactions.map((transaction) => (
                             <TableRow key={transaction.id} className="border-border hover:bg-card/50">
-                                <TableCell className="text-muted-foreground text-sm">
-                                    {format(new Date(transaction.created_at), 'MMM d, yyyy')}
-                                </TableCell>
-                                <TableCell className="text-slate-300">
-                                    {transaction.event?.title || 'Unknown Event'}
-                                </TableCell>
-                                <TableCell className="text-slate-300">
-                                    {transaction.partner?.business_name || 'Unknown Partner'}
+                                <TableCell className="text-muted-foreground text-sm font-mono">
+                                    {format(new Date(transaction.created_at), 'MMM d')}
                                 </TableCell>
                                 <TableCell className="text-slate-300 font-medium">
+                                    {transaction.event?.title || 'Unknown Event'}
+                                </TableCell>
+                                <TableCell className="text-slate-300 text-xs">
+                                    {transaction.partner?.business_name || 'Unknown Partner'}
+                                </TableCell>
+                                <TableCell className="text-slate-300 font-medium text-right">
                                     ₱{Number(transaction.gross_amount).toLocaleString()}
                                 </TableCell>
-                                <TableCell className="text-green-400">
+                                <TableCell className="text-slate-400 text-right">
+                                    ₱{Number(transaction.fixed_fee || 0).toLocaleString()}
+                                </TableCell>
+                                <TableCell className="text-green-400 text-right">
                                     ₱{Number(transaction.platform_fee).toLocaleString()}
                                 </TableCell>
-                                <TableCell className="text-slate-300">
+                                <TableCell className="text-slate-300 text-right font-bold">
                                     ₱{Number(transaction.organizer_payout).toLocaleString()}
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="text-center">
                                     <Badge variant="outline" className={getStatusColor(transaction.status)}>
                                         {transaction.status.toUpperCase()}
                                     </Badge>

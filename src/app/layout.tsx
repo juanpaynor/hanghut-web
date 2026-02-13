@@ -43,11 +43,11 @@ export const metadata: Metadata = {
     creator: '@hanghutapp', // Update with real handle
     images: ['https://hanghut.com/og-image.jpg'],
   },
-  icons: {
-    icon: '/favicon.ico',
-    shortcut: '/favicon.ico',
-    apple: '/apple-touch-icon.png',
-  },
+  // icons: {
+  //   icon: '/favicon.ico',
+  //   shortcut: '/favicon.ico',
+  //   apple: '/apple-touch-icon.png',
+  // },
   manifest: '/manifest.json',
 };
 

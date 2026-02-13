@@ -19,7 +19,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
 
     const { data: partner } = await supabase
         .from('partners')
-        .select('id, custom_percentage, pricing_model, status')
+        .select('id, custom_percentage, pricing_model, status, pass_fees_to_customer, fixed_fee_per_ticket')
         .eq('user_id', user.id)
         .single()
 
@@ -47,7 +47,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         .order('sort_order', { ascending: true })
 
     // Get commission rate
-    const commissionRate = partner.pricing_model === 'custom' && partner.custom_percentage
+    // Get commission rate
+    const commissionRate = partner.pricing_model === 'custom' && partner.custom_percentage !== null
         ? partner.custom_percentage / 100
         : 0.15
 
@@ -118,6 +119,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                     totalCapacity: event.capacity || 0,
                     checkedInCount
                 }}
+                passFeesToCustomer={partner.pass_fees_to_customer || false}
+                fixedFeePerTicket={parseFloat(partner.fixed_fee_per_ticket?.toString() || '15.00')}
             />
         </div>
     )

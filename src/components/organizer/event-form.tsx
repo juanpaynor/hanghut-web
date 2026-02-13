@@ -43,9 +43,18 @@ interface EventFormProps {
     commissionRate: number
     initialData?: any // Can be typed more strictly if needed
     eventId?: string
+    passFeesToCustomer: boolean
+    fixedFeePerTicket: number
 }
 
-export function EventForm({ partnerId, commissionRate, initialData, eventId }: EventFormProps) {
+export function EventForm({
+    partnerId,
+    commissionRate,
+    initialData,
+    eventId,
+    passFeesToCustomer,
+    fixedFeePerTicket
+}: EventFormProps) {
     const router = useRouter()
     const { toast } = useToast()
     const [isLoading, setIsLoading] = useState(false)
@@ -501,18 +510,50 @@ export function EventForm({ partnerId, commissionRate, initialData, eventId }: E
                                         <span>Ticket Price:</span>
                                         <span className="font-medium">₱{ticketPrice.toFixed(2)}</span>
                                     </div>
-                                    <div className="flex justify-between text-red-600">
-                                        <span>Platform Fee ({(commissionRate * 100).toFixed(1)}%):</span>
-                                        <span className="font-medium">-₱{platformFee.toFixed(2)}</span>
-                                    </div>
-                                    <div className="flex justify-between text-red-600">
-                                        <span>Processing Fee (3%):</span>
-                                        <span className="font-medium">-₱{processingFee.toFixed(2)}</span>
-                                    </div>
-                                    <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">
-                                        <span>You'll receive:</span>
-                                        <span>₱{organizerPayout.toFixed(2)} per ticket</span>
-                                    </div>
+
+                                    {passFeesToCustomer ? (
+                                        <>
+                                            <div className="flex justify-between text-muted-foreground border-t border-border pt-1 mt-1">
+                                                <span>Customer Pays (Price + Booking Fee):</span>
+                                                <span className="font-medium">₱{(
+                                                    ticketPrice + fixedFeePerTicket
+                                                ).toFixed(2)}</span>
+                                            </div>
+
+                                            <div className="flex justify-between text-red-600 mt-2">
+                                                <span>Platform Fee ({(commissionRate * 100).toFixed(1)}%):</span>
+                                                <span className="font-medium">-₱{(ticketPrice * commissionRate).toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-red-600">
+                                                <span>Processing Fee (3%):</span>
+                                                <span className="font-medium">-₱{(ticketPrice * 0.03).toFixed(2)}</span>
+                                            </div>
+
+                                            <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">
+                                                <span>You'll receive:</span>
+                                                <span>₱{(
+                                                    ticketPrice -
+                                                    (ticketPrice * commissionRate) -
+                                                    (ticketPrice * 0.03)
+                                                ).toFixed(2)} per ticket</span>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="flex justify-between text-red-600">
+                                                <span>Platform Fee ({(commissionRate * 100).toFixed(1)}%):</span>
+                                                <span className="font-medium">-₱{platformFee.toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-red-600">
+                                                <span>Processing Fee (3% + ₱15):</span>
+                                                <span className="font-medium">-₱{(processingFee + 15).toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">
+                                                <span>You'll receive:</span>
+                                                <span>₱{(organizerPayout - 15).toFixed(2)} per ticket</span>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </Card>
                         )}

@@ -47,9 +47,17 @@ interface TicketTiersManagerProps {
     eventId: string
     tiers: TicketTier[]
     commissionRate: number
+    passFeesToCustomer: boolean
+    fixedFeePerTicket: number
 }
 
-export function TicketTiersManager({ eventId, tiers: initialTiers, commissionRate }: TicketTiersManagerProps) {
+export function TicketTiersManager({
+    eventId,
+    tiers: initialTiers,
+    commissionRate,
+    passFeesToCustomer,
+    fixedFeePerTicket
+}: TicketTiersManagerProps) {
     const { toast } = useToast()
     const router = useRouter()
     const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -327,8 +335,38 @@ export function TicketTiersManager({ eventId, tiers: initialTiers, commissionRat
                                         setFormData({ ...formData, price: e.target.value })
                                     }
                                 />
-                                {formData.price && !isNaN(parseFloat(formData.price)) && (
-                                    <div className="text-xs text-muted-foreground bg-muted p-2 rounded-md space-y-1 mt-1">
+                                {passFeesToCustomer ? (
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-xs text-muted-foreground">
+                                            <span>Customer Pays (Price + Booking Fee)</span>
+                                            <span>
+                                                ₱{(
+                                                    parseFloat(formData.price) + fixedFeePerTicket
+                                                ).toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between text-xs text-red-600">
+                                            <span>Platform & Processing (paid by you)</span>
+                                            <span>
+                                                -₱{(
+                                                    (parseFloat(formData.price) * commissionRate) +
+                                                    (parseFloat(formData.price) * 0.03)
+                                                ).toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <div className="border-t border-border/50 pt-1 flex justify-between font-medium text-foreground">
+                                            <span>Net Earnings</span>
+                                            <span className="text-green-600">
+                                                ₱{(
+                                                    parseFloat(formData.price) -
+                                                    (parseFloat(formData.price) * commissionRate) -
+                                                    (parseFloat(formData.price) * 0.03)
+                                                ).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
                                         <div className="flex justify-between">
                                             <span>Platform Fee ({(commissionRate * 100).toFixed(0)}%)</span>
                                             <span>-₱{(parseFloat(formData.price) * commissionRate).toFixed(2)}</span>
@@ -347,7 +385,7 @@ export function TicketTiersManager({ eventId, tiers: initialTiers, commissionRat
                                                 ).toFixed(2)}
                                             </span>
                                         </div>
-                                    </div>
+                                    </>
                                 )}
                             </div>
 

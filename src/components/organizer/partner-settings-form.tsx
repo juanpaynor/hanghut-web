@@ -14,8 +14,9 @@ import { Badge } from '@/components/ui/badge'
 import {
     Upload, X, Loader2, Globe, Instagram, Facebook, Twitter,
     Layout, Store, Image as ImageIcon, CheckCircle2, AlertCircle, Palette, LayoutTemplate, SquareDashedBottom,
-    Type, Sparkles, Megaphone, ListFilter, History
+    Type, Sparkles, Megaphone, ListFilter, History, FileCode, Mail, Phone, Video
 } from 'lucide-react'
+import { VideoUploader } from '@/components/ui/video-uploader'
 import { updatePartnerProfile } from '@/lib/organizer/settings-actions'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
@@ -53,6 +54,13 @@ interface PartnerSettingsFormProps {
             content?: {
                 sort_by?: 'upcoming' | 'newest' | 'alpha'
                 show_past_events?: boolean
+            }
+            video_url?: string | null
+            tagline?: string | null
+            description_html?: string | null
+            contact_display?: {
+                email?: boolean
+                phone?: boolean
             }
         }
     }
@@ -95,6 +103,13 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             content: {
                 sort_by: initialData.branding?.content?.sort_by || 'upcoming',
                 show_past_events: initialData.branding?.content?.show_past_events ?? false
+            },
+            video_url: initialData.branding?.video_url || '',
+            tagline: initialData.branding?.tagline || '',
+            description_html: initialData.branding?.description_html || '',
+            contact_display: {
+                email: initialData.branding?.contact_display?.email ?? true,
+                phone: initialData.branding?.contact_display?.phone ?? false
             }
         }
     })
@@ -121,14 +136,28 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
     }
 
     const handleBrandingChange = (category: 'colors' | 'design' | 'announcement' | 'content', field: string, value: any) => {
+        setFormData(prev => {
+            const currentCategory = (prev.branding[category] || {}) as Record<string, any>
+            return {
+                ...prev,
+                branding: {
+                    ...prev.branding,
+                    [category]: {
+                        ...currentCategory,
+                        [field]: value
+                    }
+                }
+            }
+        })
+        setSuccessMessage(null)
+    }
+
+    const handleBrandingRootChange = (field: string, value: any) => {
         setFormData(prev => ({
             ...prev,
             branding: {
                 ...prev.branding,
-                [category]: {
-                    ...prev.branding[category as keyof typeof prev.branding],
-                    [field]: value
-                }
+                [field]: value
             }
         }))
         setSuccessMessage(null)
@@ -330,6 +359,16 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                         </div>
 
                                         <div className="space-y-2">
+                                            <Label htmlFor="tagline">Tagline</Label>
+                                            <Input
+                                                id="tagline"
+                                                value={formData.branding.tagline || ''}
+                                                onChange={(e) => handleBrandingRootChange('tagline', e.target.value)}
+                                                placeholder="e.g. The best party in town"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
                                             <Label htmlFor="slug">
                                                 Store URL *
                                                 {formData.slug && (
@@ -367,6 +406,22 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                         <p className="text-xs text-muted-foreground text-right">
                                             {formData.description.length} / 500 characters
                                         </p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="description_html" className="flex items-center gap-2">
+                                            <FileCode className="h-4 w-4" />
+                                            Rich Description (HTML)
+                                        </Label>
+                                        <Textarea
+                                            id="description_html"
+                                            value={formData.branding.description_html || ''}
+                                            onChange={(e) => handleBrandingRootChange('description_html', e.target.value)}
+                                            placeholder="<p>Custom HTML content...</p>"
+                                            rows={6}
+                                            className="font-mono text-sm"
+                                        />
+                                        <p className="text-xs text-muted-foreground">Overrides standard bio with custom HTML.</p>
                                     </div>
                                 </CardContent>
                             </Card>
@@ -444,6 +499,17 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                                 />
                                             </div>
                                         </div>
+                                    </div>
+
+                                    <Separator />
+
+                                    <div className="space-y-2">
+                                        <Label className="flex items-center gap-2"><Video className="h-4 w-4" /> Hero Video (Optional)</Label>
+                                        <VideoUploader
+                                            value={formData.branding.video_url || ''}
+                                            onChange={(url) => handleBrandingRootChange('video_url', url)}
+                                        />
+                                        <p className="text-xs text-muted-foreground">Replaces cover image with a video.</p>
                                     </div>
                                 </CardContent>
                             </Card>

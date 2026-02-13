@@ -31,8 +31,14 @@ export default async function CheckoutPage({
             cover_image_url,
             capacity,
             tickets_sold,
+            theme_color,
             organizer:partners (
-                business_name
+                id,
+                business_name,
+                pass_fees_to_customer,
+                fixed_fee_per_ticket,
+                pricing_model,
+                custom_percentage
             ),
             ticket_tiers (
                 id,

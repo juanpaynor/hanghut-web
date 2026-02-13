@@ -34,6 +34,13 @@ const profileSchema = z.object({
             sort_by: z.enum(['upcoming', 'newest', 'alpha']).optional(),
             show_past_events: z.boolean().optional(),
         }).optional(),
+        video_url: z.string().nullable().optional(),
+        tagline: z.string().nullable().optional(),
+        description_html: z.string().nullable().optional(),
+        contact_display: z.object({
+            email: z.boolean().optional(),
+            phone: z.boolean().optional(),
+        }).optional(),
     }).optional(),
     social_links: z.object({
         facebook: z.string().optional(),

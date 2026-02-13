@@ -9,7 +9,7 @@ import { Inter, Playfair_Display, Space_Mono } from 'next/font/google'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BrandingProvider } from '@/components/storefront/branding-provider'
-import { cn } from '@/lib/utils'
+import { cn, getYouTubeEmbedUrl } from '@/lib/utils'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
@@ -78,7 +78,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
             images: data.partner.cover_image_url ? [data.partner.cover_image_url] : [],
         },
         icons: {
-            icon: data.partner.profile_photo_url || '/favicon.ico',
+            icon: data.partner.branding?.favicon_url || data.partner.profile_photo_url || '/favicon.ico',
         }
     }
 }
@@ -170,7 +170,28 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                     <>
                         {/* Immersive Hero Section */}
                         <div className={cn("relative w-full h-[400px] md:h-[500px] overflow-hidden group", animate())}>
-                            {partner.cover_image_url ? (
+                            {branding.video_url ? (
+                                <>
+                                    <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent z-10 pointer-events-none" />
+                                    {getYouTubeEmbedUrl(branding.video_url) ? (
+                                        <iframe
+                                            src={getYouTubeEmbedUrl(branding.video_url)!}
+                                            className="w-full h-full object-cover pointer-events-none"
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                            allowFullScreen
+                                        />
+                                    ) : (
+                                        <video
+                                            src={branding.video_url}
+                                            autoPlay
+                                            muted
+                                            loop
+                                            playsInline
+                                            className="w-full h-full object-cover"
+                                        />
+                                    )}
+                                </>
+                            ) : partner.cover_image_url ? (
                                 <>
                                     <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent z-10" />
                                     <Image
@@ -256,10 +277,14 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
 
                                 {/* Right Column: Content */}
                                 <div className={cn("flex-1 min-w-0 pt-8 lg:pt-0 space-y-8", animate('delay-300'))}>
-                                    {partner.description && (
+                                    {(branding.description_html || partner.description) && (
                                         <div className="prose dark:prose-invert max-w-none">
                                             <h2 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60">About Us</h2>
-                                            <p className="text-lg leading-relaxed text-muted-foreground">{partner.description}</p>
+                                            {branding.description_html ? (
+                                                <div dangerouslySetInnerHTML={{ __html: branding.description_html }} />
+                                            ) : (
+                                                <p className="text-lg leading-relaxed text-muted-foreground">{partner.description}</p>
+                                            )}
                                         </div>
                                     )}
 
@@ -318,8 +343,29 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                     <>
                         <div className="relative w-full bg-background pb-12">
                             {/* Short Hero */}
-                            <div className="relative w-full h-[300px] overflow-hidden">
-                                {partner.cover_image_url ? (
+                            <div className="relative w-full h-[300px] overflow-hidden group">
+                                {branding.video_url ? (
+                                    <>
+                                        <div className="absolute inset-0 bg-black/40 z-10 pointer-events-none" />
+                                        {getYouTubeEmbedUrl(branding.video_url) ? (
+                                            <iframe
+                                                src={getYouTubeEmbedUrl(branding.video_url)!}
+                                                className="w-full h-full object-cover pointer-events-none"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                                allowFullScreen
+                                            />
+                                        ) : (
+                                            <video
+                                                src={branding.video_url}
+                                                autoPlay
+                                                muted
+                                                loop
+                                                playsInline
+                                                className="w-full h-full object-cover"
+                                            />
+                                        )}
+                                    </>
+                                ) : partner.cover_image_url ? (
                                     <>
                                         <div className="absolute inset-0 bg-black/40 z-10" />
                                         <Image
@@ -334,33 +380,36 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                     <div className="w-full h-full bg-primary/10" />
                                 )}
 
-                                {/* Centered Profile Info */}
-                                <div className={cn("absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-4 mt-8", animate('delay-200'))}>
-                                    <div className="w-28 h-28 rounded-full border-4 border-background bg-background overflow-hidden mb-4 shadow-xl">
-                                        {partner.profile_photo_url ? (
-                                            <img src={partner.profile_photo_url} className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="w-full h-full bg-muted flex items-center justify-center">
-                                                <span className="text-2xl font-bold">{partner.business_name.charAt(0)}</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <h1 className="text-4xl font-bold text-white drop-shadow-md mb-2">{partner.business_name}</h1>
-                                    <div className="flex gap-2 mb-4">
-                                        {/* Socials specific color override for dark bg */}
-                                        <div className="p-1 bg-background/50 backdrop-blur-md rounded-full flex gap-2">
-                                            <SocialButtons />
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
 
-                            <div className="container mx-auto px-4 max-w-5xl -mt-8 relative z-30">
+                            {/* Centered Profile Info (Moved below hero) */}
+                            <div className={cn("relative z-20 flex flex-col items-center justify-center text-center px-4 -mt-16 mb-8", animate('delay-200'))}>
+                                <div className="w-32 h-32 rounded-full border-[6px] border-background bg-background overflow-hidden mb-4 shadow-2xl">
+                                    {partner.profile_photo_url ? (
+                                        <img src={partner.profile_photo_url} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full bg-muted flex items-center justify-center">
+                                            <span className="text-4xl font-bold text-muted-foreground">{partner.business_name.charAt(0)}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-3 tracking-tight">{partner.business_name}</h1>
+
+                                <SocialButtons />
+                            </div>
+
+                            <div className="container mx-auto px-4 max-w-5xl relative z-30">
                                 <div className={cn("bg-card rounded-xl p-8 shadow-sm border space-y-8 min-h-[400px]", animate('delay-300'))}>
-                                    {partner.description && (
+                                    {(branding.description_html || partner.description) && (
                                         <div className="text-center max-w-2xl mx-auto space-y-4">
-                                            <p className="text-lg text-muted-foreground leading-relaxed">{partner.description}</p>
-                                            <div className="w-16 h-1 bg-primary mx-auto rounded-full" />
+                                            {branding.description_html ? (
+                                                <div className="prose dark:prose-invert max-w-none text-left" dangerouslySetInnerHTML={{ __html: branding.description_html }} />
+                                            ) : (
+                                                <>
+                                                    <p className="text-lg text-muted-foreground leading-relaxed">{partner.description}</p>
+                                                    <div className="w-16 h-1 bg-primary mx-auto rounded-full" />
+                                                </>
+                                            )}
                                         </div>
                                     )}
 
