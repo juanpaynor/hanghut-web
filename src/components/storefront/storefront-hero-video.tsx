@@ -16,6 +16,7 @@ export function StorefrontHeroVideo({ videoUrl }: StorefrontHeroVideoProps) {
 
     // Determine type
     const showYoutube = !!getYouTubeEmbedUrl(videoUrl)
+    let youtubeUrl = getYouTubeEmbedUrl(videoUrl)
     // Adjust YouTube URL for initial mute state
     if (youtubeUrl) {
         youtubeUrl = youtubeUrl.replace('mute=1', `mute=${isMuted ? 1 : 0}`)
