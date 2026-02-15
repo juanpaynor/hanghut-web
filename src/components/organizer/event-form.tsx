@@ -89,7 +89,7 @@ export function EventForm({
     // Calculate pricing preview
     const ticketPrice = parseFloat(formData.ticket_price) || 0
     const platformFee = ticketPrice * commissionRate
-    const processingFee = ticketPrice * 0.03
+    const processingFee = ticketPrice * 0.04
     const organizerPayout = ticketPrice - platformFee - processingFee
 
     const handleInputChange = (field: keyof EventFormData, value: any) => {
@@ -525,8 +525,8 @@ export function EventForm({
                                                 <span className="font-medium">-₱{(ticketPrice * commissionRate).toFixed(2)}</span>
                                             </div>
                                             <div className="flex justify-between text-red-600">
-                                                <span>Processing Fee (3%):</span>
-                                                <span className="font-medium">-₱{(ticketPrice * 0.03).toFixed(2)}</span>
+                                                <span>Processing Fee (4%):</span>
+                                                <span className="font-medium">-₱{(ticketPrice * 0.04).toFixed(2)}</span>
                                             </div>
 
                                             <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">
@@ -534,7 +534,7 @@ export function EventForm({
                                                 <span>₱{(
                                                     ticketPrice -
                                                     (ticketPrice * commissionRate) -
-                                                    (ticketPrice * 0.03)
+                                                    (ticketPrice * 0.04)
                                                 ).toFixed(2)} per ticket</span>
                                             </div>
                                         </>
@@ -545,7 +545,7 @@ export function EventForm({
                                                 <span className="font-medium">-₱{platformFee.toFixed(2)}</span>
                                             </div>
                                             <div className="flex justify-between text-red-600">
-                                                <span>Processing Fee (3% + ₱15):</span>
+                                                <span>Processing Fee (4% + ₱15):</span>
                                                 <span className="font-medium">-₱{(processingFee + 15).toFixed(2)}</span>
                                             </div>
                                             <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">

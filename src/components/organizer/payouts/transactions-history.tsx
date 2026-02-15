@@ -24,6 +24,7 @@ interface Transaction {
     status: string
     created_at: string
     event: { title: string } | null
+    purchase_intent?: { payment_method: string | null } | null
 }
 
 interface TransactionsHistoryProps {
@@ -37,6 +38,7 @@ export function TransactionsHistory({ transactions }: TransactionsHistoryProps) 
         const headers = [
             'Date',
             'Event',
+            'Payment Method',
             'Gross Amount',
             'Customer Fee',
             'Platform Fee',
@@ -51,6 +53,7 @@ export function TransactionsHistory({ transactions }: TransactionsHistoryProps) 
             ...transactions.map(t => [
                 `"${format(new Date(t.created_at), 'yyyy-MM-dd HH:mm:ss')}"`,
                 `"${t.event?.title || 'Unknown'}"`,
+                `"${t.purchase_intent?.payment_method?.toUpperCase() || 'UNKNOWN'}"`,
                 t.gross_amount,
                 t.fixed_fee || 0,
                 t.platform_fee,
@@ -110,6 +113,7 @@ export function TransactionsHistory({ transactions }: TransactionsHistoryProps) 
                         <TableRow className="border-border hover:bg-muted/50">
                             <TableHead className="w-[150px]">Date</TableHead>
                             <TableHead>Event</TableHead>
+                            <TableHead>Payment Method</TableHead>
                             <TableHead className="text-right">Total Paid</TableHead>
                             <TableHead className="text-right text-muted-foreground">Cust. Fee</TableHead>
                             <TableHead className="text-right text-red-500">Org. Fees</TableHead>
@@ -120,7 +124,7 @@ export function TransactionsHistory({ transactions }: TransactionsHistoryProps) 
                     <TableBody>
                         {transactions.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                                <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                                     <div className="flex flex-col items-center gap-2">
                                         <DollarSign className="w-8 h-8 opacity-20" />
                                         <p>No transactions found</p>
@@ -144,6 +148,11 @@ export function TransactionsHistory({ transactions }: TransactionsHistoryProps) 
                                             <span className="font-medium text-foreground">
                                                 {transaction.event?.title || 'Unknown Event'}
                                             </span>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Badge variant="secondary" className="font-normal text-xs">
+                                                {transaction.purchase_intent?.payment_method?.toUpperCase() || 'UNKNOWN'}
+                                            </Badge>
                                         </TableCell>
                                         <TableCell className="text-right font-medium">
                                             ₱{Number(transaction.gross_amount).toLocaleString()}

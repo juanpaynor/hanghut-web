@@ -47,8 +47,8 @@ export async function getDashboardStats(partnerId: string) {
 
     const totalRevenue = transactions?.reduce((sum, t) => sum + (t.gross_amount || 0), 0) || 0
     const totalPlatformFees = transactions?.reduce((sum, t) => sum + (t.platform_fee || 0), 0) || 0
-    // Payment Processing Fee: Strict 3%
-    const totalPaymentFees = totalRevenue * 0.03
+    // Payment Processing Fee: Strict 4% (Updated to match Xendit rates + margin)
+    const totalPaymentFees = totalRevenue * 0.04
 
     // Net Revenue = Gross - Platform - Payment
     const netRevenue = totalRevenue - totalPlatformFees - totalPaymentFees

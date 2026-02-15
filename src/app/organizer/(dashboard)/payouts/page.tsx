@@ -79,6 +79,9 @@ async function getTransactions(partnerId: string, from?: string, to?: string, se
             *,
             event:events!inner (
                 title
+            ),
+            purchase_intent:purchase_intents (
+                payment_method
             )
         `, { count: 'exact' })
         .eq('partner_id', partnerId)
