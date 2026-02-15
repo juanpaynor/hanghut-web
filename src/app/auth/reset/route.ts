@@ -4,17 +4,23 @@ import { createClient } from '@/lib/supabase/server'
 export async function GET(request: Request) {
     const { searchParams, origin } = new URL(request.url)
 
-    // Supabase sends different parameters depending on the flow
-    // For password reset via email, it sends 'token_hash' and 'type'
-    const token_hash = searchParams.get('token_hash')
-    const type = searchParams.get('type')
-
-    // Sometimes it might send just 'code' (PKCE flow)
-    const code = searchParams.get('code')
-
     const supabase = await createClient()
 
-    // Try PKCE code exchange first
+    // Check if there's already a valid session
+    // (Supabase API may have already verified the token and set the session)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+    if (session && !sessionError) {
+        // Valid session exists - redirect to reset password page
+        return NextResponse.redirect(`${origin}/reset-password`)
+    }
+
+    // Try to handle token parameters if present
+    const token_hash = searchParams.get('token_hash')
+    const type = searchParams.get('type')
+    const code = searchParams.get('code')
+
+    // Try PKCE code exchange
     if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code)
         if (!error) {
@@ -35,6 +41,6 @@ export async function GET(request: Request) {
     }
 
     // If all methods failed, redirect to login with error
-    console.error('Password reset failed - invalid token')
+    console.error('Password reset failed - no valid session or token')
     return NextResponse.redirect(`${origin}/organizer/login?error=invalid_reset_link`)
 }
