@@ -6,6 +6,7 @@ import Marquee from "@/components/landing/marquee";
 
 // Lazy load below-the-fold components for better performance
 const Features = dynamic(() => import("@/components/landing/features"), { ssr: true });
+const AppShowcase = dynamic(() => import("@/components/landing/app-showcase"), { ssr: true });
 const SocialCircleSection = dynamic(() => import("@/components/landing/social-circle-section"), { ssr: true });
 const PartnerCTA = dynamic(() => import("@/components/landing/partner-cta"), { ssr: true });
 
@@ -16,6 +17,7 @@ export default function Home() {
       <main className="flex-1">
         <Hero />
         <Marquee />
+        <AppShowcase />
         <Features />
         <SocialCircleSection />
         <PartnerCTA />

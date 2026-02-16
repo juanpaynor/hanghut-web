@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-<parameter name="createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: Request) {
     const { searchParams, origin } = new URL(request.url)
@@ -18,7 +18,12 @@ export async function GET(request: Request) {
     if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code)
         if (!error) {
-            return NextResponse.redirect(`${origin}/reset-password`)
+            const response = NextResponse.redirect(`${origin}/reset-password`)
+            // Prevent caching of auth responses
+            response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+            response.headers.set('Pragma', 'no-cache')
+            response.headers.set('Expires', '0')
+            return response
         }
     }
 
@@ -30,7 +35,12 @@ export async function GET(request: Request) {
         })
 
         if (!error) {
-            return NextResponse.redirect(`${origin}/reset-password`)
+            const response = NextResponse.redirect(`${origin}/reset-password`)
+            // Prevent caching of auth responses
+            response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+            response.headers.set('Pragma', 'no-cache')
+            response.headers.set('Expires', '0')
+            return response
         }
     }
 
@@ -40,10 +50,17 @@ export async function GET(request: Request) {
 
     if (session && !sessionError) {
         // Valid session exists from the reset flow - redirect to reset password page
-        return NextResponse.redirect(`${origin}/reset-password`)
+        const response = NextResponse.redirect(`${origin}/reset-password`)
+        // Prevent caching of auth responses
+        response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+        response.headers.set('Pragma', 'no-cache')
+        response.headers.set('Expires', '0')
+        return response
     }
 
     // If all methods failed, redirect to login with error
     console.error('Password reset failed - no valid token or session')
-    return NextResponse.redirect(`${origin}/organizer/login?error=invalid_reset_link`)
+    const response = NextResponse.redirect(`${origin}/organizer/login?error=invalid_reset_link`)
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+    return response
 }

@@ -12,13 +12,22 @@ export async function GET(request: Request) {
         if (!error) {
             const forwardedHost = request.headers.get('x-forwarded-host')
             const isLocalEnv = process.env.NODE_ENV === 'development'
+
+            let redirectUrl: string
             if (isLocalEnv) {
-                return NextResponse.redirect(`${origin}${next}`)
+                redirectUrl = `${origin}${next}`
             } else if (forwardedHost) {
-                return NextResponse.redirect(`https://${forwardedHost}${next}`)
+                redirectUrl = `https://${forwardedHost}${next}`
             } else {
-                return NextResponse.redirect(`${origin}${next}`)
+                redirectUrl = `${origin}${next}`
             }
+
+            const response = NextResponse.redirect(redirectUrl)
+            // Prevent caching of auth responses
+            response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+            response.headers.set('Pragma', 'no-cache')
+            response.headers.set('Expires', '0')
+            return response
         }
     }
 

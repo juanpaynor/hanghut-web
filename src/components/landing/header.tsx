@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import Image from "next/image";
+import { WaitlistDialog } from "./waitlist-dialog";
 
 export default function Header() {
   return (
@@ -21,14 +22,21 @@ export default function Header() {
         </div>
 
         <nav className="flex items-center space-x-4">
+          <Link href="/ticketing">
+            <Button variant="ghost" className="font-bold text-sm tracking-widest uppercase hover:bg-white/10">
+              Ticketing
+            </Button>
+          </Link>
           <Link href="/organizer/login">
             <Button variant="ghost" className="font-bold text-sm tracking-widest uppercase hover:bg-white/10">
               Partner Login
             </Button>
           </Link>
-          <Button className="rounded-full px-6 transition-all hover:scale-105">
-            Download App
-          </Button>
+          <WaitlistDialog>
+            <Button className="rounded-full px-6 transition-all hover:scale-105">
+              Download App
+            </Button>
+          </WaitlistDialog>
         </nav>
       </div>
     </header>
