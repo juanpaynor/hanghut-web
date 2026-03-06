@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Users, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet } from 'lucide-react'
+import { LayoutDashboard, Users, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet, Sparkles, Mail } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -28,6 +28,11 @@ const navItems = [
         title: 'Events',
         href: '/admin/events',
         icon: CalendarDays,
+    },
+    {
+        title: 'Experiences',
+        href: '/admin/experiences',
+        icon: Sparkles,
     },
     {
         title: 'Accounting',
@@ -58,6 +63,11 @@ const navItems = [
         title: 'Audit Log',
         href: '/admin/audit',
         icon: ScrollText,
+    },
+    {
+        title: 'Waitlist',
+        href: '/admin/waitlist',
+        icon: Mail,
     },
 ]
 

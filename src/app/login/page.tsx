@@ -16,6 +16,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog'
+import { useLoginRateLimit } from '@/hooks/use-login-rate-limit'
 
 export default function LoginPage() {
     const [email, setEmail] = useState('')
@@ -29,11 +30,17 @@ export default function LoginPage() {
     const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
     const router = useRouter()
     const supabase = createClient()
+    const { isLocked, remainingTime, recordAttempt, resetAttempts } = useLoginRateLimit(5, 60000)
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault()
         setLoading(true)
         setError(null)
+
+        if (isLocked) {
+            setError(`Too many failed attempts. Please try again in ${remainingTime} seconds.`)
+            return
+        }
 
         try {
             // Sign in with Supabase
@@ -43,16 +50,21 @@ export default function LoginPage() {
             })
 
             if (authError) {
-                setError(authError.message)
+                console.error('Login error:', authError.message)
+                recordAttempt()
+                setError('Invalid email or password.')
                 setLoading(false)
                 return
             }
 
             if (!authData.user) {
-                setError('Login failed. Please try again.')
+                recordAttempt()
+                setError('Invalid email or password.')
                 setLoading(false)
                 return
             }
+
+            resetAttempts()
 
             // Check if user is admin using RPC function
             const { data: isAdmin, error: userError } = await supabase

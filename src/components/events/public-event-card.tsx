@@ -4,6 +4,7 @@ import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Calendar, MapPin, Ticket, ArrowUpRight } from 'lucide-react'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
 interface PublicEventCardProps {
     event: {
@@ -14,10 +15,16 @@ interface PublicEventCardProps {
         cover_image_url: string | null
         ticket_price: number
         event_type?: string
+        capacity?: number
+        tickets_sold?: number
     }
 }
 
 export function PublicEventCard({ event }: PublicEventCardProps) {
+    const isSoldOut = typeof event.capacity === 'number' && typeof event.tickets_sold === 'number'
+        ? event.tickets_sold >= event.capacity
+        : false
+
     return (
         <Link href={`/events/${event.id}`} className="group block h-full">
             <div className="h-full bg-card rounded-2xl overflow-hidden border border-border/50 shadow-sm hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 transition-all duration-300 flex flex-col">
@@ -29,7 +36,10 @@ export function PublicEventCard({ event }: PublicEventCardProps) {
                             alt={event.title}
                             fill
                             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                            className="object-cover group-hover:scale-105 transition-transform duration-500 will-change-transform"
+                            className={cn(
+                                "object-cover group-hover:scale-105 transition-transform duration-500 will-change-transform",
+                                isSoldOut && "grayscale"
+                            )}
                             loading="lazy"
                         />
                     ) : (
@@ -39,7 +49,12 @@ export function PublicEventCard({ event }: PublicEventCardProps) {
                     )}
 
                     {/* Price Badge */}
-                    <div className="absolute top-3 right-3">
+                    <div className="absolute top-3 right-3 flex flex-col items-end gap-2">
+                        {isSoldOut && (
+                            <Badge variant="destructive" className="font-bold uppercase tracking-widest text-[10px] shadow-sm">
+                                Sold Out
+                            </Badge>
+                        )}
                         <Badge variant={event.ticket_price === 0 ? "secondary" : "default"} className="font-semibold shadow-sm backdrop-blur-md bg-background/80 text-foreground hover:bg-background/90">
                             {event.ticket_price === 0 ? 'Free' : `₱${event.ticket_price.toLocaleString()}`}
                         </Badge>
@@ -57,7 +72,7 @@ export function PublicEventCard({ event }: PublicEventCardProps) {
                     {/* Hover Overlay */}
                     <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                         <div className="bg-white/90 text-black px-4 py-2 rounded-full font-semibold text-sm transform translate-y-2 group-hover:translate-y-0 transition-transform duration-300 flex items-center gap-2">
-                            View Details <ArrowUpRight className="h-4 w-4" />
+                            {isSoldOut ? 'View Waitlist' : 'View Details'} <ArrowUpRight className="h-4 w-4" />
                         </div>
                     </div>
                 </div>

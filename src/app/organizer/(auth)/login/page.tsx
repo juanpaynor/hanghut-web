@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { useLoginRateLimit } from '@/hooks/use-login-rate-limit'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
@@ -29,10 +30,17 @@ export default function OrganizerLoginPage() {
     const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false)
     const [forgotPasswordError, setForgotPasswordError] = useState('')
     const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
+    const { isLocked, remainingTime, recordAttempt, resetAttempts } = useLoginRateLimit(5, 60000)
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
+
+        if (isLocked) {
+            setError(`Too many failed attempts. Please try again in ${remainingTime} seconds.`)
+            return
+        }
+
         setLoading(true)
 
         const supabase = createClient()
@@ -43,10 +51,15 @@ export default function OrganizerLoginPage() {
         })
 
         if (signInError) {
-            setError(signInError.message)
+            console.error('Login error:', signInError.message) // Keep internal log
+            recordAttempt()
+            setError('Invalid email or password.') // Generic message
             setLoading(false)
             return
         }
+
+        // Reset attempts on successful auth (even if partner check fails, they proved identity)
+        resetAttempts()
 
         // Check if user has an approved partner account
         const { data: partner } = await supabase

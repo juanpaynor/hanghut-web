@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 interface WaitlistDialogProps {
     children: React.ReactNode;
@@ -23,20 +24,35 @@ export function WaitlistDialog({ children }: WaitlistDialogProps) {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const { toast } = useToast();
+    const supabase = createClient();
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setLoading(true);
 
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        const formData = new FormData(e.currentTarget);
+        const fullName = formData.get("name") as string;
+        const email = formData.get("email") as string;
+
+        const { error } = await supabase
+            .from('waitlist')
+            .insert({ full_name: fullName, email, source: 'landing_page' });
 
         setLoading(false);
-        setOpen(false);
-        toast({
-            title: "You're on the list! 🚀",
-            description: "We'll let you know as soon as HangHut is ready for your crowd.",
-        });
+
+        if (!error) {
+            setOpen(false);
+            toast({
+                title: "You're on the list! 🚀",
+                description: "We'll let you know as soon as HangHut is ready for your crowd.",
+            });
+        } else {
+            toast({
+                title: "Heads up",
+                description: error.code === '23505' ? "You're already on the waitlist!" : "Something went wrong. Please try again.",
+                variant: "destructive",
+            });
+        }
     };
 
     return (
@@ -61,6 +77,7 @@ export function WaitlistDialog({ children }: WaitlistDialogProps) {
                         <Label htmlFor="name" className="text-sm font-bold uppercase tracking-widest text-muted-foreground ml-1">Full Name</Label>
                         <Input
                             id="name"
+                            name="name"
                             placeholder="John Doe"
                             required
                             className="rounded-2xl border-slate-200 bg-slate-50 h-12 focus-visible:ring-primary"
@@ -70,6 +87,7 @@ export function WaitlistDialog({ children }: WaitlistDialogProps) {
                         <Label htmlFor="email" className="text-sm font-bold uppercase tracking-widest text-muted-foreground ml-1">Email Address</Label>
                         <Input
                             id="email"
+                            name="email"
                             type="email"
                             placeholder="john@example.com"
                             required

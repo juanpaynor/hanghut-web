@@ -33,6 +33,9 @@ interface Partner {
     verified: boolean
     pricing_model: string
     custom_percentage: number | null
+    pass_fees_to_customer: boolean
+    fixed_fee_per_ticket: number
+    auto_approve_payouts: boolean
     created_at: string
     approved_at: string | null
     user: {

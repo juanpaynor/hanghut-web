@@ -145,3 +145,24 @@ export async function resetToStandardPricing(partnerId: string) {
 
     return { success: true }
 }
+
+/**
+ * Set auto-approve payouts flag for a partner
+ */
+export async function setAutoApprovePayouts(partnerId: string, autoApprove: boolean) {
+    const supabase = await createClient()
+
+    const { error } = await supabase
+        .from('partners')
+        .update({
+            auto_approve_payouts: autoApprove,
+        })
+        .eq('id', partnerId)
+
+    if (error) {
+        console.error('Error setting auto-approve payouts:', error)
+        throw new Error('Failed to set auto-approve payouts')
+    }
+
+    return { success: true }
+}

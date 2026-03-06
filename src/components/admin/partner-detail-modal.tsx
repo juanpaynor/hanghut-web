@@ -23,7 +23,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
 import { CheckCircle, XCircle, Ban, DollarSign } from 'lucide-react'
-import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, resetToStandardPricing } from '@/lib/admin/partner-actions'
+import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, resetToStandardPricing, setAutoApprovePayouts } from '@/lib/admin/partner-actions'
 import { useRouter } from 'next/navigation'
 
 interface Partner {
@@ -37,6 +37,7 @@ interface Partner {
     custom_percentage: number | null
     pass_fees_to_customer: boolean
     fixed_fee_per_ticket: number
+    auto_approve_payouts: boolean
     created_at: string
     approved_at: string | null
     user: {
@@ -58,6 +59,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
     const [pricingModel, setPricingModel] = useState(partner.pricing_model || 'standard')
     const [customPercentage, setCustomPercentage] = useState(partner.custom_percentage?.toString() || '15') // Default custom to 15 if not set
     const [adminNotes, setAdminNotes] = useState('')
+    const [autoApprovePayouts, setAutoApprovePayoutsState] = useState(partner.auto_approve_payouts || false)
 
     const handleApprove = async () => {
         setIsLoading(true)
@@ -301,6 +303,47 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                 >
                                     Save Configuration
                                 </Button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Payout Configuration */}
+                    <div className="space-y-4 border-t border-slate-700 pt-6">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                            <DollarSign className="h-5 w-5" />
+                            Payout Configuration
+                        </h3>
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between border border-slate-700 rounded-md p-4 bg-slate-800/50">
+                                <div className="space-y-1">
+                                    <Label htmlFor="auto-approve-payouts" className="text-white font-medium">
+                                        Auto-Approve Payouts
+                                    </Label>
+                                    <p className="text-xs text-slate-400 max-w-md">
+                                        When enabled, payout requests from this partner bypass manual admin review and are disbursed immediately via Xendit.
+                                    </p>
+                                </div>
+                                <Switch
+                                    id="auto-approve-payouts"
+                                    checked={autoApprovePayouts}
+                                    onCheckedChange={async (checked) => {
+                                        setIsLoading(true)
+                                        // Optimistically update
+                                        setAutoApprovePayoutsState(checked)
+                                        try {
+                                            await setAutoApprovePayouts(partner.id, checked)
+                                            router.refresh()
+                                        } catch (error) {
+                                            console.error('Error updating auto-approve setting:', error)
+                                            alert('Failed to update payout configuration')
+                                            // Revert on failure
+                                            setAutoApprovePayoutsState(!checked)
+                                        } finally {
+                                            setIsLoading(false)
+                                        }
+                                    }}
+                                    disabled={isLoading || partner.status !== 'approved'}
+                                />
                             </div>
                         </div>
                     </div>

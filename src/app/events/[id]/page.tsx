@@ -40,7 +40,18 @@ async function getEvent(eventId: string) {
         return null
     }
 
-    return event
+    // [FIX] The events.tickets_sold column is stale/deprecated.
+    // Count actual sold tickets from the tickets table (same method as organizer dashboard).
+    const { count } = await supabase
+        .from('tickets')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_id', eventId)
+        .neq('status', 'available')
+
+    return {
+        ...event,
+        tickets_sold: count ?? event.tickets_sold ?? 0
+    }
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -246,8 +257,8 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                         <Ticket className="h-6 w-6" />
                     </div>
                     <div>
-                        <h2 className="text-2xl font-bold">Get Tickets</h2>
-                        <p className="text-muted-foreground text-sm">Secure your spot now</p>
+                        <h2 className="text-2xl font-bold">{isSoldOut ? 'Sold Out' : 'Get Tickets'}</h2>
+                        <p className="text-muted-foreground text-sm">{isSoldOut ? 'Tickets are no longer available' : 'Secure your spot now'}</p>
                     </div>
                 </div>
                 <div className="text-right">

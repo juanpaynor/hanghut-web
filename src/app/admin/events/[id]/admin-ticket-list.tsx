@@ -12,7 +12,7 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-} from '@/components/ui/dialog' // Shadcn names might vary, using AlertDialog
+} from '@/components/ui/alert-dialog'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
 import { AlertCircle, RefreshCw } from 'lucide-react'

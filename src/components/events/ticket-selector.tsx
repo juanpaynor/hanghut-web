@@ -61,9 +61,9 @@ export function TicketSelector({
     const effectiveMax = selectedTier?.max_per_order || maxTickets
 
     // Determine sold out state for specific tier
-    const isTierSoldOut = selectedTier
+    const isTierSoldOut = isSoldOut || (selectedTier
         ? (selectedTier.quantity_sold >= selectedTier.quantity_total)
-        : isSoldOut
+        : false)
 
     const handleIncrement = () => {
         if (quantity < effectiveMax) setQuantity(q => q + 1)
@@ -94,10 +94,10 @@ export function TicketSelector({
                     <Button
                         size="lg"
                         className={fullWidth ? "w-full bg-primary" : "bg-primary w-full md:w-auto"}
-                        disabled={isSoldOut && activeTiers.length === 0} // Allow opening if tiers exist even if main is "sold out" (logic depends on aggregator)
+                        disabled={isSoldOut}
                     >
                         <Ticket className="h-5 w-5 mr-2" />
-                        {isSoldOut && activeTiers.length === 0 ? 'Sold Out' : 'Get Tickets'}
+                        {isSoldOut ? 'Sold Out' : 'Get Tickets'}
                     </Button>
                 )}
             </DialogTrigger>

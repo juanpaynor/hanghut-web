@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import dynamic from 'next/dynamic';
 import { FeatureCard } from "./feature-card";
-import { OrganizerFeatures } from "./organizer-features";
+import { UserFeatures } from "./user-features";
 import PhysicsEcosystem from "./physics-ecosystem";
 
 const SocialVortex = dynamic(() => import('./social-vortex'), {
@@ -54,40 +54,40 @@ export default function Features() {
         {/* Dynamic Feature Sections */}
         <div className="space-y-16 md:space-y-32">
 
-          {/* 1. Organic Marketing / Reach */}
+          {/* 1. Discover Real Plans */}
           <FeatureCard
             index={0}
-            title="Instant Organic Reach"
-            description="We show your event to thousands of users organically on our social app. No paid ads, just pure community discovery. Tap into a waiting audience of locals and travelers."
-            icon={<Zap className="h-10 w-10 text-primary" />}
+            title="Curated Local Discovery"
+            description="Stop endlessly scrolling through group chats. We show you exactly what's happening around you right now. Tap into a daily feed of events, activities, and verified communities."
+            icon={<MapPin className="h-10 w-10 text-primary" />}
             color="bg-indigo-50/80"
           >
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 bg-white/50 rounded-2xl flex flex-col gap-2">
                 <Users className="h-6 w-6 text-indigo-600" />
-                <span className="text-sm font-bold">Thousands of Eyes</span>
-                <p className="text-xs text-muted-foreground font-medium">Auto-promoted to nearby users.</p>
+                <span className="text-sm font-bold">Find Your Crowd</span>
+                <p className="text-xs text-muted-foreground font-medium">Connect with people who share your vibe.</p>
               </div>
               <div className="p-4 bg-white/50 rounded-2xl flex flex-col gap-2">
                 <Zap className="h-6 w-6 text-indigo-600" />
-                <span className="text-sm font-bold">Zero Ad Spend</span>
-                <p className="text-xs text-muted-foreground font-medium">Growth is built into the platform.</p>
+                <span className="text-sm font-bold">Live Social Feed</span>
+                <p className="text-xs text-muted-foreground font-medium">See what friends and locals are joining.</p>
               </div>
               <div className="p-4 bg-white/50 rounded-2xl flex flex-col gap-2">
                 <ShieldCheck className="h-6 w-6 text-indigo-600" />
-                <span className="text-sm font-bold">Vibe Compatibility</span>
-                <p className="text-xs text-muted-foreground font-medium">Match with the right crowd.</p>
+                <span className="text-sm font-bold">Verified Places</span>
+                <p className="text-xs text-muted-foreground font-medium">Safe, curated, and highly rated spots.</p>
               </div>
               <div className="p-4 bg-white/50 rounded-2xl flex flex-col gap-2">
                 <MapPin className="h-6 w-6 text-indigo-600" />
-                <span className="text-sm font-bold">Map Discovery</span>
-                <p className="text-xs text-muted-foreground font-medium">Be visible on the social map.</p>
+                <span className="text-sm font-bold">Interactive Map</span>
+                <p className="text-xs text-muted-foreground font-medium">Explore trending activities visually.</p>
               </div>
             </div>
           </FeatureCard>
 
-          {/* 2. Hybrid Ticketing & Organizer Toolkit (Bento Grid) */}
-          <OrganizerFeatures />
+          {/* 2. User Features (Bento Grid) */}
+          <UserFeatures />
 
 
         </div>

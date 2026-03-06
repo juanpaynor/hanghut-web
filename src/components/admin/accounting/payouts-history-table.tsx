@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
+import { PayoutDetailsSheet } from './payout-details-sheet'
 
 interface Payout {
     id: string
@@ -55,6 +56,7 @@ export function PayoutsHistoryTable({ payouts }: PayoutsHistoryTableProps) {
                         <TableHead className="text-muted-foreground">Amount</TableHead>
                         <TableHead className="text-muted-foreground">Bank Details</TableHead>
                         <TableHead className="text-muted-foreground">Status</TableHead>
+                        <TableHead className="text-right text-muted-foreground">Details</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -93,6 +95,12 @@ export function PayoutsHistoryTable({ payouts }: PayoutsHistoryTableProps) {
                                     <Badge variant="outline" className={getStatusColor(payout.status)}>
                                         {payout.status.replace('_', ' ').toUpperCase()}
                                     </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <PayoutDetailsSheet
+                                        payoutId={payout.id}
+                                        payoutAmount={Number(payout.amount)}
+                                    />
                                 </TableCell>
                             </TableRow>
                         ))

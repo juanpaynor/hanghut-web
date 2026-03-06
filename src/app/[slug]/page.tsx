@@ -63,8 +63,23 @@ async function getPartnerAndEvents(slug: string) {
     }
 
     const results = await Promise.all(queries)
-    const upcoming = results[0]?.data || []
+    const rawUpcoming = results[0]?.data || []
     const past = showPast && results[1] ? (results[1].data || []) : []
+
+    // [FIX] The events.tickets_sold column is stale/deprecated.
+    // Count actual sold tickets from the tickets table (same method as organizer dashboard).
+    const upcoming = await Promise.all(rawUpcoming.map(async (event: any) => {
+        const { count } = await supabase
+            .from('tickets')
+            .select('*', { count: 'exact', head: true })
+            .eq('event_id', event.id)
+            .neq('status', 'available')
+
+        return {
+            ...event,
+            tickets_sold: count ?? event.tickets_sold ?? 0
+        }
+    }))
 
     return { partner, upcoming, past }
 }

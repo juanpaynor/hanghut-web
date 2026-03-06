@@ -13,8 +13,9 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { getDocumentUrl, reviewKYC } from '@/lib/admin/verification-actions'
-import { FileText, CheckCircle, XCircle, ExternalLink, Loader2 } from 'lucide-react'
+import { FileText, CheckCircle, ExternalLink, Loader2 } from 'lucide-react'
 
 interface PartnerKYC {
     id: string
@@ -34,6 +35,8 @@ export function ReviewDialog({ partner }: { partner: PartnerKYC }) {
     const [docs, setDocs] = useState<{ id?: string, biz?: string }>({})
     const [viewingDocs, setViewingDocs] = useState(false)
     const [rejectReason, setRejectReason] = useState('')
+    const [feePercentage, setFeePercentage] = useState(15)
+    const [passFeesToCustomer, setPassFeesToCustomer] = useState(true)
     const [actionState, setActionState] = useState<'idle' | 'rejecting'>('idle')
 
     // Load signed URLs only when dialog opens
@@ -59,7 +62,7 @@ export function ReviewDialog({ partner }: { partner: PartnerKYC }) {
         }
 
         setLoading(true)
-        const result = await reviewKYC(partner.id, action, rejectReason)
+        const result = await reviewKYC(partner.id, action, rejectReason, feePercentage, passFeesToCustomer)
         setLoading(false)
 
         if (result?.error) {
@@ -146,6 +149,46 @@ export function ReviewDialog({ partner }: { partner: PartnerKYC }) {
                                     )}
                                 </div>
                             )}
+                        </div>
+                    </div>
+
+                    {/* Verification Settings */}
+                    <div className="bg-slate-50 p-4 rounded-md space-y-4 border border-slate-100">
+                        <div className="space-y-2">
+                            <Label>Platform Fee (%)</Label>
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={feePercentage}
+                                    onChange={(e) => setFeePercentage(Number(e.target.value))}
+                                    className="bg-white max-w-[120px]"
+                                />
+                                <span className="text-sm text-muted-foreground">Default: 15%</span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                            <Checkbox
+                                id="pass-fees"
+                                checked={passFeesToCustomer}
+                                onCheckedChange={(checked) => setPassFeesToCustomer(checked === true)}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <label
+                                    htmlFor="pass-fees"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Pass fees to customer?
+                                </label>
+                                <p className="text-xs text-muted-foreground">
+                                    Expected behavior: {passFeesToCustomer
+                                        ? `Customer pays fee on top (e.g. ₱1,150 for ₱1,000 item)`
+                                        : `Host absorbs fee (e.g. earns ₱850 on ₱1,000 item)`
+                                    }
+                                </p>
+                            </div>
                         </div>
                     </div>
 

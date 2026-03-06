@@ -113,3 +113,27 @@ export async function markPayoutCompleted(payoutId: string) {
 
     return { success: true }
 }
+
+/**
+ * Get transactions associated with a payout
+ */
+export async function getPayoutTransactions(payoutId: string) {
+    const supabase = await createClient()
+
+    const { data: transactions, error } = await supabase
+        .from('transactions')
+        .select(`
+            *,
+            event:events(title),
+            user:users(display_name, email)
+        `)
+        .eq('payout_id', payoutId)
+        .order('created_at', { ascending: false })
+
+    if (error) {
+        console.error('Error fetching payout transactions:', error)
+        return []
+    }
+
+    return transactions || []
+}

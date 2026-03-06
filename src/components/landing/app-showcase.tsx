@@ -13,8 +13,8 @@ import {
 const features = [
     {
         icon: Utensils,
-        title: "Host a Table",
-        description: "Craving sushi but your friends are busy? Create a 'Table' at your favorite spot. It's an open invitation for others to join you.",
+        title: "Host an Activity",
+        description: "Want to try that new restaurant or go hiking but friends are busy? Create an activity. It's an open invitation for others to join you.",
         color: "bg-orange-100 text-orange-600",
     },
     {
@@ -59,7 +59,7 @@ export default function AppShowcase() {
                         viewport={{ once: true }}
                         className="text-4xl md:text-6xl font-headline font-bold tracking-tighter"
                     >
-                        Airbnb for <span className="text-primary italic">Social Plans</span>
+                        The <span className="text-primary italic">Digital Town Square</span>
                     </motion.h2>
 
                     <motion.p

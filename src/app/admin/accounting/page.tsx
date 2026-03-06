@@ -5,6 +5,7 @@ import { DollarSign, TrendingUp, Users, CreditCard } from 'lucide-react'
 import { TransactionsClient } from './transactions-client'
 import { SalesVelocityChart } from '@/components/admin/accounting/sales-velocity-chart'
 import { PayoutsHistoryTable } from '@/components/admin/accounting/payouts-history-table'
+import { PartnerRevenueTable, PartnerRevenueStat } from '@/components/admin/accounting/partner-revenue-table'
 import { SkeletonTable } from '@/components/admin/skeleton-table'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -40,6 +41,18 @@ async function getAccountingStats() {
         },
         dailySales: dailyData || []
     }
+}
+
+async function getPartnerStats() {
+    const supabase = await createClient()
+    const { data: partnerStats, error } = await supabase.rpc('get_admin_partner_stats')
+
+    if (error) {
+        console.error('Error fetching partner stats:', error)
+        return []
+    }
+
+    return (partnerStats as unknown as PartnerRevenueStat[]) || []
 }
 
 async function getRecentTransactions() {
@@ -141,6 +154,7 @@ export default async function AccountingPage() {
                 <Tabs defaultValue="overview" className="space-y-4">
                     <TabsList>
                         <TabsTrigger value="overview">Overview</TabsTrigger>
+                        <TabsTrigger value="partners">Partner Performance</TabsTrigger>
                         <TabsTrigger value="transactions">Transactions</TabsTrigger>
                         <TabsTrigger value="payouts">Payout History</TabsTrigger>
                     </TabsList>
@@ -152,6 +166,17 @@ export default async function AccountingPage() {
                             <h2 className="text-xl font-bold mb-4">Recent Activity</h2>
                             <Suspense fallback={<SkeletonTable rows={5} />}>
                                 <TransactionsWrapper limit={5} />
+                            </Suspense>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="partners">
+                        <div className="mt-2">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold">Partner Revenue & Stats</h2>
+                            </div>
+                            <Suspense fallback={<SkeletonTable rows={10} />}>
+                                <PartnerStatsWrapper />
                             </Suspense>
                         </div>
                     </TabsContent>
@@ -200,5 +225,10 @@ async function TransactionsWrapper({ limit = 20 }: { limit?: number }) {
 async function PayoutsHistoryWrapper() {
     const payouts = await getAllPayouts()
     return <PayoutsHistoryTable payouts={payouts} />
+}
+
+async function PartnerStatsWrapper() {
+    const stats = await getPartnerStats()
+    return <PartnerRevenueTable data={stats} />
 }
 

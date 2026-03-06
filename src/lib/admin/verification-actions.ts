@@ -24,7 +24,9 @@ export async function getDocumentUrl(path: string) {
 export async function reviewKYC(
     partnerId: string,
     action: 'approve' | 'reject',
-    reason?: string
+    reason?: string,
+    feePercentage?: number,
+    passFeesToCustomer?: boolean
 ) {
     const supabase = await createClient()
 
@@ -48,7 +50,9 @@ export async function reviewKYC(
         approved_by: action === 'approve' ? user.id : null,
         approved_at: action === 'approve' ? new Date().toISOString() : null,
         kyc_rejection_reason: action === 'reject' ? reason : null,
-        status: action === 'approve' ? 'approved' : 'pending' // Optionally activate partner status
+        status: action === 'approve' ? 'approved' : 'pending', // Optionally activate partner status
+        custom_percentage: action === 'approve' ? (feePercentage ?? 15) : null,
+        pass_fees_to_customer: action === 'approve' ? (passFeesToCustomer ?? true) : null
     }
 
     const { error } = await supabase
