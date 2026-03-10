@@ -15,7 +15,9 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { updateEventStorefront } from "@/lib/organizer/event-actions"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, GripVertical, Eye, EyeOff, ArrowUp, ArrowDown, LayoutDashboard, Video, Palette, FileCode } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { VideoUploader } from "@/components/ui/video-uploader"
+import { DraggableVideoCropper } from "@/components/ui/draggable-video-cropper"
 
 const formSchema = z.object({
     video_url: z.string().url("Must be a valid URL").optional().or(z.literal('')),
@@ -58,9 +60,11 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
         : DEFAULT_LAYOUT
 
     const initialHidden = new Set((initialData.layout_config?.hidden || []) as string[])
+    const initialVideoPosition = initialData.layout_config?.video_position || 'center 50%'
 
     const [layoutOrder, setLayoutOrder] = useState<string[]>(initialOrder)
     const [hiddenSections, setHiddenSections] = useState<Set<string>>(initialHidden)
+    const [videoPosition, setVideoPosition] = useState<string>(initialVideoPosition)
 
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
@@ -100,7 +104,8 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                 theme_color: values.theme_color || null,
                 layout_config: {
                     order: layoutOrder,
-                    hidden: Array.from(hiddenSections)
+                    hidden: Array.from(hiddenSections),
+                    video_position: videoPosition
                 }
             })
 
@@ -183,15 +188,26 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                                     <FormItem>
                                         <FormLabel>Hero Video (Optional)</FormLabel>
                                         <FormControl>
-                                            <VideoUploader
-                                                value={field.value}
-                                                onChange={field.onChange}
-                                                disabled={isLoading}
-                                            />
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <div className="md:col-span-3">
+                                                    <VideoUploader
+                                                        value={field.value}
+                                                        onChange={field.onChange}
+                                                        disabled={isLoading}
+                                                    />
+                                                    <p className="text-xs text-muted-foreground mt-2">Upload a video to play in the hero section (Autoplays muted).</p>
+                                                </div>
+                                                {field.value && (
+                                                    <div className="md:col-span-3 mt-2">
+                                                        <DraggableVideoCropper
+                                                            videoUrl={field.value}
+                                                            value={videoPosition}
+                                                            onChange={(val) => setVideoPosition(val)}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
                                         </FormControl>
-                                        <FormDescription>
-                                            Upload a video to play in the hero section (Autoplays muted).
-                                        </FormDescription>
                                         <FormMessage />
                                     </FormItem>
                                 )}

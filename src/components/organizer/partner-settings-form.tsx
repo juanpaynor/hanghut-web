@@ -17,6 +17,8 @@ import {
     Type, Sparkles, Megaphone, ListFilter, History, FileCode, Mail, Phone, Video
 } from 'lucide-react'
 import { VideoUploader } from '@/components/ui/video-uploader'
+import { DraggableVideoCropper } from '@/components/ui/draggable-video-cropper'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { updatePartnerProfile } from '@/lib/organizer/settings-actions'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
@@ -56,6 +58,7 @@ interface PartnerSettingsFormProps {
                 show_past_events?: boolean
             }
             video_url?: string | null
+            video_position?: string
             tagline?: string | null
             description_html?: string | null
             contact_display?: {
@@ -105,6 +108,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                 show_past_events: initialData.branding?.content?.show_past_events ?? false
             },
             video_url: initialData.branding?.video_url || '',
+            video_position: initialData.branding?.video_position || 'center 50%',
             tagline: initialData.branding?.tagline || '',
             description_html: initialData.branding?.description_html || '',
             contact_display: {
@@ -505,11 +509,24 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
 
                                     <div className="space-y-2">
                                         <Label className="flex items-center gap-2"><Video className="h-4 w-4" /> Hero Video (Optional)</Label>
-                                        <VideoUploader
-                                            value={formData.branding.video_url || ''}
-                                            onChange={(url) => handleBrandingRootChange('video_url', url)}
-                                        />
-                                        <p className="text-xs text-muted-foreground">Replaces cover image with a video.</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div className="md:col-span-2">
+                                                <VideoUploader
+                                                    value={formData.branding.video_url || ''}
+                                                    onChange={(url) => handleBrandingRootChange('video_url', url)}
+                                                />
+                                                <p className="text-xs text-muted-foreground mt-2">Replaces cover image with a video.</p>
+                                            </div>
+                                            {formData.branding.video_url && (
+                                                <div className="md:col-span-3 mt-2">
+                                                    <DraggableVideoCropper
+                                                        videoUrl={formData.branding.video_url}
+                                                        value={formData.branding.video_position || 'center 50%'}
+                                                        onChange={(val) => handleBrandingRootChange('video_position', val)}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </CardContent>
                             </Card>

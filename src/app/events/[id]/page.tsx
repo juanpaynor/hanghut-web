@@ -119,6 +119,30 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
     const defaultOrder = ["hero", "title", "details", "about", "gallery", "organizer", "tickets"]
     const layoutOrder: string[] = event.layout_config?.order || defaultOrder
     const hiddenSections = new Set(event.layout_config?.hidden || [])
+    const rawVideoPosition = event.layout_config?.video_position || 'center 50%'
+
+    // Parse the new scale/x/y format
+    let objectPosition = 'center 50%'
+    let transform = 'none'
+
+    if (rawVideoPosition.includes('scale:')) {
+        const parts = rawVideoPosition.split('|')
+        let s = 1.0, x = 50, y = 50
+        parts.forEach((p: string) => {
+            const [k, v] = p.split(':')
+            if (k === 'scale') s = parseFloat(v)
+            if (k === 'x') x = parseFloat(v)
+            if (k === 'y') y = parseFloat(v)
+        })
+        objectPosition = `${x}% ${y}%`
+        transform = `scale(${s})`
+    } else if (rawVideoPosition.includes('%')) {
+        objectPosition = rawVideoPosition // legacy
+    } else if (rawVideoPosition === 'top') {
+        objectPosition = 'center 0%'
+    } else if (rawVideoPosition === 'bottom') {
+        objectPosition = 'center 100%'
+    }
 
     // --- Section Components ---
 
@@ -130,7 +154,8 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                 {youtubeEmbed ? (
                     <iframe
                         src={youtubeEmbed}
-                        className="w-full h-full object-cover pointer-events-none"
+                        className="w-full h-full object-cover pointer-events-none origin-center"
+                        style={{ objectPosition, transform }}
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen
                         title="Hero Video"
@@ -139,7 +164,8 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                     <video
                         src={event.video_url}
                         poster={event.cover_image_url}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover origin-center"
+                        style={{ objectPosition, transform }}
                         autoPlay
                         loop
                         muted

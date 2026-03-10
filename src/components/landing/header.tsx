@@ -32,11 +32,11 @@ export default function Header() {
               Partner Login
             </Button>
           </Link>
-          <WaitlistDialog>
+          <Link href="/waitlist">
             <Button className="rounded-full px-6 transition-all hover:scale-105">
               Download App
             </Button>
-          </WaitlistDialog>
+          </Link>
         </nav>
       </div>
     </header>
