@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Users, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet, Sparkles, Mail } from 'lucide-react'
+import { LayoutDashboard, Users, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet, Sparkles, Mail, Megaphone } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -68,6 +68,11 @@ const navItems = [
         title: 'Waitlist',
         href: '/admin/waitlist',
         icon: Mail,
+    },
+    {
+        title: 'App Popups',
+        href: '/admin/popups',
+        icon: Megaphone,
     },
 ]
 

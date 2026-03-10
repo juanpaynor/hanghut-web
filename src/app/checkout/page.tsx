@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { CheckoutClient } from '@/components/checkout/checkout-client'
 
@@ -85,8 +86,22 @@ export default async function CheckoutPage({
     // 4. User State
     const { data: { user } } = await supabase.auth.getUser()
 
-    // 5. Check Availability (use tier-specific availability)
-    const availableTickets = tierToUse.quantity_total - tierToUse.quantity_sold
+    // 5. Check Availability (use real-time count from tickets table using adminClient to bypass RLS)
+    const adminClient = createAdminClient()
+    let dbQuery = adminClient
+        .from('tickets')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_id', eventId)
+        .not('status', 'in', '("available","refunded")')
+
+    if (tierToUse?.id) {
+        dbQuery = dbQuery.eq('tier_id', tierToUse.id)
+    }
+
+    const { count: realSoldTicketsCount } = await dbQuery
+    const actualSold = realSoldTicketsCount || 0
+    const availableTickets = tierToUse.quantity_total - actualSold
+
     if (availableTickets < qty) {
         redirect(`/events/${eventId}?error=sold_out`)
     }

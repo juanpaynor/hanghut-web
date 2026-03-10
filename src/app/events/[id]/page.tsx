@@ -14,10 +14,13 @@ import { cn, hexToHsl, getYouTubeEmbedUrl } from '@/lib/utils'
 
 import { MobileTicketButton, ShareButton } from '@/components/events/event-actions'
 
+import { createAdminClient } from '@/lib/supabase/admin'
+
 export const dynamic = 'force-dynamic'
 
 async function getEvent(eventId: string) {
     const supabase = await createClient()
+    const adminClient = createAdminClient()
 
     const { data: event, error } = await supabase
         .from('events')
@@ -41,16 +44,32 @@ async function getEvent(eventId: string) {
     }
 
     // [FIX] The events.tickets_sold column is stale/deprecated.
-    // Count actual sold tickets from the tickets table (same method as organizer dashboard).
-    const { count } = await supabase
+    // Count actual sold tickets from the tickets table using adminClient to bypass RLS
+    // Exclude 'available' and 'refunded' explicitly
+    const { count } = await adminClient
         .from('tickets')
         .select('*', { count: 'exact', head: true })
         .eq('event_id', eventId)
-        .neq('status', 'available')
+        .not('status', 'in', '("available","refunded")')
+
+    const updatedTiers = event.ticket_tiers ? await Promise.all(event.ticket_tiers.map(async (tier: any) => {
+        const { count: tierCount } = await adminClient
+            .from('tickets')
+            .select('*', { count: 'exact', head: true })
+            .eq('event_id', eventId)
+            .eq('tier_id', tier.id)
+            .not('status', 'in', '("available","refunded")')
+
+        return {
+            ...tier,
+            quantity_sold: tierCount || 0
+        }
+    })) : []
 
     return {
         ...event,
-        tickets_sold: count ?? event.tickets_sold ?? 0
+        tickets_sold: count ?? event.tickets_sold ?? 0,
+        ticket_tiers: updatedTiers
     }
 }
 
@@ -78,7 +97,16 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
     if (!event) notFound()
 
     const ticketsRemaining = event.capacity - event.tickets_sold
-    const isSoldOut = ticketsRemaining <= 0
+    let isSoldOut = ticketsRemaining <= 0
+
+    // If event has active ticket tiers, also check if all tiers are sold out individually
+    const activeTiers = event.ticket_tiers?.filter((t: any) => t.is_active !== false) || []
+    if (activeTiers.length > 0) {
+        const hasAvailableTier = activeTiers.some((t: any) => t.quantity_total - t.quantity_sold > 0)
+        if (!hasAvailableTier) {
+            isSoldOut = true
+        }
+    }
     const eventDate = new Date(event.start_datetime)
 
     // Theme Logic
