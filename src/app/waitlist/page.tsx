@@ -49,7 +49,7 @@ export default function WaitlistPage() {
                             </span>
                         </h1>
                         <p className="text-xl md:text-2xl text-muted-foreground font-light leading-relaxed max-w-md">
-                            Discover curated gatherings, shared experiences, and build your community.
+                            Find an activity. Share a moment. Leave with a good story — and people you didn’t know you needed.
                         </p>
                     </div>
 
