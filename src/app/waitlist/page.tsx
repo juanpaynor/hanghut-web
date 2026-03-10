@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
+import Image from 'next/image';
 import { WaitlistForm } from '@/components/waitlist/waitlist-form';
 import { ArrowLeft } from 'lucide-react';
 
@@ -14,11 +15,14 @@ export default function WaitlistPage() {
 
             {/* Top Navigation Overlay */}
             <div className="absolute top-0 left-0 w-full p-6 md:p-8 z-50 flex justify-between items-center pointer-events-none">
-                <Link href="/" className="pointer-events-auto">
-                    <div className="bg-primary px-4 py-2 rounded-xl border-b-4 border-r-4 border-primary-foreground transform -rotate-3 hover:rotate-0 transition-transform shadow-lg group">
-                        <span className="font-headline font-black text-white text-xl tracking-wider group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.8)] transition-all">
-                            HANGHUT
-                        </span>
+                <Link href="/" className="pointer-events-auto flex items-center space-x-3 group">
+                    <div className="relative h-12 w-12 transition-transform group-hover:scale-105">
+                        <Image
+                            src="/logo_base.png"
+                            alt="HangHut Logo"
+                            fill
+                            className="object-contain"
+                        />
                     </div>
                 </Link>
                 <Link

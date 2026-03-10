@@ -9,15 +9,14 @@ export default function Header() {
       <div className="container mx-auto px-6 md:px-12 flex h-20 max-w-7xl items-center justify-between">
         <div className="flex items-center gap-10">
           <Link href="/" className="flex items-center space-x-3 group">
-            <div className="relative h-10 w-10 overflow-hidden rounded-xl transition-transform group-hover:scale-110">
+            <div className="relative h-12 w-12 overflow-hidden transition-transform group-hover:scale-110">
               <Image
-                src="/logo.png"
+                src="/logo_base.png"
                 alt="HangHut Logo"
                 fill
-                className="object-cover"
+                className="object-contain"
               />
             </div>
-            <span className="font-bold font-headline text-2xl tracking-tighter">HangHut</span>
           </Link>
         </div>
 
