@@ -5,8 +5,8 @@ import { ArrowLeft, Download, Shield, Smartphone } from 'lucide-react'
 import { getLatestRelease } from '@/lib/admin/apk-actions'
 
 export const metadata: Metadata = {
-    title: 'Download HangHut for Android',
-    description: 'Download the HangHut Android app. Find activities, share moments, and meet people you didn\'t know you needed.',
+    title: 'Download HangHut - Early Access',
+    description: 'Download the HangHut app for iOS (TestFlight) and Android. Find activities, share moments, and meet people you didn\'t know you needed.',
 }
 
 function formatBytes(bytes: number): string {
@@ -73,73 +73,113 @@ export default async function DownloadPage() {
                         </p>
                     </div>
 
-                    {/* Download Button */}
-                    <div className="animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-300 fill-mode-both">
-                        {release ? (
-                            <div className="space-y-4">
-                                <a
-                                    href={release.file_url}
-                                    download
-                                    className="inline-flex items-center gap-3 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-lg px-8 py-4 rounded-2xl shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all hover:scale-105 active:scale-[0.98]"
-                                >
-                                    <Download className="h-6 w-6" />
-                                    Download for Android
-                                </a>
-                                <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground">
-                                    <span className="flex items-center gap-1">
-                                        <Smartphone className="h-4 w-4" />
-                                        v{release.version_name}
-                                    </span>
-                                    <span>•</span>
-                                    <span>{formatBytes(release.file_size_bytes)}</span>
-                                    <span>•</span>
-                                    <span>APK</span>
-                                </div>
-
-                                {/* Release Notes */}
-                                {release.release_notes && (
-                                    <div className="mt-6 bg-muted/30 border border-border/50 rounded-xl p-5 text-left max-w-md mx-auto">
-                                        <h3 className="text-sm font-bold text-foreground mb-2">What&apos;s New</h3>
-                                        <p className="text-sm text-muted-foreground whitespace-pre-line">
-                                            {release.release_notes}
-                                        </p>
+                    {/* Downloads Container */}
+                    <div className="animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-300 fill-mode-both space-y-8">
+                        
+                        {/* iOS TestFlight Section */}
+                        <div className="bg-white/5 border border-white/10 rounded-3xl p-8 max-w-md mx-auto shadow-xl backdrop-blur-sm relative overflow-hidden">
+                            <div className="absolute top-0 right-0 bg-blue-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wider">
+                                Recommended
+                            </div>
+                            <div className="space-y-6">
+                                <div className="flex justify-center">
+                                    <div className="h-16 w-16 bg-blue-500/10 rounded-2xl flex items-center justify-center">
+                                        <svg className="h-8 w-8 text-blue-500" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91 1.63.16 3.09.81 3.98 2.13-3.4 2.08-2.84 7.03 2.01 8.94-.8 2-1.6 3.9-2.2 4.59zM15.53 6.1c.71-.87 1.2-2.12 1.07-3.35-1.07.05-2.39.73-3.13 1.62-.66.79-1.25 2.06-1.1 3.27 1.18.09 2.44-.67 3.16-1.54z"/>
+                                        </svg>
                                     </div>
-                                )}
+                                </div>
+                                <div className="space-y-2">
+                                    <h3 className="text-xl font-bold text-foreground">iOS Early Access</h3>
+                                    <p className="text-sm text-muted-foreground leading-relaxed">
+                                        Join our TestFlight program to get the latest iOS version directly from Apple.
+                                    </p>
+                                </div>
+                                <a
+                                    href="https://testflight.apple.com/join/2YqE1UzR"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center justify-center gap-2 w-full bg-blue-500 hover:bg-blue-600 text-white font-bold text-lg px-6 py-4 rounded-xl shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                >
+                                    <Download className="h-5 w-5" />
+                                    Download via TestFlight
+                                </a>
+                                <p className="text-xs text-muted-foreground/70">
+                                    Requires the free Apple TestFlight app.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Divider */}
+                        <div className="flex items-center justify-center gap-4 max-w-md mx-auto opacity-50">
+                            <div className="h-px bg-border flex-1"></div>
+                            <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest">or</span>
+                            <div className="h-px bg-border flex-1"></div>
+                        </div>
+
+                        {/* Android APK Section */}
+                        {release ? (
+                            <div className="bg-white/5 border border-white/10 rounded-3xl p-8 max-w-md mx-auto shadow-xl backdrop-blur-sm space-y-6">
+                                <div className="flex justify-center">
+                                    <div className="h-16 w-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center">
+                                        <Smartphone className="h-8 w-8 text-emerald-500" />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <h3 className="text-xl font-bold text-foreground">Android Direct APK</h3>
+                                    <p className="text-sm text-muted-foreground leading-relaxed">
+                                        Download and install the raw APK file directly to your Android device.
+                                    </p>
+                                </div>
+                                
+                                <div className="space-y-4">
+                                    <a
+                                        href={release.file_url}
+                                        download
+                                        className="inline-flex items-center justify-center gap-2 w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-lg px-6 py-4 rounded-xl shadow-lg shadow-emerald-500/25 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                    >
+                                        <Download className="h-5 w-5" />
+                                        Download APK
+                                    </a>
+                                    
+                                    <div className="flex flex-wrap flex-col items-center justify-center gap-2 text-sm text-emerald-500/80 font-medium">
+                                        <span>Version {release.version_name}</span>
+                                        <span className="text-xs text-muted-foreground">{formatBytes(release.file_size_bytes)}</span>
+                                    </div>
+
+                                    {/* Installation Guide internal to card */}
+                                    <div className="mt-6 pt-6 border-t border-white/5 text-left space-y-3">
+                                        <div className="flex items-center gap-2 text-sm font-bold text-foreground mx-auto justify-center">
+                                            <Shield className="h-4 w-4 text-emerald-500" />
+                                            Install Guide
+                                        </div>
+                                        <ol className="text-xs text-muted-foreground space-y-2 list-decimal list-inside max-w-[280px] mx-auto">
+                                            <li>Download the <strong>.apk</strong> file</li>
+                                            <li>Open it and enable &quot;Install from unknown sources&quot; if asked</li>
+                                            <li>Follow prompts to install</li>
+                                        </ol>
+                                    </div>
+                                    
+                                    {/* Release Notes */}
+                                    {release.release_notes && (
+                                        <div className="mt-4 pt-4 border-t border-white/5 text-left">
+                                            <p className="text-xs font-bold text-foreground mb-1 text-center">What&apos;s New:</p>
+                                            <p className="text-xs text-muted-foreground whitespace-pre-line text-center max-w-[280px] mx-auto">
+                                                {release.release_notes}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         ) : (
                             <div className="bg-muted/30 border border-border/50 rounded-xl p-8 max-w-md mx-auto">
                                 <Smartphone className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-50" />
-                                <p className="font-medium text-foreground">Coming Soon</p>
+                                <p className="font-medium text-foreground">Android Coming Soon</p>
                                 <p className="text-sm text-muted-foreground mt-1">
-                                    The Android app is being prepared. Check back soon!
+                                    The direct APK is being prepared. Check back soon!
                                 </p>
                             </div>
                         )}
-                    </div>
-
-                    {/* Installation Guide */}
-                    {release && (
-                        <div className="animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-500 fill-mode-both">
-                            <div className="bg-muted/20 border border-border/50 rounded-xl p-6 max-w-md mx-auto text-left space-y-3">
-                                <div className="flex items-center gap-2 text-sm font-bold text-foreground">
-                                    <Shield className="h-4 w-4 text-primary" />
-                                    Installation Guide
-                                </div>
-                                <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
-                                    <li>Tap the download button above</li>
-                                    <li>Open the downloaded <strong>.apk</strong> file</li>
-                                    <li>If prompted, enable &quot;Install from unknown sources&quot; in your device settings</li>
-                                    <li>Follow the on-screen prompts to install</li>
-                                </ol>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* iOS Placeholder */}
-                    <div className="animate-in fade-in duration-1000 delay-700 fill-mode-both pt-4">
-                        <p className="text-sm text-muted-foreground/60">
-                            🍎 iOS version coming soon to the App Store.
-                        </p>
                     </div>
                 </div>
             </main>
