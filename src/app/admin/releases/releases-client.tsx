@@ -3,8 +3,9 @@
 import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Upload, Trash2, Star, Smartphone, FileDown, Loader2 } from 'lucide-react'
-import { uploadApkRelease, setLatestRelease, deleteApkRelease } from '@/lib/admin/apk-actions'
+import { Upload, Trash2, Star, Smartphone, FileDown, Loader2, CheckCircle2 } from 'lucide-react'
+import { saveApkReleaseRecord, setLatestRelease, deleteApkRelease } from '@/lib/admin/apk-actions'
+import { createClient } from '@/lib/supabase/client'
 import type { ApkRelease } from '@/lib/admin/apk-actions'
 
 interface ReleasesClientProps {
@@ -23,6 +24,8 @@ function formatBytes(bytes: number): string {
 export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClientProps) {
     const [releases, setReleases] = useState<ApkRelease[]>(initialReleases)
     const [uploading, setUploading] = useState(false)
+    const [uploadProgress, setUploadProgress] = useState(0)
+    const [uploadPhase, setUploadPhase] = useState<'uploading' | 'saving' | 'done'>('uploading')
     const [actionLoading, setActionLoading] = useState<string | null>(null)
     const [showForm, setShowForm] = useState(false)
     const formRef = useRef<HTMLFormElement>(null)
@@ -30,17 +33,89 @@ export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClient
     const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault()
         setUploading(true)
+        setUploadProgress(0)
+        setUploadPhase('uploading')
 
         const formData = new FormData(e.currentTarget)
-        const result = await uploadApkRelease(formData)
+        const file = formData.get('file') as File
+        const versionName = formData.get('version_name') as string
+        const versionCode = parseInt(formData.get('version_code') as string)
+        const releaseNotes = formData.get('release_notes') as string
 
-        if (result.success) {
-            // Refresh the page to get updated data
-            window.location.reload()
-        } else {
-            alert('Upload failed: ' + result.error)
+        if (!file || !versionName || !versionCode) {
+            alert('Missing required fields')
+            setUploading(false)
+            return
         }
-        setUploading(false)
+
+        try {
+            // Step 1: Upload file to Supabase Storage with progress tracking via XHR
+            const fileName = `hanghut-v${versionName}.apk`
+            const supabase = createClient()
+            const { data: { session } } = await supabase.auth.getSession()
+
+            if (!session?.access_token) {
+                alert('Not authenticated')
+                setUploading(false)
+                return
+            }
+
+            const storageUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/apk-releases/${fileName}`
+
+            await new Promise<void>((resolve, reject) => {
+                const xhr = new XMLHttpRequest()
+
+                xhr.upload.addEventListener('progress', (event) => {
+                    if (event.lengthComputable) {
+                        const pct = Math.round((event.loaded / event.total) * 100)
+                        setUploadProgress(pct)
+                    }
+                })
+
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve()
+                    } else {
+                        reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.responseText}`))
+                    }
+                })
+
+                xhr.addEventListener('error', () => reject(new Error('Upload failed')))
+                xhr.addEventListener('abort', () => reject(new Error('Upload aborted')))
+
+                xhr.open('POST', storageUrl)
+                xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`)
+                xhr.setRequestHeader('x-upsert', 'true')
+                xhr.setRequestHeader('cache-control', '3600')
+                xhr.send(file)
+            })
+
+            // Step 2: Get public URL
+            const { data: urlData } = supabase.storage
+                .from('apk-releases')
+                .getPublicUrl(fileName)
+
+            // Step 3: Save metadata via server action
+            setUploadPhase('saving')
+            const result = await saveApkReleaseRecord({
+                version_name: versionName,
+                version_code: versionCode,
+                file_url: urlData.publicUrl,
+                file_size_bytes: file.size,
+                release_notes: releaseNotes || null,
+            })
+
+            if (result.success) {
+                setUploadPhase('done')
+                setTimeout(() => window.location.reload(), 800)
+            } else {
+                alert('Failed to save release: ' + result.error)
+                setUploading(false)
+            }
+        } catch (err) {
+            alert('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
+            setUploading(false)
+        }
     }
 
     const handleSetLatest = async (id: string) => {
@@ -93,8 +168,9 @@ export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClient
                                     name="version_name"
                                     type="text"
                                     required
+                                    disabled={uploading}
                                     placeholder="e.g. 1.2.0"
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 disabled:opacity-50"
                                 />
                             </div>
                             <div>
@@ -105,8 +181,9 @@ export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClient
                                     name="version_code"
                                     type="number"
                                     required
+                                    disabled={uploading}
                                     placeholder="e.g. 12"
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 disabled:opacity-50"
                                 />
                             </div>
                         </div>
@@ -117,8 +194,9 @@ export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClient
                             <textarea
                                 name="release_notes"
                                 rows={3}
+                                disabled={uploading}
                                 placeholder="What's new in this version..."
-                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 disabled:opacity-50"
                             />
                         </div>
                         <div>
@@ -130,15 +208,50 @@ export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClient
                                 type="file"
                                 required
                                 accept=".apk"
-                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100 text-slate-900"
+                                disabled={uploading}
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100 text-slate-900 disabled:opacity-50"
                             />
                         </div>
+
+                        {/* Progress Bar */}
+                        {uploading && (
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="font-medium text-slate-700 flex items-center gap-2">
+                                        {uploadPhase === 'uploading' && (
+                                            <><Loader2 className="h-4 w-4 animate-spin text-indigo-500" /> Uploading APK...</>
+                                        )}
+                                        {uploadPhase === 'saving' && (
+                                            <><Loader2 className="h-4 w-4 animate-spin text-indigo-500" /> Saving release info...</>
+                                        )}
+                                        {uploadPhase === 'done' && (
+                                            <><CheckCircle2 className="h-4 w-4 text-green-500" /> Upload complete!</>
+                                        )}
+                                    </span>
+                                    <span className="font-mono text-xs text-slate-500">
+                                        {uploadProgress}%
+                                    </span>
+                                </div>
+                                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full rounded-full transition-all duration-300 ease-out"
+                                        style={{
+                                            width: `${uploadPhase === 'saving' || uploadPhase === 'done' ? 100 : uploadProgress}%`,
+                                            background: uploadPhase === 'done'
+                                                ? '#22c55e'
+                                                : 'linear-gradient(90deg, #6366f1, #818cf8)',
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
                         <div className="flex gap-2">
                             <Button type="submit" disabled={uploading} className="gap-2">
                                 {uploading ? (
                                     <>
                                         <Loader2 className="h-4 w-4 animate-spin" />
-                                        Uploading...
+                                        {uploadPhase === 'uploading' ? `Uploading ${uploadProgress}%` : 'Saving...'}
                                     </>
                                 ) : (
                                     <>
@@ -147,7 +260,7 @@ export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClient
                                     </>
                                 )}
                             </Button>
-                            <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                            <Button type="button" variant="outline" onClick={() => setShowForm(false)} disabled={uploading}>
                                 Cancel
                             </Button>
                         </div>

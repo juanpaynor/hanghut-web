@@ -108,6 +108,48 @@ export async function uploadApkRelease(formData: FormData): Promise<{ success: b
     return { success: true }
 }
 
+// Client-side upload variant: only save metadata after the file was uploaded directly from the client
+export async function saveApkReleaseRecord(data: {
+    version_name: string
+    version_code: number
+    file_url: string
+    file_size_bytes: number
+    release_notes: string | null
+}): Promise<{ success: boolean, error?: string }> {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { success: false, error: 'Unauthorized' }
+
+    // Unset all existing "latest" flags
+    await supabase
+        .from('apk_releases')
+        .update({ is_latest: false })
+        .eq('is_latest', true)
+
+    // Insert release record
+    const { error: insertError } = await supabase
+        .from('apk_releases')
+        .insert({
+            version_name: data.version_name,
+            version_code: data.version_code,
+            file_url: data.file_url,
+            file_size_bytes: data.file_size_bytes,
+            release_notes: data.release_notes,
+            is_latest: true,
+            uploaded_by: user.id,
+        })
+
+    if (insertError) {
+        console.error('APK insert error:', insertError)
+        return { success: false, error: 'Failed to save release info: ' + insertError.message }
+    }
+
+    revalidatePath('/admin/releases')
+    revalidatePath('/download')
+    return { success: true }
+}
+
 export async function setLatestRelease(id: string): Promise<{ success: boolean, error?: string }> {
     const supabase = await createClient()
 
