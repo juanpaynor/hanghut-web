@@ -11,7 +11,7 @@ export default function Header() {
           <Link href="/" className="flex items-center space-x-3 group">
             <div className="relative h-12 w-12 overflow-hidden transition-transform group-hover:scale-110">
               <Image
-                src="/logo_base.png"
+                src="/logo_transparent.png"
                 alt="HangHut Logo"
                 fill
                 className="object-contain"

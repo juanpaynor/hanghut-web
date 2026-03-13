@@ -13,6 +13,12 @@ import { ArrowLeft, User } from 'lucide-react'
 import Image from 'next/image'
 import { getReportById } from '@/lib/supabase/queries'
 
+async function getAdminId() {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    return user?.id || ''
+}
+
 function UserProfileCard({
     user,
     label,
@@ -105,6 +111,7 @@ export default async function ReportDetailsPage({
 async function ReportDetailsContent({ id }: { id: string }) {
     const supabase = await createClient()
     const report = await getReportById(supabase, id)
+    const adminId = await getAdminId()
 
     if (!report) {
         notFound()
@@ -183,7 +190,14 @@ async function ReportDetailsContent({ id }: { id: string }) {
             </Card>
 
             {/* Actions */}
-            <ReportActions reportId={id} currentStatus={report.status} />
+            <ReportActions
+                reportId={id}
+                currentStatus={report.status}
+                reportedUserId={report.target_type === 'user' ? report.target_id : report.reported?.id || null}
+                targetType={report.target_type}
+                targetId={report.target_id}
+                adminId={adminId}
+            />
         </div>
     )
 }

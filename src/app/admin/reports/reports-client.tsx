@@ -91,7 +91,7 @@ export function ReportsClient({
                     <SelectContent>
                         <SelectItem value="all">All Statuses</SelectItem>
                         <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="investigating">Investigating</SelectItem>
+                        <SelectItem value="reviewed">Reviewed</SelectItem>
                         <SelectItem value="resolved">Resolved</SelectItem>
                         <SelectItem value="dismissed">Dismissed</SelectItem>
                     </SelectContent>

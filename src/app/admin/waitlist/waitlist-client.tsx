@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Download, Mail, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Download, Mail, ChevronLeft, ChevronRight, Smartphone } from 'lucide-react'
 import { getWaitlistEntries } from '@/lib/waitlist-actions'
 
 interface WaitlistEntry {
@@ -10,6 +10,7 @@ interface WaitlistEntry {
     full_name: string
     email: string
     source: string
+    phone_type: string | null
     created_at: string
 }
 
@@ -37,9 +38,9 @@ export function WaitlistClient({ initialEntries, initialTotal }: WaitlistClientP
 
     const handleExportCSV = () => {
         const csv = [
-            'Name,Email,Source,Signed Up',
+            'Name,Email,Source,Phone,Signed Up',
             ...entries.map(e =>
-                `"${e.full_name}","${e.email}","${e.source}","${new Date(e.created_at).toLocaleDateString()}"`
+                `"${e.full_name}","${e.email}","${e.source}","${e.phone_type || ''}","${new Date(e.created_at).toLocaleDateString()}"`
             )
         ].join('\n')
 
@@ -79,13 +80,14 @@ export function WaitlistClient({ initialEntries, initialTotal }: WaitlistClientP
                             <th className="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Name</th>
                             <th className="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Email</th>
                             <th className="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Source</th>
+                            <th className="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Phone</th>
                             <th className="text-left py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Signed Up</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {entries.length === 0 ? (
                             <tr>
-                                <td colSpan={5} className="py-16 text-center text-slate-400">
+                                <td colSpan={6} className="py-16 text-center text-slate-400">
                                     <Mail className="h-10 w-10 mx-auto mb-3 opacity-30" />
                                     <p className="font-medium">No signups yet</p>
                                     <p className="text-sm">Waitlist entries will appear here.</p>
@@ -109,6 +111,16 @@ export function WaitlistClient({ initialEntries, initialTotal }: WaitlistClientP
                                         <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-indigo-50 text-indigo-700">
                                             {entry.source}
                                         </span>
+                                    </td>
+                                    <td className="py-3 px-4">
+                                        {entry.phone_type ? (
+                                            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-slate-50 text-slate-700">
+                                                {entry.phone_type === 'android' ? '🤖' : '🍎'}
+                                                {entry.phone_type === 'android' ? 'Android' : 'iPhone'}
+                                            </span>
+                                        ) : (
+                                            <span className="text-xs text-slate-300">—</span>
+                                        )}
                                     </td>
                                     <td className="py-3 px-4 text-sm text-slate-500">
                                         {new Date(entry.created_at).toLocaleDateString('en-US', {

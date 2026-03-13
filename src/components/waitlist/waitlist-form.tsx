@@ -8,6 +8,7 @@ import { Loader2, ArrowRight, Sparkles, CheckCircle2 } from 'lucide-react';
 export function WaitlistForm() {
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
+    const [phoneType, setPhoneType] = useState<'android' | 'iphone' | null>(null);
     const supabase = createClient();
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -21,7 +22,7 @@ export function WaitlistForm() {
 
         const { error } = await supabase
             .from('waitlist')
-            .insert({ full_name: fullName, email, source: 'waitlist_page' });
+            .insert({ full_name: fullName, email, source: 'waitlist_page', phone_type: phoneType });
 
         if (!error) {
             setStatus('success');
@@ -32,7 +33,7 @@ export function WaitlistForm() {
     };
 
     return (
-        <div className="w-full max-w-md relative min-h-[400px]">
+        <div className="w-full relative">
             <AnimatePresence mode="wait">
                 {status !== 'success' ? (
                     <motion.div
@@ -80,6 +81,37 @@ export function WaitlistForm() {
                                 </label>
                             </div>
 
+                            {/* Phone Type Selector */}
+                            <div className="space-y-2">
+                                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider pl-1">
+                                    What phone do you use?
+                                </p>
+                                <div className="flex gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPhoneType('android')}
+                                        className={`flex-1 h-12 rounded-2xl border-2 font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+                                            phoneType === 'android'
+                                                ? 'border-primary bg-primary/10 text-primary'
+                                                : 'border-muted text-muted-foreground hover:border-primary/50'
+                                        }`}
+                                    >
+                                        Android
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPhoneType('iphone')}
+                                        className={`flex-1 h-12 rounded-2xl border-2 font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+                                            phoneType === 'iphone'
+                                                ? 'border-primary bg-primary/10 text-primary'
+                                                : 'border-muted text-muted-foreground hover:border-primary/50'
+                                        }`}
+                                    >
+                                        iPhone
+                                    </button>
+                                </div>
+                            </div>
+
                             {status === 'error' && (
                                 <motion.p
                                     initial={{ opacity: 0, height: 0 }}
@@ -110,17 +142,13 @@ export function WaitlistForm() {
                             </button>
                         </form>
 
-                        <div className="pt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                            <Sparkles className="h-4 w-4 text-primary" />
-                            <span>Spots are limited. No spam, ever.</span>
-                        </div>
                     </motion.div>
                 ) : (
                     <motion.div
                         key="success"
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="absolute inset-0 flex flex-col items-center justify-center text-center space-y-6 pt-12"
+                        className="flex flex-col items-center justify-center text-center space-y-6 py-8"
                     >
                         <motion.div
                             initial={{ scale: 0, rotate: -45 }}

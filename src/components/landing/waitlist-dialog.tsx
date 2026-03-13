@@ -23,6 +23,7 @@ interface WaitlistDialogProps {
 export function WaitlistDialog({ children }: WaitlistDialogProps) {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [phoneType, setPhoneType] = useState<'android' | 'iphone' | null>(null);
     const { toast } = useToast();
     const supabase = createClient();
 
@@ -36,12 +37,13 @@ export function WaitlistDialog({ children }: WaitlistDialogProps) {
 
         const { error } = await supabase
             .from('waitlist')
-            .insert({ full_name: fullName, email, source: 'landing_page' });
+            .insert({ full_name: fullName, email, source: 'landing_page', phone_type: phoneType });
 
         setLoading(false);
 
         if (!error) {
             setOpen(false);
+            setPhoneType(null);
             toast({
                 title: "You're on the list! 🚀",
                 description: "We'll let you know as soon as HangHut is ready for your crowd.",
@@ -72,7 +74,7 @@ export function WaitlistDialog({ children }: WaitlistDialogProps) {
                         Join the waitlist to discover shared experiences and build your intentional community.
                     </DialogDescription>
                 </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-6 pt-4 pb-4">
+                <form onSubmit={handleSubmit} className="space-y-5 pt-4 pb-4">
                     <div className="space-y-2">
                         <Label htmlFor="name" className="text-sm font-bold uppercase tracking-widest text-muted-foreground ml-1">Full Name</Label>
                         <Input
@@ -93,6 +95,33 @@ export function WaitlistDialog({ children }: WaitlistDialogProps) {
                             required
                             className="rounded-2xl border-slate-200 bg-slate-50 h-12 focus-visible:ring-primary"
                         />
+                    </div>
+                    <div className="space-y-2">
+                        <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground ml-1">What phone do you use?</Label>
+                        <div className="flex gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setPhoneType('android')}
+                                className={`flex-1 h-11 rounded-2xl border-2 font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+                                    phoneType === 'android'
+                                        ? 'border-primary bg-primary/10 text-primary'
+                                        : 'border-slate-200 text-muted-foreground hover:border-primary/50'
+                                }`}
+                            >
+                                Android
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setPhoneType('iphone')}
+                                className={`flex-1 h-11 rounded-2xl border-2 font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+                                    phoneType === 'iphone'
+                                        ? 'border-primary bg-primary/10 text-primary'
+                                        : 'border-slate-200 text-muted-foreground hover:border-primary/50'
+                                }`}
+                            >
+                                iPhone
+                            </button>
+                        </div>
                     </div>
                     <Button
                         type="submit"
