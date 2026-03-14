@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Bell, Send, Loader2, CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react'
+import { Bell, Send, Loader2, CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Image as ImageIcon, Repeat } from 'lucide-react'
 import { createBroadcast, getBroadcastStatus } from '@/lib/admin/broadcast-actions'
 import type { PushBroadcast } from '@/lib/admin/broadcast-actions'
 
@@ -110,6 +110,15 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
             alert('Failed to send: ' + result.error)
         }
         setSending(false)
+    }
+
+    const handleRepeat = (broadcast: PushBroadcast) => {
+        setTitle(broadcast.title)
+        setBody(broadcast.body)
+        setImageUrl(broadcast.image_url || '')
+        setSegment(broadcast.target_segment)
+        setShowForm(true)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
     }
 
     return (
@@ -279,18 +288,29 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
                                         })}
                                     </td>
                                     <td className="py-3 px-4 text-right">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 w-8 p-0"
-                                            onClick={() => setExpandedId(expandedId === broadcast.id ? null : broadcast.id)}
-                                        >
-                                            {expandedId === broadcast.id ? (
-                                                <ChevronUp className="h-4 w-4 text-slate-400" />
-                                            ) : (
-                                                <ChevronDown className="h-4 w-4 text-slate-400" />
-                                            )}
-                                        </Button>
+                                        <div className="flex items-center justify-end gap-1">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 w-8 p-0"
+                                                title="Repeat this broadcast"
+                                                onClick={() => handleRepeat(broadcast)}
+                                            >
+                                                <Repeat className="h-4 w-4 text-slate-400" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => setExpandedId(expandedId === broadcast.id ? null : broadcast.id)}
+                                            >
+                                                {expandedId === broadcast.id ? (
+                                                    <ChevronUp className="h-4 w-4 text-slate-400" />
+                                                ) : (
+                                                    <ChevronDown className="h-4 w-4 text-slate-400" />
+                                                )}
+                                            </Button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))
