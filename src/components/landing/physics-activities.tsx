@@ -132,11 +132,37 @@ export default function PhysicsActivities() {
         };
 
         // Add initial bodies
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 12; i++) {
             setTimeout(addBody, i * 150);
         }
 
-        const interval = setInterval(addBody, 1200);
+        // Track visibility — stop adding when hero is off-screen
+        let isVisible = true;
+        const observer = new IntersectionObserver(
+            ([entry]) => { isVisible = entry.isIntersecting; },
+            { threshold: 0.1 }
+        );
+        if (sceneRef.current) observer.observe(sceneRef.current);
+
+        const MAX_BODIES = 20;
+
+        const interval = setInterval(() => {
+            if (!isVisible) return;
+
+            // Remove bodies that have fallen way below
+            const allBodies = Composite.allBodies(world).filter(b => !b.isStatic);
+            allBodies.forEach(b => {
+                if (b.position.y > height + 200) {
+                    Composite.remove(world, b);
+                }
+            });
+
+            // Only add if under the cap
+            const currentCount = Composite.allBodies(world).filter(b => !b.isStatic).length;
+            if (currentCount < MAX_BODIES) {
+                addBody();
+            }
+        }, 1200);
 
         // Add mouse control
         const mouse = Mouse.create(render.canvas);
@@ -171,6 +197,7 @@ export default function PhysicsActivities() {
         return () => {
             window.removeEventListener('resize', handleResize);
             clearInterval(interval);
+            observer.disconnect();
             Render.stop(render);
             Runner.stop(runner);
             if (render.canvas) render.canvas.remove();

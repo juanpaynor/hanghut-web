@@ -62,8 +62,8 @@ export default function Hero() {
 
   return (
     <section ref={containerRef} className="relative w-full h-[100dvh] overflow-hidden flex flex-col items-center justify-center" style={{ backgroundColor: "#FAFAF8" }}>
-      {/* Background Physics Layer */}
-      <div className="absolute inset-0 z-0 opacity-60">
+      {/* Background Physics Layer — isolated from GSAP transforms */}
+      <div className="absolute inset-0 z-0 opacity-60" style={{ transform: "none", willChange: "auto", contain: "layout style" }}>
         <PhysicsActivities />
       </div>
 
