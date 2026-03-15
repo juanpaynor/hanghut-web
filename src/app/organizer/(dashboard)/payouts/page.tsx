@@ -138,7 +138,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
 
     const { data: partner } = await supabase
         .from('partners')
-        .select('*')
+        .select('id')
         .eq('user_id', user.id)
         .single()
 

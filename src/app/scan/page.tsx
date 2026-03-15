@@ -4,9 +4,9 @@ import { LazyWebScanner } from '@/components/scanner/lazy-scanner'
 
 export default async function ScanPage() {
     const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { user } } = await supabase.auth.getUser()
 
-    if (!session) {
+    if (!user) {
         redirect('/login?next=/scan')
     }
 
@@ -19,7 +19,7 @@ export default async function ScanPage() {
     const { data: ownedPartner } = await supabase
         .from('partners')
         .select('id')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .maybeSingle()
 
     if (ownedPartner) {
@@ -30,7 +30,7 @@ export default async function ScanPage() {
     const { data: teamMemberships } = await supabase
         .from('partner_team_members')
         .select('partner_id')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
 
     if (teamMemberships) {
         teamMemberships.forEach(tm => partnerIds.push(tm.partner_id))
@@ -45,7 +45,7 @@ export default async function ScanPage() {
                     <p className="text-slate-600">
                         You do not appear to be an organizer or team member for any event partners.
                     </p>
-                    <p className="text-sm text-slate-400 mt-4">User ID: {session.user.id}</p>
+                    <p className="text-sm text-slate-400 mt-4">User ID: {user.id}</p>
                 </div>
             </div>
         )
@@ -72,7 +72,7 @@ export default async function ScanPage() {
             <div className="w-full max-w-md w-full space-y-8">
                 <div className="text-center">
                     <h1 className="text-2xl font-bold tracking-tight text-slate-900">Ticket Scanner</h1>
-                    <p className="text-slate-500 text-sm">Logged in as {session.user.email}</p>
+                    <p className="text-slate-500 text-sm">Logged in as {user.email}</p>
                 </div>
 
                 <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100 relative">

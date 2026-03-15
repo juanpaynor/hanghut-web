@@ -17,25 +17,27 @@ async function getOrganizerEvents(partnerId: string, page: number = 1) {
 
     const { data: events, count } = await supabase
         .from('events')
-        .select('*', { count: 'exact' })
+        .select('id, title, capacity, tickets_sold, start_datetime, cover_image_url, status, ticket_price, event_type', { count: 'exact' })
         .eq('organizer_id', partnerId)
         .order('start_datetime', { ascending: false })
         .range(from, to)
 
-    // [SMART SCALING FIX] Manually count sold tickets
-    const eventsWithCounts = await Promise.all((events || []).map(async (event) => {
-        const { count } = await supabase
-            .from('tickets')
-            .select('*', { count: 'exact', head: true })
-            .eq('event_id', event.id)
-            .neq('status', 'cancelled')
-            .neq('status', 'refunded')
-            .neq('status', 'available')
+    // Batch ticket counts (single RPC instead of N+1)
+    const eventIds = events?.map(e => e.id) || []
+    let ticketCountMap = new Map<string, number>()
 
-        return {
-            ...event,
-            tickets_sold: count || 0
+    if (eventIds.length > 0) {
+        const { data: counts } = await supabase.rpc('get_ticket_counts_by_events', {
+            p_event_ids: eventIds
+        })
+        if (counts) {
+            counts.forEach((c: any) => ticketCountMap.set(c.event_id, Number(c.sold_count)))
         }
+    }
+
+    const eventsWithCounts = (events || []).map(event => ({
+        ...event,
+        tickets_sold: ticketCountMap.get(event.id) || 0
     }))
 
     return { events: eventsWithCounts, total: count || 0 }
@@ -55,7 +57,7 @@ export default async function OrganizerEventsPage(props: Props) {
 
     const { data: partner } = await supabase
         .from('partners')
-        .select('*')
+        .select('id')
         .eq('user_id', user.id)
         .single()
 

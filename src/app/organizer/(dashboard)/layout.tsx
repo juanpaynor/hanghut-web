@@ -20,7 +20,7 @@ export default async function OrganizerLayout({
     // Check if user is a direct partner (Owner)
     let { data: partner } = await supabase
         .from('partners')
-        .select('*')
+        .select('id, business_name, kyc_status, slug, profile_photo_url')
         .eq('user_id', user.id)
         .single()
 
@@ -28,7 +28,7 @@ export default async function OrganizerLayout({
     if (!partner) {
         const { data: teamMember } = await supabase
             .from('partner_team_members')
-            .select('partner_id, partners(*)')
+            .select('partner_id, partners(id, business_name, kyc_status, slug, profile_photo_url)')
             .eq('user_id', user.id)
             .single()
 

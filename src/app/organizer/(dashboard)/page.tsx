@@ -17,7 +17,7 @@ export default async function OrganizerDashboard() {
 
     const { data: partner } = await supabase
         .from('partners')
-        .select('*')
+        .select('id, business_name, kyc_status')
         .eq('user_id', user.id)
         .single()
 
