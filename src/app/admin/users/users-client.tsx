@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useDebounce } from '@/hooks/use-debounce'
 import {
@@ -45,9 +45,14 @@ export function UsersClient({
     const searchParams = useSearchParams()
     const [search, setSearch] = useState(searchParams.get('search') || '')
     const debouncedSearch = useDebounce(search, 300)
+    const prevSearchRef = useRef(debouncedSearch)
 
-    // Update URL when filters change
+    // Update URL when search changes (not on every searchParams change)
     useEffect(() => {
+        // Only act when the debounced search actually changed
+        if (debouncedSearch === prevSearchRef.current) return
+        prevSearchRef.current = debouncedSearch
+
         const params = new URLSearchParams(searchParams.toString())
 
         if (debouncedSearch) {
@@ -57,9 +62,7 @@ export function UsersClient({
         }
 
         // Reset to page 1 when search changes
-        if (debouncedSearch !== searchParams.get('search')) {
-            params.delete('page')
-        }
+        params.delete('page')
 
         router.push(`/admin/users?${params.toString()}`)
     }, [debouncedSearch, router, searchParams])

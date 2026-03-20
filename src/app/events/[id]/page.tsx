@@ -20,6 +20,8 @@ export const dynamic = 'force-dynamic'
 
 const getEvent = cache(async (eventId: string) => {
     const supabase = await createClient()
+    const { createAdminClient } = await import('@/lib/supabase/admin')
+    const adminClient = createAdminClient()
 
     const { data: event, error } = await supabase
         .from('events')
@@ -42,12 +44,17 @@ const getEvent = cache(async (eventId: string) => {
         return null
     }
 
-    // ticket_tiers.quantity_sold is kept accurate by DB triggers
-    // No need for additional count queries
-    const totalSold = event.ticket_tiers?.reduce(
-        (sum: number, t: any) => sum + (t.quantity_sold || 0), 0
-    ) ?? event.tickets_sold ?? 0
+    // Single fast count of all sold tickets (bypasses RLS)
+    const { count } = await adminClient
+        .from('tickets')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_id', eventId)
+        .not('status', 'in', '("available","refunded")')
 
+    const totalSold = count ?? event.tickets_sold ?? 0
+
+    // For per-tier sold counts, use quantity_sold from DB (updated by triggers)
+    // If triggers aren't deployed yet, the overall sold-out check still works via totalSold
     return {
         ...event,
         tickets_sold: totalSold,
