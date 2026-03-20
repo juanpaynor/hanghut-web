@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { Suspense } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
@@ -6,37 +6,50 @@ import { redirect } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import { getDashboardStats } from '@/lib/organizer/dashboard-actions'
 import { SalesDashboardClient } from '@/components/organizer/sales-dashboard'
+import { Skeleton } from '@/components/ui/skeleton'
+import { getAuthUser, getPartner } from '@/lib/auth/cached'
 
 export const dynamic = 'force-dynamic'
 
-export default async function OrganizerDashboard() {
-    const supabase = await createClient()
-
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return null
-
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id, business_name, kyc_status')
-        .eq('user_id', user.id)
-        .single()
-
-    if (!partner) return null
-
-    // Force redirect to verification if not verified
-    // This ensures new signups go straight to KYC
-    if (partner.kyc_status !== 'verified') {
-        // Optional: specific logic for 'pending_review' vs 'not_started' could go here
-        // For now, simple blockade to the verification page
-        redirect('/organizer/verification')
-    }
-
-
-    // Fetch granular dashboard stats
-    const dashboardData = await getDashboardStats(partner.id)
+// Async component that fetches data — wrapped in Suspense below
+async function DashboardData({ partnerId, businessName }: { partnerId: string; businessName: string }) {
+    const dashboardData = await getDashboardStats(partnerId)
 
     if ('error' in dashboardData) {
         return <div>Error loading dashboard</div>
+    }
+
+    return <SalesDashboardClient data={dashboardData} />
+}
+
+function DashboardSkeleton() {
+    return (
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                    <Card key={i} className="p-6">
+                        <Skeleton className="h-4 w-24 mb-3" />
+                        <Skeleton className="h-8 w-32" />
+                    </Card>
+                ))}
+            </div>
+            <Card className="p-6">
+                <Skeleton className="h-[300px] w-full rounded-lg" />
+            </Card>
+        </div>
+    )
+}
+
+export default async function OrganizerDashboard() {
+    // Cached — layout already called these, so they return instantly
+    const { user } = await getAuthUser()
+    if (!user) return null
+
+    const partner = await getPartner(user.id)
+    if (!partner) return null
+
+    if (partner.kyc_status !== 'verified') {
+        redirect('/organizer/verification')
     }
 
     return (
@@ -59,9 +72,10 @@ export default async function OrganizerDashboard() {
                 </div>
             </div>
 
-            {/* Sales Dashboard (War Room) */}
-            <SalesDashboardClient data={dashboardData} />
-
+            {/* Sales Dashboard — streams in via Suspense */}
+            <Suspense fallback={<DashboardSkeleton />}>
+                <DashboardData partnerId={partner.id} businessName={partner.business_name} />
+            </Suspense>
         </div>
     )
 }

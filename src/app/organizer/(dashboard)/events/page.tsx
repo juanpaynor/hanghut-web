@@ -1,3 +1,4 @@
+import { getAuthUser, getPartnerId } from '@/lib/auth/cached'
 import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -49,21 +50,16 @@ type Props = {
 
 export default async function OrganizerEventsPage(props: Props) {
     const searchParams = await props.searchParams
-    const supabase = await createClient()
     const page = parseInt(searchParams.page || '1')
 
-    const { data: { user } } = await supabase.auth.getUser()
+    // Cached — layout already resolved these
+    const { user } = await getAuthUser()
     if (!user) return null
 
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
+    const partnerId = await getPartnerId(user.id)
+    if (!partnerId) return null
 
-    if (!partner) return null
-
-    const { events, total } = await getOrganizerEvents(partner.id, page)
+    const { events, total } = await getOrganizerEvents(partnerId, page)
     const totalPages = Math.ceil(total / 20)
 
     const getStatusColor = (status: string) => {

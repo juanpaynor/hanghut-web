@@ -14,13 +14,12 @@ import { cn, hexToHsl, getYouTubeEmbedUrl } from '@/lib/utils'
 
 import { MobileTicketButton, ShareButton } from '@/components/events/event-actions'
 
-import { createAdminClient } from '@/lib/supabase/admin'
+import { cache } from 'react'
 
 export const dynamic = 'force-dynamic'
 
-async function getEvent(eventId: string) {
+const getEvent = cache(async (eventId: string) => {
     const supabase = await createClient()
-    const adminClient = createAdminClient()
 
     const { data: event, error } = await supabase
         .from('events')
@@ -43,35 +42,17 @@ async function getEvent(eventId: string) {
         return null
     }
 
-    // [FIX] The events.tickets_sold column is stale/deprecated.
-    // Count actual sold tickets from the tickets table using adminClient to bypass RLS
-    // Exclude 'available' and 'refunded' explicitly
-    const { count } = await adminClient
-        .from('tickets')
-        .select('*', { count: 'exact', head: true })
-        .eq('event_id', eventId)
-        .not('status', 'in', '("available","refunded")')
-
-    const updatedTiers = event.ticket_tiers ? await Promise.all(event.ticket_tiers.map(async (tier: any) => {
-        const { count: tierCount } = await adminClient
-            .from('tickets')
-            .select('*', { count: 'exact', head: true })
-            .eq('event_id', eventId)
-            .eq('tier_id', tier.id)
-            .not('status', 'in', '("available","refunded")')
-
-        return {
-            ...tier,
-            quantity_sold: tierCount || 0
-        }
-    })) : []
+    // ticket_tiers.quantity_sold is kept accurate by DB triggers
+    // No need for additional count queries
+    const totalSold = event.ticket_tiers?.reduce(
+        (sum: number, t: any) => sum + (t.quantity_sold || 0), 0
+    ) ?? event.tickets_sold ?? 0
 
     return {
         ...event,
-        tickets_sold: count ?? event.tickets_sold ?? 0,
-        ticket_tiers: updatedTiers
+        tickets_sold: totalSold,
     }
-}
+})
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
     const { id } = await params

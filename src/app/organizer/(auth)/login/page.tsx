@@ -149,6 +149,7 @@ export default function OrganizerLoginPage() {
                                         className="pl-10"
                                         required
                                         disabled={loading}
+                                        autoComplete="email"
                                     />
                                 </div>
                             </div>
@@ -166,6 +167,7 @@ export default function OrganizerLoginPage() {
                                         className="pl-10"
                                         required
                                         disabled={loading}
+                                        autoComplete="current-password"
                                     />
                                 </div>
                                 <div className="text-right">

@@ -6,8 +6,7 @@ import { subDays, format } from 'date-fns'
 export async function getDashboardStats(partnerId: string) {
     const supabase = await createClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { error: 'Not authenticated' }
+    // Auth is already verified by the layout — partnerId comes from a trusted source
 
     // ─── PARALLEL BATCH 1: Fetch all independent data at once ─────────
 

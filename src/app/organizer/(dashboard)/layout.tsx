@@ -3,40 +3,20 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { LayoutDashboard, Calendar, Wallet, LogOut, Briefcase, Mail, ScanLine, ShieldCheck } from 'lucide-react'
+import { getAuthUser, getPartner } from '@/lib/auth/cached'
 
 export default async function OrganizerLayout({
     children,
 }: {
     children: React.ReactNode
 }) {
-    const supabase = await createClient()
-
-    // Check if user is logged in
-    const { data: { user } } = await supabase.auth.getUser()
+    // Use cached helpers — deduplicated across layout + child pages
+    const { user } = await getAuthUser()
     if (!user) {
         redirect('/organizer/login')
     }
 
-    // Check if user is a direct partner (Owner)
-    let { data: partner } = await supabase
-        .from('partners')
-        .select('id, business_name, kyc_status, slug, profile_photo_url')
-        .eq('user_id', user.id)
-        .single()
-
-    // If not direct owner, check if they are a team member
-    if (!partner) {
-        const { data: teamMember } = await supabase
-            .from('partner_team_members')
-            .select('partner_id, partners(id, business_name, kyc_status, slug, profile_photo_url)')
-            .eq('user_id', user.id)
-            .single()
-
-        if (teamMember && teamMember.partners) {
-            // @ts-ignore
-            partner = teamMember.partners
-        }
-    }
+    const partner = await getPartner(user.id)
 
     // If still no partner (User hasn't registered as partner yet)
     if (!partner) {

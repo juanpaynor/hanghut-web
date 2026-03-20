@@ -1,3 +1,4 @@
+import { getAuthUser, getPartnerId } from '@/lib/auth/cached'
 import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -125,7 +126,6 @@ interface PageProps {
 }
 
 export default async function OrganizerPayoutsPage({ searchParams }: PageProps) {
-    const supabase = await createClient()
     const resolvedParams = await searchParams
     const from = resolvedParams.from
     const to = resolvedParams.to
@@ -133,24 +133,20 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
     const txPage = Number(resolvedParams.tx_page) || 1
     const payoutPage = Number(resolvedParams.payout_page) || 1
 
-    const { data: { user } } = await supabase.auth.getUser()
+    // Cached — layout already resolved these
+    const { user } = await getAuthUser()
     if (!user) return null
 
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-    if (!partner) return null
+    const partnerId = await getPartnerId(user.id)
+    if (!partnerId) return null
 
     // Parallel fetching
     const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings] = await Promise.all([
-        getPayoutStats(partner.id),
-        getPayoutHistory(partner.id, from, to, payoutPage, 5),
-        getBankAccounts(partner.id),
-        getTransactions(partner.id, from, to, search, txPage, 10),
-        from && to ? getPeriodEarnings(partner.id, from, to) : Promise.resolve(null)
+        getPayoutStats(partnerId),
+        getPayoutHistory(partnerId, from, to, payoutPage, 5),
+        getBankAccounts(partnerId),
+        getTransactions(partnerId, from, to, search, txPage, 10),
+        from && to ? getPeriodEarnings(partnerId, from, to) : Promise.resolve(null)
     ])
 
     const { payouts, count: payoutCount } = payoutsResult
@@ -242,7 +238,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                     {/* Request Payout Logic */}
                     <RequestPayoutCard
                         balance={stats.availableBalance}
-                        partnerId={partner.id}
+                        partnerId={partnerId}
                         hasBank={bankAccounts.some((b: any) => b.is_primary)}
                     />
 

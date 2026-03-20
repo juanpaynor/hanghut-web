@@ -94,9 +94,18 @@ export function RequestPayoutCard({ balance, partnerId, hasBank }: RequestPayout
                             id="amount"
                             type="number"
                             placeholder="0.00"
-                            className="pl-8 text-lg font-bold"
+                            className={`pl-8 text-lg font-bold ${Number(amount) > balance ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                             value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
+                            onChange={(e) => {
+                                const val = e.target.value
+                                // Allow empty or valid numbers, clamp to balance
+                                if (val === '' || Number(val) <= balance) {
+                                    setAmount(val)
+                                } else {
+                                    setAmount(Math.floor(balance).toString())
+                                }
+                            }}
+                            min={0}
                             max={balance}
                         />
                     </div>
@@ -104,7 +113,7 @@ export function RequestPayoutCard({ balance, partnerId, hasBank }: RequestPayout
                         <span>Available: ₱{balance.toLocaleString()}</span>
                         <button
                             type="button"
-                            onClick={() => setAmount(balance.toString())}
+                            onClick={() => setAmount(Math.floor(balance).toString())}
                             className="text-primary hover:underline"
                         >
                             Max
@@ -116,7 +125,7 @@ export function RequestPayoutCard({ balance, partnerId, hasBank }: RequestPayout
                 <Button
                     className="w-full"
                     onClick={handleRequest}
-                    disabled={isLoading || !amount || Number(amount) <= 0}
+                    disabled={isLoading || !amount || Number(amount) <= 0 || Number(amount) > balance}
                 >
                     {isLoading ? (
                         <>

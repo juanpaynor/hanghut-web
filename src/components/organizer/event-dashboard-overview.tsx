@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
     Calendar, MapPin, Users, DollarSign,
-    Ticket, QrCode, ExternalLink, Edit,
+    Ticket, ExternalLink, Edit,
     MoreHorizontal,
     TrendingUp,
     RefreshCw
@@ -65,12 +65,6 @@ export function EventDashboardOverview({ event, stats }: DashboardOverviewProps)
                         <Link href={`/events/${event.id}`} target="_blank">
                             <ExternalLink className="w-4 h-4 mr-2" />
                             View Page
-                        </Link>
-                    </Button>
-                    <Button variant="default" asChild className="flex-1 md:flex-none">
-                        <Link href={`/organizer/scanner`}>
-                            <QrCode className="w-4 h-4 mr-2" />
-                            Open Scanner
                         </Link>
                     </Button>
                 </div>

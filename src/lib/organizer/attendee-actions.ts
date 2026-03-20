@@ -58,6 +58,7 @@ export async function getEventAttendees(
                 guest_phone,
                 status,
                 payment_method,
+                paid_at,
                 refunded_amount,
                 refunded_at
             ),
@@ -96,7 +97,7 @@ export async function getEventAttendees(
     const attendees: Attendee[] = tickets.map((t: any) => ({
         id: t.id,
         status: t.status,
-        created_at: t.created_at,
+        created_at: t.purchase_intent?.paid_at || t.created_at,
         user_id: t.user_id,
         payment_id: t.purchase_intent?.xendit_invoice_id || null,
         purchase_intent_id: t.purchase_intent_id,
