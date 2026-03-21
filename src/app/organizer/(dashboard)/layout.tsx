@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { LayoutDashboard, Calendar, Wallet, LogOut, Briefcase, Mail, ScanLine, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, Calendar, Wallet, LogOut, Briefcase, Mail, ScanLine, ShieldCheck, Code } from 'lucide-react'
 import { getAuthUser, getPartner } from '@/lib/auth/cached'
 
 export default async function OrganizerLayout({
@@ -86,6 +86,10 @@ export default async function OrganizerLayout({
                                         </Link>
                                         <Link href="/organizer/settings" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
                                             Settings
+                                        </Link>
+                                        <Link href="/organizer/developers" className="text-sm font-medium text-foreground hover:text-primary transition-colors flex items-center gap-1">
+                                            <Code className="w-3.5 h-3.5" />
+                                            Developers
                                         </Link>
                                     </>
                                 ) : (

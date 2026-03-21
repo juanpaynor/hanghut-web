@@ -62,6 +62,13 @@ export default async function OrganizerEventsPage(props: Props) {
     const { events, total } = await getOrganizerEvents(partnerId, page)
     const totalPages = Math.ceil(total / 20)
 
+    const getDisplayStatus = (event: any) => {
+        if (event.status === 'active' && new Date(event.start_datetime) < new Date()) {
+            return 'completed'
+        }
+        return event.status
+    }
+
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'draft': return 'bg-slate-500/10 text-slate-600'
@@ -124,8 +131,8 @@ export default async function OrganizerEventsPage(props: Props) {
                                         </div>
                                     )}
                                     <div className="absolute top-4 right-4">
-                                        <Badge className={getStatusColor(event.status)}>
-                                            {event.status.toUpperCase()}
+                                        <Badge className={getStatusColor(getDisplayStatus(event))}>
+                                            {getDisplayStatus(event).toUpperCase()}
                                         </Badge>
                                     </div>
                                 </div>

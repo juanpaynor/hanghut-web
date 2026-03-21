@@ -76,9 +76,32 @@ export async function getDashboardStats(partnerId: string) {
         }
     }
 
+    // Also get per-tier sold counts (tickets grouped by tier_id)
+    let tierCountMap = new Map<string, number>()
+    if (eventIds.length > 0) {
+        const { data: tierTickets } = await supabase
+            .from('tickets')
+            .select('tier_id')
+            .in('event_id', eventIds)
+            .not('status', 'in', '("available","refunded")')
+
+        if (tierTickets) {
+            tierTickets.forEach((t: any) => {
+                if (t.tier_id) {
+                    tierCountMap.set(t.tier_id, (tierCountMap.get(t.tier_id) || 0) + 1)
+                }
+            })
+        }
+    }
+
     const events = (rawEvents || []).map(event => ({
         ...event,
-        tickets_sold: ticketCountMap.get(event.id) || 0
+        tickets_sold: ticketCountMap.get(event.id) || 0,
+        // Update each tier's quantity_sold with real count
+        ticket_tiers: (event.ticket_tiers || []).map((tier: any) => ({
+            ...tier,
+            quantity_sold: tierCountMap.get(tier.id) ?? tier.quantity_sold ?? 0
+        }))
     }))
 
     // ─── COMPUTE METRICS ─────────────────────────────────────────────

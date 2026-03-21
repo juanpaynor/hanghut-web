@@ -40,11 +40,30 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
     }
 
     // Fetch ticket tiers
-    const { data: tiers } = await supabase
+    const { data: rawTiers } = await supabase
         .from('ticket_tiers')
         .select('*')
         .eq('event_id', id)
         .order('sort_order', { ascending: true })
+
+    // Compute real per-tier sold counts from tickets table
+    const { data: tierTickets } = await supabase
+        .from('tickets')
+        .select('tier_id')
+        .eq('event_id', id)
+        .not('status', 'in', '("available","refunded")')
+
+    const tierCountMap = new Map<string, number>()
+    tierTickets?.forEach((t: any) => {
+        if (t.tier_id) {
+            tierCountMap.set(t.tier_id, (tierCountMap.get(t.tier_id) || 0) + 1)
+        }
+    })
+
+    const tiers = (rawTiers || []).map(tier => ({
+        ...tier,
+        quantity_sold: tierCountMap.get(tier.id) ?? tier.quantity_sold ?? 0
+    }))
 
     // Get commission rate
     // Get commission rate

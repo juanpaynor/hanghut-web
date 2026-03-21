@@ -48,9 +48,15 @@ export function EventDashboardOverview({ event, stats }: DashboardOverviewProps)
             <div className="flex flex-col md:flex-row gap-6 justify-between items-start md:items-center">
                 <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                        <Badge variant={event.status === 'active' ? 'default' : 'secondary'} className="capitalize">
-                            {event.status}
-                        </Badge>
+                        {(() => {
+                            const displayStatus = event.status === 'active' && new Date(event.start_datetime) < new Date()
+                                ? 'completed' : event.status
+                            return (
+                                <Badge variant={displayStatus === 'active' ? 'default' : 'secondary'} className="capitalize">
+                                    {displayStatus}
+                                </Badge>
+                            )
+                        })()}
                         <span className="text-muted-foreground text-sm flex items-center gap-1">
                             <Calendar className="w-3 h-3" /> {eventDate}
                         </span>

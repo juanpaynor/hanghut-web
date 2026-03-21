@@ -46,10 +46,6 @@
  *   💳 Raw payment_channel: ...
  *   💳 Extracted Payment Method: GCASH
  *
- * DEPLOYMENT:
- * -----------
- *   supabase functions deploy xendit-webhook --project-ref <PROJECT_REF>
- *
  * ============================================================================
  */
 
@@ -475,6 +471,37 @@ serve(async (req) => {
                 } catch (pushErr) {
                     console.error('⚠️ Failed to send purchase push (non-critical):', pushErr);
                 }
+
+                // 🔔 Dispatch partner webhook (ticket.purchased)
+                try {
+                    const webhookSecret = Deno.env.get('WEBHOOK_INTERNAL_SECRET');
+                    const appUrl = Deno.env.get('APP_URL') || 'https://hanghut.com';
+                    if (webhookSecret) {
+                        await fetch(`${appUrl}/api/v1/internal/dispatch-webhook`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${webhookSecret}`,
+                            },
+                            body: JSON.stringify({
+                                event_type: 'ticket.purchased',
+                                event_id: intent.event_id,
+                                payload: {
+                                    ticket_count: intent.quantity,
+                                    total_amount: intent.total_amount,
+                                    payment_method: capturedMethod,
+                                    customer: {
+                                        name: intent.guest_name || intent.user?.full_name,
+                                        email: intent.guest_email || intent.user?.email,
+                                    },
+                                },
+                            }),
+                        });
+                        console.log('✅ Partner webhook dispatched (ticket.purchased)');
+                    }
+                } catch (webhookErr) {
+                    console.error('⚠️ Partner webhook dispatch failed (non-critical):', webhookErr);
+                }
             }
 
             // Determine recipient (Guest or User)
@@ -700,6 +727,32 @@ serve(async (req) => {
                         });
 
                         console.log(`✅ Refund processed for intent ${intentId}`);
+
+                        // 🔔 Dispatch partner webhook (ticket.refunded)
+                        try {
+                            const webhookSecret = Deno.env.get('WEBHOOK_INTERNAL_SECRET');
+                            const appUrl = Deno.env.get('APP_URL') || 'https://hanghut.com';
+                            if (webhookSecret) {
+                                await fetch(`${appUrl}/api/v1/internal/dispatch-webhook`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': `Bearer ${webhookSecret}`,
+                                    },
+                                    body: JSON.stringify({
+                                        event_type: 'ticket.refunded',
+                                        event_id: intent.event_id,
+                                        payload: {
+                                            intent_id: intentId,
+                                            refund_amount: data.amount || intent.total_amount,
+                                        },
+                                    }),
+                                });
+                                console.log('✅ Partner webhook dispatched (ticket.refunded)');
+                            }
+                        } catch (webhookErr) {
+                            console.error('⚠️ Partner webhook dispatch failed (non-critical):', webhookErr);
+                        }
                     }
                 }
             } else {

@@ -8,6 +8,9 @@ export default function Footer() {
           © {new Date().getFullYear()} HangHut. All rights reserved.
         </p>
         <div className="flex gap-4">
+          <Link href="/docs/api" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Developer
+          </Link>
           <Link href="/terms-of-service" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Terms of Service
           </Link>
