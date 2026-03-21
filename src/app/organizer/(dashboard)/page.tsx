@@ -48,9 +48,10 @@ export default async function OrganizerDashboard() {
     const partner = await getPartner(user.id)
     if (!partner) return null
 
-    if (partner.kyc_status !== 'verified') {
-        redirect('/organizer/verification')
-    }
+    // KYC gate temporarily removed for smooth partner onboarding
+    // if (partner.kyc_status !== 'verified') {
+    //     redirect('/organizer/verification')
+    // }
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">

@@ -33,7 +33,7 @@ export default function Header() {
           </Link>
           <Link href="/waitlist">
             <Button className="rounded-full px-6 transition-all hover:scale-105">
-              Download App
+              Join Waitlist
             </Button>
           </Link>
         </nav>

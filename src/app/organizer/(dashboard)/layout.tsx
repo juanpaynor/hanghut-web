@@ -41,10 +41,8 @@ export default async function OrganizerLayout({
         )
     }
 
-    // KYC / Verification Check
-    // We allow access if status is 'approved' OR if they are in the verification process
-    const isVerified = partner.kyc_status === 'verified' // OR partner.status === 'approved' (legacy)
-    // Note: We use 'verified' as the gatekeeper now.
+    // KYC / Verification Check — TEMPORARILY BYPASSED for smooth partner onboarding
+    const isVerified = true // was: partner.kyc_status === 'verified'
 
     return (
         <div className="min-h-screen bg-background">
