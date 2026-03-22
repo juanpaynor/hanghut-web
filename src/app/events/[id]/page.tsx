@@ -13,6 +13,7 @@ import { EventGallery } from '@/components/events/event-gallery'
 import { cn, hexToHsl, getYouTubeEmbedUrl } from '@/lib/utils'
 
 import { MobileTicketButton, ShareButton } from '@/components/events/event-actions'
+import DOMPurify from 'isomorphic-dompurify'
 
 import { cache } from 'react'
 
@@ -238,7 +239,7 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
             <h2 className="text-2xl font-bold mb-4">About this Event</h2>
             {event.description_html ? (
                 <div
-                    dangerouslySetInnerHTML={{ __html: event.description_html }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(event.description_html) }}
                     className="description-html"
                 />
             ) : (

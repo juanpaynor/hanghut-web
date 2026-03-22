@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
@@ -12,6 +13,7 @@ import { BrandingProvider } from '@/components/storefront/branding-provider'
 import { StorefrontHeroVideo } from '@/components/storefront/storefront-hero-video'
 import { ProfileActions } from '@/components/storefront/profile-actions'
 import { cn, getYouTubeEmbedUrl } from '@/lib/utils'
+import DOMPurify from 'isomorphic-dompurify'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
@@ -19,12 +21,12 @@ const spaceMono = Space_Mono({ weight: '400', subsets: ['latin'], variable: '--f
 
 export const dynamic = 'force-dynamic'
 
-async function getPartnerAndEvents(slug: string) {
+const getPartnerAndEvents = cache(async (slug: string) => {
     console.log('[Storefront] Resolving slug:', slug)
     const supabase = await createClient()
     const { data: partner, error } = await supabase
         .from('partners')
-        .select('*')
+        .select('id, business_name, slug, description, profile_photo_url, cover_image_url, social_links, branding, verified')
         .eq('slug', slug)
         .single()
 
@@ -42,7 +44,7 @@ async function getPartnerAndEvents(slug: string) {
     const queries = [
         supabase
             .from('events')
-            .select('*')
+            .select('id, title, description, status, start_datetime, end_datetime, venue_name, address, city, capacity, cover_image_url, ticket_price, event_type, created_at')
             .eq('organizer_id', partner.id)
             .eq('status', 'active')
             .gte('start_datetime', now)
@@ -53,7 +55,7 @@ async function getPartnerAndEvents(slug: string) {
         queries.push(
             supabase
                 .from('events')
-                .select('*')
+                .select('id, title, description, status, start_datetime, end_datetime, venue_name, address, city, capacity, cover_image_url, ticket_price, event_type, created_at')
                 .eq('organizer_id', partner.id)
                 .eq('status', 'active')
                 .lt('start_datetime', now)
@@ -66,23 +68,31 @@ async function getPartnerAndEvents(slug: string) {
     const rawUpcoming = results[0]?.data || []
     const past = showPast && results[1] ? (results[1].data || []) : []
 
-    // [FIX] The events.tickets_sold column is stale/deprecated.
-    // Count actual sold tickets from the tickets table (same method as organizer dashboard).
-    const upcoming = await Promise.all(rawUpcoming.map(async (event: any) => {
-        const { count } = await supabase
-            .from('tickets')
-            .select('*', { count: 'exact', head: true })
-            .eq('event_id', event.id)
-            .neq('status', 'available')
+    // Batch ticket count — single RPC call instead of N+1 queries
+    const allEventIds = [...rawUpcoming, ...past].map((e: any) => e.id)
+    let ticketCountMap = new Map<string, number>()
 
-        return {
-            ...event,
-            tickets_sold: count ?? event.tickets_sold ?? 0
+    if (allEventIds.length > 0) {
+        const { data: counts } = await supabase.rpc('get_ticket_counts_by_events', {
+            p_event_ids: allEventIds
+        })
+        if (counts) {
+            counts.forEach((c: any) => ticketCountMap.set(c.event_id, Number(c.sold_count)))
         }
+    }
+
+    const upcoming = rawUpcoming.map((event: any) => ({
+        ...event,
+        tickets_sold: ticketCountMap.get(event.id) || 0,
     }))
 
-    return { partner, upcoming, past }
-}
+    const enrichedPast = past.map((event: any) => ({
+        ...event,
+        tickets_sold: ticketCountMap.get(event.id) || 0,
+    }))
+
+    return { partner, upcoming, past: enrichedPast }
+})
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
     const { slug } = await params
@@ -276,7 +286,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                         <div className="prose dark:prose-invert max-w-none">
                                             <h2 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60">About Us</h2>
                                             {branding.description_html ? (
-                                                <div dangerouslySetInnerHTML={{ __html: branding.description_html }} />
+                                                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(branding.description_html) }} />
                                             ) : (
                                                 <p className="text-lg leading-relaxed text-muted-foreground">{partner.description}</p>
                                             )}
@@ -382,7 +392,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                     {(branding.description_html || partner.description) && (
                                         <div className="text-center max-w-2xl mx-auto space-y-4">
                                             {branding.description_html ? (
-                                                <div className="prose dark:prose-invert max-w-none text-left" dangerouslySetInnerHTML={{ __html: branding.description_html }} />
+                                                <div className="prose dark:prose-invert max-w-none text-left" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(branding.description_html) }} />
                                             ) : (
                                                 <>
                                                     <p className="text-lg text-muted-foreground leading-relaxed">{partner.description}</p>
