@@ -52,7 +52,7 @@ async function getPayoutHistory(partnerId: string, from?: string, to?: string, p
 
     let query = supabase
         .from('payouts')
-        .select('*', { count: 'exact' })
+        .select('id, amount, status, bank_name, requested_at, admin_notes, rejection_reason', { count: 'exact' })
         .eq('partner_id', partnerId)
         .order('created_at', { ascending: false })
         .range((page - 1) * pageSize, page * pageSize - 1)
@@ -77,7 +77,15 @@ async function getTransactions(partnerId: string, from?: string, to?: string, se
     let queryBuilder = supabase
         .from('transactions')
         .select(`
-            *,
+            id,
+            gross_amount,
+            organizer_payout,
+            platform_fee,
+            payment_processing_fee,
+            fixed_fee,
+            status,
+            created_at,
+            payout_id,
             event:events!inner (
                 title
             ),
@@ -295,7 +303,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                         <h2 className="text-xl font-semibold">Transactions</h2>
                         <SearchInput placeholder="Search event or ID..." />
                     </div>
-                    <TransactionsHistory transactions={transactions} />
+                    <TransactionsHistory transactions={transactions as any} />
                     <PaginationControls totalCount={transactionCount} pageSize={10} paramName="tx_page" />
                 </TabsContent>
 

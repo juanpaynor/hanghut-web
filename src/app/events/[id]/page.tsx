@@ -48,7 +48,7 @@ const getEvent = cache(async (eventId: string) => {
     // Single fast count of all sold tickets (bypasses RLS)
     const { count } = await adminClient
         .from('tickets')
-        .select('*', { count: 'exact', head: true })
+        .select('id', { count: 'exact', head: true })
         .eq('event_id', eventId)
         .not('status', 'in', '("available","refunded")')
 

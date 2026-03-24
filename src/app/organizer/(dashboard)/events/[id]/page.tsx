@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import { EventDashboardTabs } from '@/components/organizer/event-dashboard-tabs'
+import { getAuthUser, getPartner } from '@/lib/auth/cached'
 
 interface EditEventPageProps {
     params: Promise<{
@@ -10,24 +11,21 @@ interface EditEventPageProps {
 
 export default async function EditEventPage({ params }: EditEventPageProps) {
     const { id } = await params
-    const supabase = await createClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
+    // Cached — layout already resolved these
+    const { user } = await getAuthUser()
     if (!user) {
         redirect('/organizer/login')
     }
 
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id, custom_percentage, pricing_model, status, pass_fees_to_customer, fixed_fee_per_ticket')
-        .eq('user_id', user.id)
-        .single()
-
-    if (!partner || partner.status !== 'approved') {
+    const partner = await getPartner(user.id)
+    if (!partner) {
         redirect('/organizer')
     }
 
-    // Fetch event details
+    const supabase = await createClient()
+
+    // Fetch event (needed before parallel queries for the organizer_id check)
     const { data: event } = await supabase
         .from('events')
         .select('*')
@@ -39,19 +37,73 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         notFound()
     }
 
-    // Fetch ticket tiers
-    const { data: rawTiers } = await supabase
-        .from('ticket_tiers')
-        .select('*')
-        .eq('event_id', id)
-        .order('sort_order', { ascending: true })
+    // Fetch partner pricing details (only the fields we need, not already in cached partner)
+    const { data: partnerPricing } = await supabase
+        .from('partners')
+        .select('custom_percentage, pricing_model, pass_fees_to_customer, fixed_fee_per_ticket')
+        .eq('id', partner.id)
+        .single()
 
-    // Compute real per-tier sold counts from tickets table
-    const { data: tierTickets } = await supabase
-        .from('tickets')
-        .select('tier_id')
-        .eq('event_id', id)
-        .not('status', 'in', '("available","refunded")')
+    // ─── PARALLEL: All event-dependent queries at once ─────────────────
+    const { getEventAttendees } = await import('@/lib/organizer/attendee-actions')
+    const { getPromoCodes } = await import('@/lib/organizer/promo-actions')
+
+    const [
+        { data: rawTiers },
+        { data: tierTickets },
+        { attendees },
+        { data: promoCodes },
+        { count: ticketsSold, data: soldTickets },
+        { data: refundedTickets }
+    ] = await Promise.all([
+        // 1. Ticket tiers
+        supabase
+            .from('ticket_tiers')
+            .select('*')
+            .eq('event_id', id)
+            .order('sort_order', { ascending: true }),
+
+        // 2. Per-tier sold counts
+        supabase
+            .from('tickets')
+            .select('tier_id')
+            .eq('event_id', id)
+            .not('status', 'in', '("available","refunded")'),
+
+        // 3. Attendees
+        getEventAttendees(id),
+
+        // 4. Promo codes
+        getPromoCodes(id),
+
+        // 5. Sold tickets stats
+        supabase
+            .from('tickets')
+            .select(`
+                checked_in_at,
+                status,
+                purchase_intent:purchase_intents (
+                    unit_price
+                )
+            `, { count: 'exact' })
+            .eq('event_id', id)
+            .neq('status', 'cancelled')
+            .neq('status', 'refunded')
+            .neq('status', 'available'),
+
+        // 6. Refunded tickets stats
+        supabase
+            .from('tickets')
+            .select(`
+                purchase_intent:purchase_intents (
+                    unit_price
+                )
+            `)
+            .eq('event_id', id)
+            .eq('status', 'refunded')
+    ])
+
+    // ─── COMPUTE from parallel results ────────────────────────────────
 
     const tierCountMap = new Map<string, number>()
     tierTickets?.forEach((t: any) => {
@@ -65,51 +117,15 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         quantity_sold: tierCountMap.get(tier.id) ?? tier.quantity_sold ?? 0
     }))
 
-    // Get commission rate
-    // Get commission rate
-    const commissionRate = partner.pricing_model === 'custom' && partner.custom_percentage !== null
-        ? partner.custom_percentage / 100
+    const commissionRate = partnerPricing?.pricing_model === 'custom' && partnerPricing?.custom_percentage !== null
+        ? partnerPricing.custom_percentage / 100
         : 0.15
-
-    // Fetch attendees
-    const { getEventAttendees } = await import('@/lib/organizer/attendee-actions')
-    const { attendees } = await getEventAttendees(id)
-
-    // Fetch promo codes
-    const { getPromoCodes } = await import('@/lib/organizer/promo-actions')
-    const { data: promoCodes } = await getPromoCodes(id)
-
-    // Fetch ticket stats
-    const { count: ticketsSold, data: soldTickets } = await supabase
-        .from('tickets')
-        .select(`
-            checked_in_at,
-            status,
-            purchase_intent:purchase_intents (
-                unit_price
-            )
-        `, { count: 'exact' })
-        .eq('event_id', id)
-        .neq('status', 'cancelled')
-        .neq('status', 'refunded')
-        .neq('status', 'available')
 
     const totalRevenue = soldTickets?.reduce((sum, ticket: any) => {
         const price = ticket.purchase_intent?.unit_price || 0
         return sum + price
     }, 0) || 0
     const checkedInCount = soldTickets?.filter(t => t.checked_in_at).length || 0
-
-    // Fetch refunded tickets for stats
-    const { data: refundedTickets } = await supabase
-        .from('tickets')
-        .select(`
-            purchase_intent:purchase_intents (
-                unit_price
-            )
-        `)
-        .eq('event_id', id)
-        .eq('status', 'refunded')
 
     const refundedAmount = refundedTickets?.reduce((sum, ticket: any) => {
         const price = ticket.purchase_intent?.unit_price || 0
@@ -138,8 +154,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                     totalCapacity: event.capacity || 0,
                     checkedInCount
                 }}
-                passFeesToCustomer={partner.pass_fees_to_customer || false}
-                fixedFeePerTicket={parseFloat(partner.fixed_fee_per_ticket?.toString() || '15.00')}
+                passFeesToCustomer={partnerPricing?.pass_fees_to_customer || false}
+                fixedFeePerTicket={parseFloat(partnerPricing?.fixed_fee_per_ticket?.toString() || '15.00')}
             />
         </div>
     )

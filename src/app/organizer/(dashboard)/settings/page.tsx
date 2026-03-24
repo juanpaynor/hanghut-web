@@ -3,16 +3,18 @@ import { redirect } from 'next/navigation'
 import { PartnerSettingsForm } from '@/components/organizer/partner-settings-form'
 import AccountSettingsForm from '@/components/organizer/account-settings-form'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Settings, Palette, User } from 'lucide-react'
+import { Settings, User } from 'lucide-react'
+import { getAuthUser } from '@/lib/auth/cached'
 
 export default async function SettingsPage() {
-    const supabase = await createClient()
-
-    const { data: { user } } = await supabase.auth.getUser()
+    // Cached — layout already resolved auth
+    const { user } = await getAuthUser()
     if (!user) {
         redirect('/organizer/login')
     }
 
+    // Settings form needs full partner data — can't use the minimal cached version
+    const supabase = await createClient()
     const { data: partner } = await supabase
         .from('partners')
         .select('*')

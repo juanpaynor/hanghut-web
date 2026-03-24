@@ -51,24 +51,9 @@ export const getPartner = cache(async (userId: string) => {
 })
 
 /**
- * Convenience: get just the partnerId (most pages only need this)
+ * Convenience: get just the partnerId (reuses getPartner cache)
  */
 export const getPartnerId = cache(async (userId: string) => {
-    const supabase = await createClient()
-
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', userId)
-        .single()
-
-    if (partner) return partner.id
-
-    const { data: teamMember } = await supabase
-        .from('partner_team_members')
-        .select('partner_id')
-        .eq('user_id', userId)
-        .single()
-
-    return teamMember?.partner_id || null
+    const partner = await getPartner(userId)
+    return partner?.id || null
 })

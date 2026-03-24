@@ -1,49 +1,40 @@
-import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { TeamManager } from '@/components/organizer/team-manager'
 import { getTeamMembers } from '@/lib/organizer/team-actions'
+import { getAuthUser, getPartner } from '@/lib/auth/cached'
+import { createClient } from '@/lib/supabase/server'
 
 export default async function TeamPage() {
-    const supabase = await createClient()
-
-    const { data: { user } } = await supabase.auth.getUser()
+    // Cached — layout already resolved these
+    const { user } = await getAuthUser()
     if (!user) {
         redirect('/organizer/login')
     }
 
-    // Get current partner context
-    // First check own partner (Owner)
-    let partnerId = null
+    const partner = await getPartner(user.id)
+    if (!partner) {
+        redirect('/organizer/register')
+    }
+
+    // Determine user's role (owner or team member)
     let userRole = 'owner'
-
-    const { data: ownPartner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-    if (ownPartner) {
-        partnerId = ownPartner.id
-    } else {
-        // Check if member of another partner
+    if (partner) {
+        // Check if they're NOT the owner (i.e., they're a team member)
+        const supabase = await createClient()
         const { data: member } = await supabase
             .from('partner_team_members')
-            .select('partner_id, role')
+            .select('role')
             .eq('user_id', user.id)
+            .eq('partner_id', partner.id)
             .single()
 
         if (member) {
-            partnerId = member.partner_id
             userRole = member.role
         }
     }
 
-    if (!partnerId) {
-        redirect('/organizer/register')
-    }
-
     // Fetch team data
-    const { members, invites, error } = await getTeamMembers(partnerId)
+    const { members, invites, error } = await getTeamMembers(partner.id)
 
     if (error) {
         // Handle error gracefully
@@ -55,7 +46,7 @@ export default async function TeamPage() {
         <div className="container mx-auto px-4 py-8">
             <h1 className="text-3xl font-bold mb-6">Team Management</h1>
             <TeamManager
-                partnerId={partnerId}
+                partnerId={partner.id}
                 currentUserId={user.id}
                 members={members || []}
                 invites={invites || []}
