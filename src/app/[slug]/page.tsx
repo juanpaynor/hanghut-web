@@ -13,7 +13,7 @@ import { BrandingProvider } from '@/components/storefront/branding-provider'
 import { StorefrontHeroVideo } from '@/components/storefront/storefront-hero-video'
 import { ProfileActions } from '@/components/storefront/profile-actions'
 import { cn, getYouTubeEmbedUrl } from '@/lib/utils'
-import DOMPurify from 'isomorphic-dompurify'
+import sanitizeHtml from 'sanitize-html'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
@@ -286,7 +286,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                         <div className="prose dark:prose-invert max-w-none">
                                             <h2 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60">About Us</h2>
                                             {branding.description_html ? (
-                                                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(branding.description_html) }} />
+                                                <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(branding.description_html) }} />
                                             ) : (
                                                 <p className="text-lg leading-relaxed text-muted-foreground">{partner.description}</p>
                                             )}
@@ -392,7 +392,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                     {(branding.description_html || partner.description) && (
                                         <div className="text-center max-w-2xl mx-auto space-y-4">
                                             {branding.description_html ? (
-                                                <div className="prose dark:prose-invert max-w-none text-left" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(branding.description_html) }} />
+                                                <div className="prose dark:prose-invert max-w-none text-left" dangerouslySetInnerHTML={{ __html: sanitizeHtml(branding.description_html) }} />
                                             ) : (
                                                 <>
                                                     <p className="text-lg text-muted-foreground leading-relaxed">{partner.description}</p>
