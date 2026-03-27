@@ -62,6 +62,33 @@ export async function reviewKYC(
 
     if (error) return { error: error.message }
 
+    // 3. If approved, trigger XenPlatform sub-account creation + KYC
+    if (action === 'approve') {
+        try {
+            const { error: subAccountError } = await supabase.functions.invoke(
+                'create-xendit-subaccount',
+                { body: { partner_id: partnerId } }
+            )
+
+            if (!subAccountError) {
+                // Sub-account created, now submit KYC docs
+                try {
+                    await supabase.functions.invoke(
+                        'submit-xendit-kyc',
+                        { body: { partner_id: partnerId } }
+                    )
+                    console.log('[XenPlatform] KYC submitted for partner:', partnerId)
+                } catch (kycErr) {
+                    console.warn('[XenPlatform] KYC submission failed for partner:', partnerId, kycErr)
+                }
+            } else {
+                console.warn('[XenPlatform] Sub-account creation failed for partner:', partnerId, subAccountError)
+            }
+        } catch (xenditErr) {
+            console.warn('[XenPlatform] Sub-account creation error for partner:', partnerId, xenditErr)
+        }
+    }
+
     revalidatePath('/admin/verifications')
     return { success: true }
 }

@@ -61,25 +61,35 @@ export default function OrganizerLoginPage() {
         // Reset attempts on successful auth (even if partner check fails, they proved identity)
         resetAttempts()
 
-        // Check if user has an approved partner account
+        // Check if user has an approved partner account OR is a team member
         const { data: partner } = await supabase
             .from('partners')
             .select('status')
             .eq('user_id', data.user.id)
-            .single()
+            .maybeSingle()
 
-        if (!partner) {
-            setError('No partner account found. Please register for a partner account.')
-            await supabase.auth.signOut()
-            setLoading(false)
-            return
-        }
+        if (partner) {
+            // User is a partner owner — check approval status
+            if (partner.status !== 'approved') {
+                setError(`Your partner application is ${partner.status}. Please wait for approval.`)
+                await supabase.auth.signOut()
+                setLoading(false)
+                return
+            }
+        } else {
+            // Not an owner — check if they're a team member
+            const { data: teamMember } = await supabase
+                .from('partner_team_members')
+                .select('partner_id')
+                .eq('user_id', data.user.id)
+                .maybeSingle()
 
-        if (partner.status !== 'approved') {
-            setError(`Your partner application is ${partner.status}. Please wait for approval.`)
-            await supabase.auth.signOut()
-            setLoading(false)
-            return
+            if (!teamMember) {
+                setError('No partner account found. Please register for a partner account or ask your team admin to invite you.')
+                await supabase.auth.signOut()
+                setLoading(false)
+                return
+            }
         }
 
         // Success - redirect to organizer dashboard

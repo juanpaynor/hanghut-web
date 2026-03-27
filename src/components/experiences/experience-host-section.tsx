@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import Image from 'next/image'
 import { ShieldCheck } from 'lucide-react'
 
 interface ExperienceHostSectionProps {
@@ -24,11 +23,10 @@ export function ExperienceHostSection({
             {/* Avatar */}
             <div className="relative shrink-0 w-16 h-16 rounded-full overflow-hidden border-2 border-background shadow-md bg-muted">
                 {hostAvatarUrl ? (
-                    <Image
+                    <img
                         src={hostAvatarUrl}
                         alt={hostName}
-                        fill
-                        className="object-cover"
+                        className="w-full h-full object-cover"
                     />
                 ) : (
                     <div className="w-full h-full bg-primary/20 flex items-center justify-center">

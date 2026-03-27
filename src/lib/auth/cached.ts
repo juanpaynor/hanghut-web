@@ -57,3 +57,42 @@ export const getPartnerId = cache(async (userId: string) => {
     const partner = await getPartner(userId)
     return partner?.id || null
 })
+
+/**
+ * Get the user's role within their partner organization.
+ * Returns { role, partnerId } or null if user has no org access.
+ * 
+ * Roles: 'owner' | 'manager' | 'scanner' | 'finance' | 'marketing'
+ */
+export type UserRole = {
+    role: 'owner' | 'manager' | 'scanner' | 'finance' | 'marketing'
+    partnerId: string
+}
+
+export const getUserRole = cache(async (userId: string): Promise<UserRole | null> => {
+    const supabase = await createClient()
+
+    // Check direct ownership first
+    const { data: owner } = await supabase
+        .from('partners')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+    if (owner) {
+        return { role: 'owner', partnerId: owner.id }
+    }
+
+    // Check team membership
+    const { data: member } = await supabase
+        .from('partner_team_members')
+        .select('partner_id, role')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+    if (member) {
+        return { role: member.role as UserRole['role'], partnerId: member.partner_id }
+    }
+
+    return null
+})

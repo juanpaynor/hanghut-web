@@ -1,8 +1,7 @@
 import { redirect } from 'next/navigation'
 import { TeamManager } from '@/components/organizer/team-manager'
 import { getTeamMembers } from '@/lib/organizer/team-actions'
-import { getAuthUser, getPartner } from '@/lib/auth/cached'
-import { createClient } from '@/lib/supabase/server'
+import { getAuthUser, getPartner, getUserRole } from '@/lib/auth/cached'
 
 export default async function TeamPage() {
     // Cached — layout already resolved these
@@ -16,22 +15,13 @@ export default async function TeamPage() {
         redirect('/organizer/register')
     }
 
-    // Determine user's role (owner or team member)
-    let userRole = 'owner'
-    if (partner) {
-        // Check if they're NOT the owner (i.e., they're a team member)
-        const supabase = await createClient()
-        const { data: member } = await supabase
-            .from('partner_team_members')
-            .select('role')
-            .eq('user_id', user.id)
-            .eq('partner_id', partner.id)
-            .single()
-
-        if (member) {
-            userRole = member.role
-        }
+    // Only owner can manage team
+    const userRole = await getUserRole(user.id)
+    if (!userRole || userRole.role !== 'owner') {
+        redirect('/organizer')
     }
+
+    const userRoleName = userRole.role
 
     // Fetch team data
     const { members, invites, error } = await getTeamMembers(partner.id)
@@ -50,7 +40,7 @@ export default async function TeamPage() {
                 currentUserId={user.id}
                 members={members || []}
                 invites={invites || []}
-                userRole={userRole}
+                userRole={userRoleName}
             />
         </div>
     )

@@ -38,6 +38,8 @@ interface Partner {
     auto_approve_payouts: boolean
     created_at: string
     approved_at: string | null
+    xendit_account_id: string | null
+    kyc_status: string | null
     user: {
         id: string
         display_name: string

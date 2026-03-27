@@ -40,6 +40,8 @@ interface Partner {
     auto_approve_payouts: boolean
     created_at: string
     approved_at: string | null
+    xendit_account_id: string | null
+    kyc_status: string | null
     user: {
         id: string
         display_name: string
@@ -210,6 +212,23 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                     <p className="text-white">{format(new Date(partner.approved_at), 'MMM d, yyyy')}</p>
                                 </div>
                             )}
+                            {partner.xendit_account_id && (
+                                <div>
+                                    <Label className="text-slate-400">Xendit Sub-Account</Label>
+                                    <p className="text-white font-mono text-xs">{partner.xendit_account_id}</p>
+                                </div>
+                            )}
+                            <div>
+                                <Label className="text-slate-400">KYC Status</Label>
+                                <Badge variant="outline" className={
+                                    partner.kyc_status === 'verified' ? 'bg-green-500/10 text-green-500' :
+                                    partner.kyc_status === 'submitted' ? 'bg-yellow-500/10 text-yellow-500' :
+                                    partner.kyc_status === 'rejected' ? 'bg-red-500/10 text-red-500' :
+                                    'bg-slate-500/10 text-slate-500'
+                                }>
+                                    {(partner.kyc_status || 'not_started').toUpperCase().replace('_', ' ')}
+                                </Badge>
+                            </div>
                         </div>
                     </div>
 

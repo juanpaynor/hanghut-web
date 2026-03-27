@@ -1,5 +1,6 @@
-import { getAuthUser, getPartnerId } from '@/lib/auth/cached'
+import { getAuthUser, getPartnerId, getUserRole } from '@/lib/auth/cached'
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { DollarSign, TrendingUp, Clock, Settings, Wallet, FileText } from 'lucide-react'
@@ -9,6 +10,8 @@ import { BankSettingsForm } from '@/components/organizer/payouts/bank-settings-f
 import { RequestPayoutCard } from '@/components/organizer/payouts/request-payout-card'
 import { TransactionsHistory } from '@/components/organizer/payouts/transactions-history'
 import { PayoutsDateFilter } from '@/components/organizer/payouts/payouts-date-filter'
+import { WalletCard } from '@/components/organizer/payouts/wallet-card'
+import { getWalletInfo } from '@/lib/organizer/wallet-actions'
 import Link from 'next/link'
 import { SearchInput } from '@/components/ui/search-input'
 import { PaginationControls } from '@/components/ui/pagination-controls'
@@ -145,16 +148,23 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
     const { user } = await getAuthUser()
     if (!user) return null
 
+    // Only owner and finance roles can access payouts
+    const userRole = await getUserRole(user.id)
+    if (!userRole || !['owner', 'finance'].includes(userRole.role)) {
+        redirect('/organizer')
+    }
+
     const partnerId = await getPartnerId(user.id)
     if (!partnerId) return null
 
     // Parallel fetching
-    const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings] = await Promise.all([
+    const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings, walletInfo] = await Promise.all([
         getPayoutStats(partnerId),
         getPayoutHistory(partnerId, from, to, payoutPage, 5),
         getBankAccounts(partnerId),
         getTransactions(partnerId, from, to, search, txPage, 10),
-        from && to ? getPeriodEarnings(partnerId, from, to) : Promise.resolve(null)
+        from && to ? getPeriodEarnings(partnerId, from, to) : Promise.resolve(null),
+        getWalletInfo(partnerId),
     ])
 
     const { payouts, count: payoutCount } = payoutsResult
@@ -242,6 +252,14 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                             </div>
                         </Card>
                     </div>
+
+                    {/* Xendit Wallet */}
+                    <WalletCard
+                        xenditAccountId={walletInfo.xenditAccountId}
+                        receivable={walletInfo.receivable}
+                        kycStatus={walletInfo.kycStatus}
+                        availableBalance={stats.availableBalance}
+                    />
 
                     {/* Request Payout Logic */}
                     <RequestPayoutCard

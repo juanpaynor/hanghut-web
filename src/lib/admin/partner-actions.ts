@@ -3,11 +3,13 @@
 import { createClient } from '@/lib/supabase/server'
 
 /**
- * Approve a pending partner application
+ * Approve a pending partner application.
+ * Also triggers XenPlatform sub-account creation and KYC submission.
  */
 export async function approvePartner(partnerId: string) {
     const supabase = await createClient()
 
+    // Step 1: Approve the partner
     const { error } = await supabase
         .from('partners')
         .update({
@@ -22,7 +24,44 @@ export async function approvePartner(partnerId: string) {
         throw new Error('Failed to approve partner')
     }
 
-    return { success: true }
+    // Step 2: Create Xendit sub-account (XenPlatform)
+    let xenditWarning: string | null = null
+    try {
+        const { data: subAccountResult, error: subAccountError } = await supabase.functions.invoke(
+            'create-xendit-subaccount',
+            { body: { partner_id: partnerId } }
+        )
+
+        if (subAccountError) {
+            console.warn('[XenPlatform] Sub-account creation failed:', subAccountError)
+            xenditWarning = 'Partner approved but Xendit sub-account creation failed. You can retry from the dashboard.'
+        } else {
+            console.log('[XenPlatform] Sub-account created:', subAccountResult)
+
+            // Step 3: Submit KYC docs to Xendit (only if sub-account was created)
+            try {
+                const { data: kycResult, error: kycError } = await supabase.functions.invoke(
+                    'submit-xendit-kyc',
+                    { body: { partner_id: partnerId } }
+                )
+
+                if (kycError) {
+                    console.warn('[XenPlatform] KYC submission failed:', kycError)
+                    xenditWarning = 'Sub-account created but KYC submission failed. Documents can be submitted later.'
+                } else {
+                    console.log('[XenPlatform] KYC submitted:', kycResult)
+                }
+            } catch (kycErr) {
+                console.warn('[XenPlatform] KYC submission error:', kycErr)
+                xenditWarning = 'Sub-account created but KYC submission failed. Documents can be submitted later.'
+            }
+        }
+    } catch (xenditErr) {
+        console.warn('[XenPlatform] Sub-account creation error:', xenditErr)
+        xenditWarning = 'Partner approved but Xendit sub-account creation failed. You can retry from the dashboard.'
+    }
+
+    return { success: true, warning: xenditWarning }
 }
 
 /**
@@ -94,7 +133,8 @@ export async function reactivatePartner(partnerId: string) {
 }
 
 /**
- * Set custom pricing for a partner
+ * Set custom pricing for a partner.
+ * Also creates a matching Xendit split rule for payment splitting.
  */
 export async function setCustomPricing(
     partnerId: string,
@@ -119,11 +159,32 @@ export async function setCustomPricing(
         throw new Error('Failed to set custom pricing')
     }
 
+    // Create/update Xendit split rule for this partner's fee percentage
+    try {
+        const { data, error: splitError } = await supabase.functions.invoke(
+            'create-split-rule',
+            { body: { partner_id: partnerId, platform_percentage: percentage } }
+        )
+
+        if (!splitError && data?.split_rule_id) {
+            await supabase
+                .from('partners')
+                .update({ split_rule_id: data.split_rule_id })
+                .eq('id', partnerId)
+            console.log('[SplitRule] Created for partner:', partnerId, 'rule:', data.split_rule_id)
+        } else {
+            console.warn('[SplitRule] Failed to create split rule:', splitError)
+        }
+    } catch (err) {
+        console.warn('[SplitRule] Error creating split rule:', err)
+    }
+
     return { success: true }
 }
 
 /**
- * Reset partner to standard pricing
+ * Reset partner to standard pricing (15%).
+ * Also creates a Xendit split rule for the standard 15% tier.
  */
 export async function resetToStandardPricing(partnerId: string) {
     const supabase = await createClient()
@@ -141,6 +202,24 @@ export async function resetToStandardPricing(partnerId: string) {
     if (error) {
         console.error('Error resetting pricing:', error)
         throw new Error('Failed to reset pricing')
+    }
+
+    // Create/update Xendit split rule for standard 15%
+    try {
+        const { data, error: splitError } = await supabase.functions.invoke(
+            'create-split-rule',
+            { body: { partner_id: partnerId, platform_percentage: 15 } }
+        )
+
+        if (!splitError && data?.split_rule_id) {
+            await supabase
+                .from('partners')
+                .update({ split_rule_id: data.split_rule_id })
+                .eq('id', partnerId)
+            console.log('[SplitRule] Reset to standard for partner:', partnerId)
+        }
+    } catch (err) {
+        console.warn('[SplitRule] Error creating standard split rule:', err)
     }
 
     return { success: true }
