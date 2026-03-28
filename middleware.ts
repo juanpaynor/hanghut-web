@@ -20,15 +20,20 @@ export async function middleware(request: NextRequest) {
     }
 
     // 2. Partner Subdomains → Rewrite to /[slug] storefront
-    const isSubdomain = hostname.includes('.') && 
-                       !hostname.startsWith('www.') && 
-                       !hostname.startsWith('admin.') &&
-                       !hostname.startsWith('api.')
+    const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'
+    const reservedSubdomains = ['www', 'admin', 'api', 'mail', 'smtp', 'send']
+    
+    const isSubdomain = hostname.endsWith(`.${rootDomain}`) && 
+                        hostname !== rootDomain &&
+                        hostname !== `www.${rootDomain}`
 
     if (isSubdomain) {
-        const subdomain = hostname.split('.')[0]
-        const urlArgs = new URL(`/${subdomain}${path}`, request.url)
-        return await updateSession(request, urlArgs)
+        const subdomain = hostname.replace(`.${rootDomain}`, '')
+        // Skip reserved subdomains
+        if (!reservedSubdomains.includes(subdomain)) {
+            const urlArgs = new URL(`/${subdomain}${path}`, request.url)
+            return await updateSession(request, urlArgs)
+        }
     }
 
     // 3. Default → No rewrite
