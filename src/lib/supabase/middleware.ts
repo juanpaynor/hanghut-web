@@ -16,9 +16,9 @@ export async function updateSession(request: NextRequest, rewriteUrl?: URL) {
                 },
                 setAll(cookiesToSet) {
                     cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
-                    supabaseResponse = NextResponse.next({
-                        request,
-                    })
+                    supabaseResponse = rewriteUrl
+                        ? NextResponse.rewrite(rewriteUrl, { request })
+                        : NextResponse.next({ request })
                     cookiesToSet.forEach(({ name, value, options }) =>
                         supabaseResponse.cookies.set(name, value, options)
                     )
