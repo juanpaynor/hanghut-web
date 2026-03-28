@@ -8,8 +8,6 @@ export async function middleware(request: NextRequest) {
     // Strip port if present
     hostname = hostname.split(':')[0]
 
-    console.log('[Middleware] hostname:', hostname, '| path:', url.pathname)
-
     // Handle local development hostname
     if (hostname.includes('localhost')) {
         const localSubdomain = hostname.split('.localhost')[0]
@@ -26,7 +24,6 @@ export async function middleware(request: NextRequest) {
 
     // 1. Admin Subdomain -> Rewrite to /admin
     if (hostname === `admin.${rootDomain}`) {
-        console.log('[Middleware] Admin subdomain detected, rewriting to /admin')
         const urlArgs = new URL(`/admin${path}`, request.url)
         return await updateSession(request, urlArgs)
     }
@@ -36,21 +33,20 @@ export async function middleware(request: NextRequest) {
                         hostname !== rootDomain &&
                         hostname !== `www.${rootDomain}`
 
-    console.log('[Middleware] isSubdomain:', isSubdomain, '| rootDomain:', rootDomain, '| endsWith:', hostname.endsWith(`.${rootDomain}`))
-
     if (isSubdomain) {
         const subdomain = hostname.replace(`.${rootDomain}`, '')
-        console.log('[Middleware] Subdomain detected:', subdomain)
         // Skip reserved subdomains
         if (!reservedSubdomains.includes(subdomain)) {
             const urlArgs = new URL(`/${subdomain}${path}`, request.url)
-            console.log('[Middleware] Rewriting to:', urlArgs.pathname)
             return await updateSession(request, urlArgs)
         }
     }
 
-    // 3. Default → No rewrite
-    return await updateSession(request)
+    // 3. Default → No rewrite (add debug header)
+    const response = await updateSession(request)
+    response.headers.set('x-middleware-host', hostname)
+    response.headers.set('x-middleware-matched', isSubdomain ? 'true' : 'false')
+    return response
 }
 
 export const config = {
