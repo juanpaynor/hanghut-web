@@ -183,8 +183,8 @@ export async function setCustomPricing(
 }
 
 /**
- * Reset partner to standard pricing (15%).
- * Also creates a Xendit split rule for the standard 15% tier.
+ * Reset partner to standard pricing (4%).
+ * Also creates a Xendit split rule for the standard 4% tier.
  */
 export async function resetToStandardPricing(partnerId: string) {
     const supabase = await createClient()
@@ -194,7 +194,7 @@ export async function resetToStandardPricing(partnerId: string) {
         .update({
             pricing_model: 'standard',
             custom_percentage: null,
-            pass_fees_to_customer: false,
+            pass_fees_to_customer: true,
             fixed_fee_per_ticket: 15.00,
         })
         .eq('id', partnerId)
@@ -204,11 +204,11 @@ export async function resetToStandardPricing(partnerId: string) {
         throw new Error('Failed to reset pricing')
     }
 
-    // Create/update Xendit split rule for standard 15%
+    // Create/update Xendit split rule for standard 4%
     try {
         const { data, error: splitError } = await supabase.functions.invoke(
             'create-split-rule',
-            { body: { partner_id: partnerId, platform_percentage: 15 } }
+            { body: { partner_id: partnerId, platform_percentage: 4 } }
         )
 
         if (!splitError && data?.split_rule_id) {

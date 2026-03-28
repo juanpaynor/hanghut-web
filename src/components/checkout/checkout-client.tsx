@@ -55,7 +55,7 @@ export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientPr
     const passFees = organizer.pass_fees_to_customer || false
     const commissionRate = organizer.pricing_model === 'custom' && organizer.custom_percentage !== null
         ? organizer.custom_percentage / 100
-        : 0.15
+        : 0.04
     const fixedFeePerTicket = parseFloat(organizer.fixed_fee_per_ticket || '15')
 
     const subtotal = tier.price * quantity

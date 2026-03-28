@@ -119,7 +119,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
 
     const commissionRate = partnerPricing?.pricing_model === 'custom' && partnerPricing?.custom_percentage !== null
         ? partnerPricing.custom_percentage / 100
-        : 0.15
+        : 0.04
 
     const totalRevenue = soldTickets?.reduce((sum, ticket: any) => {
         const price = ticket.purchase_intent?.unit_price || 0

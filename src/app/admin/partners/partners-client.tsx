@@ -227,7 +227,7 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
                                             <span className="text-muted-foreground text-sm">
                                                 {partner.pricing_model === 'custom'
                                                     ? `${partner.custom_percentage}%`
-                                                    : '10% (Standard)'}
+                                                    : '4% (Standard)'}
                                             </span>
                                         </TableCell>
                                         <TableCell className="text-muted-foreground text-sm">

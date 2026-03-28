@@ -26,10 +26,10 @@ export default async function CreateEventPage() {
         redirect('/organizer')
     }
 
-    // Get commission rate (custom or default 15%)
+    // Get commission rate (custom or default 4%)
     const commissionRate = partner.pricing_model === 'custom' && partner.custom_percentage !== null
         ? partner.custom_percentage / 100
-        : 0.15
+        : 0.04
 
     return (
         <div className="p-8">

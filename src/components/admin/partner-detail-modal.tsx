@@ -59,7 +59,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
     const router = useRouter()
     const [isLoading, setIsLoading] = useState(false)
     const [pricingModel, setPricingModel] = useState(partner.pricing_model || 'standard')
-    const [customPercentage, setCustomPercentage] = useState(partner.custom_percentage?.toString() || '15') // Default custom to 15 if not set
+    const [customPercentage, setCustomPercentage] = useState(partner.custom_percentage?.toString() || '4')
     const [adminNotes, setAdminNotes] = useState('')
     const [autoApprovePayouts, setAutoApprovePayoutsState] = useState(partner.auto_approve_payouts || false)
 
@@ -251,7 +251,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="standard">Standard (15%)</SelectItem>
+                                            <SelectItem value="standard">Standard (4%)</SelectItem>
                                             <SelectItem value="custom">Custom</SelectItem>
                                         </SelectContent>
                                     </Select>

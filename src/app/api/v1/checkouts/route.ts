@@ -90,7 +90,7 @@ export async function POST(request: Request) {
 
     const commissionRate = partner?.pricing_model === 'custom' && partner?.custom_percentage !== null
         ? partner.custom_percentage / 100
-        : 0.15
+        : 0.04
     const fixedFeePerTicket = parseFloat(partner?.fixed_fee_per_ticket?.toString() || '15.00')
     const passFees = partner?.pass_fees_to_customer || false
 
