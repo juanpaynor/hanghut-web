@@ -145,10 +145,10 @@ export default async function OrganizerLayout({
                                 )}
 
                                 {isVerified && partner.slug && (
-                                    <Link href={`/${partner.slug}`} target="_blank" className="text-sm font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1">
+                                    <a href={`https://${partner.slug}.hanghut.com`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1">
                                         My Storefront
                                         <span className="text-[10px] leading-none">↗</span>
-                                    </Link>
+                                    </a>
                                 )}
                             </nav>
                         </div>

@@ -268,15 +268,21 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => router.push(`/${formData.slug || ''}`)}
-                        disabled={!formData.slug}
+                    <a
+                        href={formData.slug ? `https://${formData.slug}.hanghut.com` : '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={!formData.slug ? 'pointer-events-none opacity-50' : ''}
                     >
-                        <Store className="h-4 w-4 mr-2" />
-                        View Live Store
-                    </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={!formData.slug}
+                        >
+                            <Store className="h-4 w-4 mr-2" />
+                            View Live Store
+                        </Button>
+                    </a>
                     <Button type="submit" size="lg" disabled={isLoading} className={cn("min-w-[140px]", successMessage ? "bg-green-600 hover:bg-green-700" : "")}>
                         {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : (successMessage ? <><CheckCircle2 className="h-4 w-4 mr-2" /> Saved</> : 'Save Changes')}
                     </Button>
@@ -375,11 +381,6 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                         <div className="space-y-2">
                                             <Label htmlFor="slug">
                                                 Store URL *
-                                                {formData.slug && (
-                                                    <span className="text-muted-foreground font-normal ml-2 text-xs">
-                                                        (hanghut.com/{formData.slug})
-                                                    </span>
-                                                )}
                                             </Label>
                                             <div className="relative">
                                                 <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-muted-foreground/50">
@@ -393,6 +394,19 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                                     className={cn("pl-9", errors.slug && "border-red-500")}
                                                 />
                                             </div>
+                                            {formData.slug && (
+                                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                                    Your storefront:{' '}
+                                                    <a
+                                                        href={`https://${formData.slug}.hanghut.com`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-primary font-medium hover:underline"
+                                                    >
+                                                        {formData.slug}.hanghut.com
+                                                    </a>
+                                                </p>
+                                            )}
                                             {errors.slug && <p className="text-red-500 text-sm mt-1">{errors.slug}</p>}
                                         </div>
                                     </div>

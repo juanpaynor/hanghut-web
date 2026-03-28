@@ -27,26 +27,30 @@ function getSubdomain(request: NextRequest): string | null {
     return RESERVED_SUBDOMAINS.includes(subdomain) ? null : subdomain
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
     const url = request.nextUrl
     const subdomain = getSubdomain(request)
     const hostname = (request.headers.get('host') || '').split(':')[0]
 
-    // 1. Partner subdomain → mutate pathname and rewrite
+    // 1. Partner subdomain → rewrite to storefront (no auth needed)
     if (subdomain) {
-        // Mutate the pathname directly on the nextUrl object
         url.pathname = `/${subdomain}${url.pathname}`
         return NextResponse.rewrite(url)
     }
 
-    // 2. Admin subdomain → rewrite to /admin
+    // 2. Admin subdomain → rewrite to /admin path (with auth)
     if (hostname === `admin.${ROOT_DOMAIN}`) {
+        // If requesting /login on admin subdomain, let it pass through
+        // to the login page (not rewritten to /admin/login)
+        if (url.pathname === '/login') {
+            return await updateSession(request)
+        }
         url.pathname = `/admin${url.pathname}`
         return NextResponse.rewrite(url)
     }
 
-    // 3. Default → pass through (no rewrite needed)
-    return NextResponse.next()
+    // 3. Default (main domain) → Supabase session handling for auth
+    return await updateSession(request)
 }
 
 export const config = {
