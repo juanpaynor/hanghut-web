@@ -19,10 +19,7 @@ export async function middleware(request: NextRequest) {
         return await updateSession(request, urlArgs)
     }
 
-    // 2. Organizer Subdomains -> Rewrite to /[slug]
-    /* 
-    // DISABLED: Netlify Personal Plan does not support Wildcard Domains.
-    // Re-enable this block if/when upgrading to Pro or if manually adding aliases.
+    // 2. Partner Subdomains → Rewrite to /[slug] storefront
     const isSubdomain = hostname.includes('.') && 
                        !hostname.startsWith('www.') && 
                        !hostname.startsWith('admin.') &&
@@ -33,9 +30,8 @@ export async function middleware(request: NextRequest) {
         const urlArgs = new URL(`/${subdomain}${path}`, request.url)
         return await updateSession(request, urlArgs)
     }
-    */
 
-    // 3. Default -> No rewrite
+    // 3. Default → No rewrite
     return await updateSession(request)
 }
 
