@@ -1,62 +1,75 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 
-export async function middleware(request: NextRequest) {
-    const url = request.nextUrl
-    let hostname = request.headers.get('host') || request.nextUrl.host || ''
-    
-    // Strip port if present
-    hostname = hostname.split(':')[0]
+const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'
+const RESERVED_SUBDOMAINS = ['www', 'admin', 'api', 'mail', 'smtp', 'send']
 
-    // Handle local development hostname
-    if (hostname.includes('localhost')) {
-        const localSubdomain = hostname.split('.localhost')[0]
-        if (localSubdomain !== hostname) {
-            hostname = `${localSubdomain}.${process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'}`
+function extractSubdomain(request: NextRequest): string | null {
+    const url = request.url
+    const host = request.headers.get('host') || ''
+    const hostname = host.split(':')[0]
+
+    // Local development
+    if (url.includes('localhost') || url.includes('127.0.0.1')) {
+        const fullUrlMatch = url.match(/http:\/\/([^.]+)\.localhost/)
+        if (fullUrlMatch && fullUrlMatch[1]) {
+            return fullUrlMatch[1]
         }
+        if (hostname.includes('.localhost')) {
+            return hostname.split('.')[0]
+        }
+        return null
     }
 
-    const searchParams = request.nextUrl.searchParams.toString()
-    const path = `${url.pathname}${searchParams.length > 0 ? `?${searchParams}` : ''}`
+    // Production: check if hostname is a subdomain of root domain
+    const isSubdomain =
+        hostname !== ROOT_DOMAIN &&
+        hostname !== `www.${ROOT_DOMAIN}` &&
+        hostname.endsWith(`.${ROOT_DOMAIN}`)
 
-    const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'
-    const reservedSubdomains = ['www', 'admin', 'api', 'mail', 'smtp', 'send']
+    if (!isSubdomain) return null
 
-    // 1. Admin Subdomain -> Rewrite to /admin
-    if (hostname === `admin.${rootDomain}`) {
+    const subdomain = hostname.replace(`.${ROOT_DOMAIN}`, '')
+    return RESERVED_SUBDOMAINS.includes(subdomain) ? null : subdomain
+}
+
+export async function middleware(request: NextRequest) {
+    const subdomain = extractSubdomain(request)
+
+    // Partner subdomain detected → rewrite to storefront BEFORE Supabase session
+    if (subdomain) {
+        const { pathname } = request.nextUrl
+        const searchParams = request.nextUrl.searchParams.toString()
+        const path = `${pathname}${searchParams.length > 0 ? `?${searchParams}` : ''}`
+
+        // Rewrite subdomain to /[slug] storefront route
+        const rewriteUrl = new URL(`/${subdomain}${path}`, request.url)
+        return NextResponse.rewrite(rewriteUrl)
+    }
+
+    // Admin subdomain
+    const host = request.headers.get('host') || ''
+    const hostname = host.split(':')[0]
+    if (hostname === `admin.${ROOT_DOMAIN}`) {
+        const { pathname } = request.nextUrl
+        const searchParams = request.nextUrl.searchParams.toString()
+        const path = `${pathname}${searchParams.length > 0 ? `?${searchParams}` : ''}`
         const urlArgs = new URL(`/admin${path}`, request.url)
         return await updateSession(request, urlArgs)
     }
 
-    // 2. Partner Subdomains → Rewrite to /[slug] storefront
-    const isSubdomain = hostname.endsWith(`.${rootDomain}`) && 
-                        hostname !== rootDomain &&
-                        hostname !== `www.${rootDomain}`
-
-    if (isSubdomain) {
-        const subdomain = hostname.replace(`.${rootDomain}`, '')
-        // Skip reserved subdomains
-        if (!reservedSubdomains.includes(subdomain)) {
-            const urlArgs = new URL(`/${subdomain}${path}`, request.url)
-            return await updateSession(request, urlArgs)
-        }
-    }
-
-    // 3. Default → No rewrite (add debug header)
-    const response = await updateSession(request)
-    response.headers.set('x-middleware-host', hostname)
-    response.headers.set('x-middleware-matched', isSubdomain ? 'true' : 'false')
-    return response
+    // Default: run Supabase session (handles auth, protected routes)
+    return await updateSession(request)
 }
 
 export const config = {
     matcher: [
         /*
-         * Match all request paths except for the ones starting with:
+         * Match all paths except:
          * - _next/static (static files)
-         * - _next/image (image optimization files)
-         * - favicon.ico (favicon file)
-         * - public folder
+         * - _next/image (image optimization)
+         * - favicon.ico
+         * - public assets
          */
         '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     ],
