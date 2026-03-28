@@ -35,16 +35,23 @@ export async function updateSession(request: NextRequest, rewriteUrl?: URL) {
         data: { user },
     } = await supabase.auth.getUser()
 
-    // Protected routes pattern
+    // Protected routes pattern — exclude login/register/auth pages
+    const pathname = request.nextUrl.pathname
     const isProtectedRoute =
-        request.nextUrl.pathname.startsWith('/admin') ||
-        request.nextUrl.pathname.startsWith('/organizer')
+        (pathname.startsWith('/admin') || pathname.startsWith('/organizer')) &&
+        !pathname.startsWith('/organizer/login') &&
+        !pathname.startsWith('/organizer/register') &&
+        !pathname.startsWith('/organizer/accept-invite')
 
     if (!user && isProtectedRoute) {
-        // no user, potentially respond by redirecting the user to the login page
+        // Redirect to the appropriate login page based on the route
         const url = request.nextUrl.clone()
-        url.pathname = '/login'
-        url.searchParams.set('next', request.nextUrl.pathname)
+        if (pathname.startsWith('/admin')) {
+            url.pathname = '/login'
+        } else {
+            url.pathname = '/organizer/login'
+        }
+        url.searchParams.set('next', pathname)
         return NextResponse.redirect(url)
     }
 
