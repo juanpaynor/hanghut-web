@@ -97,8 +97,7 @@ export async function POST(request: Request) {
     const unitPrice = tierToUse ? tierToUse.price : event.ticket_price
     const platformFee = Math.round(unitPrice * quantity * commissionRate)
     const fixedFeeTotal = fixedFeePerTicket * quantity
-    const processingFee = Math.round(unitPrice * quantity * 0.03)
-    const totalFees = platformFee + fixedFeeTotal + processingFee
+    const totalFees = platformFee + fixedFeeTotal
 
     // Call the create-purchase-intent edge function
     const edgeClient = createClient(
@@ -125,7 +124,6 @@ export async function POST(request: Request) {
                 calculated_fees: {
                     platform_fee: platformFee,
                     fixed_fee: fixedFeeTotal,
-                    processing_fee: processingFee,
                     total_fees: totalFees
                 }
             },

@@ -89,8 +89,7 @@ export function EventForm({
     // Calculate pricing preview
     const ticketPrice = parseFloat(formData.ticket_price) || 0
     const platformFee = ticketPrice * commissionRate
-    const processingFee = ticketPrice * 0.04
-    const organizerPayout = ticketPrice - platformFee - processingFee
+    const organizerPayout = ticketPrice - platformFee
 
     const handleInputChange = (field: keyof EventFormData, value: any) => {
         setFormData(prev => ({ ...prev, [field]: value }))
@@ -524,17 +523,12 @@ export function EventForm({
                                                 <span>Platform Fee ({(commissionRate * 100).toFixed(1)}%):</span>
                                                 <span className="font-medium">-₱{(ticketPrice * commissionRate).toFixed(2)}</span>
                                             </div>
-                                            <div className="flex justify-between text-red-600">
-                                                <span>Processing Fee (4%):</span>
-                                                <span className="font-medium">-₱{(ticketPrice * 0.04).toFixed(2)}</span>
-                                            </div>
 
                                             <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">
                                                 <span>You'll receive:</span>
                                                 <span>₱{(
                                                     ticketPrice -
-                                                    (ticketPrice * commissionRate) -
-                                                    (ticketPrice * 0.04)
+                                                    (ticketPrice * commissionRate)
                                                 ).toFixed(2)} per ticket</span>
                                             </div>
                                         </>
@@ -544,13 +538,9 @@ export function EventForm({
                                                 <span>Platform Fee ({(commissionRate * 100).toFixed(1)}%):</span>
                                                 <span className="font-medium">-₱{platformFee.toFixed(2)}</span>
                                             </div>
-                                            <div className="flex justify-between text-red-600">
-                                                <span>Processing Fee (4% + ₱15):</span>
-                                                <span className="font-medium">-₱{(processingFee + 15).toFixed(2)}</span>
-                                            </div>
                                             <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">
                                                 <span>You'll receive:</span>
-                                                <span>₱{(organizerPayout - 15).toFixed(2)} per ticket</span>
+                                                <span>₱{organizerPayout.toFixed(2)} per ticket</span>
                                             </div>
                                         </>
                                     )}

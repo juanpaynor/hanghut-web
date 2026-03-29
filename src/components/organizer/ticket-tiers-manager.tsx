@@ -346,12 +346,9 @@ export function TicketTiersManager({
                                             </span>
                                         </div>
                                         <div className="flex justify-between text-xs text-red-600">
-                                            <span>Platform & Processing (paid by you)</span>
+                                            <span>Platform Fee ({(commissionRate * 100).toFixed(0)}%)</span>
                                             <span>
-                                                -₱{(
-                                                    (parseFloat(formData.price) * commissionRate) +
-                                                    (parseFloat(formData.price) * 0.04)
-                                                ).toFixed(2)}
+                                                -₱{(parseFloat(formData.price) * commissionRate).toFixed(2)}
                                             </span>
                                         </div>
                                         <div className="border-t border-border/50 pt-1 flex justify-between font-medium text-foreground">
@@ -359,8 +356,7 @@ export function TicketTiersManager({
                                             <span className="text-green-600">
                                                 ₱{(
                                                     parseFloat(formData.price) -
-                                                    (parseFloat(formData.price) * commissionRate) -
-                                                    (parseFloat(formData.price) * 0.04)
+                                                    (parseFloat(formData.price) * commissionRate)
                                                 ).toFixed(2)}
                                             </span>
                                         </div>
@@ -371,17 +367,12 @@ export function TicketTiersManager({
                                             <span>Platform Fee ({(commissionRate * 100).toFixed(0)}%)</span>
                                             <span>-₱{(parseFloat(formData.price) * commissionRate).toFixed(2)}</span>
                                         </div>
-                                        <div className="flex justify-between">
-                                            <span>Processing (4% + ₱15)</span>
-                                            <span>-₱{((parseFloat(formData.price) * 0.04) + 15).toFixed(2)}</span>
-                                        </div>
                                         <div className="border-t border-border/50 pt-1 flex justify-between font-medium text-foreground">
                                             <span>Net Earnings</span>
                                             <span className="text-green-600">
                                                 ₱{(
                                                     parseFloat(formData.price) -
-                                                    (parseFloat(formData.price) * commissionRate) -
-                                                    ((parseFloat(formData.price) * 0.04) + 15)
+                                                    (parseFloat(formData.price) * commissionRate)
                                                 ).toFixed(2)}
                                             </span>
                                         </div>
