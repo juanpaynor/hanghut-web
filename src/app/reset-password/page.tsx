@@ -22,18 +22,23 @@ export default function ResetPasswordPage() {
     const supabase = createClient()
 
     useEffect(() => {
+        // Check if redirected here with an error from auth callback
+        const errorParam = searchParams.get('error')
+        const messageParam = searchParams.get('message')
+        if (errorParam === 'link_expired') {
+            setError(messageParam || 'This reset link has expired or was opened in a different browser. Please request a new password reset link.')
+            return
+        }
+
         // Check if we have a valid session from the reset link
         const checkSession = async () => {
             const { data: { session } } = await supabase.auth.getSession()
             if (!session) {
                 setError('Invalid or expired reset link. Please request a new password reset.')
-            } else {
-                // Log the session user for debugging
-                console.log('Password reset session for user:', session.user.email)
             }
         }
         checkSession()
-    }, [supabase])
+    }, [supabase, searchParams])
 
     const handleResetPassword = async (e: React.FormEvent) => {
         e.preventDefault()
