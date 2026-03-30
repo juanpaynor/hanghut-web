@@ -14,7 +14,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import { Calendar, MapPin, Upload, X, Loader2, DollarSign } from 'lucide-react'
+import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText } from 'lucide-react'
 import { createEvent, updateEvent } from '@/lib/organizer/event-actions'
 import { GooglePlacesAutocomplete } from '@/components/organizer/google-places-autocomplete'
 import { useToast } from '@/hooks/use-toast'
@@ -35,6 +35,7 @@ interface EventFormData {
     sales_end_datetime: string
     cover_image: File | null
     additional_images: File[]
+    custom_tos: string
     status: 'draft' | 'active' | 'paused' | 'cancelled' | 'hidden'
 }
 
@@ -83,6 +84,7 @@ export function EventForm({
         sales_end_datetime: initialData?.sales_end_datetime ? new Date(initialData.sales_end_datetime).toISOString().slice(0, 16) : '',
         cover_image: null,
         additional_images: [],
+        custom_tos: initialData?.custom_tos || '',
         status: initialData?.status || 'draft',
     })
 
@@ -246,6 +248,7 @@ export function EventForm({
             formDataToSend.append('ticket_price', formData.ticket_price)
             formDataToSend.append('capacity', formData.capacity)
             formDataToSend.append('sales_end_datetime', formData.sales_end_datetime)
+            formDataToSend.append('custom_tos', formData.custom_tos)
             formDataToSend.append('status', status)
 
             // Only send organizer_id for create, backend handles auth for update
@@ -679,6 +682,27 @@ export function EventForm({
                             {errors.additional_images && <p className="text-sm text-red-500 mt-1">{errors.additional_images}</p>}
                         </div>
                     </div>
+                </Card>
+
+                {/* Custom Terms & Conditions */}
+                <Card className="p-6">
+                    <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
+                        <FileText className="h-6 w-6" />
+                        Terms & Conditions (Optional)
+                    </h2>
+                    <p className="text-sm text-muted-foreground mb-6">
+                        Add event-specific terms that customers must accept at checkout. Leave empty to use your organization&apos;s default terms.
+                    </p>
+                    <Textarea
+                        value={formData.custom_tos}
+                        onChange={(e) => handleInputChange('custom_tos', e.target.value)}
+                        placeholder={`e.g., No refunds within 24 hours of the event.\nAttendees must be 18 years or older.\nThe organizer is not liable for lost belongings.`}
+                        rows={6}
+                        maxLength={2000}
+                    />
+                    <p className="text-xs text-muted-foreground mt-2">
+                        {formData.custom_tos.length}/2000 characters
+                    </p>
                 </Card>
 
                 {isEditing && (

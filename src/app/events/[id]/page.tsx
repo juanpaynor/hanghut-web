@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
-import { Calendar, MapPin, Share2, ShieldCheck, Clock, Ticket } from 'lucide-react'
+import { Calendar, MapPin, Share2, ShieldCheck, Clock, Ticket, Phone } from 'lucide-react'
 import type { Metadata } from 'next'
 import { TicketSelector } from '@/components/events/ticket-selector'
 import { EventGallery } from '@/components/events/event-gallery'
@@ -274,6 +274,10 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                         View Profile
                     </Link>
                 )}
+                <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                    <Phone className="h-3 w-3" />
+                    <a href="tel:+639618478642" className="hover:underline">+63 961 847 8642</a>
+                </p>
             </div>
         </div>
     )
@@ -324,6 +328,10 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                 />
                 <p className="text-center text-xs text-muted-foreground mt-6 flex items-center justify-center gap-1">
                     <ShieldCheck className="h-3 w-3" /> Secure checkout powered by Xendit
+                </p>
+                <p className="text-center text-xs text-muted-foreground mt-2 flex items-center justify-center gap-1">
+                    <Phone className="h-3 w-3" /> Need help? Contact us at{' '}
+                    <a href="tel:+639618478642" className="text-primary hover:underline font-medium">+63 961 847 8642</a>
                 </p>
             </div>
         </Card>

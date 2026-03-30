@@ -117,6 +117,35 @@ async function getTransactions(partnerId: string, from?: string, to?: string, se
     return { transactions: transactions || [], count: count || 0 }
 }
 
+// Helper to get wallet top-ups from the dedicated wallet_topups table
+async function getWalletTopUps(partnerId: string) {
+    const supabase = await createClient()
+
+    const { data: topups } = await supabase
+        .from('wallet_topups')
+        .select('id, amount, status, payment_method, reference_id, created_at, completed_at')
+        .eq('partner_id', partnerId)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+    // Normalize top-ups into the transaction shape for the unified list
+    return (topups || []).map(t => ({
+        id: t.id,
+        gross_amount: t.amount,
+        organizer_payout: t.amount,
+        platform_fee: 0,
+        payment_processing_fee: 0,
+        fixed_fee: null,
+        status: 'completed',
+        created_at: t.created_at,
+        payout_id: null,
+        event: { title: 'Wallet Top-Up' },
+        purchase_intent: { payment_method: t.payment_method },
+        _type: 'topup' as const,
+    }))
+}
+
 // Helper to get Period Earnings
 async function getPeriodEarnings(partnerId: string, from?: string, to?: string) {
     if (!from || !to) return null
@@ -158,17 +187,22 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
     if (!partnerId) return null
 
     // Parallel fetching
-    const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings, walletInfo] = await Promise.all([
+    const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings, walletInfo, topups] = await Promise.all([
         getPayoutStats(partnerId),
         getPayoutHistory(partnerId, from, to, payoutPage, 5),
         getBankAccounts(partnerId),
         getTransactions(partnerId, from, to, search, txPage, 10),
         from && to ? getPeriodEarnings(partnerId, from, to) : Promise.resolve(null),
         getWalletInfo(partnerId),
+        getWalletTopUps(partnerId),
     ])
 
     const { payouts, count: payoutCount } = payoutsResult
-    const { transactions, count: transactionCount } = transactionsResult
+    const { transactions: ticketTransactions, count: transactionCount } = transactionsResult
+
+    // Merge ticket transactions + wallet top-ups, sorted by date
+    const transactions = [...ticketTransactions.map((t: any) => ({ ...t, _type: 'ticket' })), ...topups]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -206,64 +240,71 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                     </TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="overview" className="space-y-8">
-                    {/* Stats Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <Card className="p-6 bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-muted-foreground mb-1">Available Balance</p>
-                                    <p className="text-3xl font-bold text-green-600">
-                                        ₱{stats.availableBalance.toLocaleString()}
-                                    </p>
-                                </div>
-                                <DollarSign className="h-10 w-10 text-green-500 opacity-80" />
-                            </div>
-                        </Card>
-
-                        <Card className="p-6 bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-muted-foreground mb-1">
-                                        {periodEarnings !== null ? 'Period Earnings' : 'Total Earnings'}
-                                    </p>
-                                    <p className="text-3xl font-bold text-blue-600">
-                                        ₱{(periodEarnings !== null ? periodEarnings : stats.totalEarnings).toLocaleString()}
-                                    </p>
-                                    {periodEarnings !== null && (
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                            Total Lifetime: ₱{stats.totalEarnings.toLocaleString()}
-                                        </p>
-                                    )}
-                                </div>
-                                <TrendingUp className="h-10 w-10 text-blue-500 opacity-80" />
-                            </div>
-                        </Card>
-
-                        <Card className="p-6 bg-gradient-to-br from-yellow-500/10 to-yellow-600/5 border-yellow-500/20">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-muted-foreground mb-1">Pending Requests</p>
-                                    <p className="text-3xl font-bold text-yellow-600">
-                                        ₱{stats.pendingPayouts.toLocaleString()}
-                                    </p>
-                                </div>
-                                <Clock className="h-10 w-10 text-yellow-500 opacity-80" />
-                            </div>
-                        </Card>
-                    </div>
-
-                    {/* Xendit Wallet */}
+                <TabsContent value="overview" className="space-y-6">
+                    {/* Hero Wallet Section */}
                     <WalletCard
                         xenditAccountId={walletInfo.xenditAccountId}
                         receivable={walletInfo.receivable}
                         kycStatus={walletInfo.kycStatus}
-                        availableBalance={stats.availableBalance}
+                        xenditAvailableBalance={walletInfo.xenditAvailableBalance}
+                        pendingSettlement={walletInfo.pendingSettlement}
                     />
 
-                    {/* Request Payout Logic */}
+                    {/* Secondary Stats Row */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <Card className="p-5 border-border/50 hover:border-border transition-colors">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 rounded-xl bg-blue-500/10">
+                                    <TrendingUp className="h-5 w-5 text-blue-500" />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                                        {periodEarnings !== null ? 'Period Earnings' : 'Lifetime Earnings'}
+                                    </p>
+                                    <p className="text-xl font-bold">
+                                        ₱{(periodEarnings !== null ? periodEarnings : stats.totalEarnings).toLocaleString()}
+                                    </p>
+                                    {periodEarnings !== null && (
+                                        <p className="text-[10px] text-muted-foreground">
+                                            Lifetime: ₱{stats.totalEarnings.toLocaleString()}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </Card>
+
+                        <Card className="p-5 border-border/50 hover:border-border transition-colors">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 rounded-xl bg-amber-500/10">
+                                    <Clock className="h-5 w-5 text-amber-500" />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Pending Requests</p>
+                                    <p className="text-xl font-bold">
+                                        ₱{stats.pendingPayouts.toLocaleString()}
+                                    </p>
+                                </div>
+                            </div>
+                        </Card>
+
+                        <Card className="p-5 border-border/50 hover:border-border transition-colors">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 rounded-xl bg-green-500/10">
+                                    <DollarSign className="h-5 w-5 text-green-500" />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Withdrawn</p>
+                                    <p className="text-xl font-bold">
+                                        ₱{stats.completedPayouts.toLocaleString()}
+                                    </p>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+
+                    {/* Request Payout */}
                     <RequestPayoutCard
-                        balance={stats.availableBalance}
+                        balance={walletInfo.xenditAvailableBalance}
                         partnerId={partnerId}
                         hasBank={bankAccounts.some((b: any) => b.is_primary)}
                     />
@@ -271,31 +312,38 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                     {/* Withdrawal History */}
                     <Card className="p-6">
                         <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-2xl font-bold">Withdrawal History</h2>
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-lg bg-muted">
+                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                </div>
+                                <h2 className="text-lg font-semibold">Withdrawal History</h2>
+                            </div>
                             {from && to && (
-                                <Badge variant="outline" className="text-muted-foreground font-normal">
-                                    Filtered by Date
+                                <Badge variant="outline" className="text-muted-foreground font-normal text-xs">
+                                    Filtered
                                 </Badge>
                             )}
                         </div>
                         {payouts.length === 0 ? (
-                            <div className="text-center py-12">
-                                <DollarSign className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-                                <p className="text-muted-foreground">No payout requests found in this period</p>
+                            <div className="text-center py-10">
+                                <div className="p-3 rounded-full bg-muted w-fit mx-auto mb-3">
+                                    <DollarSign className="h-6 w-6 text-muted-foreground" />
+                                </div>
+                                <p className="text-sm text-muted-foreground">No withdrawal requests yet</p>
                             </div>
                         ) : (
-                            <div className="space-y-3">
+                            <div className="space-y-2">
                                 {payouts.map((payout: any) => (
                                     <Link
                                         key={payout.id}
                                         href={`/organizer/payouts/${payout.id}`}
-                                        className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors block"
+                                        className="flex items-center justify-between p-4 rounded-xl border border-border/50 hover:border-border hover:bg-muted/30 transition-all block"
                                     >
                                         <div>
-                                            <p className="font-semibold text-lg">₱{Number(payout.amount).toLocaleString()}</p>
-                                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                            <p className="font-semibold">₱{Number(payout.amount).toLocaleString()}</p>
+                                            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                                                 <span>{format(new Date(payout.requested_at), 'MMM d, yyyy')}</span>
-                                                <span>•</span>
+                                                <span className="opacity-40">•</span>
                                                 <span>{payout.bank_name}</span>
                                             </div>
                                             {payout.admin_notes && (
@@ -305,7 +353,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                                                 <p className="text-xs text-red-600 mt-1">Reason: {payout.rejection_reason}</p>
                                             )}
                                         </div>
-                                        <Badge className={getStatusColor(payout.status)}>
+                                        <Badge className={`text-[10px] ${getStatusColor(payout.status)}`}>
                                             {payout.status.replace('_', ' ').toUpperCase()}
                                         </Badge>
                                     </Link>
@@ -318,11 +366,19 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
 
                 <TabsContent value="transactions" className="space-y-4">
                     <div className="flex justify-between items-center">
-                        <h2 className="text-xl font-semibold">Transactions</h2>
+                        <div>
+                            <h2 className="text-lg font-semibold">Transactions</h2>
+                            <p className="text-sm text-muted-foreground">Each row represents a completed ticket sale with fees and settlement info</p>
+                        </div>
                         <SearchInput placeholder="Search event or ID..." />
                     </div>
-                    <TransactionsHistory transactions={transactions as any} />
-                    <PaginationControls totalCount={transactionCount} pageSize={10} paramName="tx_page" />
+                    <TransactionsHistory transactions={transactions as any} totalCount={transactionCount} />
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm text-muted-foreground">
+                            Showing {Math.min((txPage - 1) * 10 + 1, transactionCount)}–{Math.min(txPage * 10, transactionCount)} of {transactionCount} transactions
+                        </p>
+                        <PaginationControls totalCount={transactionCount} pageSize={10} paramName="tx_page" />
+                    </div>
                 </TabsContent>
 
                 <TabsContent value="settings">

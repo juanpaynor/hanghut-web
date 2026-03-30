@@ -33,13 +33,15 @@ export default async function CheckoutPage({
             capacity,
             tickets_sold,
             theme_color,
+            custom_tos,
             organizer:partners (
                 id,
                 business_name,
                 pass_fees_to_customer,
                 fixed_fee_per_ticket,
                 pricing_model,
-                custom_percentage
+                custom_percentage,
+                custom_tos
             ),
             ticket_tiers (
                 id,
@@ -56,6 +58,11 @@ export default async function CheckoutPage({
     if (!event) {
         redirect('/')
     }
+
+    // Resolve custom TOS: event-level overrides organizer-level
+    const org = Array.isArray(event.organizer) ? event.organizer[0] : event.organizer
+    const customTos = event.custom_tos || org?.custom_tos || null
+    const organizerName = org?.business_name || 'Organizer'
 
     // 3. Resolve Tier
     let tierToUse = null
@@ -125,6 +132,8 @@ export default async function CheckoutPage({
                     quantity={qty}
                     user={user}
                     tier={tierToUse}
+                    customTos={customTos}
+                    organizerName={organizerName}
                 />
             </main>
         </div>

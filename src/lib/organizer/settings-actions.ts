@@ -50,6 +50,7 @@ const profileSchema = z.object({
     }).optional(),
     cover_image_url: z.string().optional(),
     profile_photo_url: z.string().optional(),
+    custom_tos: z.string().max(2000).optional(),
 })
 
 export type ProfileFormState = {
@@ -96,6 +97,11 @@ export async function updatePartnerProfile(
             website: formData.get('website') as string || '',
         },
         branding
+    }
+
+    const customTos = formData.get('custom_tos') as string
+    if (customTos !== undefined) {
+        (rawData as any).custom_tos = customTos
     }
 
     // Validate
@@ -175,6 +181,7 @@ export async function updatePartnerProfile(
         branding: data.branding,
         profile_photo_url: profilePhotoUrl,
         cover_image_url: coverImageUrl,
+        custom_tos: data.custom_tos || null,
         updated_at: new Date().toISOString(),
     }
 

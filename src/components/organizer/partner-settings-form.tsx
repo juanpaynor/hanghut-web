@@ -30,6 +30,7 @@ interface PartnerSettingsFormProps {
         slug?: string
         profile_photo_url?: string
         cover_image_url?: string
+        custom_tos?: string | null
         social_links?: {
             facebook?: string
             instagram?: string
@@ -80,6 +81,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
         business_name: initialData.business_name || '',
         description: initialData.description || '',
         slug: initialData.slug || '',
+        custom_tos: initialData.custom_tos || '',
         social_links: {
             facebook: initialData.social_links?.facebook || '',
             instagram: initialData.social_links?.instagram || '',
@@ -219,6 +221,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             data.append('business_name', formData.business_name)
             data.append('description', formData.description)
             data.append('slug', formData.slug)
+            data.append('custom_tos', formData.custom_tos)
 
             data.append('facebook', formData.social_links.facebook)
             data.append('instagram', formData.social_links.instagram)
@@ -613,6 +616,31 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                             </div>
                                         </div>
                                     </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Custom Terms of Service */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <FileCode className="h-5 w-5" />
+                                        Custom Terms & Conditions
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Add your own terms that customers must accept at checkout. This applies to all your events by default — you can override per-event in the event editor.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <Textarea
+                                        value={formData.custom_tos}
+                                        onChange={(e) => handleInputChange('custom_tos', e.target.value)}
+                                        placeholder={`e.g., By purchasing tickets, you agree to the following:\n\n1. No refunds within 24 hours of the event.\n2. Attendees must be 18 years or older.\n3. The organizer reserves the right to refuse entry.\n4. Photography and recording may occur during the event.`}
+                                        rows={8}
+                                        className="resize-none"
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        {formData.custom_tos.length} / 2000 characters • Leave empty to show only HangHut&apos;s Terms of Service at checkout.
+                                    </p>
                                 </CardContent>
                             </Card>
                         </div>

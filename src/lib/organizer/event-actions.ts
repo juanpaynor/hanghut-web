@@ -119,6 +119,7 @@ export async function createEvent(formData: FormData) {
             cover_image_url: coverUrl,
             images: additionalImageUrls.length > 0 ? additionalImageUrls : null,
             status: formData.get('status') as string,
+            custom_tos: (formData.get('custom_tos') as string) || null,
             is_featured: false,
         }
 
@@ -270,6 +271,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
             cover_image_url: coverUrl,
             images: finalImages.length > 0 ? finalImages : null,
             status: formData.get('status') as string,
+            custom_tos: (formData.get('custom_tos') as string) || null,
             updated_at: new Date().toISOString(),
         }
 

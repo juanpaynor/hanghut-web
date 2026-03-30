@@ -150,7 +150,7 @@ export default async function PayoutDetailPage({ params }: PageProps) {
                     Included Transactions
                 </h2>
                 {transactions && transactions.length > 0 ? (
-                    <TransactionsHistory transactions={transactions} />
+                    <TransactionsHistory transactions={transactions} totalCount={transactions.length} />
                 ) : (
                     <Card className="p-8 text-center text-muted-foreground">
                         <p>No linked transactions found for this payout.</p>

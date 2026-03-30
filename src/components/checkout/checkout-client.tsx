@@ -28,9 +28,11 @@ interface CheckoutClientProps {
         quantity_total: number
         quantity_sold: number
     }
+    customTos?: string | null
+    organizerName?: string
 }
 
-export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientProps) {
+export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName }: CheckoutClientProps) {
     const router = useRouter()
     const { toast } = useToast()
     const [isLoading, setIsLoading] = useState(false)
@@ -48,6 +50,8 @@ export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientPr
 
     // [NEW] Terms & Newsletter State
     const [termsAccepted, setTermsAccepted] = useState(false)
+    const [organizerTermsAccepted, setOrganizerTermsAccepted] = useState(false)
+    const [showOrganizerTos, setShowOrganizerTos] = useState(false)
     const [newsletterSubscribed, setNewsletterSubscribed] = useState(false)
 
     // Fee Logic
@@ -124,7 +128,16 @@ export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientPr
         if (!termsAccepted) {
             toast({
                 title: "Terms Required",
-                description: "You must accept the Terms of Service to proceed.",
+                description: "You must accept the HangHut Terms of Service to proceed.",
+                variant: "destructive"
+            })
+            return
+        }
+
+        if (customTos && !organizerTermsAccepted) {
+            toast({
+                title: "Organizer Terms Required",
+                description: `You must accept ${organizerName || 'the organizer'}'s terms to proceed.`,
                 variant: "destructive"
             })
             return
@@ -392,10 +405,32 @@ export function CheckoutClient({ event, quantity, user, tier }: CheckoutClientPr
                                         className="mt-1 h-4 w-4 rounded border-primary text-primary focus:ring-primary"
                                     />
                                     <span className="text-sm">
-                                        I accept the <a href="/terms" target="_blank" className="underline text-primary hover:text-primary/80">Terms of Service</a>
+                                        I accept the <a href="/terms" target="_blank" className="underline text-primary hover:text-primary/80">HangHut Terms of Service</a>
                                         <span className="text-destructive">*</span>
                                     </span>
                                 </Label>
+
+                                {customTos && (
+                                    <div className="space-y-1.5">
+                                        <Label className="flex items-start gap-3 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={organizerTermsAccepted}
+                                                onChange={(e) => setOrganizerTermsAccepted(e.target.checked)}
+                                                className="mt-1 h-4 w-4 rounded border-primary text-primary focus:ring-primary"
+                                            />
+                                            <span className="text-sm">
+                                                I accept <button type="button" onClick={() => setShowOrganizerTos(!showOrganizerTos)} className="underline text-primary hover:text-primary/80">{organizerName || 'Organizer'}&apos;s Terms &amp; Conditions</button>
+                                                <span className="text-destructive">*</span>
+                                            </span>
+                                        </Label>
+                                        {showOrganizerTos && (
+                                            <div className="ml-7 p-3 rounded-lg bg-muted/50 border border-border/50 text-xs text-muted-foreground max-h-40 overflow-y-auto whitespace-pre-wrap">
+                                                {customTos}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 <Label className="flex items-start gap-3 cursor-pointer">
                                     <input

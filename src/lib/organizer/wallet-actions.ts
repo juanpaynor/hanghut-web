@@ -5,12 +5,14 @@ import { getAuthUser, getPartnerId } from '@/lib/auth/cached'
 
 /**
  * Get wallet info for the current organizer, including:
- * - Xendit sub-account ID
+ * - Xendit sub-account balance (available + pending settlement)
  * - Platform fee receivable (owed to HangHut)
+ * - KYC status
  */
 export async function getWalletInfo(partnerId: string) {
     const supabase = await createClient()
 
+    // 1. Get partner basics from DB
     const { data: partner, error } = await supabase
         .from('partners')
         .select('xendit_account_id, platform_fee_receivable, kyc_status')
@@ -18,13 +20,42 @@ export async function getWalletInfo(partnerId: string) {
         .single()
 
     if (error || !partner) {
-        return { xenditAccountId: null, receivable: 0, kycStatus: null }
+        return {
+            xenditAccountId: null,
+            receivable: 0,
+            kycStatus: null,
+            xenditAvailableBalance: 0,
+            pendingSettlement: 0,
+        }
+    }
+
+    // 2. If they have a Xendit sub-account, fetch real balance from Xendit
+    let xenditAvailableBalance = 0
+    let pendingSettlement = 0
+
+    if (partner.xendit_account_id) {
+        try {
+            const { data, error: fnError } = await supabase.functions.invoke(
+                'get-subaccount-balance',
+                { body: { partner_id: partnerId } }
+            )
+
+            if (!fnError && data) {
+                xenditAvailableBalance = data.available_balance || 0
+                pendingSettlement = data.pending_settlement || 0
+            }
+        } catch (err) {
+            console.error('[Wallet] Failed to fetch Xendit balance:', err)
+            // Fail silently — show 0 rather than crashing the page
+        }
     }
 
     return {
         xenditAccountId: partner.xendit_account_id,
         receivable: Number(partner.platform_fee_receivable) || 0,
         kycStatus: partner.kyc_status,
+        xenditAvailableBalance,
+        pendingSettlement,
     }
 }
 
