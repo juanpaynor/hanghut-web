@@ -6,10 +6,16 @@ export async function updateSession(request: NextRequest, rewriteUrl?: URL) {
         ? NextResponse.rewrite(rewriteUrl, { request })
         : NextResponse.next({ request })
 
+    const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'
+    const isLocalEnv = process.env.NODE_ENV === 'development'
+
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
+            cookieOptions: {
+                domain: isLocalEnv ? undefined : `.${rootDomain}`,
+            },
             cookies: {
                 getAll() {
                     return request.cookies.getAll()
