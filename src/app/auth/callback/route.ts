@@ -5,20 +5,31 @@ export async function GET(request: Request) {
     const { searchParams, origin } = new URL(request.url)
     const code = searchParams.get('code')
     const next = searchParams.get('next') ?? '/admin'
-    const error = searchParams.get('error')
-    const error_description = searchParams.get('error_description')
-
-    // Handle Supabase auth errors (e.g., expired token)
-    if (error) {
-        console.error('[Auth Callback] Supabase error:', error, error_description)
-        return NextResponse.redirect(`${origin}/login?error=${error}`)
-    }
 
     if (code) {
-        const supabase = await createClient()
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+        // For password resets, pass the code to the client-side page
+        // The browser's Supabase client has the PKCE code_verifier in localStorage
+        // and can exchange the code properly
+        if (next === '/reset-password') {
+            const forwardedHost = request.headers.get('x-forwarded-host')
+            const isLocalEnv = process.env.NODE_ENV === 'development'
 
-        if (!exchangeError) {
+            let redirectUrl: string
+            if (isLocalEnv) {
+                redirectUrl = `${origin}/reset-password?code=${code}`
+            } else if (forwardedHost) {
+                redirectUrl = `https://${forwardedHost}/reset-password?code=${code}`
+            } else {
+                redirectUrl = `${origin}/reset-password?code=${code}`
+            }
+
+            return NextResponse.redirect(redirectUrl)
+        }
+
+        // For other auth flows (login, etc.), exchange server-side
+        const supabase = await createClient()
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (!error) {
             const forwardedHost = request.headers.get('x-forwarded-host')
             const isLocalEnv = process.env.NODE_ENV === 'development'
 
@@ -32,25 +43,13 @@ export async function GET(request: Request) {
             }
 
             const response = NextResponse.redirect(redirectUrl)
-            // Prevent caching of auth responses
             response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
             response.headers.set('Pragma', 'no-cache')
             response.headers.set('Expires', '0')
             return response
         }
-
-        // Code exchange failed — likely PKCE code_verifier mismatch
-        // (user opened reset email on different browser/device)
-        console.error('[Auth Callback] Code exchange failed:', exchangeError.message)
-
-        // If this was a password reset, redirect to reset-password with an error message
-        if (next === '/reset-password') {
-            return NextResponse.redirect(
-                `${origin}/reset-password?error=link_expired&message=This reset link has expired or was opened in a different browser. Please request a new password reset link.`
-            )
-        }
     }
 
-    // Fallback: return the user to login with an error
+    // return the user to an error page with instructions
     return NextResponse.redirect(`${origin}/login?error=auth_callback_error`)
 }
