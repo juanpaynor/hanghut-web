@@ -32,6 +32,19 @@ export async function middleware(request: NextRequest) {
     const subdomain = getSubdomain(request)
     const hostname = (request.headers.get('host') || '').split(':')[0]
 
+    // 0. Supabase auth code redirect — password reset / email confirmation
+    // Supabase sends users to the site root with ?code=xxx (PKCE flow)
+    // We need to forward that to /auth/callback so it gets exchanged for a session
+    const authCode = url.searchParams.get('code')
+    if (authCode && url.pathname === '/') {
+        const callbackUrl = new URL('/auth/callback', request.url)
+        callbackUrl.searchParams.set('code', authCode)
+        // Preserve the 'next' param if present, default to /reset-password
+        const next = url.searchParams.get('next') || '/reset-password'
+        callbackUrl.searchParams.set('next', next)
+        return NextResponse.redirect(callbackUrl)
+    }
+
     // 1. Partner subdomain → rewrite to storefront (no auth needed)
     if (subdomain) {
         url.pathname = `/${subdomain}${url.pathname}`
@@ -49,7 +62,13 @@ export async function middleware(request: NextRequest) {
         return NextResponse.rewrite(url)
     }
 
-    // 3. Default (main domain) → Supabase session handling for auth
+    // 3. Skip auth overhead for public-only routes
+    const publicPrefixes = ['/events', '/terms', '/privacy', '/how-it-works']
+    if (publicPrefixes.some(p => url.pathname.startsWith(p))) {
+        return NextResponse.next()
+    }
+
+    // 4. Default (main domain) → Supabase session handling for auth
     return await updateSession(request)
 }
 

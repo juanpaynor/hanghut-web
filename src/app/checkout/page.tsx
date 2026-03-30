@@ -20,40 +20,45 @@ export default async function CheckoutPage({
 
     const supabase = await createClient()
 
-    // 2. Fetch Event Details with Ticket Tiers
-    const { data: event } = await supabase
-        .from('events')
-        .select(`
-            id,
-            title,
-            start_datetime,
-            venue_name,
-            ticket_price,
-            cover_image_url,
-            capacity,
-            tickets_sold,
-            theme_color,
-            custom_tos,
-            organizer:partners (
+    // Run event fetch and auth check in parallel
+    const [eventResult, userResult] = await Promise.all([
+        supabase
+            .from('events')
+            .select(`
                 id,
-                business_name,
-                pass_fees_to_customer,
-                fixed_fee_per_ticket,
-                pricing_model,
-                custom_percentage,
-                custom_tos
-            ),
-            ticket_tiers (
-                id,
-                name,
-                price,
-                quantity_total,
-                quantity_sold,
-                is_active
-            )
-        `)
-        .eq('id', eventId)
-        .single()
+                title,
+                start_datetime,
+                venue_name,
+                ticket_price,
+                cover_image_url,
+                capacity,
+                tickets_sold,
+                theme_color,
+                custom_tos,
+                organizer:partners (
+                    id,
+                    business_name,
+                    pass_fees_to_customer,
+                    fixed_fee_per_ticket,
+                    pricing_model,
+                    custom_percentage,
+                    custom_tos
+                ),
+                ticket_tiers (
+                    id,
+                    name,
+                    price,
+                    quantity_total,
+                    quantity_sold,
+                    is_active
+                )
+            `)
+            .eq('id', eventId)
+            .single(),
+        supabase.auth.getUser()
+    ])
+
+    const event = eventResult.data
 
     if (!event) {
         redirect('/')
@@ -90,8 +95,8 @@ export default async function CheckoutPage({
         }
     }
 
-    // 4. User State
-    const { data: { user } } = await supabase.auth.getUser()
+    // 4. User State (already fetched in parallel above)
+    const user = userResult.data?.user ?? null
 
     // 5. Check Availability (use real-time count from tickets table using adminClient to bypass RLS)
     const adminClient = createAdminClient()

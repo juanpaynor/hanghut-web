@@ -8,7 +8,7 @@ export const revalidate = 60 // Cache for 60 seconds
 
 export const metadata: Metadata = {
     title: 'Events - HangHut',
-    description: 'Discover and book tickets to the best events, concerts, parties, workshops, and experiences near you. Secure checkout powered by Xendit.',
+    description: 'Discover and book tickets to the best events, concerts, parties, workshops, and experiences near you.',
     openGraph: {
         title: 'Discover Events - HangHut',
         description: 'Browse upcoming events and buy tickets securely.',
@@ -87,7 +87,7 @@ export default async function EventsPage() {
                         </div>
                     </div>
                     <p className="text-xs text-muted-foreground mt-4 text-center">
-                        © {new Date().getFullYear()} HangHut. Secure payments powered by Xendit.
+                        © {new Date().getFullYear()} HangHut. All rights reserved.
                     </p>
                 </div>
             </footer>

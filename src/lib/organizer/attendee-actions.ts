@@ -124,13 +124,13 @@ export async function getEventAttendees(
     return { attendees, total: count || 0 }
 }
 
-export async function refundTicket(ticketId: string, eventId: string) {
+export async function refundTicket(ticketId: string, eventId: string, reason: string = 'Requested by organizer') {
     const supabase = await createClient()
 
-    // 1. Fetch Ticket details
+    // 1. Fetch ticket with intent and tier info
     const { data: ticket, error: ticketError } = await supabase
         .from('tickets')
-        .select('*, tier:ticket_tiers(id, price)')
+        .select('*, tier:ticket_tiers(id, price), purchase_intent:purchase_intents(id, total_amount, quantity, status, xendit_invoice_id)')
         .eq('id', ticketId)
         .single()
 
@@ -142,33 +142,72 @@ export async function refundTicket(ticketId: string, eventId: string) {
         throw new Error('Ticket is already refunded')
     }
 
-    // 2. CHECK PENDING BALANCE (SOP Requirement)
-    // For MVP, we will assume we can refund if the organizer has any sales. 
-    // Ideally, we sum up recent transactions. 
-    // Since we lack a complex ledger for "Pending Balance" per user readily available in this context without querying transactions:
-    // We will perform a "Safe Manual Refund" - marking it as refunded in DB.
-    // Xendit automated refunds require specific API calls which we'll simulate for now or stub.
+    const intent = Array.isArray(ticket.purchase_intent) ? ticket.purchase_intent[0] : ticket.purchase_intent
+    if (!intent) {
+        throw new Error('No purchase intent found for this ticket')
+    }
 
-    // 3. Update Ticket Status
+    if (intent.status !== 'completed' && intent.status !== 'paid') {
+        throw new Error('Cannot refund — payment was not completed')
+    }
+
+    // 2. Calculate refund amount (per-ticket price)
+    const tier = Array.isArray(ticket.tier) ? ticket.tier[0] : ticket.tier
+    const perTicketPrice = tier?.price || (intent.total_amount / (intent.quantity || 1))
+
+    // 3. Call the request-refund edge function (handles Xendit API + MASTER transfer + rollback)
+    const { data: { session } } = await supabase.auth.getSession()
+
+    const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/request-refund`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`,
+            },
+            body: JSON.stringify({
+                intent_id: intent.id,
+                amount: perTicketPrice,
+                reason: reason,
+                intent_type: 'event',
+            }),
+        }
+    )
+
+    const result = await response.json()
+
+    if (!response.ok || !result.success) {
+        const errorMsg = result.error || 'Refund failed'
+        const errorCode = result.code || 'UNKNOWN'
+        console.error('[Refund] Edge function error:', errorCode, errorMsg)
+
+        if (errorCode === 'INSUFFICIENT_BALANCE') {
+            throw new Error('Insufficient balance in organizer wallet. Please top up first.')
+        }
+        throw new Error(`Refund failed: ${errorMsg}`)
+    }
+
+    // 4. Mark this specific ticket as refunded (edge function handles intent-level updates, we handle per-ticket)
     const { error: updateError } = await supabase
         .from('tickets')
         .update({ status: 'refunded', updated_at: new Date().toISOString() })
         .eq('id', ticketId)
 
     if (updateError) {
-        throw new Error('Failed to update ticket status')
+        console.error('[Refund] Failed to update ticket status:', updateError)
+        // Don't throw — the actual refund succeeded, this is just a DB status update
     }
 
-    // 4. Decrement Quantity Sold in Tier
+    // 5. Decrement tier quantity_sold
     if (ticket.tier_id) {
-        const { error: tierError } = await supabase.rpc('decrement_tier_sold', {
-            row_id: ticket.tier_id,
-            amount: 1
-        })
-
-        // Fallback if RPC doesn't exist (it should, but just in case, manual update)
-        if (tierError) {
-            // Fetch current
+        try {
+            await supabase.rpc('decrement_tier_sold', {
+                row_id: ticket.tier_id,
+                amount: 1
+            })
+        } catch (e) {
+            // Fallback manual decrement
             const { data: currentTier } = await supabase.from('ticket_tiers').select('quantity_sold').eq('id', ticket.tier_id).single()
             if (currentTier) {
                 await supabase.from('ticket_tiers').update({ quantity_sold: Math.max(0, currentTier.quantity_sold - 1) }).eq('id', ticket.tier_id)
@@ -176,18 +215,29 @@ export async function refundTicket(ticketId: string, eventId: string) {
         }
     }
 
-    // 5. TODO: Trigger Xendit Refund via Edge Function or API here
-    // For now, we rely on the Admin to process the actual money return if it's not automated.
-    // Or we assume the SOP where "Mark as Refunded" triggers a payout deduction.
-
     revalidatePath(`/organizer/events/${eventId}`)
-    return { success: true }
+    return { success: true, refundId: result.data?.id }
 }
 
-export async function markIntentAsRefunded(intentId: string, eventId: string) {
+export async function markIntentAsRefunded(intentId: string, eventId: string, reason: string = 'Full order refund by organizer') {
     const supabase = await createClient()
 
-    // 1. Get all tickets for this intent
+    // 1. Get intent details
+    const { data: intent } = await supabase
+        .from('purchase_intents')
+        .select('id, total_amount, quantity, status, xendit_invoice_id')
+        .eq('id', intentId)
+        .single()
+
+    if (!intent) {
+        throw new Error('Purchase intent not found')
+    }
+
+    if (intent.status === 'refunded') {
+        return { success: true }
+    }
+
+    // 2. Get all non-refunded tickets for this intent
     const { data: tickets } = await supabase
         .from('tickets')
         .select('id, tier_id, status')
@@ -195,26 +245,54 @@ export async function markIntentAsRefunded(intentId: string, eventId: string) {
 
     if (!tickets || tickets.length === 0) return { success: true }
 
-    // Filter mainly to handle inventory correctly (avoid double count)
     const ticketsToRefund = tickets.filter(t => t.status !== 'refunded')
-
     if (ticketsToRefund.length === 0) return { success: true }
 
-    // 2. Update status for ALL tickets (safe to re-run)
+    // 3. Call the request-refund edge function (full refund — no amount means full)
+    const { data: { session } } = await supabase.auth.getSession()
+
+    const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/request-refund`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`,
+            },
+            body: JSON.stringify({
+                intent_id: intentId,
+                reason: reason,
+                intent_type: 'event',
+            }),
+        }
+    )
+
+    const result = await response.json()
+
+    if (!response.ok || !result.success) {
+        const errorMsg = result.error || 'Refund failed'
+        const errorCode = result.code || 'UNKNOWN'
+        console.error('[Refund] Edge function error:', errorCode, errorMsg)
+
+        if (errorCode === 'INSUFFICIENT_BALANCE') {
+            throw new Error('Insufficient balance in organizer wallet. Please top up first.')
+        }
+        throw new Error(`Refund failed: ${errorMsg}`)
+    }
+
+    // 4. Mark all tickets as refunded
     const { error: updateError } = await supabase
         .from('tickets')
         .update({ status: 'refunded', updated_at: new Date().toISOString() })
         .eq('purchase_intent_id', intentId)
 
     if (updateError) {
-        console.error('Failed to update ticket status', updateError)
-        throw new Error('Failed to update ticket status')
+        console.error('[Refund] Failed to update ticket statuses:', updateError)
     }
 
-    // 3. Decrement Inventory
+    // 5. Decrement tier inventory
     const tierCounts = new Map<string, number>()
     for (const t of ticketsToRefund) {
-        // Only count if it has a tier_id
         if (t.tier_id) {
             tierCounts.set(t.tier_id, (tierCounts.get(t.tier_id) || 0) + 1)
         }
@@ -222,16 +300,15 @@ export async function markIntentAsRefunded(intentId: string, eventId: string) {
 
     for (const [tierId, count] of Array.from(tierCounts.entries())) {
         try {
-            // Optimistic call, ignore error if SP doesn't exist
             await supabase.rpc('decrement_tier_sold', {
                 row_id: tierId,
                 amount: count
             })
         } catch (e) {
-            console.error('Failed to decrement tier sold', e)
+            console.error('[Refund] Failed to decrement tier sold:', e)
         }
     }
 
     revalidatePath(`/organizer/events/${eventId}`)
-    return { success: true }
+    return { success: true, refundId: result.data?.id }
 }

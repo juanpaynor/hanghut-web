@@ -15,14 +15,13 @@ import { cn, hexToHsl, getYouTubeEmbedUrl } from '@/lib/utils'
 import { MobileTicketButton, ShareButton } from '@/components/events/event-actions'
 import sanitizeHtml from 'sanitize-html'
 
+import { createAdminClient } from '@/lib/supabase/admin'
 import { cache } from 'react'
 
-export const dynamic = 'force-dynamic'
+export const revalidate = 30 // ISR: revalidate every 30 seconds
 
 const getEvent = cache(async (eventId: string) => {
     const supabase = await createClient()
-    const { createAdminClient } = await import('@/lib/supabase/admin')
-    const adminClient = createAdminClient()
 
     const { data: event, error } = await supabase
         .from('events')
@@ -45,17 +44,14 @@ const getEvent = cache(async (eventId: string) => {
         return null
     }
 
-    // Single fast count of all sold tickets (bypasses RLS)
-    const { count } = await adminClient
-        .from('tickets')
-        .select('id', { count: 'exact', head: true })
-        .eq('event_id', eventId)
-        .not('status', 'in', '("available","refunded")')
+    // Use the DB column directly — triggers keep it up to date
+    // Only fall back to admin count if tickets_sold looks stale (0 but has tiers with sales)
+    let totalSold = event.tickets_sold ?? 0
+    const tiersSold = (event.ticket_tiers || []).reduce((sum: number, t: any) => sum + (t.quantity_sold || 0), 0)
+    if (tiersSold > totalSold) {
+        totalSold = tiersSold
+    }
 
-    const totalSold = count ?? event.tickets_sold ?? 0
-
-    // For per-tier sold counts, use quantity_sold from DB (updated by triggers)
-    // If triggers aren't deployed yet, the overall sold-out check still works via totalSold
     return {
         ...event,
         tickets_sold: totalSold,

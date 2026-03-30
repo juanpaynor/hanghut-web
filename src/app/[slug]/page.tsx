@@ -19,10 +19,9 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
 const spaceMono = Space_Mono({ weight: '400', subsets: ['latin'], variable: '--font-mono' })
 
-export const dynamic = 'force-dynamic'
+export const revalidate = 60 // ISR: cache for 60 seconds
 
 const getPartnerAndEvents = cache(async (slug: string) => {
-    console.log('[Storefront] Resolving slug:', slug)
     const supabase = await createClient()
     const { data: partner, error } = await supabase
         .from('partners')
@@ -34,8 +33,6 @@ const getPartnerAndEvents = cache(async (slug: string) => {
         console.error('[Storefront] Error finding slug:', slug, error)
         return null
     }
-
-    console.log('[Storefront] Partner found:', partner.business_name)
 
     const now = new Date().toISOString()
     const showPast = partner.branding?.content?.show_past_events ?? false
