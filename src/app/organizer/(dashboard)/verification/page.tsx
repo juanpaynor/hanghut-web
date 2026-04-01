@@ -1,9 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { AlertCircle, CheckCircle, Clock, ShieldCheck, FileText, Upload } from 'lucide-react'
+import { AlertCircle, CheckCircle, Clock, ShieldCheck } from 'lucide-react'
 import { KYCVerificationForm } from './kyc-form'
 
 export default async function VerificationPage() {
@@ -16,12 +14,18 @@ export default async function VerificationPage() {
 
     const { data: partner } = await supabase
         .from('partners')
-        .select('kyc_status, kyc_rejection_reason, business_name')
+        .select(`
+            kyc_status, kyc_rejection_reason, business_name, business_type,
+            representative_name, contact_number, nationality, place_of_birth,
+            street_line1, street_line2, city, province_state, postal_code,
+            tax_id, registration_number,
+            id_document_url, business_document_url, bir_2303_url,
+            articles_of_incorporation_url, secretary_certificate_url, latest_gis_url
+        `)
         .eq('user_id', user.id)
         .single()
 
     if (!partner) {
-        // Edge case: User logged in but no partner profile?
         return <div>Error: Partner profile not found.</div>
     }
 
@@ -88,66 +92,40 @@ export default async function VerificationPage() {
             )}
 
             {/* Submission Form */}
-            {(status === 'not_started' || status === 'rejected') && (
-                <div className="grid gap-6 md:grid-cols-2">
-                    <div className="space-y-6">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Identity & Business Types</CardTitle>
-                                <CardDescription>
-                                    We need to know who you are representing.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="flex gap-4 items-start">
-                                    <div className="h-8 w-8 rounded bg-secondary flex items-center justify-center mt-1">
-                                        <span className="font-bold text-sm">1</span>
-                                    </div>
-                                    <div>
-                                        <h4 className="font-medium">Representative Info</h4>
-                                        <p className="text-sm text-muted-foreground">
-                                            The actual human responsible for this account.
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-4 items-start">
-                                    <div className="h-8 w-8 rounded bg-secondary flex items-center justify-center mt-1">
-                                        <span className="font-bold text-sm">2</span>
-                                    </div>
-                                    <div>
-                                        <h4 className="font-medium">Valid ID</h4>
-                                        <p className="text-sm text-muted-foreground">
-                                            Passport, Driver's License, or National ID.
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-4 items-start">
-                                    <div className="h-8 w-8 rounded bg-secondary flex items-center justify-center mt-1">
-                                        <span className="font-bold text-sm">3</span>
-                                    </div>
-                                    <div>
-                                        <h4 className="font-medium">Digital Signature</h4>
-                                        <p className="text-sm text-muted-foreground">
-                                            Agree to our Partner Terms of Service.
-                                        </p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
-
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Submit Verification</CardTitle>
-                            <CardDescription>
-                                Upload your documents securely.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <KYCVerificationForm userEmail={user.email} />
-                        </CardContent>
-                    </Card>
-                </div>
+            {(status === 'not_started' || status === 'rejected' || status === 'submitted') && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Submit Verification</CardTitle>
+                        <CardDescription>
+                            Complete the form below to verify your identity and business.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <KYCVerificationForm 
+                            userEmail={user.email}
+                            existingData={{
+                                business_type: partner.business_type,
+                                representative_name: partner.representative_name,
+                                contact_number: partner.contact_number,
+                                nationality: partner.nationality,
+                                place_of_birth: partner.place_of_birth,
+                                street_line1: partner.street_line1,
+                                street_line2: partner.street_line2,
+                                city: partner.city,
+                                province_state: partner.province_state,
+                                postal_code: partner.postal_code,
+                                tax_id: partner.tax_id,
+                                registration_number: partner.registration_number,
+                                id_document_url: partner.id_document_url,
+                                business_document_url: partner.business_document_url,
+                                bir_2303_url: partner.bir_2303_url,
+                                articles_of_incorporation_url: partner.articles_of_incorporation_url,
+                                secretary_certificate_url: partner.secretary_certificate_url,
+                                latest_gis_url: partner.latest_gis_url,
+                            }}
+                        />
+                    </CardContent>
+                </Card>
             )}
         </div>
     )

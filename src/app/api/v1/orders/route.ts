@@ -70,7 +70,7 @@ export async function GET(request: Request) {
 
     if (error) {
         console.error('Orders query error:', error)
-        return apiError('Failed to fetch orders', 500)
+        return apiError(`Failed to fetch orders: ${error.message} (${error.code})`, 500)
     }
 
     const formattedOrders = (orders || []).map((order: any) => ({

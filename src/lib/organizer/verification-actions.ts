@@ -3,28 +3,41 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
-import { z } from 'zod'
 
-// Schema for text fields
-const kycSchema = z.object({
-    representative_name: z.string().min(2, 'Name is required'),
-    contact_number: z.string().min(8, 'Valid phone number required'),
-    work_email: z.string().email().optional().or(z.literal('')),
-    digital_signature_text: z.string().min(3, 'Please type your full name to sign'),
-    terms_accepted: z.literal('on'),
-})
+/**
+ * Helper to upload a KYC document to Supabase Storage
+ */
+async function uploadKYCDocument(
+    adminSupabase: any,
+    userId: string,
+    file: File,
+    folder: string
+): Promise<string | null> {
+    if (!file || file.size === 0) return null
+    if (file.size > 10 * 1024 * 1024) throw new Error(`${folder} file too large (max 10MB)`)
+
+    const ext = file.name.split('.').pop() || 'file'
+    const fileName = `${userId}/${folder}-${Date.now()}.${ext}`
+
+    const { data, error } = await adminSupabase.storage
+        .from('kyc-documents')
+        .upload(fileName, file, {
+            upsert: true,
+            contentType: file.type
+        })
+
+    if (error) {
+        console.error(`Failed to upload ${folder}:`, error)
+        throw new Error(`Failed to upload ${folder}: ${error.message}`)
+    }
+
+    return data.path
+}
 
 export type KYCFormState = {
-    errors?: {
-        representative_name?: string[]
-        contact_number?: string[]
-        digital_signature_text?: string[]
-        terms_accepted?: string[]
-        id_document?: string[]
-        business_document?: string[]
-        _form?: string[]
-    }
+    errors?: Record<string, string[]>
     message?: string
+    success?: boolean
 }
 
 export async function submitKYCVerification(
@@ -39,114 +52,125 @@ export async function submitKYCVerification(
         return { message: 'Unauthorized session.' }
     }
 
-    // 2. Validate Text Inputs
-    const rawData = {
-        representative_name: formData.get('representative_name'),
-        contact_number: formData.get('contact_number'),
-        work_email: formData.get('work_email'),
-        digital_signature_text: formData.get('digital_signature_text'),
-        terms_accepted: formData.get('terms_accepted'),
-    }
-
-    const validatedFields = kycSchema.safeParse(rawData)
-
-    if (!validatedFields.success) {
-        return {
-            errors: validatedFields.error.flatten().fieldErrors as any,
-            message: 'Please check your inputs.'
-        }
-    }
-
-    // 3. Validate Files
-    const idFile = formData.get('id_document') as File
-    const businessFile = formData.get('business_document') as File
-
-    const errors: any = {}
-    if (!idFile || idFile.size === 0) {
-        errors.id_document = ['One form of Government ID is required.']
-    }
-    // Business doc is optional for individuals usually, but let's enforce based on logic or leave generic
-    // For now, let's require it if user is NOT 'individual' but we don't know business type easily here without fetch.
-    // Let's assume ID is mandatory, Business Doc is mandatory for now to be safe, or check size.
-    if (businessFile && businessFile.size > 5 * 1024 * 1024) {
-        errors.business_document = ['File size too large (Max 5MB)']
-    }
-
-    if (Object.keys(errors).length > 0) {
-        return { errors, message: 'Missing or invalid documents.' }
-    }
-
-    // 4. Setup Admin Client for Storage (Bypass RLS if needed, or use auth context)
-    // We created RLS policies for "authenticated" users to insert into 'kyc-documents' bucket.
-    // So we CAN use the standard user client 'supabase' for upload IF the policies work.
-    // However, existing pattern uses admin client. Let's stick to admin client to be 100% sure we can place it in the right path
-    // and ensuring we don't hit weird RLS issues with "storage.foldername" logic if checking partner_id.
-
-    // Actually, secure approach: use USER client so RLS enforces they can only upload to THEIR folder.
-    // BUT the existing code used Admin Client. I'll stick to Admin Client for reliability in this task context.
-
+    // 2. Get existing partner record
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     if (!serviceRoleKey || !supabaseUrl) return { message: 'Server Config Error' }
 
     const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey)
 
-    // 5. Upload Files
-    let idDocPath = ''
-    let businessDocPath = ''
-    const timestamp = Date.now()
+    const { data: partner } = await adminSupabase
+        .from('partners')
+        .select('id, business_type')
+        .eq('user_id', user.id)
+        .single()
+
+    if (!partner) {
+        return { message: 'Partner profile not found.' }
+    }
+
+    // 3. Extract form fields
+    const representativeName = formData.get('representativeName') as string
+    const phoneNumber = formData.get('phoneNumber') as string
+    const birthdate = formData.get('birthdate') as string
+    const sex = formData.get('sex') as string
+    const nationality = formData.get('nationality') as string
+    const placeOfBirth = formData.get('placeOfBirth') as string
+    const businessType = formData.get('businessType') as string
+
+    // Address
+    const streetLine1 = formData.get('streetLine1') as string | null
+    const streetLine2 = formData.get('streetLine2') as string | null
+    const city = formData.get('city') as string | null
+    const provinceState = formData.get('provinceState') as string | null
+    const postalCode = formData.get('postalCode') as string | null
+
+    // Tax/Registration
+    const taxId = formData.get('taxId') as string | null
+    const registrationNumber = formData.get('registrationNumber') as string | null
+
+    // 4. Validate required fields
+    const errors: Record<string, string[]> = {}
+    if (!representativeName?.trim()) errors.representativeName = ['Representative name is required']
+    if (!phoneNumber?.trim()) errors.phoneNumber = ['Phone number is required']
+    if (!birthdate) errors.birthdate = ['Date of birth is required']
+    if (!sex) errors.sex = ['Sex is required']
+    if (!nationality?.trim()) errors.nationality = ['Nationality is required']
+    if (!placeOfBirth?.trim()) errors.placeOfBirth = ['Place of birth is required']
+    if (!businessType) errors.businessType = ['Business type is required']
+
+    if (Object.keys(errors).length > 0) {
+        return { errors, message: 'Please check your inputs.' }
+    }
+
+    // 5. Upload documents
+    const idDocumentFile = formData.get('idDocument') as File | null
+    const businessDocumentFile = formData.get('businessDocument') as File | null
+    const bir2303File = formData.get('bir2303') as File | null
+    const articlesFile = formData.get('articlesOfIncorporation') as File | null
+    const secretaryCertFile = formData.get('secretaryCertificate') as File | null
+    const gisFile = formData.get('latestGIS') as File | null
+
+    let idDocumentUrl: string | null = null
+    let businessDocumentUrl: string | null = null
+    let bir2303Url: string | null = null
+    let articlesUrl: string | null = null
+    let secretaryCertUrl: string | null = null
+    let gisUrl: string | null = null
 
     try {
-        // Sanitize filename to prevent 'Invalid key' errors (e.g. spaces, special chars)
-        const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9.-]/g, '_')
-
-        // ID Document
-        const idPath = `${user.id}/id-${timestamp}-${sanitize(idFile.name)}`
-        const { error: idError, data: idData } = await adminSupabase.storage
-            .from('kyc-documents')
-            .upload(idPath, idFile, { upsert: true, contentType: idFile.type })
-
-        if (idError) throw new Error('ID Upload failed: ' + idError.message)
-        idDocPath = idData.path // Store the PATH, not the public URL (it's private)
-
-        // Business Document (if provided)
-        if (businessFile && businessFile.size > 0) {
-            const bizPath = `${user.id}/business-${timestamp}-${sanitize(businessFile.name)}`
-            const { error: bizError, data: bizData } = await adminSupabase.storage
-                .from('kyc-documents')
-                .upload(bizPath, businessFile, { upsert: true, contentType: businessFile.type })
-
-            if (bizError) throw new Error('Business Doc Upload failed: ' + bizError.message)
-            businessDocPath = bizData.path
+        if (idDocumentFile && idDocumentFile.size > 0) {
+            idDocumentUrl = await uploadKYCDocument(adminSupabase, user.id, idDocumentFile, 'id-document')
         }
-
+        if (businessDocumentFile && businessDocumentFile.size > 0) {
+            businessDocumentUrl = await uploadKYCDocument(adminSupabase, user.id, businessDocumentFile, 'business-document')
+        }
+        if (bir2303File && bir2303File.size > 0) {
+            bir2303Url = await uploadKYCDocument(adminSupabase, user.id, bir2303File, 'bir-2303')
+        }
+        if (articlesFile && articlesFile.size > 0) {
+            articlesUrl = await uploadKYCDocument(adminSupabase, user.id, articlesFile, 'articles-of-incorporation')
+        }
+        if (secretaryCertFile && secretaryCertFile.size > 0) {
+            secretaryCertUrl = await uploadKYCDocument(adminSupabase, user.id, secretaryCertFile, 'secretary-certificate')
+        }
+        if (gisFile && gisFile.size > 0) {
+            gisUrl = await uploadKYCDocument(adminSupabase, user.id, gisFile, 'latest-gis')
+        }
     } catch (error: any) {
         return { message: error.message || 'File upload failed.' }
     }
 
-    // 6. DB Update
-    // Get IP address is hard in server action without headers().
-    // We can try headers().get('x-forwarded-for') but strictly speaking we might just leave null for now or pass from client (unsafe).
-    // Let's skip IP for now or use a placeholder.
+    // 6. Build update object (only include non-null uploads to avoid overwriting existing docs)
+    const updateData: Record<string, any> = {
+        representative_name: representativeName,
+        contact_number: phoneNumber,
+        business_type: businessType,
+        nationality,
+        place_of_birth: placeOfBirth,
+        street_line1: streetLine1 || null,
+        street_line2: streetLine2 || null,
+        city: city || null,
+        province_state: provinceState || null,
+        postal_code: postalCode || null,
+        tax_id: taxId || null,
+        registration_number: registrationNumber || null,
+        kyc_status: 'pending_review',
+        kyc_rejection_reason: null,
+    }
 
+    // Only overwrite document URLs if new files were uploaded
+    if (idDocumentUrl) updateData.id_document_url = idDocumentUrl
+    if (businessDocumentUrl) updateData.business_document_url = businessDocumentUrl
+    if (bir2303Url) updateData.bir_2303_url = bir2303Url
+    if (articlesUrl) updateData.articles_of_incorporation_url = articlesUrl
+    if (secretaryCertUrl) updateData.secretary_certificate_url = secretaryCertUrl
+    if (gisUrl) updateData.latest_gis_url = gisUrl
+
+    // 7. DB Update
     const { error: dbError } = await adminSupabase
         .from('partners')
-        .update({
-            representative_name: validatedFields.data.representative_name,
-            contact_number: validatedFields.data.contact_number,
-            work_email: validatedFields.data.work_email,
-            digital_signature_text: validatedFields.data.digital_signature_text,
-
-            // Files
-            id_document_url: idDocPath,
-            business_document_url: businessDocPath,
-
-            // Meta
-            terms_version: 'v1.0',
-            terms_accepted_at: new Date().toISOString(),
-            kyc_status: 'pending_review',
-            kyc_rejection_reason: null, // Clear any rejection notes
-        })
+        .update(updateData)
         .eq('user_id', user.id)
 
     if (dbError) {
@@ -154,5 +178,5 @@ export async function submitKYCVerification(
     }
 
     revalidatePath('/organizer/verification')
-    return { message: 'Success' }
+    return { message: 'Verification submitted successfully!', success: true }
 }

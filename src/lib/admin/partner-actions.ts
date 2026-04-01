@@ -159,27 +159,40 @@ export async function setCustomPricing(
         throw new Error('Failed to set custom pricing')
     }
 
-    // Create/update Xendit split rule for this partner's fee percentage
+    // Create/update Xendit split rule — this MUST stay in sync with the DB percentage
+    let splitRuleWarning: string | null = null
     try {
         const { data, error: splitError } = await supabase.functions.invoke(
             'create-split-rule',
             { body: { partner_id: partnerId, platform_percentage: percentage } }
         )
 
-        if (!splitError && data?.split_rule_id) {
-            await supabase
+        if (splitError) {
+            console.error('[SplitRule] FAILED to create split rule:', splitError)
+            splitRuleWarning = `Pricing updated but Xendit split rule failed to sync. Payments may not split correctly until this is resolved. Error: ${splitError.message || 'Unknown'}`
+        } else if (!data?.split_rule_id) {
+            console.error('[SplitRule] No split_rule_id returned')
+            splitRuleWarning = 'Pricing updated but Xendit did not return a split rule ID. Check the edge function logs.'
+        } else {
+            // Save the split rule ID
+            const { error: updateError } = await supabase
                 .from('partners')
                 .update({ split_rule_id: data.split_rule_id })
                 .eq('id', partnerId)
-            console.log('[SplitRule] Created for partner:', partnerId, 'rule:', data.split_rule_id)
-        } else {
-            console.warn('[SplitRule] Failed to create split rule:', splitError)
+
+            if (updateError) {
+                console.error('[SplitRule] Failed to save split_rule_id:', updateError)
+                splitRuleWarning = `Split rule created (${data.split_rule_id}) but failed to save to DB.`
+            } else {
+                console.log('[SplitRule] Created for partner:', partnerId, 'rule:', data.split_rule_id)
+            }
         }
     } catch (err) {
-        console.warn('[SplitRule] Error creating split rule:', err)
+        console.error('[SplitRule] Exception creating split rule:', err)
+        splitRuleWarning = `Pricing updated but split rule creation threw an error. Payments may not split correctly.`
     }
 
-    return { success: true }
+    return { success: true, warning: splitRuleWarning }
 }
 
 /**
@@ -205,24 +218,36 @@ export async function resetToStandardPricing(partnerId: string) {
     }
 
     // Create/update Xendit split rule for standard 4%
+    let splitRuleWarning: string | null = null
     try {
         const { data, error: splitError } = await supabase.functions.invoke(
             'create-split-rule',
             { body: { partner_id: partnerId, platform_percentage: 4 } }
         )
 
-        if (!splitError && data?.split_rule_id) {
-            await supabase
+        if (splitError) {
+            console.error('[SplitRule] FAILED to reset split rule:', splitError)
+            splitRuleWarning = `Pricing reset but Xendit split rule failed to sync. Error: ${splitError.message || 'Unknown'}`
+        } else if (!data?.split_rule_id) {
+            splitRuleWarning = 'Pricing reset but Xendit did not return a split rule ID.'
+        } else {
+            const { error: updateError } = await supabase
                 .from('partners')
                 .update({ split_rule_id: data.split_rule_id })
                 .eq('id', partnerId)
-            console.log('[SplitRule] Reset to standard for partner:', partnerId)
+
+            if (updateError) {
+                splitRuleWarning = `Split rule created (${data.split_rule_id}) but failed to save to DB.`
+            } else {
+                console.log('[SplitRule] Reset to standard for partner:', partnerId)
+            }
         }
     } catch (err) {
-        console.warn('[SplitRule] Error creating standard split rule:', err)
+        console.error('[SplitRule] Error creating standard split rule:', err)
+        splitRuleWarning = 'Pricing reset but split rule creation threw an error.'
     }
 
-    return { success: true }
+    return { success: true, warning: splitRuleWarning }
 }
 
 /**

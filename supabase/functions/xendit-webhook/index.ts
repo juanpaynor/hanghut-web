@@ -395,35 +395,43 @@ serve(async (req) => {
             // Record transaction (Create transaction BEFORE tickets to ensure accounting)
             const { data: partner } = await supabaseClient
                 .from('partners')
-                .select('id, custom_percentage')
+                .select('id, custom_percentage, fixed_fee_per_ticket, pass_fees_to_customer')
                 .eq('id', intent.event.organizer_id)
                 .single()
 
-            const platformFeePercentage = partner?.custom_percentage || 10.0
-            const platformFee = (intent.subtotal * platformFeePercentage) / 100
+            // Use ?? instead of || so that 0% fee partners are handled correctly
+            const platformFeePercentage = partner?.custom_percentage ?? 4.0
+            const platformFee = Math.round((intent.subtotal * platformFeePercentage) / 100)
             const processingFee = intent.payment_processing_fee || 0
-            const organizerPayout = intent.subtotal - platformFee
+            const fixedFeePerTicket = partner?.fixed_fee_per_ticket ?? 15.0
+            const totalFixedFee = fixedFeePerTicket * (intent.quantity || 1)
+            const organizerPayout = intent.subtotal - platformFee - totalFixedFee
 
-            await supabaseClient
+            console.log(`💰 Fee calc: subtotal=${intent.subtotal}, pct=${platformFeePercentage}%, platformFee=${platformFee}, fixedFee=${totalFixedFee} (${fixedFeePerTicket}×${intent.quantity}), organizerPayout=${organizerPayout}`)
+
+            const { error: txError } = await supabaseClient
                 .from('transactions')
                 .insert({
                     purchase_intent_id: intent.id,
                     event_id: intent.event_id,
                     partner_id: intent.event.organizer_id,
-                    user_id: intent.user_id,
+                    user_id: intent.user_id || null,
                     gross_amount: intent.subtotal,
                     platform_fee: platformFee,
                     payment_processing_fee: processingFee,
-                    // @ts-ignore
-                    fixed_fee: intent.metadata?.fixed_fee || 0,
+                    fixed_fee: totalFixedFee,
                     organizer_payout: organizerPayout,
                     fee_percentage: platformFeePercentage,
-                    fee_basis: partner?.custom_percentage ? 'custom' : 'standard',
+                    fee_basis: (partner?.custom_percentage != null && partner.custom_percentage !== 4.0) ? 'custom' : 'standard',
                     xendit_transaction_id: payment_request_id || payment_id || data.id,
                     status: 'completed',
                 })
 
-            console.log(`✅ Recorded transaction for intent ${intent.id}`)
+            if (txError) {
+                console.error('❌ Transaction insert failed:', txError)
+            } else {
+                console.log(`✅ Recorded transaction for intent ${intent.id}`)
+            }
 
             // Issue tickets using the RPC function (Single Source of Truth)
             console.log(`🎟️ Issuing tickets for intent ${intent.id} via RPC...`)
@@ -705,19 +713,34 @@ serve(async (req) => {
                             .eq('id', intent.event.organizer_id)
                             .single();
 
-                        const platformFeePercentage = partner?.custom_percentage || 10.0;
+                        // Use ?? for null-coalescing (0% is valid)
+                        const platformFeePercentage = partner?.custom_percentage ?? 4.0;
                         const refundAmount = data.amount || intent.total_amount;
 
-                        const refundPlatformFee = (refundAmount / intent.total_amount) * intent.platform_fee;
-                        const refundPayout = (refundAmount / intent.total_amount) * (intent.subtotal - intent.platform_fee);
+                        // Look up the original transaction for accurate reversal
+                        const { data: origTx } = await supabaseClient
+                            .from('transactions')
+                            .select('platform_fee, organizer_payout, fixed_fee, gross_amount')
+                            .eq('purchase_intent_id', intent.id)
+                            .eq('status', 'completed')
+                            .single();
 
-                        await supabaseClient.from('transactions').insert({
+                        // Calculate proportional reversal based on original transaction
+                        const ratio = origTx ? (refundAmount / origTx.gross_amount) : (refundAmount / intent.total_amount);
+                        const refundPlatformFee = origTx ? Math.round(origTx.platform_fee * ratio) : Math.round((refundAmount * platformFeePercentage) / 100);
+                        const refundFixedFee = origTx ? Math.round((origTx.fixed_fee || 0) * ratio) : 0;
+                        const refundPayout = origTx ? Math.round(origTx.organizer_payout * ratio) : (refundAmount - refundPlatformFee);
+
+                        console.log(`💰 Refund calc: amount=${refundAmount}, ratio=${ratio.toFixed(2)}, platformFee=${refundPlatformFee}, fixedFee=${refundFixedFee}, payout=${refundPayout}`);
+
+                        const { error: refundTxError } = await supabaseClient.from('transactions').insert({
                             purchase_intent_id: intent.id,
                             event_id: intent.event_id,
                             partner_id: intent.event.organizer_id,
-                            user_id: intent.user_id,
+                            user_id: intent.user_id || null,
                             gross_amount: -refundAmount,
                             platform_fee: -refundPlatformFee,
+                            fixed_fee: -refundFixedFee,
                             organizer_payout: -refundPayout,
                             payment_processing_fee: 0,
                             fee_percentage: platformFeePercentage,
@@ -725,6 +748,10 @@ serve(async (req) => {
                             xendit_transaction_id: data.id,
                             status: 'refunded'
                         });
+
+                        if (refundTxError) {
+                            console.error('❌ Refund transaction insert failed:', refundTxError);
+                        }
 
                         console.log(`✅ Refund processed for intent ${intentId}`);
 
