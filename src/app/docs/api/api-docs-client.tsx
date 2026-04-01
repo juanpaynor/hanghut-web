@@ -21,27 +21,35 @@ const listEventsRes = `{
   "data": {
     "events": [
       {
-        "id": "8db0f243-2e64-...",
-        "title": "S10MAIC",
+        "id": "bdb74865-8347-...",
+        "title": "Tinda Tindahan",
         "status": "active",
-        "start_datetime": "2026-03-27T19:00:00+00:00",
-        "venue_name": "Mow's",
+        "start_datetime": "2026-04-14T11:07:00+00:00",
+        "end_datetime": null,
+        "venue_name": "98 Escolta St",
+        "city": "Manila",
         "capacity": 100,
-        "tickets_sold": 100,
+        "cover_image_url": "https://api.hanghut.com/storage/v1/...",
+        "ticket_price": 700,
+        "event_type": "art",
+        "tickets_sold": 10,
         "ticket_tiers": [
           {
+            "id": "a8af9742-...",
             "name": "General Admission",
-            "price": 1000,
+            "price": 700,
             "quantity_total": 100,
-            "quantity_sold": 100
+            "quantity_sold": 0,
+            "is_active": true,
+            "sort_order": 0
           }
         ]
       }
     ],
     "meta": {
       "page": 1,
-      "per_page": 10,
-      "total": 7,
+      "per_page": 20,
+      "total": 2,
       "total_pages": 1,
       "has_more": false
     }
@@ -114,17 +122,23 @@ const listOrdersRes = `{
   "data": {
     "orders": [
       {
-        "id": "pi_abc123-...",
-        "event": { "id": "8db0f243-...", "title": "S10MAIC" },
-        "customer": { "name": "Juan Dela Cruz", "email": "juan@example.com" },
-        "quantity": 2,
-        "total_amount": 2000,
+        "id": "9d13f49e-...",
+        "event": { "id": "bdb74865-...", "title": "Tinda Tindahan" },
+        "customer": {
+          "name": "Juan Dela Cruz",
+          "email": "juan@example.com",
+          "phone": "+639171234567"
+        },
+        "quantity": 1,
+        "total_amount": 720,
+        "subtotal": 700,
         "status": "completed",
-        "payment_method": "gcash",
-        "paid_at": "2026-03-21T10:30:00Z"
+        "payment_method": "GCASH",
+        "paid_at": "2026-03-30T08:44:12.267+00:00",
+        "created_at": "2026-03-30T08:39:23.276+00:00"
       }
     ],
-    "meta": { "page": 1, "total": 42, "has_more": true }
+    "meta": { "page": 1, "per_page": 20, "total": 32, "total_pages": 2, "has_more": true }
   }
 }`
 
@@ -152,17 +166,21 @@ const registerWebhookRes = `{
 
 const analyticsRes = `{
   "data": {
-    "total_revenue": 150000,
-    "total_tickets_sold": 212,
-    "total_orders": 189,
-    "total_discounts": 5000,
+    "total_revenue": 11856.5,
+    "total_tickets_sold": 35,
+    "total_orders": 32,
+    "total_discounts": 285,
+    "date_range": { "from": null, "to": null },
     "events": [
       {
-        "id": "8db0f243-...",
-        "title": "S10MAIC",
-        "revenue": 100000,
-        "tickets_sold": 100,
-        "orders": 95
+        "id": "bdb74865-...",
+        "title": "Tinda Tindahan",
+        "start_datetime": "2026-04-14T11:07:00+00:00",
+        "capacity": 100,
+        "revenue": 4960,
+        "tickets_sold": 7,
+        "orders": 7,
+        "discount_total": 0
       }
     ]
   }
@@ -331,7 +349,7 @@ export function ApiDocsClient() {
                             <div className="bg-[#0d1117] p-8 lg:p-12 border-l border-zinc-800/40">
                                 <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 mb-3">Base URL</p>
                                 <div className="bg-[#161b22] border border-zinc-800/60 rounded-xl px-4 py-3 mb-8">
-                                    <pre className="text-[15px] font-mono text-emerald-400">https://api.hanghut.com/v1</pre>
+                                    <pre className="text-[15px] font-mono text-emerald-400">https://www.hanghut.com/api/v1</pre>
                                 </div>
                                 <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 mb-3">Endpoints</p>
                                 <div className="space-y-1.5 font-mono text-[13px]">

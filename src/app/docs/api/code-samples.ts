@@ -18,10 +18,10 @@ export interface CodeSample {
 
 // ─── Authentication ───
 export const authSamples: CodeSample = {
-    curl: `curl https://api.hanghut.com/v1/events \\
+    curl: `curl https://www.hanghut.com/api/v1/events \\
   -H "Authorization: Bearer hh_live_your_key"`,
     javascript: `const response = await fetch(
-  'https://api.hanghut.com/v1/events',
+  'https://www.hanghut.com/api/v1/events',
   {
     headers: {
       'Authorization': \`Bearer \${API_KEY}\`
@@ -32,12 +32,12 @@ const { data } = await response.json();`,
     python: `import requests
 
 response = requests.get(
-    "https://api.hanghut.com/v1/events",
+    "https://www.hanghut.com/api/v1/events",
     headers={"Authorization": f"Bearer {api_key}"}
 )
 events = response.json()["data"]`,
     php: `<?php
-$ch = curl_init('https://api.hanghut.com/v1/events');
+$ch = curl_init('https://www.hanghut.com/api/v1/events');
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HTTPHEADER => [
@@ -49,7 +49,7 @@ $events = $response->data;`,
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI('https://api.hanghut.com/v1/events')
+uri = URI('https://www.hanghut.com/api/v1/events')
 req = Net::HTTP::Get.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 
@@ -61,10 +61,10 @@ events = JSON.parse(res.body)['data']`,
 
 // ─── List Events ───
 export const listEventsSamples: CodeSample = {
-    curl: `curl "https://api.hanghut.com/v1/events?page=1&per_page=10" \\
+    curl: `curl "https://www.hanghut.com/api/v1/events?page=1&per_page=10" \\
   -H "Authorization: Bearer hh_live_your_key"`,
     javascript: `const res = await fetch(
-  'https://api.hanghut.com/v1/events?page=1&per_page=10',
+  'https://www.hanghut.com/api/v1/events?page=1&per_page=10',
   {
     headers: {
       'Authorization': \`Bearer \${API_KEY}\`
@@ -77,7 +77,7 @@ console.log(data.meta.total); // Total count`,
     python: `import requests
 
 response = requests.get(
-    "https://api.hanghut.com/v1/events",
+    "https://www.hanghut.com/api/v1/events",
     params={"page": 1, "per_page": 10},
     headers={"Authorization": f"Bearer {api_key}"}
 )
@@ -85,7 +85,7 @@ data = response.json()["data"]
 for event in data["events"]:
     print(f"{event['title']} — {event['tickets_sold']}/{event['capacity']}")`,
     php: `<?php
-$ch = curl_init('https://api.hanghut.com/v1/events?page=1&per_page=10');
+$ch = curl_init('https://www.hanghut.com/api/v1/events?page=1&per_page=10');
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HTTPHEADER => [
@@ -99,7 +99,7 @@ foreach ($response->data->events as $event) {
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI('https://api.hanghut.com/v1/events?page=1&per_page=10')
+uri = URI('https://www.hanghut.com/api/v1/events?page=1&per_page=10')
 req = Net::HTTP::Get.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 
@@ -112,10 +112,10 @@ data['events'].each { |e| puts "#{e['title']} — #{e['tickets_sold']} sold" }`,
 
 // ─── Get Event ───
 export const getEventSamples: CodeSample = {
-    curl: `curl "https://api.hanghut.com/v1/events/8db0f243-2e64-..." \\
+    curl: `curl "https://www.hanghut.com/api/v1/events/8db0f243-2e64-..." \\
   -H "Authorization: Bearer hh_live_your_key"`,
     javascript: `const res = await fetch(
-  \`https://api.hanghut.com/v1/events/\${eventId}\`,
+  \`https://www.hanghut.com/api/v1/events/\${eventId}\`,
   {
     headers: { 'Authorization': \`Bearer \${API_KEY}\` }
   }
@@ -129,7 +129,7 @@ event.ticket_tiers.forEach(tier => {
     python: `import requests
 
 response = requests.get(
-    f"https://api.hanghut.com/v1/events/{event_id}",
+    f"https://www.hanghut.com/api/v1/events/{event_id}",
     headers={"Authorization": f"Bearer {api_key}"}
 )
 event = response.json()["data"]
@@ -137,7 +137,7 @@ event = response.json()["data"]
 for tier in event["ticket_tiers"]:
     print(f"{tier['name']}: ₱{tier['price']} — {tier['available']} left")`,
     php: `<?php
-$ch = curl_init("https://api.hanghut.com/v1/events/{$eventId}");
+$ch = curl_init("https://www.hanghut.com/api/v1/events/{$eventId}");
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HTTPHEADER => [
@@ -152,7 +152,7 @@ foreach ($event->ticket_tiers as $tier) {
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI("https://api.hanghut.com/v1/events/#{event_id}")
+uri = URI("https://www.hanghut.com/api/v1/events/#{event_id}")
 req = Net::HTTP::Get.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 
@@ -167,7 +167,7 @@ end`,
 
 // ─── Create Event ───
 export const createEventSamples: CodeSample = {
-    curl: `curl -X POST "https://api.hanghut.com/v1/events" \\
+    curl: `curl -X POST "https://www.hanghut.com/api/v1/events" \\
   -H "Authorization: Bearer hh_live_your_key" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -178,7 +178,7 @@ export const createEventSamples: CodeSample = {
     "capacity": 150,
     "ticket_price": 800
   }'`,
-    javascript: `const res = await fetch('https://api.hanghut.com/v1/events', {
+    javascript: `const res = await fetch('https://www.hanghut.com/api/v1/events', {
   method: 'POST',
   headers: {
     'Authorization': \`Bearer \${API_KEY}\`,
@@ -198,7 +198,7 @@ console.log('Created:', event.id, event.status); // draft`,
     python: `import requests
 
 response = requests.post(
-    "https://api.hanghut.com/v1/events",
+    "https://www.hanghut.com/api/v1/events",
     headers={
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -224,7 +224,7 @@ $payload = json_encode([
     'ticket_price' => 800,
 ]);
 
-$ch = curl_init('https://api.hanghut.com/v1/events');
+$ch = curl_init('https://www.hanghut.com/api/v1/events');
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
@@ -239,7 +239,7 @@ echo "Created: {$event->id} — {$event->status}\\n";`,
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI('https://api.hanghut.com/v1/events')
+uri = URI('https://www.hanghut.com/api/v1/events')
 req = Net::HTTP::Post.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 req['Content-Type'] = 'application/json'
@@ -261,12 +261,12 @@ puts "Created: #{event['id']} — #{event['status']}"`,
 
 // ─── Update Event ───
 export const updateEventSamples: CodeSample = {
-    curl: `curl -X PUT "https://api.hanghut.com/v1/events/f47ac10b-..." \\
+    curl: `curl -X PUT "https://www.hanghut.com/api/v1/events/f47ac10b-..." \\
   -H "Authorization: Bearer hh_live_your_key" \\
   -H "Content-Type: application/json" \\
   -d '{"status": "active", "capacity": 200}'`,
     javascript: `const res = await fetch(
-  \`https://api.hanghut.com/v1/events/\${eventId}\`,
+  \`https://www.hanghut.com/api/v1/events/\${eventId}\`,
   {
     method: 'PUT',
     headers: {
@@ -280,7 +280,7 @@ const { data: event } = await res.json();`,
     python: `import requests
 
 response = requests.put(
-    f"https://api.hanghut.com/v1/events/{event_id}",
+    f"https://www.hanghut.com/api/v1/events/{event_id}",
     headers={
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -289,7 +289,7 @@ response = requests.put(
 )
 event = response.json()["data"]`,
     php: `<?php
-$ch = curl_init("https://api.hanghut.com/v1/events/{$eventId}");
+$ch = curl_init("https://www.hanghut.com/api/v1/events/{$eventId}");
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_CUSTOMREQUEST => 'PUT',
@@ -306,7 +306,7 @@ $event = json_decode(curl_exec($ch))->data;`,
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI("https://api.hanghut.com/v1/events/#{event_id}")
+uri = URI("https://www.hanghut.com/api/v1/events/#{event_id}")
 req = Net::HTTP::Put.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 req['Content-Type'] = 'application/json'
@@ -320,10 +320,10 @@ event = JSON.parse(res.body)['data']`,
 
 // ─── List Attendees ───
 export const listAttendeesSamples: CodeSample = {
-    curl: `curl "https://api.hanghut.com/v1/events/8db0f243-.../attendees?status=sold" \\
+    curl: `curl "https://www.hanghut.com/api/v1/events/8db0f243-.../attendees?status=sold" \\
   -H "Authorization: Bearer hh_live_your_key"`,
     javascript: `const res = await fetch(
-  \`https://api.hanghut.com/v1/events/\${eventId}/attendees?status=sold\`,
+  \`https://www.hanghut.com/api/v1/events/\${eventId}/attendees?status=sold\`,
   {
     headers: { 'Authorization': \`Bearer \${API_KEY}\` }
   }
@@ -335,7 +335,7 @@ data.attendees.forEach(a => {
     python: `import requests
 
 response = requests.get(
-    f"https://api.hanghut.com/v1/events/{event_id}/attendees",
+    f"https://www.hanghut.com/api/v1/events/{event_id}/attendees",
     params={"status": "sold"},
     headers={"Authorization": f"Bearer {api_key}"}
 )
@@ -343,7 +343,7 @@ data = response.json()["data"]
 for attendee in data["attendees"]:
     print(f"{attendee['customer']['name']} — {attendee['tier']['name']}")`,
     php: `<?php
-$url = "https://api.hanghut.com/v1/events/{$eventId}/attendees?status=sold";
+$url = "https://www.hanghut.com/api/v1/events/{$eventId}/attendees?status=sold";
 $ch = curl_init($url);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
@@ -358,7 +358,7 @@ foreach ($data->attendees as $a) {
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI("https://api.hanghut.com/v1/events/#{event_id}/attendees?status=sold")
+uri = URI("https://www.hanghut.com/api/v1/events/#{event_id}/attendees?status=sold")
 req = Net::HTTP::Get.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 
@@ -371,7 +371,7 @@ data['attendees'].each { |a| puts "#{a['customer']['name']} — #{a['tier']['nam
 
 // ─── Create Checkout ───
 export const createCheckoutSamples: CodeSample = {
-    curl: `curl -X POST "https://api.hanghut.com/v1/checkouts" \\
+    curl: `curl -X POST "https://www.hanghut.com/api/v1/checkouts" \\
   -H "Authorization: Bearer hh_live_your_key" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -388,7 +388,7 @@ export const createCheckoutSamples: CodeSample = {
     javascript: `// Server-side: create checkout and redirect
 app.post('/buy-ticket', async (req, res) => {
   const response = await fetch(
-    'https://api.hanghut.com/v1/checkouts',
+    'https://www.hanghut.com/api/v1/checkouts',
     {
       method: 'POST',
       headers: {
@@ -414,7 +414,7 @@ app.post('/buy-ticket', async (req, res) => {
     python: `import requests
 
 response = requests.post(
-    "https://api.hanghut.com/v1/checkouts",
+    "https://www.hanghut.com/api/v1/checkouts",
     headers={
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -446,7 +446,7 @@ $payload = json_encode([
     'cancel_url' => 'https://your-site.com/cancel',
 ]);
 
-$ch = curl_init('https://api.hanghut.com/v1/checkouts');
+$ch = curl_init('https://www.hanghut.com/api/v1/checkouts');
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
@@ -461,7 +461,7 @@ header('Location: ' . $checkout->checkout_url);`,
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI('https://api.hanghut.com/v1/checkouts')
+uri = URI('https://www.hanghut.com/api/v1/checkouts')
 req = Net::HTTP::Post.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 req['Content-Type'] = 'application/json'
@@ -483,10 +483,10 @@ checkout = JSON.parse(res.body)['data']
 
 // ─── Verify Ticket ───
 export const verifyTicketSamples: CodeSample = {
-    curl: `curl "https://api.hanghut.com/v1/tickets/a1b2c3d4-..." \\
+    curl: `curl "https://www.hanghut.com/api/v1/tickets/a1b2c3d4-..." \\
   -H "Authorization: Bearer hh_live_your_key"`,
     javascript: `const res = await fetch(
-  \`https://api.hanghut.com/v1/tickets/\${ticketId}\`,
+  \`https://www.hanghut.com/api/v1/tickets/\${ticketId}\`,
   {
     headers: { 'Authorization': \`Bearer \${API_KEY}\` }
   }
@@ -503,7 +503,7 @@ if (ticket.status === 'sold') {
     python: `import requests
 
 response = requests.get(
-    f"https://api.hanghut.com/v1/tickets/{ticket_id}",
+    f"https://www.hanghut.com/api/v1/tickets/{ticket_id}",
     headers={"Authorization": f"Bearer {api_key}"}
 )
 ticket = response.json()["data"]
@@ -515,7 +515,7 @@ elif ticket["status"] == "checked_in":
 else:
     print(f"❌ INVALID — status: {ticket['status']}")`,
     php: `<?php
-$ch = curl_init("https://api.hanghut.com/v1/tickets/{$ticketId}");
+$ch = curl_init("https://www.hanghut.com/api/v1/tickets/{$ticketId}");
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HTTPHEADER => [
@@ -534,7 +534,7 @@ if ($ticket->status === 'sold') {
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI("https://api.hanghut.com/v1/tickets/#{ticket_id}")
+uri = URI("https://www.hanghut.com/api/v1/tickets/#{ticket_id}")
 req = Net::HTTP::Get.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 
@@ -555,10 +555,10 @@ end`,
 
 // ─── Check In ───
 export const checkInSamples: CodeSample = {
-    curl: `curl -X POST "https://api.hanghut.com/v1/tickets/a1b2c3d4-.../check-in" \\
+    curl: `curl -X POST "https://www.hanghut.com/api/v1/tickets/a1b2c3d4-.../check-in" \\
   -H "Authorization: Bearer hh_live_your_key"`,
     javascript: `const res = await fetch(
-  \`https://api.hanghut.com/v1/tickets/\${ticketId}/check-in\`,
+  \`https://www.hanghut.com/api/v1/tickets/\${ticketId}/check-in\`,
   {
     method: 'POST',
     headers: { 'Authorization': \`Bearer \${API_KEY}\` }
@@ -573,7 +573,7 @@ if (res.status === 409) {
     python: `import requests
 
 response = requests.post(
-    f"https://api.hanghut.com/v1/tickets/{ticket_id}/check-in",
+    f"https://www.hanghut.com/api/v1/tickets/{ticket_id}/check-in",
     headers={"Authorization": f"Bearer {api_key}"}
 )
 if response.status_code == 409:
@@ -582,7 +582,7 @@ else:
     data = response.json()["data"]
     print(f"Checked in: {data['customer']['name']} at {data['checked_in_at']}")`,
     php: `<?php
-$ch = curl_init("https://api.hanghut.com/v1/tickets/{$ticketId}/check-in");
+$ch = curl_init("https://www.hanghut.com/api/v1/tickets/{$ticketId}/check-in");
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
@@ -602,7 +602,7 @@ if ($httpCode === 409) {
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI("https://api.hanghut.com/v1/tickets/#{ticket_id}/check-in")
+uri = URI("https://www.hanghut.com/api/v1/tickets/#{ticket_id}/check-in")
 req = Net::HTTP::Post.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 
@@ -619,10 +619,10 @@ end`,
 
 // ─── Refund Ticket ───
 export const refundTicketSamples: CodeSample = {
-    curl: `curl -X POST "https://api.hanghut.com/v1/tickets/a1b2c3d4-.../refund" \\
+    curl: `curl -X POST "https://www.hanghut.com/api/v1/tickets/a1b2c3d4-.../refund" \\
   -H "Authorization: Bearer hh_live_your_key"`,
     javascript: `const res = await fetch(
-  \`https://api.hanghut.com/v1/tickets/\${ticketId}/refund\`,
+  \`https://www.hanghut.com/api/v1/tickets/\${ticketId}/refund\`,
   {
     method: 'POST',
     headers: { 'Authorization': \`Bearer \${API_KEY}\` }
@@ -633,13 +633,13 @@ console.log(\`Refunded: \${data.id} — \${data.status}\`);`,
     python: `import requests
 
 response = requests.post(
-    f"https://api.hanghut.com/v1/tickets/{ticket_id}/refund",
+    f"https://www.hanghut.com/api/v1/tickets/{ticket_id}/refund",
     headers={"Authorization": f"Bearer {api_key}"}
 )
 data = response.json()["data"]
 print(f"Refunded: {data['id']} — {data['status']}")`,
     php: `<?php
-$ch = curl_init("https://api.hanghut.com/v1/tickets/{$ticketId}/refund");
+$ch = curl_init("https://www.hanghut.com/api/v1/tickets/{$ticketId}/refund");
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
@@ -652,7 +652,7 @@ echo "Refunded: {$data->id} — {$data->status}\\n";`,
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI("https://api.hanghut.com/v1/tickets/#{ticket_id}/refund")
+uri = URI("https://www.hanghut.com/api/v1/tickets/#{ticket_id}/refund")
 req = Net::HTTP::Post.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 
@@ -665,10 +665,10 @@ puts "Refunded: #{data['id']} — #{data['status']}"`,
 
 // ─── List Orders ───
 export const listOrdersSamples: CodeSample = {
-    curl: `curl "https://api.hanghut.com/v1/orders?event_id=8db0f243-..." \\
+    curl: `curl "https://www.hanghut.com/api/v1/orders?event_id=8db0f243-..." \\
   -H "Authorization: Bearer hh_live_your_key"`,
     javascript: `const res = await fetch(
-  \`https://api.hanghut.com/v1/orders?event_id=\${eventId}\`,
+  \`https://www.hanghut.com/api/v1/orders?event_id=\${eventId}\`,
   {
     headers: { 'Authorization': \`Bearer \${API_KEY}\` }
   }
@@ -680,7 +680,7 @@ data.orders.forEach(order => {
     python: `import requests
 
 response = requests.get(
-    "https://api.hanghut.com/v1/orders",
+    "https://www.hanghut.com/api/v1/orders",
     params={"event_id": event_id},
     headers={"Authorization": f"Bearer {api_key}"}
 )
@@ -688,7 +688,7 @@ data = response.json()["data"]
 for order in data["orders"]:
     print(f"{order['customer']['name']}: {order['quantity']}x — ₱{order['total_amount']}")`,
     php: `<?php
-$ch = curl_init("https://api.hanghut.com/v1/orders?event_id={$eventId}");
+$ch = curl_init("https://www.hanghut.com/api/v1/orders?event_id={$eventId}");
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HTTPHEADER => [
@@ -702,7 +702,7 @@ foreach ($data->orders as $order) {
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI("https://api.hanghut.com/v1/orders?event_id=#{event_id}")
+uri = URI("https://www.hanghut.com/api/v1/orders?event_id=#{event_id}")
 req = Net::HTTP::Get.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 
@@ -715,14 +715,14 @@ data['orders'].each { |o| puts "#{o['customer']['name']}: #{o['quantity']}x — 
 
 // ─── Register Webhook ───
 export const registerWebhookSamples: CodeSample = {
-    curl: `curl -X POST "https://api.hanghut.com/v1/webhooks" \\
+    curl: `curl -X POST "https://www.hanghut.com/api/v1/webhooks" \\
   -H "Authorization: Bearer hh_live_your_key" \\
   -H "Content-Type: application/json" \\
   -d '{
     "url": "https://your-site.com/webhook",
     "events": ["ticket.purchased", "ticket.refunded"]
   }'`,
-    javascript: `const res = await fetch('https://api.hanghut.com/v1/webhooks', {
+    javascript: `const res = await fetch('https://www.hanghut.com/api/v1/webhooks', {
   method: 'POST',
   headers: {
     'Authorization': \`Bearer \${API_KEY}\`,
@@ -739,7 +739,7 @@ console.log('Webhook secret:', webhook.secret);`,
     python: `import requests
 
 response = requests.post(
-    "https://api.hanghut.com/v1/webhooks",
+    "https://www.hanghut.com/api/v1/webhooks",
     headers={
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -753,7 +753,7 @@ webhook = response.json()["data"]
 # Save webhook["secret"] — it's only shown once!
 print(f"Webhook secret: {webhook['secret']}")`,
     php: `<?php
-$ch = curl_init('https://api.hanghut.com/v1/webhooks');
+$ch = curl_init('https://www.hanghut.com/api/v1/webhooks');
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
@@ -772,7 +772,7 @@ echo "Webhook secret: {$webhook->secret}\\n";`,
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI('https://api.hanghut.com/v1/webhooks')
+uri = URI('https://www.hanghut.com/api/v1/webhooks')
 req = Net::HTTP::Post.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 req['Content-Type'] = 'application/json'
@@ -905,10 +905,10 @@ end`,
 
 // ─── Analytics ───
 export const analyticsSamples: CodeSample = {
-    curl: `curl "https://api.hanghut.com/v1/analytics/sales?from=2026-03-01&to=2026-03-31" \\
+    curl: `curl "https://www.hanghut.com/api/v1/analytics/sales?from=2026-03-01&to=2026-03-31" \\
   -H "Authorization: Bearer hh_live_your_key"`,
     javascript: `const res = await fetch(
-  'https://api.hanghut.com/v1/analytics/sales?from=2026-03-01&to=2026-03-31',
+  'https://www.hanghut.com/api/v1/analytics/sales?from=2026-03-01&to=2026-03-31',
   {
     headers: { 'Authorization': \`Bearer \${API_KEY}\` }
   }
@@ -919,7 +919,7 @@ console.log(\`Tickets: \${data.total_tickets_sold}\`);`,
     python: `import requests
 
 response = requests.get(
-    "https://api.hanghut.com/v1/analytics/sales",
+    "https://www.hanghut.com/api/v1/analytics/sales",
     params={"from": "2026-03-01", "to": "2026-03-31"},
     headers={"Authorization": f"Bearer {api_key}"}
 )
@@ -927,7 +927,7 @@ data = response.json()["data"]
 print(f"Revenue: ₱{data['total_revenue']}")
 print(f"Tickets: {data['total_tickets_sold']}")`,
     php: `<?php
-$ch = curl_init('https://api.hanghut.com/v1/analytics/sales?from=2026-03-01&to=2026-03-31');
+$ch = curl_init('https://www.hanghut.com/api/v1/analytics/sales?from=2026-03-01&to=2026-03-31');
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HTTPHEADER => [
@@ -940,7 +940,7 @@ echo "Tickets: {$data->total_tickets_sold}\\n";`,
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI('https://api.hanghut.com/v1/analytics/sales?from=2026-03-01&to=2026-03-31')
+uri = URI('https://www.hanghut.com/api/v1/analytics/sales?from=2026-03-01&to=2026-03-31')
 req = Net::HTTP::Get.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 
@@ -954,7 +954,7 @@ puts "Tickets: #{data['total_tickets_sold']}"`,
 
 // ─── Create Promo Code ───
 export const createPromoSamples: CodeSample = {
-    curl: `curl -X POST "https://api.hanghut.com/v1/promo-codes" \\
+    curl: `curl -X POST "https://www.hanghut.com/api/v1/promo-codes" \\
   -H "Authorization: Bearer hh_live_your_key" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -965,7 +965,7 @@ export const createPromoSamples: CodeSample = {
     "usage_limit": 50,
     "expires_at": "2026-04-01T00:00:00Z"
   }'`,
-    javascript: `const res = await fetch('https://api.hanghut.com/v1/promo-codes', {
+    javascript: `const res = await fetch('https://www.hanghut.com/api/v1/promo-codes', {
   method: 'POST',
   headers: {
     'Authorization': \`Bearer \${API_KEY}\`,
@@ -985,7 +985,7 @@ console.log(\`Created: \${promo.code} — \${promo.discount_amount}% off\`);`,
     python: `import requests
 
 response = requests.post(
-    "https://api.hanghut.com/v1/promo-codes",
+    "https://www.hanghut.com/api/v1/promo-codes",
     headers={
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -1002,7 +1002,7 @@ response = requests.post(
 promo = response.json()["data"]
 print(f"Created: {promo['code']} — {promo['discount_amount']}% off")`,
     php: `<?php
-$ch = curl_init('https://api.hanghut.com/v1/promo-codes');
+$ch = curl_init('https://www.hanghut.com/api/v1/promo-codes');
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
@@ -1024,7 +1024,7 @@ echo "Created: {$promo->code} — {$promo->discount_amount}% off\\n";`,
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI('https://api.hanghut.com/v1/promo-codes')
+uri = URI('https://www.hanghut.com/api/v1/promo-codes')
 req = Net::HTTP::Post.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 req['Content-Type'] = 'application/json'
