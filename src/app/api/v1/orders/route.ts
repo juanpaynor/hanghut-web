@@ -52,12 +52,11 @@ export async function GET(request: Request) {
             guest_phone,
             quantity,
             total_amount,
+            subtotal,
             status,
             payment_method,
             paid_at,
             created_at,
-            promo_code,
-            discount_amount,
             event:events (
                 id,
                 title
@@ -86,10 +85,9 @@ export async function GET(request: Request) {
         },
         quantity: order.quantity,
         total_amount: order.total_amount,
+        subtotal: order.subtotal,
         status: order.status,
         payment_method: order.payment_method,
-        promo_code: order.promo_code,
-        discount_amount: order.discount_amount,
         paid_at: order.paid_at,
         created_at: order.created_at,
     }))
