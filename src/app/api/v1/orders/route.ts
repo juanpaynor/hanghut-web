@@ -58,7 +58,7 @@ export async function GET(request: Request) {
             created_at,
             promo_code,
             discount_amount,
-            events (
+            event:events (
                 id,
                 title
             )
@@ -69,14 +69,15 @@ export async function GET(request: Request) {
         .range(from, to)
 
     if (error) {
+        console.error('Orders query error:', error)
         return apiError('Failed to fetch orders', 500)
     }
 
     const formattedOrders = (orders || []).map((order: any) => ({
         id: order.id,
-        event: order.events ? {
-            id: order.events.id,
-            title: order.events.title,
+        event: order.event ? {
+            id: order.event.id,
+            title: order.event.title,
         } : null,
         customer: {
             name: order.guest_name,
