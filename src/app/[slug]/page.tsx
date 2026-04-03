@@ -274,7 +274,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                             <SocialButtons />
 
                                             <div className="w-full space-y-2">
-                                                <ProfileActions shareUrl={`https://hanghut.com/${partner.slug}`} />
+                                                <ProfileActions shareUrl={`https://hanghut.com/${partner.slug}`} partnerId={partner.id} partnerName={partner.business_name} />
                                             </div>
                                         </div>
                                     </div>
