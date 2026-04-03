@@ -22,6 +22,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { updatePartnerProfile } from '@/lib/organizer/settings-actions'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { SectionList } from './section-editor/section-list'
+import { SectionTemplates } from './section-editor/section-templates'
+import { StorefrontSection, TemplateName } from '@/lib/storefront/section-types'
 
 interface PartnerSettingsFormProps {
     initialData: {
@@ -66,6 +69,8 @@ interface PartnerSettingsFormProps {
                 email?: boolean
                 phone?: boolean
             }
+            sections?: StorefrontSection[]
+            selected_template?: TemplateName | null
         }
     }
 }
@@ -116,7 +121,9 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             contact_display: {
                 email: initialData.branding?.contact_display?.email ?? true,
                 phone: initialData.branding?.contact_display?.phone ?? false
-            }
+            },
+            sections: initialData.branding?.sections || [],
+            selected_template: initialData.branding?.selected_template || null,
         }
     })
 
@@ -293,12 +300,15 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             </div>
 
             <Tabs defaultValue="general" className="space-y-8">
-                <TabsList className="grid w-full max-w-sm grid-cols-2 mb-8">
+                <TabsList className="grid w-full max-w-md grid-cols-3 mb-8">
                     <TabsTrigger value="general" className="flex items-center gap-2">
-                        <Store className="h-4 w-4" /> General Info
+                        <Store className="h-4 w-4" /> General
                     </TabsTrigger>
                     <TabsTrigger value="appearance" className="flex items-center gap-2">
                         <Palette className="h-4 w-4" /> Appearance
+                    </TabsTrigger>
+                    <TabsTrigger value="sections" className="flex items-center gap-2">
+                        <LayoutTemplate className="h-4 w-4" /> Sections
                     </TabsTrigger>
                 </TabsList>
 
@@ -650,54 +660,6 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                 <TabsContent value="appearance">
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                         <div className="lg:col-span-8 space-y-8">
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>Design & Layout</CardTitle>
-                                    <CardDescription>Choose how you want your storefront to look.</CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-6">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div
-                                            onClick={() => handleBrandingChange('design', 'layout', 'modern')}
-                                            className={cn(
-                                                "cursor-pointer border-2 rounded-xl p-4 hover:border-primary/50 transition-colors flex flex-col gap-2",
-                                                formData.branding.design.layout === 'modern' ? "border-primary bg-primary/5" : "border-border"
-                                            )}
-                                        >
-                                            <div className="w-full h-32 bg-muted rounded-lg flex gap-2 p-2 overflow-hidden">
-                                                <div className="w-1/3 bg-background rounded border shadow-sm h-full" />
-                                                <div className="w-2/3 space-y-2">
-                                                    <div className="w-full h-24 bg-background rounded border shadow-sm" />
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <p className="font-semibold flex items-center gap-2"><LayoutTemplate className="h-4 w-4" /> Modern Split</p>
-                                                <p className="text-sm text-muted-foreground">Profile sidebar on left, content on right. Best for dense content.</p>
-                                            </div>
-                                        </div>
-
-                                        <div
-                                            onClick={() => handleBrandingChange('design', 'layout', 'classic')}
-                                            className={cn(
-                                                "cursor-pointer border-2 rounded-xl p-4 hover:border-primary/50 transition-colors flex flex-col gap-2",
-                                                formData.branding.design.layout === 'classic' ? "border-primary bg-primary/5" : "border-border"
-                                            )}
-                                        >
-                                            <div className="w-full h-32 bg-muted rounded-lg space-y-2 p-2 overflow-hidden">
-                                                <div className="w-full h-12 bg-background rounded border shadow-sm" />
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <div className="h-16 bg-background rounded border shadow-sm" />
-                                                    <div className="h-16 bg-background rounded border shadow-sm" />
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <p className="font-semibold flex items-center gap-2"><Layout className="h-4 w-4" /> Classic Hero</p>
-                                                <p className="text-sm text-muted-foreground">Large hero image with centered branding. Traditional and impactful.</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
 
                             <Card>
                                 <CardHeader>
@@ -899,6 +861,47 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                 </CardContent>
                             </Card>
                         </div>
+                    </div>
+                </TabsContent>
+
+                <TabsContent value="sections">
+                    <div className="space-y-8 max-w-4xl">
+                        <SectionTemplates
+                            currentTemplate={formData.branding.selected_template as TemplateName | null}
+                            onApply={(sections, template) => {
+                                setFormData(prev => ({
+                                    ...prev,
+                                    branding: {
+                                        ...prev.branding,
+                                        sections,
+                                        selected_template: template,
+                                    }
+                                }))
+                                setSuccessMessage(null)
+                            }}
+                        />
+
+                        {(formData.branding.sections as StorefrontSection[])?.length > 0 && (
+                            <SectionList
+                                sections={formData.branding.sections as StorefrontSection[]}
+                                onChange={(sections) => {
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        branding: {
+                                            ...prev.branding,
+                                            sections,
+                                        }
+                                    }))
+                                    setSuccessMessage(null)
+                                }}
+                            />
+                        )}
+
+                        {!(formData.branding.sections as StorefrontSection[])?.length && (
+                            <div className="text-center py-16 border-2 border-dashed rounded-xl">
+                                <p className="text-muted-foreground">Pick a template above to get started, or your current layout will be used.</p>
+                            </div>
+                        )}
                     </div>
                 </TabsContent>
             </Tabs>

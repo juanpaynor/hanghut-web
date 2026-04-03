@@ -62,11 +62,13 @@ export default function OrganizerLoginPage() {
         resetAttempts()
 
         // Check if user has an approved partner account OR is a team member
-        const { data: partner } = await supabase
+        const { data: partner, error: partnerError } = await supabase
             .from('partners')
             .select('status')
             .eq('user_id', data.user.id)
             .maybeSingle()
+
+        console.log('[Login] Partner check:', { userId: data.user.id, partner, partnerError })
 
         if (partner) {
             // User is a partner owner — check approval status

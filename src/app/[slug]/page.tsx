@@ -14,6 +14,7 @@ import { StorefrontHeroVideo } from '@/components/storefront/storefront-hero-vid
 import { ProfileActions } from '@/components/storefront/profile-actions'
 import { cn, getYouTubeEmbedUrl } from '@/lib/utils'
 import sanitizeHtml from 'sanitize-html'
+import { SectionRenderer } from '@/components/storefront/section-renderer'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
@@ -122,6 +123,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
     const enableAnimations = branding.design?.enable_animations ?? true
     const announcement = branding.announcement || {}
     const sortBy = branding.content?.sort_by || 'upcoming'
+    const hasSections = Array.isArray(branding.sections) && branding.sections.length > 0
 
     // Sort Upcoming Events
     const sortedUpcoming = [...upcoming].sort((a, b) => {
@@ -188,6 +190,20 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                         </p>
                     </div>
                 )}
+
+                {/* ─── SECTION-BASED RENDERING ─── */}
+                {hasSections ? (
+                    <>
+                        <SectionRenderer
+                            sections={branding.sections}
+                            partner={partner}
+                            events={upcoming}
+                            pastEvents={past}
+                        />
+                        <div className="flex-grow" />
+                    </>
+                ) : (
+                <>
 
                 {/* --- MODERN LAYOUT (Default) --- */}
                 {layout === 'modern' && (
@@ -433,6 +449,8 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                         <div className="flex-grow" /> {/* Spacer */}
                     </>
                 )}
+
+                </>) /* end legacy fallback */}
 
                 {/* --- FOOTER --- */}
                 {showFooter && (

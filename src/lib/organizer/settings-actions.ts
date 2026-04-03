@@ -41,6 +41,13 @@ const profileSchema = z.object({
             email: z.boolean().optional(),
             phone: z.boolean().optional(),
         }).optional(),
+        sections: z.array(z.object({
+            type: z.string(),
+            visible: z.boolean(),
+            config: z.record(z.any()),
+        })).optional(),
+        selected_template: z.string().nullable().optional(),
+        video_position: z.string().optional(),
     }).optional(),
     social_links: z.object({
         facebook: z.string().optional(),
