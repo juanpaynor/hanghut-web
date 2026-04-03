@@ -121,17 +121,16 @@ export function CampaignComposer() {
     async function loadEventAttendeeCount(eventId: string) {
         setLoadingCount(true)
         try {
-            // Count unique emails from tickets for this event
-            const { data: tickets } = await supabase
-                .from('tickets')
-                .select('guest_email, user:users!tickets_user_id_fkey(email)')
+            // Count unique emails from completed purchase intents for this event
+            const { data: intents } = await supabase
+                .from('purchase_intents')
+                .select('guest_email')
                 .eq('event_id', eventId)
-                .in('status', ['sold', 'checked_in'])
+                .in('status', ['completed', 'paid'])
 
             const uniqueEmails = new Set<string>()
-            tickets?.forEach((t: any) => {
-                const email = t.guest_email || t.user?.email
-                if (email) uniqueEmails.add(email.toLowerCase())
+            intents?.forEach((intent: any) => {
+                if (intent.guest_email) uniqueEmails.add(intent.guest_email.toLowerCase())
             })
 
             setAudienceCount(uniqueEmails.size)
@@ -143,16 +142,15 @@ export function CampaignComposer() {
     }
 
     async function getEventAttendeeEmails(eventId: string): Promise<string[]> {
-        const { data: tickets } = await supabase
-            .from('tickets')
-            .select('guest_email, user:users!tickets_user_id_fkey(email)')
+        const { data: intents } = await supabase
+            .from('purchase_intents')
+            .select('guest_email')
             .eq('event_id', eventId)
-            .in('status', ['sold', 'checked_in'])
+            .in('status', ['completed', 'paid'])
 
         const uniqueEmails = new Set<string>()
-        tickets?.forEach((t: any) => {
-            const email = t.guest_email || t.user?.email
-            if (email) uniqueEmails.add(email.toLowerCase())
+        intents?.forEach((intent: any) => {
+            if (intent.guest_email) uniqueEmails.add(intent.guest_email.toLowerCase())
         })
 
         return Array.from(uniqueEmails)
