@@ -266,9 +266,9 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                     )}
                 </h3>
                 {event.organizer?.slug && (
-                    <Link href={`/${event.organizer.slug}`} className="text-sm text-primary hover:underline">
+                    <a href={`https://${event.organizer.slug}.hanghut.com`} className="text-sm text-primary hover:underline">
                         View Profile
-                    </Link>
+                    </a>
                 )}
                 <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                     <Phone className="h-3 w-3" />
@@ -371,7 +371,7 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
             <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                 <div className="container mx-auto px-4 flex h-16 items-center justify-between">
                     {event.organizer ? (
-                        <Link href={`/${event.organizer.slug}`} className="flex items-center gap-3 font-bold text-xl hover:opacity-80 transition-opacity">
+                        <a href={`https://${event.organizer.slug}.hanghut.com`} className="flex items-center gap-3 font-bold text-xl hover:opacity-80 transition-opacity">
                             {event.organizer.profile_photo_url ? (
                                 <div className="relative w-10 h-10 rounded-full overflow-hidden border border-border">
                                     <Image
@@ -387,7 +387,7 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                                 </div>
                             )}
                             <span className="truncate max-w-[200px]">{event.organizer.business_name}</span>
-                        </Link>
+                        </a>
                     ) : (
                         <Link href="/" className="flex items-center gap-2 font-bold text-xl">
                             <div className="bg-primary px-3 py-1 rounded-md text-primary-foreground transform -rotate-2 text-lg">
