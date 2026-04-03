@@ -47,6 +47,16 @@ export async function middleware(request: NextRequest) {
 
     // 1. Partner subdomain → rewrite to storefront (no auth needed)
     if (subdomain) {
+        // Known app routes should work normally on subdomains (e.g. acme.hanghut.com/events/[id])
+        const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan']
+        const isAppRoute = appRoutePrefixes.some(prefix => url.pathname.startsWith(prefix))
+
+        if (isAppRoute) {
+            // Let it pass through to the normal app route
+            return NextResponse.next()
+        }
+
+        // Rewrite root and unknown paths to the storefront slug page
         url.pathname = `/${subdomain}${url.pathname}`
         return NextResponse.rewrite(url)
     }
