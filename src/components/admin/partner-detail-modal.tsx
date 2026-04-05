@@ -23,7 +23,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
 import { CheckCircle, XCircle, Ban, DollarSign } from 'lucide-react'
-import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, resetToStandardPricing, setAutoApprovePayouts } from '@/lib/admin/partner-actions'
+import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts } from '@/lib/admin/partner-actions'
 import { useRouter } from 'next/navigation'
 
 interface Partner {
@@ -110,6 +110,22 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
         } catch (error) {
             console.error('Error suspending partner:', error)
             alert('Failed to suspend partner')
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    const handleReactivate = async () => {
+        if (!confirm(`Are you sure you want to reinstate ${partner.business_name}?`)) return
+
+        setIsLoading(true)
+        try {
+            await reactivatePartner(partner.id)
+            router.refresh()
+            onOpenChange(false)
+        } catch (error) {
+            console.error('Error reactivating partner:', error)
+            alert('Failed to reinstate partner')
         } finally {
             setIsLoading(false)
         }
@@ -430,6 +446,26 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                 >
                                     <Ban className="h-4 w-4 mr-2" />
                                     Suspend Partner
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Reinstate Suspended Partner */}
+                    {partner.status === 'suspended' && (
+                        <div className="space-y-4 border-t border-slate-700 pt-6">
+                            <h3 className="text-lg font-semibold text-yellow-400">Partner Suspended</h3>
+                            <p className="text-sm text-slate-400">
+                                This partner is currently suspended. You can reinstate them to restore access to their storefront and event management.
+                            </p>
+                            <div className="flex gap-3">
+                                <Button
+                                    onClick={handleReactivate}
+                                    disabled={isLoading}
+                                    className="flex-1 bg-green-600 hover:bg-green-700"
+                                >
+                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                    Reinstate Partner
                                 </Button>
                             </div>
                         </div>
