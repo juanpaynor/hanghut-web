@@ -8,6 +8,27 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 
+export type AdminRole = 'super_admin' | 'admin' | 'support' | 'finance_admin'
+
+// Role-based nav visibility
+const NAV_PERMISSIONS: Record<string, AdminRole[]> = {
+    '/admin':             ['super_admin', 'admin', 'support', 'finance_admin'],
+    '/admin/verifications': ['super_admin', 'admin'],
+    '/admin/partners':    ['super_admin', 'admin', 'support', 'finance_admin'],
+    '/admin/events':      ['super_admin', 'admin', 'support', 'finance_admin'],
+    '/admin/experiences': ['super_admin', 'admin'],
+    '/admin/accounting':  ['super_admin', 'admin', 'finance_admin'],
+    '/admin/users':       ['super_admin', 'admin', 'support'],
+    '/admin/reports':     ['super_admin', 'admin', 'support'],
+    '/admin/tables':      ['super_admin', 'admin', 'support'],
+    '/admin/tickets':     ['super_admin', 'admin', 'support'],
+    '/admin/audit':       ['super_admin', 'admin', 'finance_admin'],
+    '/admin/waitlist':    ['super_admin', 'admin'],
+    '/admin/popups':      ['super_admin', 'admin'],
+    '/admin/releases':    ['super_admin', 'admin'],
+    '/admin/broadcasts':  ['super_admin', 'admin'],
+}
+
 const navItems = [
     {
         title: 'Dashboard',
@@ -86,7 +107,11 @@ const navItems = [
     },
 ]
 
-export function AdminNav() {
+interface AdminNavProps {
+    adminRole: AdminRole
+}
+
+export function AdminNav({ adminRole }: AdminNavProps) {
     const pathname = usePathname()
     const router = useRouter()
     const supabase = createClient()
@@ -97,10 +122,16 @@ export function AdminNav() {
         router.refresh()
     }
 
+    // Filter nav items based on role
+    const visibleItems = navItems.filter(item => {
+        const allowedRoles = NAV_PERMISSIONS[item.href]
+        return allowedRoles?.includes(adminRole) ?? false
+    })
+
     return (
         <nav className="flex-1 flex flex-col">
             <div className="flex-1 py-4 px-3 space-y-1">
-                {navItems.map((item) => {
+                {visibleItems.map((item) => {
                     const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
                     const Icon = item.icon
 
@@ -123,6 +154,11 @@ export function AdminNav() {
             </div>
 
             <div className="p-4 border-t border-slate-100">
+                <div className="mb-2 px-3">
+                    <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                        {adminRole.replace('_', ' ')}
+                    </span>
+                </div>
                 <Button
                     onClick={handleLogout}
                     variant="ghost"

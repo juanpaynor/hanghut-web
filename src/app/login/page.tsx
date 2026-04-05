@@ -66,8 +66,8 @@ export default function LoginPage() {
 
             resetAttempts()
 
-            // Check if user is admin using RPC function
-            const { data: isAdmin, error: userError } = await supabase
+            // Check if user is admin — now returns role string or null
+            const { data: adminRole, error: userError } = await supabase
                 .rpc('is_user_admin')
 
             if (userError) {
@@ -77,17 +77,37 @@ export default function LoginPage() {
                 return
             }
 
-            if (!isAdmin) {
-                // Sign out non-admin users
+            if (!adminRole) {
                 await supabase.auth.signOut()
                 setError('Access denied. Admin privileges required.')
                 setLoading(false)
                 return
             }
 
-            // Success - redirect to admin dashboard
-            router.push('/admin')
-            router.refresh()
+            // Reject support/finance_admin roles — they should use /support/login
+            if (adminRole === 'support' || adminRole === 'finance_admin') {
+                await supabase.auth.signOut()
+                setError('Support staff should log in at /support/login')
+                setLoading(false)
+                return
+            }
+
+            // Send OTP code for 2FA
+            try {
+                const { sendOtpCode } = await import('@/lib/admin/otp-actions')
+                const result = await sendOtpCode(authData.user.id)
+
+                // Set cookies for the verify page
+                document.cookie = `pending_2fa_user=${authData.user.id}; path=/; max-age=600`
+                document.cookie = `pending_2fa_email=${encodeURIComponent(result.maskedEmail)}; path=/; max-age=600`
+
+                // Redirect to verify page
+                router.push('/verify')
+            } catch (otpErr: any) {
+                console.error('OTP error:', otpErr)
+                setError(otpErr.message || 'Failed to send verification code')
+                setLoading(false)
+            }
         } catch (err) {
             setError('An unexpected error occurred.')
             setLoading(false)

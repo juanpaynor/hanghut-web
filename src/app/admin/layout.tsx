@@ -2,8 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { AdminNav } from '@/components/admin/admin-nav'
+import type { AdminRole } from '@/components/admin/admin-nav'
 
-// Force rebuild: Admin Theme Update
 export default async function AdminLayout({
     children,
 }: {
@@ -18,12 +18,23 @@ export default async function AdminLayout({
         redirect('/login')
     }
 
-    // Check if user is admin using RPC function
-    const { data: isAdmin, error: userError } = await supabase
+    // Check if user is admin — now returns role string or null
+    const { data: adminRole, error: userError } = await supabase
         .rpc('is_user_admin')
 
-    if (userError || !isAdmin) {
+    if (userError || !adminRole) {
         redirect('/login')
+    }
+
+    // 2FA enforcement: check mfa_verified_at within 8 hours
+    const mfaVerifiedAt = user.app_metadata?.mfa_verified_at
+    const EIGHT_HOURS = 8 * 60 * 60 * 1000
+
+    if (!mfaVerifiedAt || Date.now() - new Date(mfaVerifiedAt).getTime() > EIGHT_HOURS) {
+        // Allow access to the verify page itself
+        // The verify page is at /admin/verify — handled by its own route
+        // We check the URL in the middleware instead — for now, redirect
+        redirect('/verify')
     }
 
     return (
@@ -37,7 +48,7 @@ export default async function AdminLayout({
                             HangHut
                         </Link>
                     </div>
-                    <AdminNav />
+                    <AdminNav adminRole={adminRole as AdminRole} />
                 </aside>
 
                 {/* Main content */}
