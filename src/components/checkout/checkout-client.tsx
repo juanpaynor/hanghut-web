@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { Calendar, MapPin, Ticket, ShieldCheck, Loader2, ArrowRight, Lock, Mail, Phone, User, LogIn } from 'lucide-react'
 import { format } from 'date-fns'
 import { useToast } from '@/hooks/use-toast'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 
 import { validatePromoCode } from '@/lib/organizer/promo-actions'
@@ -34,8 +34,13 @@ interface CheckoutClientProps {
 
 export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName }: CheckoutClientProps) {
     const router = useRouter()
+    const searchParams = useSearchParams()
     const { toast } = useToast()
     const [isLoading, setIsLoading] = useState(false)
+
+    // Embed mode detection — force guest checkout if embedded
+    const isEmbed = searchParams.get('embed') === 'true'
+    const effectiveUser = isEmbed ? null : user
 
     // Promo Code State
     const [promoCodeInput, setPromoCodeInput] = useState('')
@@ -115,7 +120,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
 
     const handlePayment = async () => {
         // STRICT PROTOCOL: Name, Email, and Phone are REQUIRED
-        if (!user && (!guestDetails.name || !guestDetails.email || !guestDetails.phone)) {
+        if (!effectiveUser && (!guestDetails.name || !guestDetails.email || !guestDetails.phone)) {
             toast({
                 title: "All Fields Required",
                 description: "Name, Email, and Phone are required for ticket delivery.",
@@ -145,8 +150,8 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
 
         // [Workaround] Subscribe directly via server action since Edge Function might miss it
         if (newsletterSubscribed && event.organizer_id) {
-            const email = user?.email || guestDetails.email
-            const name = user ? (user.user_metadata?.full_name || user.email) : guestDetails.name
+            const email = effectiveUser?.email || guestDetails.email
+            const name = effectiveUser ? (effectiveUser.user_metadata?.full_name || effectiveUser.email) : guestDetails.name
 
             // Execute in background
             subscribeGuestToNewsletter(event.organizer_id, email, name).catch(err =>
@@ -162,7 +167,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 event_id: event.id,
                 quantity: quantity,
                 tier_id: tier.id || undefined,
-                guest_details: !user ? guestDetails : undefined,
+                guest_details: !effectiveUser ? guestDetails : undefined,
                 promo_code: appliedPromo ? appliedPromo.code : undefined,
                 subscribed_to_newsletter: newsletterSubscribed,
                 // [NEW] Fee Metadata for Edge Function
@@ -181,7 +186,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 failure_url: `${window.location.origin}/events/${event.id}`
             }
 
-            const headers = !user
+            const headers = !effectiveUser
                 ? { Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}` }
                 : undefined
 
@@ -214,7 +219,16 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
 
             if (data.data?.payment_url) {
                 console.log('✅ [CHECKOUT] Payment URL received, redirecting to:', data.data.payment_url)
-                window.location.href = data.data.payment_url
+
+                // If we're inside an embed iframe, ask the parent window to redirect
+                if (isEmbed && window.self !== window.top) {
+                    window.parent.postMessage({
+                        type: 'HANGHUT_REDIRECT_PARENT',
+                        url: data.data.payment_url,
+                    }, '*')
+                } else {
+                    window.location.href = data.data.payment_url
+                }
             } else {
                 console.error('🔴 [CHECKOUT] No payment_url in response:', data)
                 throw new Error('No payment URL received')
@@ -246,20 +260,20 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-primary">
                             <User className="w-5 h-5" />
-                            {user ? 'Your Information' : 'Guest Checkout'}
+                            {effectiveUser ? 'Your Information' : 'Guest Checkout'}
                         </CardTitle>
                         <CardDescription>
-                            {user ? 'Tickets will be sent to your registered email.' : 'Enter your details to receive tickets.'}
+                            {effectiveUser ? 'Tickets will be sent to your registered email.' : 'Enter your details to receive tickets.'}
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        {user ? (
+                        {effectiveUser ? (
                             <div className="flex items-center p-4 bg-muted/30 rounded-lg border border-border/50">
                                 <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center mr-4">
-                                    <span className="font-bold text-primary">{user.email?.charAt(0).toUpperCase()}</span>
+                                    <span className="font-bold text-primary">{effectiveUser.email?.charAt(0).toUpperCase()}</span>
                                 </div>
                                 <div>
-                                    <p className="font-medium">{user.email}</p>
+                                    <p className="font-medium">{effectiveUser.email}</p>
                                     <p className="text-sm text-muted-foreground flex items-center gap-1">
                                         <Badge variant="secondary" className="text-xs">Authenticated</Badge>
                                     </p>

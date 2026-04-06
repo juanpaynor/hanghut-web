@@ -48,7 +48,7 @@ export async function middleware(request: NextRequest) {
     // 1. Partner subdomain → rewrite to storefront (no auth needed)
     if (subdomain) {
         // Known app routes should work normally on subdomains (e.g. acme.hanghut.com/events/[id])
-        const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan']
+        const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan', '/embed']
         const isAppRoute = appRoutePrefixes.some(prefix => url.pathname.startsWith(prefix))
 
         if (isAppRoute) {
@@ -73,7 +73,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // 3. Skip auth overhead for public-only routes
-    const publicPrefixes = ['/events', '/terms', '/privacy', '/how-it-works']
+    const publicPrefixes = ['/events', '/terms', '/privacy', '/how-it-works', '/embed', '/checkout']
     if (publicPrefixes.some(p => url.pathname.startsWith(p))) {
         return NextResponse.next()
     }

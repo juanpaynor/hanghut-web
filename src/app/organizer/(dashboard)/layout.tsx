@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { LayoutDashboard, Calendar, Wallet, LogOut, Briefcase, Mail, ScanLine, ShieldCheck, Code } from 'lucide-react'
+import { LayoutDashboard, Calendar, Wallet, LogOut, Briefcase, Mail, ScanLine, ShieldCheck, Code, Code2 } from 'lucide-react'
 import { getAuthUser, getPartner, getUserRole } from '@/lib/auth/cached'
 import type { UserRole } from '@/lib/auth/cached'
 
@@ -16,6 +16,7 @@ const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
     scanner:   ['owner', 'manager', 'scanner'],
     settings:  ['owner', 'manager'],
     developers:['owner'],
+    embed:     ['owner', 'marketing'],
     verification: ['owner'],
 }
 
@@ -125,6 +126,12 @@ export default async function OrganizerLayout({
                                             <Link href="/organizer/developers" className="text-sm font-medium text-foreground hover:text-primary transition-colors flex items-center gap-1">
                                                 <Code className="w-3.5 h-3.5" />
                                                 Developers
+                                            </Link>
+                                        )}
+                                        {hasAccess('embed', role) && (
+                                            <Link href="/organizer/developers/embed" className="text-sm font-medium text-foreground hover:text-primary transition-colors flex items-center gap-1">
+                                                <Code2 className="w-3.5 h-3.5" />
+                                                Embed
                                             </Link>
                                         )}
                                     </>
