@@ -73,17 +73,18 @@ export default async function OrganizerLayout({
             <header className="border-b border-border bg-card">
                 <div className="container mx-auto px-4 py-4">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-8">
-                            <Link href="/organizer" className="flex items-center gap-2">
+                        <div className="flex items-center gap-4 xl:gap-8 flex-1 min-w-0">
+                            <Link href="/organizer" className="flex items-center gap-2 shrink-0">
                                 <div className="bg-primary px-4 py-2 rounded transform -rotate-1">
                                     <h1 className="font-headline font-bold text-xl text-primary-foreground">
                                         HANGHUT
                                     </h1>
                                 </div>
-                                <span className="text-sm text-muted-foreground">Organizer</span>
+                                <span className="text-sm text-muted-foreground hidden xl:block">Organizer</span>
                             </Link>
 
-                            <nav className="hidden md:flex items-center gap-6">
+                            <nav className="hidden md:flex items-center gap-3 lg:gap-5 overflow-x-auto whitespace-nowrap pb-1" style={{ scrollbarWidth: 'none' }}>
+                                <style dangerouslySetInnerHTML={{ __html: `nav::-webkit-scrollbar { display: none; }` }} />
                                 {isVerified ? (
                                     <>
                                         {hasAccess('dashboard', role) && (
