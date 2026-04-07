@@ -69,13 +69,13 @@ export function StorefrontHeroVideo({ videoUrl, videoPosition = 'center' }: Stor
     }
 
     return (
-        <div className="relative w-full h-full group/video overflow-hidden">
+        <div className="absolute inset-0 w-full h-full group/video overflow-hidden">
             {showYoutube ? (
                 <iframe
                     ref={iframeRef}
                     src={youtubeUrl!}
-                    className="w-full h-full object-cover pointer-events-none origin-center"
-                    style={{ objectPosition, transform }}
+                    className="absolute top-1/2 left-1/2 w-[100vw] h-[56.25vw] min-h-[100vh] min-w-[177.77vh] pointer-events-none"
+                    style={{ transform: `translate(-50%, -50%) ${transform !== 'none' ? transform : ''}`, objectPosition }}
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                 />
@@ -87,7 +87,7 @@ export function StorefrontHeroVideo({ videoUrl, videoPosition = 'center' }: Stor
                     muted={isMuted}
                     loop
                     playsInline
-                    className="w-full h-full object-cover"
+                    className="absolute inset-0 w-full h-full object-cover"
                     style={{ objectPosition: videoPosition }}
                 />
             )}

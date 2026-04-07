@@ -130,8 +130,11 @@
   // ── PostMessage Handler ─────────────────────────────────
 
   window.addEventListener('message', function (event) {
-    // In production, validate origin
-    // For now allow both prod and dev origins
+    // SECURITY: Strictly validate that incoming messages only come from HangHut
+    if (event.origin !== HANGHUT_ORIGIN) {
+      return;
+    }
+
     var data = event.data;
     if (!data || typeof data !== 'object' || !data.type) return;
 

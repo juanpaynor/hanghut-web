@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import {
     Upload, X, Loader2, Globe, Instagram, Facebook, Twitter,
     Layout, Store, Image as ImageIcon, CheckCircle2, AlertCircle, Palette, LayoutTemplate, SquareDashedBottom,
-    Type, Sparkles, Megaphone, ListFilter, History, FileCode, Mail, Phone, Video
+    Type, Sparkles, Megaphone, ListFilter, History, FileCode, Mail, Phone, Video, Menu
 } from 'lucide-react'
 import { VideoUploader } from '@/components/ui/video-uploader'
 import { DraggableVideoCropper } from '@/components/ui/draggable-video-cropper'
@@ -51,6 +51,7 @@ interface PartnerSettingsFormProps {
                 font?: 'sans' | 'serif' | 'mono'
                 enable_animations?: boolean
                 show_footer?: boolean
+                show_navbar?: boolean
             }
             announcement?: {
                 enabled?: boolean
@@ -103,7 +104,9 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                 layout: initialData.branding?.design?.layout || 'modern',
                 font: initialData.branding?.design?.font || 'sans',
                 show_footer: initialData.branding?.design?.show_footer ?? true,
-                enable_animations: initialData.branding?.design?.enable_animations ?? true
+                enable_animations: initialData.branding?.design?.enable_animations ?? true,
+                show_navbar: initialData.branding?.design?.show_navbar ?? 
+                    (initialData.branding?.selected_template === 'festival' || initialData.branding?.selected_template === 'classic')
             },
             announcement: {
                 enabled: initialData.branding?.announcement?.enabled ?? false,
@@ -826,7 +829,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                             onCheckedChange={(checked) => handleBrandingChange('design', 'enable_animations', checked)}
                                         />
                                     </div>
-                                    <Separator />
+                                     <Separator />
                                     <div className="flex items-center justify-between">
                                         <div className="space-y-0.5">
                                             <Label className="text-base flex items-center gap-2"><SquareDashedBottom className="h-4 w-4" /> Show Footer</Label>
@@ -837,6 +840,19 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                         <Switch
                                             checked={formData.branding.design.show_footer}
                                             onCheckedChange={(checked) => handleBrandingChange('design', 'show_footer', checked)}
+                                        />
+                                    </div>
+                                    <Separator />
+                                    <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-base flex items-center gap-2"><Menu className="h-4 w-4" /> Show Top Navbar</Label>
+                                            <p className="text-sm text-muted-foreground">
+                                                Display a floating navigation bar that auto-links to your sections.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={formData.branding.design.show_navbar}
+                                            onCheckedChange={(checked) => handleBrandingChange('design', 'show_navbar', checked)}
                                         />
                                     </div>
                                 </CardContent>

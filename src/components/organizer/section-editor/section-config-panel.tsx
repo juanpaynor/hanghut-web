@@ -35,16 +35,50 @@ export function SectionConfigPanel({ type, config, onChange }: SectionConfigPane
                             </SelectContent>
                         </Select>
                     </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>Height</Label>
+                            <Select value={config.height || 'default'} onValueChange={(v) => update('height', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="short">Short</SelectItem>
+                                    <SelectItem value="default">Default</SelectItem>
+                                    <SelectItem value="tall">Tall</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Content Position</Label>
+                            <Select value={config.content_position || 'bottom'} onValueChange={(v) => update('content_position', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="bottom">Bottom</SelectItem>
+                                    <SelectItem value="center">Center</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
                     <div className="space-y-2">
-                        <Label>Height</Label>
-                        <Select value={config.height || 'default'} onValueChange={(v) => update('height', v)}>
+                        <Label>Overlay Darkness (For images/video)</Label>
+                        <Select value={config.overlay_opacity || 'gradient'} onValueChange={(v) => update('overlay_opacity', v)}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="short">Short</SelectItem>
-                                <SelectItem value="default">Default</SelectItem>
-                                <SelectItem value="tall">Tall</SelectItem>
+                                <SelectItem value="none">No Overlay</SelectItem>
+                                <SelectItem value="gradient">Bottom Gradient (Default)</SelectItem>
+                                <SelectItem value="light">Light Darkening</SelectItem>
+                                <SelectItem value="medium">Medium Darkening</SelectItem>
+                                <SelectItem value="dark">Heavy Darkening</SelectItem>
                             </SelectContent>
                         </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Custom Hero Logo URL (Optional)</Label>
+                        <Input
+                            value={config.hero_logo_url || ''}
+                            onChange={(e) => update('hero_logo_url', e.target.value)}
+                            placeholder="https://example.com/logo.png"
+                        />
+                        <p className="text-xs text-muted-foreground">Replaces your circular profile photo with a custom festival-style graphic banner.</p>
                     </div>
                     <div className="space-y-2">
                         <Label>Overlay Text (Optional)</Label>

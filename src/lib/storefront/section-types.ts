@@ -22,7 +22,7 @@ export const SECTION_META: Record<SectionType, { label: string; icon: string; de
 
 // Default configs per section type
 export const DEFAULT_SECTION_CONFIG: Record<SectionType, Record<string, any>> = {
-    hero: { variant: 'fullbleed', overlay_text: '', cta_text: '', cta_link: '', height: 'default' },
+    hero: { variant: 'fullbleed', overlay_text: '', cta_text: '', cta_link: '', height: 'default', content_position: 'bottom', overlay_opacity: 'medium', hero_logo_url: '' },
     about: { variant: 'centered' },
     events: { variant: 'grid', columns: 3, show_price: true, show_category: true },
     past_events: { variant: 'grid', columns: 2 },
@@ -34,7 +34,7 @@ export const DEFAULT_SECTION_CONFIG: Record<SectionType, Record<string, any>> = 
 }
 
 // Template presets
-export type TemplateName = 'modern' | 'classic' | 'minimal' | 'bold'
+export type TemplateName = 'modern' | 'classic' | 'minimal' | 'bold' | 'festival'
 
 export const TEMPLATE_META: Record<TemplateName, { label: string; description: string }> = {
     modern: { label: 'Modern Split', description: 'Sidebar brand card + content grid. Best for info-dense organizers.' },
@@ -42,6 +42,7 @@ export const TEMPLATE_META: Record<TemplateName, { label: string; description: s
 
     minimal: { label: 'Minimal', description: 'Clean white space, text-focused. Premium and elegant.' },
     bold: { label: 'Bold', description: 'Dark, full-bleed hero with stats. Perfect for nightlife and festivals.' },
+    festival: { label: 'Festival', description: 'Immersive full-bleed video/image hero with centered logo and dark overlay. High visual impact.' },
 }
 
 export function getTemplateSections(template: TemplateName): StorefrontSection[] {
@@ -75,6 +76,13 @@ export function getTemplateSections(template: TemplateName): StorefrontSection[]
                 { type: 'stats', visible: true, config: { items: [{ label: 'Events', value: '50+' }, { label: 'Attendees', value: '10K+' }, { label: 'Cities', value: '5' }] } },
                 { type: 'events', visible: true, config: { variant: 'grid', columns: 3 } },
                 { type: 'cta', visible: true, config: { heading: "Don't miss out", subheading: 'Follow us for the next big event', button_text: 'Follow', button_link: '#newsletter' } },
+            ]
+        case 'festival':
+            return [
+                { type: 'hero', visible: true, config: { variant: 'fullbleed', height: 'tall', content_position: 'center', overlay_opacity: 'dark', cta_text: 'Get Tickets', cta_link: '#events' } },
+                { type: 'events', visible: true, config: { variant: 'grid', columns: 3 } },
+                { type: 'gallery', visible: true, config: { variant: 'masonry', columns: 3 } },
+                { type: 'newsletter', visible: true, config: { variant: 'banner', heading: 'Stay Updated', subheading: 'Be the first to know about lineup announcements' } },
             ]
     }
 }

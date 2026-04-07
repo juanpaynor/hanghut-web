@@ -34,77 +34,94 @@ export function SectionRenderer({ sections, partner, events, pastEvents }: Secti
                 .filter((s) => s.visible)
                 .map((section, index) => {
                     const key = `${section.type}-${index}`
+                    
+                    let content = null
 
                     switch (section.type) {
                         case 'hero':
-                            return (
+                            content = (
                                 <HeroSection
-                                    key={key}
                                     config={section.config}
                                     partner={partner}
                                     branding={branding}
                                 />
                             )
+                            break
                         case 'about':
-                            return (
+                            content = (
                                 <AboutSection
-                                    key={key}
                                     config={section.config}
                                     description={partner.description}
                                     descriptionHtml={branding.description_html}
                                 />
                             )
+                            break
                         case 'events':
-                            return (
+                            content = (
                                 <EventsSection
-                                    key={key}
                                     config={section.config}
                                     events={events}
                                     sortBy={branding.content?.sort_by}
                                 />
                             )
+                            break
                         case 'past_events':
-                            return (
+                            content = (
                                 <PastEventsSection
-                                    key={key}
                                     config={section.config}
                                     events={pastEvents}
                                 />
                             )
+                            break
                         case 'newsletter':
-                            return (
+                            content = (
                                 <NewsletterSection
-                                    key={key}
                                     config={section.config}
                                     partnerId={partner.id}
                                     partnerName={partner.business_name}
                                 />
                             )
+                            break
                         case 'stats':
-                            return (
+                            content = (
                                 <StatsSection
-                                    key={key}
                                     config={section.config}
                                 />
                             )
+                            break
                         case 'cta':
-                            return (
+                            content = (
                                 <CTASection
-                                    key={key}
                                     config={section.config}
                                     primaryColor={branding.colors?.primary}
                                 />
                             )
+                            break
                         case 'divider':
-                            return (
+                            content = (
                                 <DividerSection
-                                    key={key}
                                     config={section.config}
                                 />
                             )
+                            break
                         default:
-                            return null
+                            content = null
                     }
+                    
+                    if (!content) return null
+
+                    const id = section.type === 'past_events' ? 'past-events' : section.type
+
+                    // Do not wrap hero or divider with padding id divs
+                    if (section.type === 'hero' || section.type === 'divider') {
+                        return <div key={key}>{content}</div>
+                    }
+
+                    return (
+                        <div key={key} id={id} className="scroll-mt-20">
+                            {content}
+                        </div>
+                    )
                 })}
         </>
     )

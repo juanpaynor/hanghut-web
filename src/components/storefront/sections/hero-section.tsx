@@ -12,6 +12,9 @@ interface HeroSectionProps {
         cta_text?: string
         cta_link?: string
         height?: 'short' | 'default' | 'tall'
+        content_position?: 'bottom' | 'center'
+        overlay_opacity?: 'gradient' | 'light' | 'medium' | 'dark' | 'none'
+        hero_logo_url?: string
     }
     partner: {
         business_name: string
@@ -189,17 +192,30 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
     }
 
     // ─── Fullbleed / Video: Immersive cover ───
+    const contentPos = config.content_position || 'bottom'
+    const opacityMode = config.overlay_opacity || 'gradient'
+    
+    // Map the selected opacity mode to its corresponding Tailwind classes
+    const overlayClasses: Record<string, string> = {
+        none: 'opacity-0',
+        light: 'bg-black/30',
+        medium: 'bg-black/50',
+        dark: 'bg-black/70',
+        gradient: 'bg-gradient-to-t from-background via-background/40 to-transparent'
+    }
+    const overlayClass = overlayClasses[opacityMode] || overlayClasses.gradient
+
     return (
         <section className={cn('relative w-full overflow-hidden group', height)}>
             {/* Media */}
             {videoUrl ? (
                 <>
-                    <div className="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent z-10 pointer-events-none" />
+                    <div className={cn("absolute inset-0 z-10 pointer-events-none transition-colors", overlayClass)} />
                     <StorefrontHeroVideo videoUrl={videoUrl} />
                 </>
             ) : coverUrl ? (
                 <>
-                    <div className="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent z-10" />
+                    <div className={cn("absolute inset-0 z-10 transition-colors", overlayClass)} />
                     <Image
                         src={coverUrl}
                         alt="Cover"
@@ -218,34 +234,64 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
             )}
 
             {/* Overlay Content */}
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-end pb-12 md:pb-20 px-4 text-center">
-                {partner.profile_photo_url && (
-                    <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-white/30 shadow-xl mb-4">
+            <div className={cn(
+                "absolute inset-0 z-20 flex flex-col items-center px-4 text-center",
+                contentPos === 'center' ? "justify-center" : "justify-end pb-12 md:pb-20"
+            )}>
+                {config.hero_logo_url ? (
+                    <div className={cn(
+                        "relative", 
+                        contentPos === 'center' ? "w-64 md:w-96 mb-6" : "w-32 md:w-48 mb-4",
+                        "animate-in slide-in-from-bottom-4 fade-in duration-700"
+                    )}>
+                        <img src={config.hero_logo_url} alt={`${partner.business_name} logo`} className="w-full h-auto object-contain drop-shadow-2xl" />
+                    </div>
+                ) : partner.profile_photo_url ? (
+                    <div className={cn(
+                        "rounded-full overflow-hidden border-2 border-white/30 shadow-xl",
+                        contentPos === 'center' ? "w-24 h-24 md:w-32 md:h-32 mb-6" : "w-16 h-16 mb-4"
+                    )}>
                         <img src={partner.profile_photo_url} alt={partner.business_name} className="w-full h-full object-cover" />
                     </div>
+                ) : null}
+
+                {/* If a custom logo is used in centered mode, hide the title for a cleaner "festival" aesthetic */}
+                {(!config.hero_logo_url || contentPos !== 'center') && (
+                    <div className="flex items-center gap-2 mb-1">
+                        <h1 className={cn(
+                            "font-bold text-white drop-shadow-lg max-w-3xl tracking-tight leading-tight",
+                            contentPos === 'center' ? "text-4xl md:text-6xl" : "text-3xl md:text-5xl"
+                        )}>
+                            {overlayText}
+                        </h1>
+                        {partner.verified && (
+                            <div className="bg-blue-500 text-white p-1 rounded-full ring-2 ring-white/30 inline-flex">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                        )}
+                    </div>
                 )}
-                <div className="flex items-center gap-2 mb-1">
-                    <h1 className="text-3xl md:text-5xl font-bold text-white drop-shadow-lg max-w-3xl">
-                        {overlayText}
-                    </h1>
-                    {partner.verified && (
-                        <div className="bg-blue-500 text-white p-1 rounded-full ring-2 ring-white/30 inline-flex">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                            </svg>
-                        </div>
-                    )}
-                </div>
-                {partner.slug && (
-                    <p className="text-sm text-white/60 mb-2">@{partner.slug}</p>
+                
+                {partner.slug && (!config.hero_logo_url || contentPos !== 'center') && (
+                    <p className="text-sm text-white/60 mb-2 font-medium tracking-wide">@{partner.slug}</p>
                 )}
+                
                 {tagline && (
-                    <p className="text-lg text-white/80 drop-shadow-md max-w-xl mb-4">{tagline}</p>
+                    <p className={cn(
+                        "text-white/90 drop-shadow-md max-w-xl text-balance",
+                        contentPos === 'center' ? "text-xl md:text-2xl mt-4 font-medium tracking-wide" : "text-lg mb-4"
+                    )}>{tagline}</p>
                 )}
+                
                 {ctaText && ctaLink && (
                     <a
                         href={ctaLink}
-                        className="px-8 py-3 bg-white/90 text-black rounded-full font-semibold hover:bg-white transition-colors shadow-lg"
+                        className={cn(
+                            "bg-white text-black rounded-full font-semibold hover:bg-white/90 transition-colors shadow-[0_0_40px_rgba(255,255,255,0.3)]",
+                            contentPos === 'center' ? "px-10 py-4 mt-8 text-lg" : "px-8 py-3 mt-2"
+                        )}
                     >
                         {ctaText}
                     </a>

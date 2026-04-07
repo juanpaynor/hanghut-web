@@ -3,13 +3,14 @@
 import { TemplateName, TEMPLATE_META, getTemplateSections, StorefrontSection } from '@/lib/storefront/section-types'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { LayoutTemplate, Layout, Type, Zap } from 'lucide-react'
+import { LayoutTemplate, Layout, Type, Zap, Sparkles } from 'lucide-react'
 
 const TEMPLATE_ICONS: Record<TemplateName, any> = {
     modern: LayoutTemplate,
     classic: Layout,
     minimal: Type,
     bold: Zap,
+    festival: Sparkles,
 }
 
 // Visual preview thumbnails for each template
@@ -59,6 +60,14 @@ const TEMPLATE_PREVIEWS: Record<TemplateName, React.ReactNode> = {
                 <div className="h-5 bg-zinc-700 rounded" />
                 <div className="h-5 bg-zinc-700 rounded" />
             </div>
+        </div>
+    ),
+    festival: (
+        <div className="w-full h-24 bg-zinc-900 rounded-lg flex flex-col items-center justify-center p-1.5 overflow-hidden border-2 border-zinc-950 relative">
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+            <div className="w-10 h-10 rounded-full border border-white/20 shadow-xl z-10 mb-1" />
+            <div className="w-16 h-3 bg-white z-10 rounded" />
+            <div className="w-12 h-3 bg-white/90 rounded-full z-10 mt-2" />
         </div>
     ),
 }

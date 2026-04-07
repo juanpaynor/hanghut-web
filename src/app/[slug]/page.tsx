@@ -15,6 +15,7 @@ import { ProfileActions } from '@/components/storefront/profile-actions'
 import { cn, getYouTubeEmbedUrl } from '@/lib/utils'
 import sanitizeHtml from 'sanitize-html'
 import { SectionRenderer } from '@/components/storefront/section-renderer'
+import { StorefrontNavbar } from '@/components/storefront/storefront-navbar'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
@@ -121,6 +122,8 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
     const fontPreference = branding.design?.font || 'sans'
     const showFooter = branding.design?.show_footer ?? true
     const enableAnimations = branding.design?.enable_animations ?? true
+    const showNavbar = branding.design?.show_navbar ?? 
+        (branding.selected_template === 'festival' || branding.selected_template === 'classic' || false)
     const announcement = branding.announcement || {}
     const sortBy = branding.content?.sort_by || 'upcoming'
     const hasSections = Array.isArray(branding.sections) && branding.sections.length > 0
@@ -194,6 +197,13 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                 {/* ─── SECTION-BASED RENDERING ─── */}
                 {hasSections ? (
                     <>
+                        {showNavbar && (
+                            <StorefrontNavbar 
+                                partner={partner} 
+                                sections={branding.sections} 
+                                fontClass={fontClass} 
+                            />
+                        )}
                         <SectionRenderer
                             sections={branding.sections}
                             partner={partner}
