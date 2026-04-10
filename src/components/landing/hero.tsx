@@ -73,7 +73,7 @@ export default function Hero() {
         className="relative z-10 container mx-auto px-4 flex flex-col items-center text-center space-y-8"
         style={{ willChange: "transform, opacity" }}
       >
-        <div className="space-y-4 perspective-1000 relative z-20">
+        <div className="perspective-1000 relative z-20 flex flex-col items-center">
           <motion.div
             initial={{ scale: 2.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -82,18 +82,20 @@ export default function Hero() {
               ease: [0.34, 1.56, 0.64, 1],
               delay: 0.2
             }}
-            className="inline-block bg-primary px-8 py-4 sm:px-12 sm:py-6 rounded-none transform -rotate-1 shadow-[10px_10px_0px_0px_rgba(0,0,0,1)]"
+            className="inline-block"
           >
-            <h1 className="font-headline font-bold text-5xl sm:text-7xl md:text-8xl tracking-tighter text-primary-foreground">
-              HANGHUT
-            </h1>
+            <img
+              src="/hero_logo.png"
+              alt="Hanghut"
+              className="w-[70vw] max-w-4xl h-auto object-contain drop-shadow-xl"
+            />
           </motion.div>
 
           <motion.p
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 1.0, duration: 0.8 }}
-            className="max-w-xl mx-auto text-xl md:text-2xl text-muted-foreground font-light tracking-wide bg-white/80 backdrop-blur-sm p-4 rounded-xl mt-8"
+            className="max-w-xl mx-auto text-xl md:text-2xl text-muted-foreground font-light tracking-wide bg-white/80 backdrop-blur-sm p-4 rounded-xl -mt-12 relative z-10"
           >
             REAL CONNECTIONS. UNFORGETTABLE EXPERIENCES.
           </motion.p>
@@ -104,7 +106,7 @@ export default function Hero() {
             size="lg"
             className="rounded-full px-12 py-8 text-xl font-medium shadow-glow hover:scale-105 transition-transform bg-primary text-primary-foreground border-0"
           >
-            Find Your Crowd
+            Join The Waitlist!
           </Button>
         </WaitlistDialog>
       </div>
