@@ -70,7 +70,7 @@ export default function Hero() {
       {/* Content Layer — zoom-through target */}
       <div
         ref={contentRef}
-        className="relative z-10 container mx-auto px-4 flex flex-col items-center text-center space-y-8"
+        className="relative z-10 container mx-auto px-4 flex flex-col items-center text-center"
         style={{ willChange: "transform, opacity" }}
       >
         <div className="perspective-1000 relative z-20 flex flex-col items-center">
@@ -90,25 +90,28 @@ export default function Hero() {
               className="w-[70vw] max-w-4xl h-auto object-contain drop-shadow-xl"
             />
           </motion.div>
+        </div>
 
+        {/* Text & Button Cluster - pulled tightly under the logo */}
+        <div className="flex flex-col items-center space-y-6 relative z-30 -mt-20 md:-mt-28">
           <motion.p
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 1.0, duration: 0.8 }}
-            className="max-w-xl mx-auto text-xl md:text-2xl text-muted-foreground font-light tracking-wide bg-white/80 backdrop-blur-sm p-4 rounded-xl -mt-12 relative z-10"
+            className="max-w-xl mx-auto text-xl md:text-2xl text-muted-foreground font-light tracking-wide bg-white/80 backdrop-blur-sm p-4 rounded-xl"
           >
             REAL CONNECTIONS. UNFORGETTABLE EXPERIENCES.
           </motion.p>
-        </div>
 
-        <WaitlistDialog>
-          <Button
-            size="lg"
-            className="rounded-full px-12 py-8 text-xl font-medium shadow-glow hover:scale-105 transition-transform bg-primary text-primary-foreground border-0"
-          >
-            Join The Waitlist!
-          </Button>
-        </WaitlistDialog>
+          <WaitlistDialog>
+            <Button
+              size="lg"
+              className="rounded-full px-12 py-8 text-xl font-medium shadow-glow hover:scale-105 transition-transform bg-primary text-primary-foreground border-0"
+            >
+              Join The Waitlist!
+            </Button>
+          </WaitlistDialog>
+        </div>
       </div>
 
       {/* Scroll Indicator */}
