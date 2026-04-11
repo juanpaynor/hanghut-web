@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Users, UsersRound, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet, Sparkles, Mail, Megaphone, Smartphone, Bell } from 'lucide-react'
+import { LayoutDashboard, Users, UsersRound, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet, Sparkles, Mail, Megaphone, Smartphone, Bell, Armchair } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ const NAV_PERMISSIONS: Record<string, AdminRole[]> = {
     '/admin/partners':    ['super_admin', 'admin', 'support', 'finance_admin'],
     '/admin/events':      ['super_admin', 'admin', 'support', 'finance_admin'],
     '/admin/experiences': ['super_admin', 'admin'],
+    '/admin/venue-templates': ['super_admin', 'admin'],
     '/admin/accounting':  ['super_admin', 'admin', 'finance_admin'],
     '/admin/users':       ['super_admin', 'admin', 'support'],
     '/admin/reports':     ['super_admin', 'admin', 'support'],
@@ -55,6 +56,11 @@ const navItems = [
         title: 'Experiences',
         href: '/admin/experiences',
         icon: Sparkles,
+    },
+    {
+        title: 'Venue Templates',
+        href: '/admin/venue-templates',
+        icon: Armchair,
     },
     {
         title: 'Accounting',

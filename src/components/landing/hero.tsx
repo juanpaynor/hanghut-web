@@ -93,12 +93,12 @@ export default function Hero() {
         </div>
 
         {/* Text & Button Cluster - pulled tightly under the logo */}
-        <div className="flex flex-col items-center space-y-6 relative z-30 -mt-20 md:-mt-28">
+        <div className="flex flex-col items-center space-y-6 relative z-30 mt-4 md:-mt-28">
           <motion.p
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 1.0, duration: 0.8 }}
-            className="max-w-xl mx-auto text-xl md:text-2xl text-muted-foreground font-light tracking-wide bg-white/80 backdrop-blur-sm p-4 rounded-xl"
+            className="max-w-xl mx-auto text-lg md:text-2xl text-muted-foreground font-light tracking-wide bg-white/80 backdrop-blur-sm p-4 rounded-xl"
           >
             REAL CONNECTIONS. UNFORGETTABLE EXPERIENCES.
           </motion.p>
@@ -106,7 +106,7 @@ export default function Hero() {
           <WaitlistDialog>
             <Button
               size="lg"
-              className="rounded-full px-12 py-8 text-xl font-medium shadow-glow hover:scale-105 transition-transform bg-primary text-primary-foreground border-0"
+              className="rounded-full px-8 md:px-12 py-6 md:py-8 text-lg md:text-xl font-medium shadow-glow hover:scale-105 transition-transform bg-primary text-primary-foreground border-0"
             >
               Join The Waitlist!
             </Button>

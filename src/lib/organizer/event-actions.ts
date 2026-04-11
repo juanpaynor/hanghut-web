@@ -121,6 +121,8 @@ export async function createEvent(formData: FormData) {
             status: formData.get('status') as string,
             custom_tos: (formData.get('custom_tos') as string) || null,
             is_featured: false,
+            seating_type: (formData.get('seating_type') as string) || 'general_admission',
+            max_seats_per_order: parseInt(formData.get('max_seats_per_order') as string) || 10,
         }
 
         // 4. Insert event
@@ -273,6 +275,8 @@ export async function updateEvent(eventId: string, formData: FormData) {
             status: formData.get('status') as string,
             custom_tos: (formData.get('custom_tos') as string) || null,
             updated_at: new Date().toISOString(),
+            seating_type: (formData.get('seating_type') as string) || 'general_admission',
+            max_seats_per_order: parseInt(formData.get('max_seats_per_order') as string) || 10,
         }
 
         const { error: updateError } = await adminSupabase

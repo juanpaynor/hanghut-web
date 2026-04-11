@@ -14,7 +14,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText } from 'lucide-react'
+import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair } from 'lucide-react'
 import { createEvent, updateEvent } from '@/lib/organizer/event-actions'
 import { GooglePlacesAutocomplete } from '@/components/organizer/google-places-autocomplete'
 import { useToast } from '@/hooks/use-toast'
@@ -37,6 +37,8 @@ interface EventFormData {
     additional_images: File[]
     custom_tos: string
     status: 'draft' | 'active' | 'paused' | 'cancelled' | 'hidden'
+    seating_type: 'general_admission' | 'assigned_seating'
+    max_seats_per_order: string
 }
 
 interface EventFormProps {
@@ -86,6 +88,8 @@ export function EventForm({
         additional_images: [],
         custom_tos: initialData?.custom_tos || '',
         status: initialData?.status || 'draft',
+        seating_type: initialData?.seating_type || 'general_admission',
+        max_seats_per_order: initialData?.max_seats_per_order?.toString() || '10',
     })
 
     // Calculate pricing preview
@@ -250,6 +254,8 @@ export function EventForm({
             formDataToSend.append('sales_end_datetime', formData.sales_end_datetime)
             formDataToSend.append('custom_tos', formData.custom_tos)
             formDataToSend.append('status', status)
+            formDataToSend.append('seating_type', formData.seating_type)
+            formDataToSend.append('max_seats_per_order', formData.max_seats_per_order)
 
             // Only send organizer_id for create, backend handles auth for update
             if (!isEditing) {
@@ -549,6 +555,71 @@ export function EventForm({
                                     )}
                                 </div>
                             </Card>
+                        )}
+                    </div>
+                </Card>
+
+                {/* Seating Configuration */}
+                <Card className="p-6">
+                    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                        <Armchair className="h-6 w-6" />
+                        Seating Configuration
+                    </h2>
+                    <div className="space-y-4">
+                        <div>
+                            <Label>Seating Type</Label>
+                            <div className="grid grid-cols-2 gap-3 mt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleInputChange('seating_type', 'general_admission')}
+                                    className={`p-4 rounded-lg border-2 text-left transition-all ${
+                                        formData.seating_type === 'general_admission'
+                                            ? 'border-primary bg-primary/5'
+                                            : 'border-border hover:border-muted-foreground/30'
+                                    }`}
+                                >
+                                    <div className="font-semibold">General Admission</div>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                        No assigned seats — first come, first served
+                                    </p>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleInputChange('seating_type', 'assigned_seating')}
+                                    className={`p-4 rounded-lg border-2 text-left transition-all ${
+                                        formData.seating_type === 'assigned_seating'
+                                            ? 'border-primary bg-primary/5'
+                                            : 'border-border hover:border-muted-foreground/30'
+                                    }`}
+                                >
+                                    <div className="font-semibold">Assigned Seating</div>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                        Buyers pick specific seats from a seat map
+                                    </p>
+                                </button>
+                            </div>
+                        </div>
+
+                        {formData.seating_type === 'assigned_seating' && (
+                            <>
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
+                                    <strong>Note:</strong> After saving, configure your seat map in the <strong>Seat Map</strong> tab on the event dashboard.
+                                </div>
+                                <div className="max-w-xs">
+                                    <Label htmlFor="max_seats_per_order">Max Seats Per Order</Label>
+                                    <Input
+                                        id="max_seats_per_order"
+                                        type="number"
+                                        min="1"
+                                        max="50"
+                                        value={formData.max_seats_per_order}
+                                        onChange={(e) => handleInputChange('max_seats_per_order', e.target.value)}
+                                    />
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        Maximum number of seats a buyer can select in one order
+                                    </p>
+                                </div>
+                            </>
                         )}
                     </div>
                 </Card>

@@ -9,7 +9,8 @@ import { PromoCodeManager } from '@/components/organizer/promo-code-manager'
 import { CheckInStats } from '@/components/organizer/check-in-stats'
 import { EventDashboardOverview } from '@/components/organizer/event-dashboard-overview'
 import { StorefrontCustomizationForm } from '@/components/organizer/storefront-customization-form'
-import { FileText, Ticket, Users, LayoutDashboard, Palette } from 'lucide-react'
+import { SeatMapTab } from '@/components/organizer/seat-map-tab'
+import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair } from 'lucide-react'
 import { Attendee } from '@/lib/organizer/attendee-actions'
 import { PromoCode } from '@/lib/organizer/promo-actions'
 
@@ -48,7 +49,7 @@ export function EventDashboardTabs({
 
     return (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full max-w-3xl grid-cols-5 bg-muted/50 p-1">
+            <TabsList className={`grid w-full max-w-4xl bg-muted/50 p-1 ${event.seating_type === 'assigned_seating' ? 'grid-cols-6' : 'grid-cols-5'}`}>
                 <TabsTrigger value="overview" className="flex items-center gap-2">
                     <LayoutDashboard className="h-4 w-4" />
                     Overview
@@ -69,6 +70,12 @@ export function EventDashboardTabs({
                     <Palette className="h-4 w-4" />
                     Design
                 </TabsTrigger>
+                {event.seating_type === 'assigned_seating' && (
+                    <TabsTrigger value="seatmap" className="flex items-center gap-2">
+                        <Armchair className="h-4 w-4" />
+                        Seat Map
+                    </TabsTrigger>
+                )}
             </TabsList>
 
             <TabsContent value="overview" className="mt-6 animate-in fade-in-50 duration-300">
@@ -129,6 +136,15 @@ export function EventDashboardTabs({
                     initialData={event}
                 />
             </TabsContent>
+
+            {event.seating_type === 'assigned_seating' && (
+                <TabsContent value="seatmap" className="mt-6 animate-in fade-in-50 duration-300">
+                    <SeatMapTab
+                        eventId={eventId}
+                        event={event}
+                    />
+                </TabsContent>
+            )}
         </Tabs >
     )
 }

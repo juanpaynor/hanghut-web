@@ -20,19 +20,19 @@ export default function Header() {
           </Link>
         </div>
 
-        <nav className="flex items-center space-x-4">
-          <Link href="/ticketing">
+        <nav className="flex items-center space-x-2 md:space-x-4">
+          <Link href="/ticketing" className="hidden md:block">
             <Button variant="ghost" className="font-bold text-sm tracking-widest uppercase hover:bg-white/10">
               Ticketing
             </Button>
           </Link>
-          <Link href="/organizer/login">
+          <Link href="/organizer/login" className="hidden md:block">
             <Button variant="ghost" className="font-bold text-sm tracking-widest uppercase hover:bg-white/10">
               Partner Login
             </Button>
           </Link>
           <Link href="/waitlist">
-            <Button className="rounded-full px-6 transition-all hover:scale-105">
+            <Button className="rounded-full px-4 md:px-6 transition-all hover:scale-105">
               Join Waitlist
             </Button>
           </Link>
