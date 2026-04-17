@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { TicketsClient } from './tickets-client'
 import { SkeletonTable } from '@/components/admin/skeleton-table'
+import { getAuthUser } from '@/lib/auth/cached'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,6 +79,8 @@ export default async function TicketsPage({
 
 async function TicketsDataWrapper({ page, status, type, search }: { page: number; status: string; type: string; search: string }) {
     const { tickets, total } = await getTickets(page, status, type, search)
+    const { user } = await getAuthUser()
+    const adminId = user?.id || ''
 
-    return <TicketsClient tickets={tickets} currentPage={page} totalCount={total} statusFilter={status} typeFilter={type} searchQuery={search} />
+    return <TicketsClient tickets={tickets} currentPage={page} totalCount={total} statusFilter={status} typeFilter={type} searchQuery={search} adminId={adminId} />
 }

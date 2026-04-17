@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft, User } from 'lucide-react'
 import Image from 'next/image'
 import { getReportById } from '@/lib/supabase/queries'
+import { MessageSquare, FileText, MapPin, ExternalLink } from 'lucide-react'
 
 async function getAdminId() {
     const supabase = await createClient()
@@ -62,6 +63,133 @@ function UserProfileCard({
                 ) : (
                     <div className="text-muted-foreground italic">User information not available or not a user.</div>
                 )}
+            </CardContent>
+        </Card>
+    )
+}
+
+function ReportedContentCard({
+    targetType,
+    targetId,
+    content,
+}: {
+    targetType: string
+    targetId: string
+    content: Record<string, any> | null
+}) {
+    const icons: Record<string, React.ReactNode> = {
+        message: <MessageSquare className="h-4 w-4" />,
+        post: <FileText className="h-4 w-4" />,
+        table: <MapPin className="h-4 w-4" />,
+        app: <ExternalLink className="h-4 w-4" />,
+    }
+
+    const typeLabels: Record<string, string> = {
+        message: 'Reported Message',
+        post: 'Reported Post',
+        table: 'Reported Hangout / Venue',
+        app: 'App-Level Report',
+    }
+
+    return (
+        <Card className="bg-card border-border">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    {icons[targetType] ?? <ExternalLink className="h-4 w-4" />}
+                    {typeLabels[targetType] ?? `Reported ${targetType}`}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground font-mono mt-1">ID: {targetId}</p>
+            </CardHeader>
+            <CardContent>
+                {!content ? (
+                    <div className="p-4 rounded-lg bg-muted/50 border border-dashed border-border text-center">
+                        <p className="text-muted-foreground text-sm">
+                            {targetType === 'app'
+                                ? 'This is an app-level report with no specific content target.'
+                                : 'Content not found — it may have already been deleted.'}
+                        </p>
+                    </div>
+                ) : targetType === 'message' ? (
+                    <div className="space-y-3">
+                        <div className="p-4 rounded-lg bg-muted/50 border border-border">
+                            {content.deleted_for_everyone ? (
+                                <p className="text-muted-foreground italic text-sm">This message was deleted by the sender.</p>
+                            ) : content.content ? (
+                                <p className="text-foreground">{content.content}</p>
+                            ) : content.gif_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={content.gif_url} alt="GIF" className="max-w-xs rounded" />
+                            ) : (
+                                <p className="text-muted-foreground italic text-sm">No text content (may be a media message).</p>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <p className="text-xs text-muted-foreground">Sender</p>
+                                <p className="text-foreground">{content.sender_name || content.sender_id?.slice(0, 8) || '—'}</p>
+                            </div>
+                            <div>
+                                <p className="text-xs text-muted-foreground">Type</p>
+                                <p className="text-foreground capitalize">{content.content_type || 'text'}</p>
+                            </div>
+                        </div>
+                    </div>
+                ) : targetType === 'post' ? (
+                    <div className="space-y-3">
+                        {content.content && (
+                            <div className="p-4 rounded-lg bg-muted/50 border border-border">
+                                <p className="text-foreground">{content.content}</p>
+                            </div>
+                        )}
+                        {content.image_urls?.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                                {content.image_urls.slice(0, 4).map((url: string, i: number) => (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img key={i} src={url} alt="Post image" className="h-32 w-32 object-cover rounded-lg border border-border" />
+                                ))}
+                            </div>
+                        )}
+                        {!content.content && !content.image_urls?.length && content.gif_url && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={content.gif_url} alt="GIF" className="max-w-xs rounded" />
+                        )}
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <p className="text-xs text-muted-foreground">Post Type</p>
+                                <p className="text-foreground capitalize">{content.post_type || '—'}</p>
+                            </div>
+                            {content.vibe_tag && (
+                                <div>
+                                    <p className="text-xs text-muted-foreground">Vibe</p>
+                                    <p className="text-foreground">{content.vibe_tag}</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ) : targetType === 'table' ? (
+                    <div className="space-y-3">
+                        <div className="p-4 rounded-lg bg-muted/50 border border-border space-y-2">
+                            <p className="text-foreground font-semibold text-lg">{content.title}</p>
+                            {content.description && (
+                                <p className="text-muted-foreground text-sm">{content.description}</p>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <p className="text-xs text-muted-foreground">Location</p>
+                                <p className="text-foreground">{content.location_name || '—'}</p>
+                            </div>
+                            <div>
+                                <p className="text-xs text-muted-foreground">Status</p>
+                                <p className="text-foreground capitalize">{content.status || '—'}</p>
+                            </div>
+                            <div>
+                                <p className="text-xs text-muted-foreground">Type</p>
+                                <p className="text-foreground">{content.is_experience ? 'Experience' : 'Hangout'}</p>
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
             </CardContent>
         </Card>
     )
@@ -119,17 +247,13 @@ async function ReportDetailsContent({ id }: { id: string }) {
 
     return (
         <div className="space-y-6">
-            {/* Target Information (if not user) */}
+            {/* Reported Content Preview */}
             {report.target_type !== 'user' && (
-                <Card className="bg-card border-border">
-                    <CardHeader>
-                        <CardTitle>Report Target</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-foreground">Target Type: <span className="font-bold uppercase">{report.target_type}</span></p>
-                        <p className="text-muted-foreground text-sm mt-1">ID: {report.target_id}</p>
-                    </CardContent>
-                </Card>
+                <ReportedContentCard
+                    targetType={report.target_type}
+                    targetId={report.target_id}
+                    content={report.reportedContent}
+                />
             )}
 
             {/* User Profiles */}

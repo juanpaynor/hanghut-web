@@ -141,13 +141,21 @@ export function AuditClient({
                                         {format(new Date(action.created_at), 'MMM d, yyyy h:mm a')}
                                     </TableCell>
                                     <TableCell className="text-slate-300">
-                                        {action.admin?.display_name || 'Unknown Admin'}
+                                        {action.admin?.display_name || (
+                                            <span className="text-muted-foreground italic text-xs">
+                                                {action.admin?.id ? `Admin ${action.admin.id.slice(0, 8)}` : 'System'}
+                                            </span>
+                                        )}
                                     </TableCell>
                                     <TableCell>
                                         {getActionTypeBadge(action.action_type)}
                                     </TableCell>
                                     <TableCell className="text-slate-300">
-                                        {action.target_user?.display_name || 'Unknown User'}
+                                        {action.target_user?.display_name || (
+                                            <span className="text-muted-foreground italic text-xs">
+                                                {action.target_user?.id ? `User ${action.target_user.id.slice(0, 8)}` : '—'}
+                                            </span>
+                                        )}
                                     </TableCell>
                                     <TableCell className="text-muted-foreground text-sm max-w-md truncate">
                                         {action.reason}

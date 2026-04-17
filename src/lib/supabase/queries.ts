@@ -191,13 +191,40 @@ export async function getReportById(supabase: SupabaseClient, id: string) {
         evidence_url = (report.metadata as any).screenshot_url
     }
 
+    // Fetch the actual reported content based on target_type
+    let reportedContent: Record<string, any> | null = null
+
+    if (report.target_type === 'message' && report.target_id) {
+        const { data } = await supabase
+            .from('messages')
+            .select('id, content, content_type, gif_url, timestamp, sender_name, sender_id, deleted_at, deleted_for_everyone')
+            .eq('id', report.target_id)
+            .single()
+        reportedContent = data
+    } else if (report.target_type === 'post' && report.target_id) {
+        const { data } = await supabase
+            .from('posts')
+            .select('id, content, image_url, image_urls, gif_url, video_url, post_type, created_at, user_id, vibe_tag')
+            .eq('id', report.target_id)
+            .single()
+        reportedContent = data
+    } else if (report.target_type === 'table' && report.target_id) {
+        const { data } = await supabase
+            .from('tables')
+            .select('id, title, description, location_name, host_id, status, is_experience, created_at')
+            .eq('id', report.target_id)
+            .single()
+        reportedContent = data
+    }
+
     return {
         ...report,
-        reason_category: report.reason_category, // explicit map
+        reason_category: report.reason_category,
         reporter,
         reported,
         reportedUserReportCount,
-        evidence_url
+        evidence_url,
+        reportedContent,
     }
 }
 

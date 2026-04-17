@@ -42,18 +42,16 @@ interface TicketDetailModalProps {
     ticket: Ticket
     open: boolean
     onOpenChange: (open: boolean) => void
+    adminId: string
 }
 
-export function TicketDetailModal({ ticket, open, onOpenChange }: TicketDetailModalProps) {
+export function TicketDetailModal({ ticket, open, onOpenChange, adminId }: TicketDetailModalProps) {
     const router = useRouter()
     const { toast } = useToast()
     const [adminResponse, setAdminResponse] = useState(ticket.admin_response || '')
     const [loading, setLoading] = useState(false)
     const [denyReason, setDenyReason] = useState('')
     const [showDenyInput, setShowDenyInput] = useState(false)
-
-    // Get admin ID from somewhere (you'll need to pass this or get it from context)
-    const adminId = '12f3de21-914a-4967-bbe6-2913790a2aa1' // TODO: Get from session
 
     const handleApproveAppeal = async () => {
         if (!confirm('Are you sure you want to approve this appeal and reactivate the user?')) {

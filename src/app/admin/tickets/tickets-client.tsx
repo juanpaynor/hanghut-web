@@ -50,11 +50,12 @@ interface TicketsClientProps {
     statusFilter: string
     typeFilter: string
     searchQuery: string
+    adminId: string
 }
 
 const ITEMS_PER_PAGE = 20
 
-export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, typeFilter, searchQuery }: TicketsClientProps) {
+export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, typeFilter, searchQuery, adminId }: TicketsClientProps) {
     const router = useRouter()
     const searchParams = useSearchParams()
     const [isPending, startTransition] = useTransition()
@@ -305,6 +306,7 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
                     ticket={selectedTicket}
                     open={!!selectedTicket}
                     onOpenChange={(open: boolean) => !open && setSelectedTicket(null)}
+                    adminId={adminId}
                 />
             )}
         </>
