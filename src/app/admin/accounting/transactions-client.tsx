@@ -71,13 +71,13 @@ export function TransactionsClient({ transactions }: TransactionsClientProps) {
                                 <TableCell className="text-muted-foreground text-sm font-mono">
                                     {format(new Date(transaction.created_at), 'MMM d')}
                                 </TableCell>
-                                <TableCell className="text-slate-300 font-medium">
+                                <TableCell className="text-slate-700 font-medium">
                                     {transaction.event?.title || 'Unknown Event'}
                                 </TableCell>
-                                <TableCell className="text-slate-300 text-xs">
+                                <TableCell className="text-slate-700 text-xs">
                                     {transaction.partner?.business_name || 'Unknown Partner'}
                                 </TableCell>
-                                <TableCell className="text-slate-300 font-medium text-right">
+                                <TableCell className="text-slate-700 font-medium text-right">
                                     ₱{Number(transaction.gross_amount).toLocaleString()}
                                 </TableCell>
                                 <TableCell className="text-slate-400 text-right">
@@ -86,7 +86,7 @@ export function TransactionsClient({ transactions }: TransactionsClientProps) {
                                 <TableCell className="text-green-400 text-right">
                                     ₱{Number(transaction.platform_fee).toLocaleString()}
                                 </TableCell>
-                                <TableCell className="text-slate-300 text-right font-bold">
+                                <TableCell className="text-slate-700 text-right font-bold">
                                     ₱{Number(transaction.organizer_payout).toLocaleString()}
                                 </TableCell>
                                 <TableCell className="text-center">

@@ -140,7 +140,7 @@ export function AuditClient({
                                     <TableCell className="text-muted-foreground text-sm">
                                         {format(new Date(action.created_at), 'MMM d, yyyy h:mm a')}
                                     </TableCell>
-                                    <TableCell className="text-slate-300">
+                                    <TableCell className="text-slate-700">
                                         {action.admin?.display_name || (
                                             <span className="text-muted-foreground italic text-xs">
                                                 {action.admin?.id ? `Admin ${action.admin.id.slice(0, 8)}` : 'System'}
@@ -150,7 +150,7 @@ export function AuditClient({
                                     <TableCell>
                                         {getActionTypeBadge(action.action_type)}
                                     </TableCell>
-                                    <TableCell className="text-slate-300">
+                                    <TableCell className="text-slate-700">
                                         {action.target_user?.display_name || (
                                             <span className="text-muted-foreground italic text-xs">
                                                 {action.target_user?.id ? `User ${action.target_user.id.slice(0, 8)}` : '—'}

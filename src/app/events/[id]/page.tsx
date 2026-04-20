@@ -37,7 +37,7 @@ const getEvent = cache(async (eventId: string) => {
       ticket_tiers(*)
     `)
         .eq('id', eventId)
-        .eq('status', 'active')
+        .in('status', ['active', 'hidden'])
         .single()
 
     if (error || !event) {

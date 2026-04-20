@@ -231,7 +231,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                                     key={event.id}
                                     className="border-border hover:bg-card/50"
                                 >
-                                    <TableCell className="text-slate-300">
+                                    <TableCell className="text-slate-700">
                                         <div className="flex items-start gap-3">
                                             {event.cover_image_url ? (
                                                 <img
@@ -260,7 +260,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                                     </TableCell>
                                     <TableCell>
                                         <div>
-                                            <p className="text-slate-300 text-sm flex items-center gap-1">
+                                            <p className="text-slate-700 text-sm flex items-center gap-1">
                                                 {event.organizer?.business_name || 'Unknown'}
                                                 {event.organizer?.verified && (
                                                     <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20 text-xs">
@@ -285,7 +285,7 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                                     <TableCell>
                                         <div className="flex items-center gap-2 text-sm">
                                             <Users className="h-4 w-4 text-muted-foreground" />
-                                            <span className="text-slate-300">
+                                            <span className="text-slate-700">
                                                 {event.tickets_sold} / {event.capacity}
                                             </span>
                                         </div>

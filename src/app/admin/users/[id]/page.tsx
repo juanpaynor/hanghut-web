@@ -149,7 +149,7 @@ async function UserProfileContent({ id }: { id: string }) {
                             {user.bio && (
                                 <div>
                                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Bio</h3>
-                                    <p className="text-slate-300">{user.bio}</p>
+                                    <p className="text-slate-700">{user.bio}</p>
                                 </div>
                             )}
                         </div>

@@ -122,7 +122,7 @@ export default async function VenueTemplatesPage() {
                 </div>
             ) : (
                 <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
-                    <MapPin className="w-12 h-12 mx-auto text-slate-300 mb-4" />
+                    <MapPin className="w-12 h-12 mx-auto text-slate-700 mb-4" />
                     <h3 className="text-lg font-semibold text-slate-700">
                         No venue templates yet
                     </h3>

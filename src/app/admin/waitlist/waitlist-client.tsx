@@ -119,7 +119,7 @@ export function WaitlistClient({ initialEntries, initialTotal }: WaitlistClientP
                                                 {entry.phone_type === 'android' ? 'Android' : 'iPhone'}
                                             </span>
                                         ) : (
-                                            <span className="text-xs text-slate-300">—</span>
+                                            <span className="text-xs text-slate-700">—</span>
                                         )}
                                     </td>
                                     <td className="py-3 px-4 text-sm text-slate-500">

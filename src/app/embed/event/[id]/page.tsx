@@ -48,7 +48,7 @@ export default async function EmbedEventPage({
             )
         `)
         .eq('id', id)
-        .eq('status', 'active')
+        .in('status', ['active', 'hidden'])
         .single()
 
     if (error || !event) notFound()

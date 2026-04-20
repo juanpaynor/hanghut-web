@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound, redirect } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -28,12 +29,16 @@ export const metadata: Metadata = {
 
 async function setVerified(experienceId: string, verified: boolean) {
     'use server'
-    const supabase = await createClient()
-    await supabase
+    // Use admin client to bypass RLS — only admins can reach this page
+    const adminSupabase = createAdminClient()
+    const { error } = await adminSupabase
         .from('tables')
         .update({ verified_by_hanghut: verified })
         .eq('id', experienceId)
         .eq('is_experience', true)
+    if (error) {
+        console.error('[setVerified] Failed to update experience:', error.message)
+    }
     revalidatePath(`/admin/experiences/${experienceId}`)
     revalidatePath('/admin/experiences')
 }

@@ -61,7 +61,7 @@ export default async function ScanPage() {
         .from('events')
         .select('id, title, start_datetime, end_datetime')
         .in('organizer_id', partnerIds)
-        .eq('status', 'active')
+        .in('status', ['active', 'hidden'])
         .gte('start_datetime', todayStart) // Show events starting from today onwards
         .order('start_datetime', { ascending: true })
 

@@ -114,7 +114,7 @@ export function UsersClient({
                                         <div className="flex items-center gap-3">
                                             <Avatar className="h-8 w-8">
                                                 <AvatarImage src={user.user_photos?.[0]?.photo_url} />
-                                                <AvatarFallback className="bg-muted text-slate-300">
+                                                <AvatarFallback className="bg-muted text-slate-700">
                                                     {user.display_name?.slice(0, 2).toUpperCase() || '??'}
                                                 </AvatarFallback>
                                             </Avatar>

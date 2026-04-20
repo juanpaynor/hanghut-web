@@ -53,6 +53,7 @@ export async function saveVenueTemplate(
     canvas_data: CanvasData
     tags?: string[]
     is_published?: boolean
+    thumbnail_url?: string | null
   }
 ) {
   const supabase = await createClient()
@@ -78,6 +79,7 @@ export async function saveVenueTemplate(
     total_capacity: totalCapacity,
     tags: data.tags || [],
     is_published: data.is_published ?? false,
+    thumbnail_url: data.thumbnail_url ?? null,
     updated_at: new Date().toISOString(),
   }
 
@@ -226,6 +228,7 @@ export async function saveEventSeatMap(
         event_id: eventId,
         label: section.label,
         color: section.color,
+        section_type: section.sectionType || 'general',
         polygon_points: section.polygonPoints,
         arc_config: section.arcConfig || null,
         is_active: section.isActive,

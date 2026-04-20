@@ -129,16 +129,16 @@ export function TablesClient({ tables, currentPage, totalCount, searchQuery }: T
                         ) : (
                             tables.map((table) => (
                                 <TableRow key={table.id} className="border-border hover:bg-card/50">
-                                    <TableCell className="text-slate-300 font-medium">
+                                    <TableCell className="text-slate-700 font-medium">
                                         {table.title || 'Untitled'}
                                     </TableCell>
-                                    <TableCell className="text-slate-300">
+                                    <TableCell className="text-slate-700">
                                         {table.host?.display_name || 'Unknown'}
                                     </TableCell>
                                     <TableCell className="text-muted-foreground text-sm">
                                         {format(new Date(table.datetime), 'MMM d, yyyy h:mm a')}
                                     </TableCell>
-                                    <TableCell className="text-slate-300">
+                                    <TableCell className="text-slate-700">
                                         {table.location_name}
                                     </TableCell>
                                     <TableCell>

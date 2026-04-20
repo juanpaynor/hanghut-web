@@ -38,7 +38,26 @@ async function getEvents(page: number, status?: string, eventType?: string, sear
     }
 
     if (search) {
-        query = query.or(`title.ilike.%${search}%,venue_name.ilike.%${search}%`)
+        const trimmed = search.trim()
+        if (trimmed.length >= 3) {
+            // Use full-text search_vector (GIN indexed) for 3+ char queries.
+            // Falls back to trigram ilike for partial/typo matches on the same pass.
+            // to_tsquery requires word tokens; we build a prefix query: "term:*"
+            const tsQuery = trimmed
+                .split(/\s+/)
+                .filter(Boolean)
+                .map(w => `${w.replace(/[^a-zA-Z0-9]/g, '')}:*`)
+                .join(' & ')
+            if (tsQuery) {
+                query = query.textSearch('search_vector', tsQuery, { type: 'websearch' })
+            } else {
+                query = query.or(`title.ilike.%${trimmed}%,venue_name.ilike.%${trimmed}%`)
+            }
+        } else if (trimmed.length > 0) {
+            // Short terms: trigram ilike (gin_trgm_ops index used for >= 3 chars,
+            // sequential for 1-2 chars — acceptable since dataset is small at that point)
+            query = query.or(`title.ilike.%${trimmed}%,venue_name.ilike.%${trimmed}%`)
+        }
     }
 
     const { data: events, error, count } = await query
@@ -48,21 +67,13 @@ async function getEvents(page: number, status?: string, eventType?: string, sear
         return { events: [], total: 0 }
     }
 
-    // [SMART SCALING FIX] Manually count sold tickets
-    const eventsWithCounts = await Promise.all((events || []).map(async (event) => {
-        const { count } = await supabase
-            .from('tickets')
-            .select('*', { count: 'exact', head: true })
-            .eq('event_id', event.id)
-            .neq('status', 'available')
+    if (!events || events.length === 0) {
+        return { events: [], total: 0 }
+    }
 
-        return {
-            ...event,
-            tickets_sold: count || 0
-        }
-    }))
-
-    return { events: eventsWithCounts || [], total: count || 0 }
+    // tickets_sold is kept in sync by the trg_sync_event_tickets_sold trigger —
+    // no secondary query needed.
+    return { events, total: count || 0 }
 }
 
 export default async function EventsPage({

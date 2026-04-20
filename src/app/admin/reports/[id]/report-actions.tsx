@@ -362,7 +362,7 @@ export function ReportActions({
                         </DialogDescription>
                     </DialogHeader>
                     <div className="py-4">
-                        <p className="text-sm text-slate-300">
+                        <p className="text-sm text-slate-700">
                             You are about to delete a <strong className="text-white">{targetType}</strong> with ID:
                         </p>
                         <p className="font-mono text-xs text-slate-400 mt-1 bg-slate-900 rounded px-3 py-2">

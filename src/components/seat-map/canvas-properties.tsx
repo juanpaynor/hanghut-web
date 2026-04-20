@@ -12,6 +12,7 @@ interface CanvasPropertiesProps {
   tool: CanvasTool
   onUpdateSection: (id: string, updates: Partial<SectionData>) => void
   onDeleteSection: (id: string) => void
+  onSelectSection: (id: string) => void
   backgroundShapes: BackgroundShape[]
   onUpdateShape: (id: string, updates: Partial<BackgroundShape>) => void
   onDeleteShape: (id: string) => void
@@ -20,8 +21,11 @@ interface CanvasPropertiesProps {
   onSetDropRow: (row: string) => void
   onSetDropSeatNumber: (num: number) => void
   selectedSeatId: string | null
+  selectedSeatIds: string[]
   onDeleteSeat: (sectionId: string, seatId: string) => void
   onSelectSeat: (seatId: string | null) => void
+  onRenumberSeats: (seatIds: string[], rowLabel: string, startNumber: number) => void
+  onDeleteSelectedSeats: () => void
   seatRadius: number
   seatShape: SeatShape
   onSetSeatRadius: (r: number) => void
@@ -49,6 +53,7 @@ export function CanvasProperties({
   tool,
   onUpdateSection,
   onDeleteSection,
+  onSelectSection,
   backgroundShapes,
   onUpdateShape,
   onDeleteShape,
@@ -57,8 +62,11 @@ export function CanvasProperties({
   onSetDropRow,
   onSetDropSeatNumber,
   selectedSeatId,
+  selectedSeatIds,
   onDeleteSeat,
   onSelectSeat,
+  onRenumberSeats,
+  onDeleteSelectedSeats,
   seatRadius,
   seatShape,
   onSetSeatRadius,
@@ -68,6 +76,7 @@ export function CanvasProperties({
   const [fillCols, setFillCols] = useState(20)
   const [gridRotation, setGridRotation] = useState(0)
   const [labelScheme, setLabelScheme] = useState<'alpha' | 'numeric'>('alpha')
+  const [aisleInput, setAisleInput] = useState('')  // comma-separated: e.g. "5,15" = aisle after seat 5 and 15
 
   // Sync state when selecting a different section
   useEffect(() => {
@@ -90,11 +99,18 @@ export function CanvasProperties({
         labelScheme,
       })
     } else {
+      // Parse aisle positions
+      const aisleAfterSeats = aisleInput
+        .split(',')
+        .map(s => parseInt(s.trim()))
+        .filter(n => !isNaN(n) && n > 0)
+
       seatPositions = fillStraightSeats(selectedSection.polygonPoints, {
         rowCount: fillRows,
         seatsPerRow: fillCols,
         labelScheme,
         gridRotation,
+        aisleAfterSeats: aisleAfterSeats.length > 0 ? aisleAfterSeats : undefined,
       })
     }
 
@@ -119,6 +135,8 @@ export function CanvasProperties({
 
   // Find the selected seat object
   const selectedSeat = selectedSection?.seats.find((s) => s.id === selectedSeatId) ?? null
+  const [renumberRow, setRenumberRow] = useState('A')
+  const [renumberStart, setRenumberStart] = useState(1)
 
   return (
     <div className="w-72 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0 overflow-y-auto">
@@ -164,6 +182,61 @@ export function CanvasProperties({
             className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium py-2 rounded-lg transition-all border border-slate-700"
           >
             ← Back to Section
+          </button>
+        </div>
+      ) : selectedSeatIds.length > 1 ? (
+        /* ─── Multi-Seat Selection View ──────────────────────────────── */
+        <div className="p-4 space-y-4">
+          <div className="bg-amber-900/20 border border-amber-500/30 p-3 rounded-lg">
+            <p className="text-sm text-white font-medium mb-1">
+              {selectedSeatIds.length} Seats Selected
+            </p>
+            <p className="text-[11px] text-slate-400">
+              Renumber or delete the selected seats
+            </p>
+          </div>
+
+          {/* Renumber controls */}
+          <div className="space-y-3">
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Renumber Row
+            </label>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-[10px] text-slate-500 mb-1 block">Row</label>
+                <input
+                  type="text"
+                  value={renumberRow}
+                  onChange={(e) => setRenumberRow(e.target.value.toUpperCase())}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-md px-2.5 py-1.5 text-sm text-white focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+                  maxLength={3}
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-[10px] text-slate-500 mb-1 block">Start #</label>
+                <input
+                  type="number"
+                  value={renumberStart}
+                  onChange={(e) => setRenumberStart(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-md px-2.5 py-1.5 text-sm text-white focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+                  min={1}
+                />
+              </div>
+            </div>
+            <button
+              onClick={() => onRenumberSeats(selectedSeatIds, renumberRow, renumberStart)}
+              className="w-full flex items-center justify-center gap-2 bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 text-sm font-medium py-2.5 rounded-lg transition-all border border-amber-600/30"
+            >
+              Apply Renumber (L→R)
+            </button>
+          </div>
+
+          <button
+            onClick={onDeleteSelectedSeats}
+            className="w-full flex items-center justify-center gap-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 text-sm font-medium py-2.5 rounded-lg transition-all border border-red-600/30"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete {selectedSeatIds.length} Seats
           </button>
         </div>
       ) : selectedSection ? (
@@ -245,8 +318,8 @@ export function CanvasProperties({
             {/* Seat Drop Tool hint */}
             {tool === 'draw-seat' && (
               <div className="bg-indigo-900/20 border border-indigo-500/30 p-3 rounded-lg mb-3">
-                <p className="text-[11px] text-indigo-200 leading-relaxed mb-3">
-                  Click on the canvas to drop individual seats. They will be added to this section.
+                <p className="text-[11px] text-indigo-200 leading-relaxed mb-2">
+                  Click on the canvas to place seats. Seat # auto-increments after each click.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -274,6 +347,9 @@ export function CanvasProperties({
                     />
                   </div>
                 </div>
+                <p className="text-[10px] text-indigo-300/60 mt-2">
+                  Next: <span className="font-mono font-bold text-indigo-200">{dropRow}{dropSeatNumber}</span> • Seat # auto-advances on click
+                </p>
               </div>
             )}
 
@@ -356,11 +432,25 @@ export function CanvasProperties({
                     </button>
                   </div>
                 </div>
+
+                <div className="mt-3">
+                  <label className="text-[11px] text-slate-500 mb-1 block">
+                    Aisles After Seat #
+                  </label>
+                  <input
+                    type="text"
+                    value={aisleInput}
+                    onChange={(e) => setAisleInput(e.target.value)}
+                    placeholder="e.g. 5, 15"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                  />
+                  <p className="text-[10px] text-slate-600 mt-1">Comma-separated seat positions for aisle gaps</p>
+                </div>
                 <button
                   onClick={handleFillSeats}
                   className="w-full mt-3 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium py-2.5 rounded-lg transition-all shadow-lg shadow-indigo-500/20"
                 >
-                  Generate {fillRows * fillCols} Seats
+                  Auto-Fill Seats ({fillRows} rows × {fillCols}/row)
                 </button>
               </div>
             )}
@@ -412,6 +502,7 @@ export function CanvasProperties({
                 {sections.map((section) => (
                   <div
                     key={section.id}
+                    onClick={() => onSelectSection(section.id)}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/50 hover:bg-slate-800 transition-all cursor-pointer"
                   >
                     <div

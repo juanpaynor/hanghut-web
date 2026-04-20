@@ -78,20 +78,30 @@ export default async function ExperienceDetailPage({ params }: { params: Promise
 
     if (!exp) notFound()
 
-    // Fetch host display name + profile photo
-    const [{ data: hostUser }, { data: hostPhoto }] = await Promise.all([
+    // Fetch host display name + profile photo + partner business name as fallback
+    const [{ data: hostUser }, { data: hostPartner }] = await Promise.all([
         supabase
             .from('users')
             .select('display_name, avatar_url')
             .eq('id', exp.host_id)
-            .single(),
+            .maybeSingle(),
         supabase
-            .from('user_photos')
-            .select('photo_url')
+            .from('partners')
+            .select('business_name')
             .eq('user_id', exp.host_id)
-            .eq('is_primary', true)
-            .single()
+            .maybeSingle()
     ])
+
+    // Get primary photo, falling back to first photo if none marked primary
+    let hostPhotoUrl: string | null = null
+    const { data: hostPhotos } = await supabase
+        .from('user_photos')
+        .select('photo_url, is_primary')
+        .eq('user_id', exp.host_id)
+        .order('is_primary', { ascending: false })
+        .order('sort_order', { ascending: true })
+        .limit(1)
+    hostPhotoUrl = hostPhotos?.[0]?.photo_url ?? null
 
     // Fetch reviews with user info
     const { data: rawReviews } = await supabase
@@ -134,8 +144,8 @@ export default async function ExperienceDetailPage({ params }: { params: Promise
 
     const images: string[] = (exp.images as string[]) ?? []
     const schedules = exp.experience_schedules ?? []
-    const hostName: string = hostUser?.display_name ?? 'Your Host'
-    const hostAvatarUrl: string | null = hostPhoto?.photo_url ?? exp.host_avatar_url ?? hostUser?.avatar_url ?? null
+    const hostName: string = hostUser?.display_name ?? hostPartner?.business_name ?? 'Your Host'
+    const hostAvatarUrl: string | null = hostPhotoUrl ?? exp.host_avatar_url ?? hostUser?.avatar_url ?? null
     const typeLabel = EXPERIENCE_TYPE_LABELS[exp.experience_type ?? ''] ?? 'Experience'
     const successUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/experiences/success`
     const failureUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/experiences/${id}`
@@ -214,6 +224,9 @@ export default async function ExperienceDetailPage({ params }: { params: Promise
                         <div>
                             <p className="text-[10px] uppercase tracking-widest text-primary font-bold">Your Host</p>
                             <p className="text-sm font-semibold">{hostName}</p>
+                            {exp.host_bio && (
+                                <p className="text-xs text-muted-foreground mt-0.5 max-w-xs">{exp.host_bio}</p>
+                            )}
                         </div>
                     </div>
 

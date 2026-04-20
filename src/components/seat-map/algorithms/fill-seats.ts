@@ -21,6 +21,9 @@ export interface FillConfig {
   labelScheme?: 'alpha' | 'numeric'  // A,B,C or 1,2,3 for rows
   startLabel?: string    // e.g. "A" or "1"
   gridRotation?: number  // rotation angle in degrees
+  aisleAfterSeats?: number[]  // seat numbers after which to insert an aisle gap
+  aisleWidth?: number    // width of aisle gap in px (default 20)
+  autoFit?: boolean      // if true, ignore rowCount/seatsPerRow and fit as many as possible
 }
 
 const DEFAULT_SEAT_SIZE = 8
@@ -36,7 +39,8 @@ export function fillStraightSeats(
   config: FillConfig
 ): SeatPosition[] {
   const polygon = flatToVertices(polygonPointsFlat)
-  
+  if (polygon.length < 3) return []
+
   // Calculate polygon center
   let sumX = 0, sumY = 0
   for (const pt of polygon) { sumX += pt.x; sumY += pt.y }
@@ -45,7 +49,7 @@ export function fillStraightSeats(
 
   const rotationRad = ((config.gridRotation ?? 0) * Math.PI) / 180
 
-  // To find the rotated bounding box, we rotate the polygon backwards
+  // Rotate the polygon backwards to get axis-aligned bounding box
   const localPolygon = polygon.map(p => {
     const dx = p.x - cx
     const dy = p.y - cy
@@ -55,11 +59,12 @@ export function fillStraightSeats(
     }
   })
 
-  // We generate the grid based on the local polygon bounds
   const bounds = getPolygonBounds(localPolygon)
   const seatSize = config.seatSize ?? DEFAULT_SEAT_SIZE
   const seatGap = config.seatGap ?? DEFAULT_SEAT_GAP
   const rowGap = config.rowGap ?? DEFAULT_ROW_GAP
+  const aisleWidth = config.aisleWidth ?? 20
+  const aisleSet = new Set(config.aisleAfterSeats ?? [])
   const cellWidth = seatSize * 2 + seatGap
   const cellHeight = seatSize * 2 + rowGap
 
@@ -71,29 +76,44 @@ export function fillStraightSeats(
 
   if (innerWidth <= 0 || innerHeight <= 0) return []
 
+  // Auto-calculate how many rows/cols actually fit in the polygon bounds
+  const maxRows = config.autoFit
+    ? Math.floor(innerHeight / cellHeight)
+    : config.rowCount
+  const maxCols = config.autoFit
+    ? Math.floor(innerWidth / cellWidth)
+    : config.seatsPerRow
+
+  // Use min of requested and physically possible
+  const effectiveRows = Math.min(config.rowCount, Math.max(1, Math.floor(innerHeight / cellHeight)))
+  const effectiveCols = Math.min(config.seatsPerRow, Math.max(1, Math.floor(innerWidth / cellWidth)))
+
   const seats: SeatPosition[] = []
 
-  for (let row = 0; row < config.rowCount; row++) {
+  for (let row = 0; row < effectiveRows; row++) {
     const rowLabel = getRowLabel(row, config.labelScheme, config.startLabel)
     const localY = bounds.minY + padY + row * cellHeight + seatSize
 
-    // Skip rows that exceed the polygon bounds
     if (localY > bounds.maxY - padY) break
 
     let seatNum = 0
-    for (let col = 0; col < config.seatsPerRow; col++) {
-      const localX = bounds.minX + padX + col * cellWidth + seatSize
+    let aisleOffset = 0
+    for (let col = 0; col < effectiveCols; col++) {
+      // Add aisle gap after specified seat numbers
+      if (aisleSet.has(col)) {
+        aisleOffset += aisleWidth
+      }
 
-      // Skip seats that exceed polygon bounds
+      const localX = bounds.minX + padX + col * cellWidth + seatSize + aisleOffset
+
       if (localX > bounds.maxX - padX) break
 
-      // Rotate point forward back to canvas space to check intersection
+      // Rotate point back to canvas space to check polygon intersection
       const dx = localX - cx
       const dy = localY - cy
       const worldX = cx + dx * Math.cos(rotationRad) - dy * Math.sin(rotationRad)
       const worldY = cy + dx * Math.sin(rotationRad) + dy * Math.cos(rotationRad)
 
-      // Only include seats inside the original polygon
       if (pointInPolygon(worldX, worldY, polygon)) {
         seatNum++
         seats.push({

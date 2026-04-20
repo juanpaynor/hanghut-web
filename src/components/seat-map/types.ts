@@ -114,6 +114,7 @@ export interface CanvasState {
   backgroundShapes: BackgroundShape[]
   selectedIds: string[]         // selected section or shape IDs
   selectedSeatId: string | null // single selected seat within a section
+  selectedSeatIds: string[]     // multi-selected seat IDs (for batch renumber)
   drawingPoints: number[]       // temp points while drawing polygon
   isDrawing: boolean
   canvasWidth: number
@@ -122,6 +123,7 @@ export interface CanvasState {
   dropSeatNumber: number
   seatRadius: number            // global seat dot size (3-12)
   seatShape: SeatShape          // global seat dot shape
+  dragSeatStart: { x: number; y: number } | null  // start point for click-drag seat row
 }
 
 // ─── Undo/Redo ──────────────────────────────────────────────────────────────

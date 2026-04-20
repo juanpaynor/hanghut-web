@@ -125,20 +125,20 @@ export function ReportsClient({
                         ) : (
                             reports.map((report) => (
                                 <TableRow key={report.id} className="border-border hover:bg-card/50">
-                                    <TableCell className="font-mono text-sm text-slate-300">
+                                    <TableCell className="font-mono text-sm text-slate-700">
                                         {report.id.slice(0, 8)}...
                                     </TableCell>
-                                    <TableCell className="text-slate-300">
+                                    <TableCell className="text-slate-700">
                                         {report.reporter?.display_name || 'Unknown'}
                                     </TableCell>
-                                    <TableCell className="text-slate-300">
+                                    <TableCell className="text-slate-700">
                                         {report.reported?.display_name || (
                                             report.target_type === 'user' ? 'Unknown' :
                                                 report.target_type === 'table' ? '[Table]' :
                                                     `[${report.target_type}]`
                                         )}
                                     </TableCell>
-                                    <TableCell className="text-slate-300 capitalize">
+                                    <TableCell className="text-slate-700 capitalize">
                                         {report.reason_category}
                                     </TableCell>
                                     <TableCell>

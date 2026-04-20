@@ -140,7 +140,7 @@ export function PopupsClient({ initialPopups }: { initialPopups: AdminPopup[] })
                                                 <img src={popup.image_url} alt="Preview" className="object-cover w-full h-full" />
                                             </div>
                                         ) : (
-                                            <div className="h-12 w-20 rounded border bg-slate-50 flex items-center justify-center text-slate-300">
+                                            <div className="h-12 w-20 rounded border bg-slate-50 flex items-center justify-center text-slate-700">
                                                 <ImageIcon className="h-4 w-4" />
                                             </div>
                                         )}

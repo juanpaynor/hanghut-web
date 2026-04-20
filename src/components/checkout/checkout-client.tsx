@@ -217,7 +217,16 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 throw new Error(data.error?.message || 'Failed to create order')
             }
 
-            if (data.data?.payment_url) {
+            if (data.data?.free) {
+                // Free ticket — already confirmed, go straight to success
+                console.log('✅ [CHECKOUT] Free ticket confirmed, redirecting to success')
+                const successUrl = `${window.location.origin}/checkout/success?intent_id=${data.data.intent_id}`
+                if (isEmbed && window.self !== window.top) {
+                    window.parent.postMessage({ type: 'HANGHUT_REDIRECT_PARENT', url: successUrl }, '*')
+                } else {
+                    window.location.href = successUrl
+                }
+            } else if (data.data?.payment_url) {
                 console.log('✅ [CHECKOUT] Payment URL received, redirecting to:', data.data.payment_url)
 
                 // If we're inside an embed iframe, ask the parent window to redirect
@@ -470,16 +479,25 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                         Processing...
                                     </>
                                 ) : (
-                                    <>
-                                        Pay ₱{(total - discount).toLocaleString()}
-                                        <ArrowRight className="ml-2 h-5 w-5" />
-                                    </>
+                                    (total - discount) <= 0 ? (
+                                        <>
+                                            Get Free Tickets
+                                            <ArrowRight className="ml-2 h-5 w-5" />
+                                        </>
+                                    ) : (
+                                        <>
+                                            Pay ₱{(total - discount).toLocaleString()}
+                                            <ArrowRight className="ml-2 h-5 w-5" />
+                                        </>
+                                    )
                                 )}
                             </Button>
-                            <p className="text-xs text-center text-muted-foreground flex items-center justify-center gap-1">
-                                <ShieldCheck className="w-3 h-3" />
-                                Secure payment processed by Xendit
-                            </p>
+                            {(total - discount) > 0 && (
+                                <p className="text-xs text-center text-muted-foreground flex items-center justify-center gap-1">
+                                    <ShieldCheck className="w-3 h-3" />
+                                    Secure payment processed by Xendit
+                                </p>
+                            )}
                         </CardFooter>
                     </Card>
                 </div>

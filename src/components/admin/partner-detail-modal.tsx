@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
-import { CheckCircle, XCircle, Ban, DollarSign } from 'lucide-react'
+import { CheckCircle, XCircle, Ban, DollarSign, ExternalLink, Phone, MapPin, FileText } from 'lucide-react'
 import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts } from '@/lib/admin/partner-actions'
 import { useRouter } from 'next/navigation'
 
@@ -42,6 +42,33 @@ interface Partner {
     approved_at: string | null
     xendit_account_id: string | null
     kyc_status: string | null
+    kyc_rejection_reason: string | null
+    slug: string | null
+    // Contact & representative
+    contact_number: string | null
+    representative_name: string | null
+    work_email: string | null
+    nationality: string | null
+    place_of_birth: string | null
+    // Address
+    street_line1: string | null
+    street_line2: string | null
+    city: string | null
+    province_state: string | null
+    postal_code: string | null
+    // Bank info
+    bank_name: string | null
+    bank_account_number: string | null
+    bank_account_name: string | null
+    // KYC documents
+    id_document_url: string | null
+    business_document_url: string | null
+    bir_2303_url: string | null
+    articles_of_incorporation_url: string | null
+    secretary_certificate_url: string | null
+    latest_gis_url: string | null
+    // Admin notes
+    admin_notes: string | null
     user: {
         id: string
         display_name: string
@@ -247,6 +274,135 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                             </div>
                         </div>
                     </div>
+
+                    {/* Contact & Representative Info */}
+                    <div className="space-y-4 border-t border-slate-700 pt-6">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                            <Phone className="h-5 w-5" />
+                            Contact & Representative
+                        </h3>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <Label className="text-slate-400">Contact Number</Label>
+                                <p className="text-white">{partner.contact_number || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <Label className="text-slate-400">Work Email</Label>
+                                <p className="text-white">{partner.work_email || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <Label className="text-slate-400">Representative Name</Label>
+                                <p className="text-white">{partner.representative_name || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <Label className="text-slate-400">Nationality</Label>
+                                <p className="text-white capitalize">{partner.nationality || 'N/A'}</p>
+                            </div>
+                            {partner.place_of_birth && (
+                                <div>
+                                    <Label className="text-slate-400">Place of Birth</Label>
+                                    <p className="text-white">{partner.place_of_birth}</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Address */}
+                    {(partner.street_line1 || partner.city) && (
+                        <div className="space-y-4 border-t border-slate-700 pt-6">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <MapPin className="h-5 w-5" />
+                                Address
+                            </h3>
+                            <div className="text-white space-y-0.5">
+                                {partner.street_line1 && <p>{partner.street_line1}</p>}
+                                {partner.street_line2 && <p>{partner.street_line2}</p>}
+                                {(partner.city || partner.province_state || partner.postal_code) && (
+                                    <p>{[partner.city, partner.province_state, partner.postal_code].filter(Boolean).join(', ')}</p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Bank Information */}
+                    {(partner.bank_name || partner.bank_account_number) && (
+                        <div className="space-y-4 border-t border-slate-700 pt-6">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <DollarSign className="h-5 w-5" />
+                                Bank Information
+                            </h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <Label className="text-slate-400">Bank Name</Label>
+                                    <p className="text-white">{partner.bank_name || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <Label className="text-slate-400">Account Name</Label>
+                                    <p className="text-white">{partner.bank_account_name || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <Label className="text-slate-400">Account Number</Label>
+                                    <p className="text-white font-mono">{partner.bank_account_number || 'N/A'}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* KYC Documents */}
+                    {(partner.id_document_url || partner.business_document_url || partner.bir_2303_url || partner.articles_of_incorporation_url || partner.secretary_certificate_url || partner.latest_gis_url) && (
+                        <div className="space-y-4 border-t border-slate-700 pt-6">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <FileText className="h-5 w-5" />
+                                KYC Documents
+                            </h3>
+                            <div className="grid grid-cols-2 gap-3">
+                                {partner.id_document_url && (
+                                    <a href={partner.id_document_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 underline">
+                                        <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Government ID
+                                    </a>
+                                )}
+                                {partner.business_document_url && (
+                                    <a href={partner.business_document_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 underline">
+                                        <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Business Document
+                                    </a>
+                                )}
+                                {partner.bir_2303_url && (
+                                    <a href={partner.bir_2303_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 underline">
+                                        <ExternalLink className="h-3.5 w-3.5 shrink-0" /> BIR Form 2303
+                                    </a>
+                                )}
+                                {partner.articles_of_incorporation_url && (
+                                    <a href={partner.articles_of_incorporation_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 underline">
+                                        <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Articles of Incorporation
+                                    </a>
+                                )}
+                                {partner.secretary_certificate_url && (
+                                    <a href={partner.secretary_certificate_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 underline">
+                                        <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Secretary Certificate
+                                    </a>
+                                )}
+                                {partner.latest_gis_url && (
+                                    <a href={partner.latest_gis_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 underline">
+                                        <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Latest GIS
+                                    </a>
+                                )}
+                            </div>
+                            {partner.kyc_rejection_reason && (
+                                <div className="mt-3 p-3 rounded-md bg-red-500/10 border border-red-500/20">
+                                    <p className="text-xs text-red-400 font-medium">KYC Rejection Reason</p>
+                                    <p className="text-sm text-red-300 mt-1">{partner.kyc_rejection_reason}</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Previous Admin Notes */}
+                    {partner.admin_notes && (
+                        <div className="space-y-2 border-t border-slate-700 pt-6">
+                            <h3 className="text-base font-semibold text-slate-300">Previous Admin Notes</h3>
+                            <p className="text-sm text-slate-400 bg-slate-800/50 rounded-md p-3 border border-slate-700">{partner.admin_notes}</p>
+                        </div>
+                    )}
 
                     {/* Pricing Configuration */}
                     <div className="space-y-4 border-t border-slate-700 pt-6">

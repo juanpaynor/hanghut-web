@@ -238,12 +238,12 @@ export function TicketsClient({ tickets, currentPage, totalCount, statusFilter, 
                                                 {ticket.priority.toUpperCase()}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="text-slate-300 font-medium max-w-md truncate">
+                                        <TableCell className="text-slate-700 font-medium max-w-md truncate">
                                             {ticket.subject}
                                         </TableCell>
                                         <TableCell>
                                             <div>
-                                                <p className="text-slate-300 text-sm">{ticket.user_display_name}</p>
+                                                <p className="text-slate-700 text-sm">{ticket.user_display_name}</p>
                                                 <p className="text-muted-foreground text-xs">{ticket.user_email}</p>
                                             </div>
                                         </TableCell>

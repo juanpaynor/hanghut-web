@@ -47,7 +47,19 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
     const [existingMap, setExistingMap] = useState<any>(null)
     const [canvasData, setCanvasData] = useState<CanvasData | null>(null)
     const [templates, setTemplates] = useState<any[]>([])
-    const [showWarning, setShowWarning] = useState(true)
+    const [showWarning, setShowWarning] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('hanghut_seatmap_warning_dismissed') !== 'true'
+        }
+        return true
+    })
+
+    const dismissWarning = () => {
+        setShowWarning(false)
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('hanghut_seatmap_warning_dismissed', 'true')
+        }
+    }
 
     // Load existing seat map
     useEffect(() => {
@@ -274,7 +286,7 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                         </p>
                     </div>
                     <DialogFooter>
-                        <Button onClick={() => setShowWarning(false)}>
+                        <Button onClick={dismissWarning}>
                             I Understand
                         </Button>
                     </DialogFooter>

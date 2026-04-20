@@ -101,7 +101,7 @@ export function PayoutsClient({ payouts }: PayoutsClientProps) {
                                 <TableRow key={payout.id} className="border-border hover:bg-card/50">
                                     <TableCell>
                                         <div>
-                                            <p className="text-slate-300 font-medium">
+                                            <p className="text-slate-700 font-medium">
                                                 {payout.partner?.business_name || 'Unknown'}
                                             </p>
                                             <p className="text-muted-foreground text-sm">
@@ -109,12 +109,12 @@ export function PayoutsClient({ payouts }: PayoutsClientProps) {
                                             </p>
                                         </div>
                                     </TableCell>
-                                    <TableCell className="text-slate-300 font-bold text-lg">
+                                    <TableCell className="text-slate-700 font-bold text-lg">
                                         ₱{Number(payout.amount).toLocaleString()}
                                     </TableCell>
                                     <TableCell>
                                         <div className="text-sm">
-                                            <p className="text-slate-300">{payout.bank_name}</p>
+                                            <p className="text-slate-700">{payout.bank_name}</p>
                                             <p className="text-muted-foreground">{payout.bank_account_number}</p>
                                             <p className="text-muted-foreground">{payout.bank_account_name}</p>
                                         </div>

@@ -22,6 +22,7 @@ const SeatDot = memo(function SeatDot({
   y,
   status,
   isSelected,
+  isMultiSelected,
   onClick,
   radius,
   shape,
@@ -30,14 +31,15 @@ const SeatDot = memo(function SeatDot({
   y: number
   status: string
   isSelected: boolean
+  isMultiSelected?: boolean
   onClick?: () => void
   radius: number
   shape: SeatShape
 }) {
   const r = isSelected ? radius + 2 : radius
-  const fill = isSelected ? '#818cf8' : (SEAT_COLORS[status as keyof typeof SEAT_COLORS] ?? '#6366f1')
-  const stroke = isSelected ? '#ffffff' : status === 'available' ? '#16a34a' : undefined
-  const strokeW = isSelected ? 2.5 : 1
+  const fill = isSelected ? '#818cf8' : isMultiSelected ? '#f59e0b' : (SEAT_COLORS[status as keyof typeof SEAT_COLORS] ?? '#6366f1')
+  const stroke = isSelected ? '#ffffff' : isMultiSelected ? '#fbbf24' : status === 'available' ? '#16a34a' : undefined
+  const strokeW = isSelected || isMultiSelected ? 2.5 : 1
 
   if (shape === 'square') {
     return (
@@ -62,13 +64,13 @@ const SeatDot = memo(function SeatDot({
   if (shape === 'diamond') {
     return (
       <Rect
-        x={x - r}
-        y={y - r}
+        x={x}
+        y={y}
         width={r * 2}
         height={r * 2}
         rotation={45}
-        offsetX={0}
-        offsetY={0}
+        offsetX={r}
+        offsetY={r}
         fill={fill}
         stroke={stroke}
         strokeWidth={strokeW}
@@ -107,6 +109,7 @@ const SectionGroup = memo(function SectionGroup({
   onDragEnd,
   onClick,
   selectedSeatId,
+  selectedSeatIds,
   onSeatClick,
   seatRadius,
   seatShape,
@@ -117,6 +120,7 @@ const SectionGroup = memo(function SectionGroup({
   onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void
   onClick: () => void
   selectedSeatId: string | null
+  selectedSeatIds: string[]
   onSeatClick?: (seatId: string) => void
   seatRadius: number
   seatShape: SeatShape
@@ -164,6 +168,7 @@ const SectionGroup = memo(function SectionGroup({
           y={seat.y}
           status={seat.status}
           isSelected={seat.id === selectedSeatId}
+          isMultiSelected={selectedSeatIds.includes(seat.id)}
           onClick={onSeatClick ? () => onSeatClick(seat.id) : undefined}
           radius={seatRadius}
           shape={seatShape}
@@ -348,7 +353,17 @@ export function CanvasBuilder({
 
       // Delete key — delete selected seat OR selected section
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (state.selectedSeatId && state.selectedIds.length > 0) {
+        if (state.selectedSeatIds.length > 0) {
+          // Delete all multi-selected seats
+          state.sections.forEach((section) => {
+            section.seats.forEach((seat) => {
+              if (state.selectedSeatIds.includes(seat.id)) {
+                dispatchWithHistory({ type: 'DELETE_SEAT', sectionId: section.id, seatId: seat.id })
+              }
+            })
+          })
+          dispatch({ type: 'SELECT_SEATS', seatIds: [] })
+        } else if (state.selectedSeatId && state.selectedIds.length > 0) {
           // Delete the selected seat
           dispatchWithHistory({
             type: 'DELETE_SEAT',
@@ -448,6 +463,17 @@ export function CanvasBuilder({
         dispatch({ type: 'SET_IS_DRAWING', isDrawing: true })
       }
 
+      // Seat tool: record start position for potential drag
+      if (state.tool === 'draw-seat' && state.selectedIds.length > 0) {
+        dispatch({ type: 'SET_DRAG_SEAT_START', point: { x, y } })
+      }
+
+      // Select mode: start drag-select rectangle on stage background
+      if (state.tool === 'select' && e.target === stage) {
+        dispatch({ type: 'SET_DRAWING_POINTS', points: [x, y] })
+        dispatch({ type: 'SET_IS_DRAWING', isDrawing: true })
+      }
+
       // Pan: start drag
       if (state.tool === 'pan') {
         stage.draggable(true)
@@ -471,6 +497,82 @@ export function CanvasBuilder({
           offset: { x: pos.x, y: pos.y },
         })
         stage.draggable(false)
+        return
+      }
+
+      // Seat tool: place single seat or row
+      if (state.tool === 'draw-seat' && state.selectedIds.length > 0) {
+        const pointer = stage.getPointerPosition()
+        if (pointer && state.dragSeatStart) {
+          const { x, y } = screenToCanvas(pointer)
+          const sectionId = state.selectedIds[0]
+          const section = state.sections.find((s) => s.id === sectionId)
+          if (section) {
+            const dx = x - state.dragSeatStart.x
+            const dy = y - state.dragSeatStart.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            const spacing = state.seatRadius * 2.5
+            const isDrag = dist > spacing
+            const count = isDrag ? Math.max(2, Math.round(dist / spacing)) : 1
+            const newSeats: SeatData[] = []
+            for (let i = 0; i < count; i++) {
+              const t = count === 1 ? 0 : i / (count - 1)
+              const sx = isDrag ? state.dragSeatStart.x + dx * t : state.dragSeatStart.x
+              const sy = isDrag ? state.dragSeatStart.y + dy * t : state.dragSeatStart.y
+              const num = state.dropSeatNumber + i
+              newSeats.push({
+                id: crypto.randomUUID(),
+                rowLabel: state.dropRow,
+                seatNumber: num,
+                label: `${state.dropRow}${num}`,
+                x: sx,
+                y: sy,
+                status: 'available',
+              })
+            }
+            dispatchWithHistory({
+              type: 'UPDATE_SECTION',
+              id: sectionId,
+              updates: { seats: [...section.seats, ...newSeats] },
+            })
+            dispatch({ type: 'SET_DROP_SEAT_NUMBER', num: state.dropSeatNumber + count })
+          }
+        }
+        dispatch({ type: 'SET_DRAG_SEAT_START', point: null })
+        return
+      }
+
+      // Select mode: finish drag-select rectangle
+      if (
+        state.tool === 'select' &&
+        state.isDrawing &&
+        state.drawingPoints.length >= 2
+      ) {
+        const pointer = stage.getPointerPosition()
+        if (pointer) {
+          const { x, y } = screenToCanvas(pointer)
+          const [x1, y1] = state.drawingPoints
+          const minX = Math.min(x1, x)
+          const minY = Math.min(y1, y)
+          const maxX = Math.max(x1, x)
+          const maxY = Math.max(y1, y)
+          // Only select if dragged enough
+          if (maxX - minX > 5 || maxY - minY > 5) {
+            const selectedIds: string[] = []
+            state.sections.forEach((section) => {
+              section.seats.forEach((seat) => {
+                if (seat.x >= minX && seat.x <= maxX && seat.y >= minY && seat.y <= maxY) {
+                  selectedIds.push(seat.id)
+                }
+              })
+            })
+            if (selectedIds.length > 0) {
+              dispatch({ type: 'SELECT_SEATS', seatIds: selectedIds })
+            }
+          }
+        }
+        dispatch({ type: 'SET_DRAWING_POINTS', points: [] })
+        dispatch({ type: 'SET_IS_DRAWING', isDrawing: false })
         return
       }
 
@@ -545,37 +647,9 @@ export function CanvasBuilder({
         return
       }
 
-      // ── Select mode — click background deselects ──────────
-      if (state.tool === 'select' && e.target === stage) {
+      // ── Select mode — click background deselects (only if not dragging) ──
+      if (state.tool === 'select' && e.target === stage && !state.isDrawing) {
         dispatch({ type: 'DESELECT_ALL' })
-      }
-
-      // ── Seat Dropper ───────────────────────────────────────
-      if (state.tool === 'draw-seat') {
-        const selectedId = state.selectedIds[0]
-        if (!selectedId) return
-
-        const section = state.sections.find((s) => s.id === selectedId)
-        if (!section) return
-
-        const newSeat: SeatData = {
-          id: crypto.randomUUID(),
-          rowLabel: state.dropRow || 'A',
-          seatNumber: state.dropSeatNumber || 1,
-          label: `${state.dropRow || 'A'}${state.dropSeatNumber || 1}`,
-          x,
-          y,
-          status: 'available',
-          customPrice: null,
-        }
-
-        dispatchWithHistory({
-          type: 'UPDATE_SECTION',
-          id: selectedId,
-          updates: { seats: [...section.seats, newSeat] },
-        })
-
-        dispatch({ type: 'SET_DROP_SEAT_NUMBER', num: (state.dropSeatNumber || 1) + 1 })
       }
     },
     [readOnly, state, dispatch, dispatchWithHistory, screenToCanvas]
@@ -595,12 +669,12 @@ export function CanvasBuilder({
     [readOnly, state.tool, dispatch]
   )
 
-  // ─── Seat click to select ───────────────────────────────────────────
+  // ─── Seat click to select (click toggles, for multi-select) ─────────
   const handleSeatClick = useCallback(
     (seatId: string) => {
       if (readOnly) return
       if (state.tool === 'select') {
-        dispatch({ type: 'SELECT_SEAT', seatId })
+        dispatch({ type: 'TOGGLE_SELECT_SEAT', seatId })
       }
     },
     [readOnly, state.tool, dispatch]
@@ -648,6 +722,13 @@ export function CanvasBuilder({
     onSave?.(data)
   }, [state, onSave])
 
+  // ─── External save trigger (from parent header buttons) ─────────────
+  useEffect(() => {
+    const handler = () => handleExport()
+    document.addEventListener('canvas:requestSave', handler)
+    return () => document.removeEventListener('canvas:requestSave', handler)
+  }, [handleExport])
+
   // ─── Image Upload ──────────────────────────────────────────────────────
   const handleUploadClick = useCallback(() => {
     fileInputRef.current?.click()
@@ -685,7 +766,7 @@ export function CanvasBuilder({
 
   // ─── Live drawing preview ───────────────────────────────────────────
   const rectPreview = useMemo(() => {
-    if (state.tool !== 'draw-rect' || !state.isDrawing || !mousePos) return null
+    if ((state.tool !== 'draw-rect' && state.tool !== 'select') || !state.isDrawing || !mousePos) return null
     if (state.drawingPoints.length < 2) return null
 
     const [x1, y1] = state.drawingPoints
@@ -694,6 +775,7 @@ export function CanvasBuilder({
       y: Math.min(y1, mousePos.y),
       width: Math.abs(mousePos.x - x1),
       height: Math.abs(mousePos.y - y1),
+      isSelect: state.tool === 'select',
     }
   }, [state.tool, state.isDrawing, state.drawingPoints, mousePos])
 
@@ -735,7 +817,10 @@ export function CanvasBuilder({
     }
     if (state.tool === 'draw-seat') {
       if (!state.selectedIds.length) return '⚠ Select a section first, then click to drop seats'
-      return `Dropping: Row ${state.dropRow} Seat ${state.dropSeatNumber} • Click canvas to place`
+      return `Row ${state.dropRow} Seat ${state.dropSeatNumber} • Click to place or drag to place a row`
+    }
+    if (state.selectedSeatIds.length > 1) {
+      return `${state.selectedSeatIds.length} seats selected • Renumber in properties panel • Delete to remove`
     }
     if (state.tool === 'select' && state.selectedSeatId) {
       return 'Press Delete/Backspace to remove seat • Esc to deselect'
@@ -794,8 +879,9 @@ export function CanvasBuilder({
             canvasHeight={state.canvasHeight}
           />
 
-          {/* Background Shapes */}
+          {/* All interactive objects in one layer so mouse events aren't blocked */}
           <Layer>
+            {/* Background Shapes (rendered first = behind sections) */}
             {state.backgroundShapes.map((shape) => (
               <RenderBackgroundShape
                 key={shape.id}
@@ -806,10 +892,7 @@ export function CanvasBuilder({
                 }}
               />
             ))}
-          </Layer>
-
-          {/* Sections + Seats Layer */}
-          <Layer>
+            {/* Sections + Seats */}
             {state.sections.map((section) => (
               <SectionGroup
                 key={section.id}
@@ -819,6 +902,7 @@ export function CanvasBuilder({
                 onDragEnd={(e) => handleSectionDragEnd(section.id, e)}
                 onClick={() => handleSectionClick(section.id)}
                 selectedSeatId={state.selectedSeatId}
+                selectedSeatIds={state.selectedSeatIds}
                 onSeatClick={state.tool === 'select' ? handleSeatClick : undefined}
                 seatRadius={state.seatRadius}
                 seatShape={state.seatShape}
@@ -868,16 +952,43 @@ export function CanvasBuilder({
                 y={rectPreview.y}
                 width={rectPreview.width}
                 height={rectPreview.height}
-                stroke="#f97316"
+                stroke={rectPreview.isSelect ? '#3b82f6' : '#f97316'}
                 strokeWidth={2}
                 dash={[8, 4]}
-                fill="#f9731615"
+                fill={rectPreview.isSelect ? '#3b82f615' : '#f9731615'}
                 perfectDrawEnabled={false}
               />
             )}
 
+            {/* Seat drag row preview */}
+            {state.tool === 'draw-seat' && state.dragSeatStart && mousePos && (() => {
+              const dx = mousePos.x - state.dragSeatStart.x
+              const dy = mousePos.y - state.dragSeatStart.y
+              const dist = Math.sqrt(dx * dx + dy * dy)
+              const spacing = state.seatRadius * 2.5
+              const count = Math.max(1, Math.round(dist / spacing))
+              const dots = []
+              for (let i = 0; i <= count; i++) {
+                const t = count === 0 ? 0 : i / count
+                dots.push(
+                  <Circle
+                    key={`drag-${i}`}
+                    x={state.dragSeatStart.x + dx * t}
+                    y={state.dragSeatStart.y + dy * t}
+                    radius={state.seatRadius}
+                    fill="#6366f140"
+                    stroke="#818cf8"
+                    strokeWidth={1}
+                    dash={[2, 2]}
+                    perfectDrawEnabled={false}
+                  />
+                )
+              }
+              return <>{dots}</>
+            })()}
+
             {/* Seat drop cursor preview */}
-            {state.tool === 'draw-seat' && mousePos && state.selectedIds.length > 0 && (
+            {state.tool === 'draw-seat' && !state.dragSeatStart && mousePos && state.selectedIds.length > 0 && (
               <>
                 <Circle
                   x={mousePos.x}
@@ -935,6 +1046,9 @@ export function CanvasBuilder({
             dispatchWithHistory({ type: 'DELETE_SECTION', id })
             dispatch({ type: 'DESELECT_ALL' })
           }}
+          onSelectSection={(id) => {
+            dispatch({ type: 'SELECT', ids: [id] })
+          }}
           backgroundShapes={state.backgroundShapes.filter(s => s.type === 'image')}
           onUpdateShape={(id, updates) => {
             dispatchWithHistory({ type: 'UPDATE_SHAPE', id, updates })
@@ -947,11 +1061,29 @@ export function CanvasBuilder({
           onSetDropRow={(row) => dispatch({ type: 'SET_DROP_ROW', row })}
           onSetDropSeatNumber={(num) => dispatch({ type: 'SET_DROP_SEAT_NUMBER', num })}
           selectedSeatId={state.selectedSeatId}
+          selectedSeatIds={state.selectedSeatIds}
           onDeleteSeat={(sectionId, seatId) => {
             dispatchWithHistory({ type: 'DELETE_SEAT', sectionId, seatId })
           }}
           onSelectSeat={(seatId) => {
             dispatch({ type: 'SELECT_SEAT', seatId })
+          }}
+          onRenumberSeats={(seatIds, rowLabel, startNumber) => {
+            // Find which section contains the majority of the selected seats
+            const sectionId = state.sections.find(s =>
+              s.seats.some(seat => seatIds.includes(seat.id))
+            )?.id ?? ''
+            dispatchWithHistory({ type: 'RENUMBER_SEATS', sectionId, seatIds, startRow: rowLabel, startNum: startNumber })
+          }}
+          onDeleteSelectedSeats={() => {
+            state.sections.forEach((section) => {
+              section.seats.forEach((seat) => {
+                if (state.selectedSeatIds.includes(seat.id)) {
+                  dispatchWithHistory({ type: 'DELETE_SEAT', sectionId: section.id, seatId: seat.id })
+                }
+              })
+            })
+            dispatch({ type: 'SELECT_SEATS', seatIds: [] })
           }}
           seatRadius={state.seatRadius}
           seatShape={state.seatShape}

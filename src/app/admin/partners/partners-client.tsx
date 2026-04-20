@@ -40,6 +40,28 @@ interface Partner {
     approved_at: string | null
     xendit_account_id: string | null
     kyc_status: string | null
+    kyc_rejection_reason: string | null
+    slug: string | null
+    contact_number: string | null
+    representative_name: string | null
+    work_email: string | null
+    nationality: string | null
+    place_of_birth: string | null
+    street_line1: string | null
+    street_line2: string | null
+    city: string | null
+    province_state: string | null
+    postal_code: string | null
+    bank_name: string | null
+    bank_account_number: string | null
+    bank_account_name: string | null
+    id_document_url: string | null
+    business_document_url: string | null
+    bir_2303_url: string | null
+    articles_of_incorporation_url: string | null
+    secretary_certificate_url: string | null
+    latest_gis_url: string | null
+    admin_notes: string | null
     user: {
         id: string
         display_name: string
@@ -194,7 +216,7 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
                                         className="border-border hover:bg-card/50 cursor-pointer"
                                         onClick={() => setSelectedPartner(partner)}
                                     >
-                                        <TableCell className="text-slate-300 font-medium">
+                                        <TableCell className="text-slate-700 font-medium">
                                             <div className="flex items-center gap-2">
                                                 {partner.business_name}
                                                 {partner.verified && (
@@ -206,8 +228,11 @@ export function PartnersClient({ partners, currentPage, totalCount, statusFilter
                                         </TableCell>
                                         <TableCell>
                                             <div>
-                                                <p className="text-slate-300 text-sm">{partner.user?.display_name || 'Unknown'}</p>
+                                                <p className="text-slate-700 text-sm">{partner.user?.display_name || 'Unknown'}</p>
                                                 <p className="text-muted-foreground text-xs">{partner.user?.email}</p>
+                                                {partner.contact_number && (
+                                                    <p className="text-muted-foreground text-xs">{partner.contact_number}</p>
+                                                )}
                                             </div>
                                         </TableCell>
                                         <TableCell>
