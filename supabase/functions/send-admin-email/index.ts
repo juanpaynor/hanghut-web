@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Supabase Edge Function: send-admin-email
 // Deploy with: supabase functions deploy send-admin-email
 //
@@ -49,16 +50,22 @@ serve(async (req) => {
         if (!isAdmin) throw new Error('Admin access required')
 
         // Parse request body
-        const { subject, html_content, sender_name = 'HangHut' } = await req.json()
+        const { subject, html_content, sender_name = 'HangHut', phone_type } = await req.json()
 
         if (!subject || !html_content) {
             throw new Error('Missing required fields: subject, html_content')
         }
 
-        // Fetch all waitlist entries
-        const { data: recipients, error: fetchError } = await supabase
+        // Fetch waitlist entries, optionally filtered by phone_type
+        let recipientQuery = supabase
             .from('waitlist')
             .select('email, full_name')
+
+        if (phone_type) {
+            recipientQuery = recipientQuery.eq('phone_type', phone_type)
+        }
+
+        const { data: recipients, error: fetchError } = await recipientQuery
 
         if (fetchError) throw new Error(`Failed to fetch waitlist: ${fetchError.message}`)
         if (!recipients || recipients.length === 0) {

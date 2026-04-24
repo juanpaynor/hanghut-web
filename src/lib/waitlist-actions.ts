@@ -25,17 +25,23 @@ export async function joinWaitlist(formData: { fullName: string; email: string }
     return { success: true }
 }
 
-export async function getWaitlistEntries(page = 1, pageSize = 25) {
+export async function getWaitlistEntries(page = 1, pageSize = 25, phoneType?: string) {
     const supabase = await createClient()
 
     const from = (page - 1) * pageSize
     const to = from + pageSize - 1
 
-    const { data, error, count } = await supabase
+    let query = supabase
         .from('waitlist')
         .select('*', { count: 'exact' })
         .order('created_at', { ascending: false })
         .range(from, to)
+
+    if (phoneType && phoneType !== 'all') {
+        query = query.eq('phone_type', phoneType)
+    }
+
+    const { data, error, count } = await query
 
     if (error) {
         console.error('Error fetching waitlist:', error)

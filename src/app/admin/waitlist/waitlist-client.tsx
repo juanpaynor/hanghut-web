@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Download, Mail, ChevronLeft, ChevronRight, Smartphone } from 'lucide-react'
 import { getWaitlistEntries } from '@/lib/waitlist-actions'
 
+type PhoneFilter = 'all' | 'iphone' | 'android'
+
 interface WaitlistEntry {
     id: string
     full_name: string
@@ -24,15 +26,26 @@ export function WaitlistClient({ initialEntries, initialTotal }: WaitlistClientP
     const [total, setTotal] = useState(initialTotal)
     const [page, setPage] = useState(1)
     const [loading, setLoading] = useState(false)
+    const [phoneFilter, setPhoneFilter] = useState<PhoneFilter>('all')
     const pageSize = 50
     const totalPages = Math.ceil(total / pageSize)
 
-    const goToPage = async (newPage: number) => {
+    const goToPage = async (newPage: number, filter: PhoneFilter = phoneFilter) => {
         setLoading(true)
-        const { entries: newEntries, total: newTotal } = await getWaitlistEntries(newPage, pageSize)
+        const { entries: newEntries, total: newTotal } = await getWaitlistEntries(newPage, pageSize, filter === 'all' ? undefined : filter)
         setEntries(newEntries)
         setTotal(newTotal)
         setPage(newPage)
+        setLoading(false)
+    }
+
+    const handlePhoneFilter = async (filter: PhoneFilter) => {
+        setPhoneFilter(filter)
+        setLoading(true)
+        const { entries: newEntries, total: newTotal } = await getWaitlistEntries(1, pageSize, filter === 'all' ? undefined : filter)
+        setEntries(newEntries)
+        setTotal(newTotal)
+        setPage(1)
         setLoading(false)
     }
 
@@ -56,10 +69,44 @@ export function WaitlistClient({ initialEntries, initialTotal }: WaitlistClientP
     return (
         <div className="space-y-4">
             {/* Actions Bar */}
-            <div className="flex items-center justify-between">
-                <p className="text-sm text-slate-500">
-                    Showing {entries.length} of {total} entries
-                </p>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                    <p className="text-sm text-slate-500">
+                        Showing {entries.length} of {total} entries
+                    </p>
+                    <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+                        <button
+                            onClick={() => handlePhoneFilter('all')}
+                            className={`px-3 py-1.5 font-medium transition-colors ${
+                                phoneFilter === 'all'
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-white text-slate-600 hover:bg-slate-50'
+                            }`}
+                        >
+                            All
+                        </button>
+                        <button
+                            onClick={() => handlePhoneFilter('iphone')}
+                            className={`px-3 py-1.5 font-medium border-l border-slate-200 transition-colors ${
+                                phoneFilter === 'iphone'
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-white text-slate-600 hover:bg-slate-50'
+                            }`}
+                        >
+                            🍎 iPhone
+                        </button>
+                        <button
+                            onClick={() => handlePhoneFilter('android')}
+                            className={`px-3 py-1.5 font-medium border-l border-slate-200 transition-colors ${
+                                phoneFilter === 'android'
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-white text-slate-600 hover:bg-slate-50'
+                            }`}
+                        >
+                            🤖 Android
+                        </button>
+                    </div>
+                </div>
                 <Button
                     variant="outline"
                     size="sm"

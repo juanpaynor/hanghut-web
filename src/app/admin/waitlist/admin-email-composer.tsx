@@ -24,11 +24,14 @@ interface Campaign {
     created_at: string
 }
 
+type Audience = 'all' | 'iphone' | 'android'
+
 export function AdminEmailComposer({ waitlistCount }: { waitlistCount: number }) {
     const [subject, setSubject] = useState('')
     const [content, setContent] = useState('')
     const [sending, setSending] = useState(false)
     const [activeTab, setActiveTab] = useState('write')
+    const [audience, setAudience] = useState<Audience>('all')
     const [campaigns, setCampaigns] = useState<Campaign[]>([])
     const [loadingHistory, setLoadingHistory] = useState(true)
 
@@ -73,7 +76,8 @@ export function AdminEmailComposer({ waitlistCount }: { waitlistCount: number })
                 body: {
                     subject,
                     html_content: content,
-                    sender_name: 'HangHut'
+                    sender_name: 'HangHut',
+                    phone_type: audience === 'all' ? undefined : audience,
                 }
             })
 
@@ -126,6 +130,42 @@ export function AdminEmailComposer({ waitlistCount }: { waitlistCount: number })
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
+                    {/* Audience Selector */}
+                    <div className="mb-6">
+                        <p className="text-sm font-medium mb-2 text-slate-700">Send to</p>
+                        <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm w-fit">
+                            <button
+                                onClick={() => setAudience('all')}
+                                className={`px-4 py-2 font-medium transition-colors ${
+                                    audience === 'all'
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'bg-white text-slate-600 hover:bg-slate-50'
+                                }`}
+                            >
+                                All ({waitlistCount})
+                            </button>
+                            <button
+                                onClick={() => setAudience('iphone')}
+                                className={`px-4 py-2 font-medium border-l border-slate-200 transition-colors ${
+                                    audience === 'iphone'
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'bg-white text-slate-600 hover:bg-slate-50'
+                                }`}
+                            >
+                                🍎 iPhone only
+                            </button>
+                            <button
+                                onClick={() => setAudience('android')}
+                                className={`px-4 py-2 font-medium border-l border-slate-200 transition-colors ${
+                                    audience === 'android'
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'bg-white text-slate-600 hover:bg-slate-50'
+                                }`}
+                            >
+                                🤖 Android only
+                            </button>
+                        </div>
+                    </div>
                     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                         <TabsList className="grid w-full grid-cols-2 mb-6">
                             <TabsTrigger value="write" className="flex items-center gap-2">
@@ -193,9 +233,9 @@ export function AdminEmailComposer({ waitlistCount }: { waitlistCount: number })
                                 Sending to {waitlistCount}...
                             </>
                         ) : (
-                            <>
+                        <>
                                 <Send className="mr-2 h-4 w-4" />
-                                Send to {waitlistCount} {waitlistCount === 1 ? 'Person' : 'People'}
+                                Send to {audience === 'all' ? `All ${waitlistCount}` : audience === 'iphone' ? '🍎 iPhone' : '🤖 Android'} {waitlistCount === 1 ? 'Person' : 'People'}
                             </>
                         )}
                     </Button>
