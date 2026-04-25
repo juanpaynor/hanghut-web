@@ -64,8 +64,11 @@ export function AdminEmailComposer({ waitlistCount }: { waitlistCount: number })
             return
         }
 
+        const audienceLabel = audience === 'all'
+            ? `all ${waitlistCount} people on the waitlist`
+            : `all ${audience.toUpperCase()} users on the waitlist`
         const confirmSend = window.confirm(
-            `Are you sure you want to send this email to ALL ${waitlistCount} people on the waitlist? This cannot be undone.`
+            `Are you sure you want to send this email to ${audienceLabel}? This cannot be undone.`
         )
         if (!confirmSend) return
 
