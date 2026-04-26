@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Bell, Send, Loader2, CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Image as ImageIcon, Repeat } from 'lucide-react'
-import { createBroadcast, getBroadcastStatus } from '@/lib/admin/broadcast-actions'
+import { createBroadcast, getBroadcastStatus, retryBroadcast } from '@/lib/admin/broadcast-actions'
 import type { PushBroadcast } from '@/lib/admin/broadcast-actions'
 
 interface BroadcastsClientProps {
@@ -39,6 +39,7 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
     const [showForm, setShowForm] = useState(false)
     const [expandedId, setExpandedId] = useState<string | null>(null)
     const [pollingId, setPollingId] = useState<string | null>(null)
+    const [retryingId, setRetryingId] = useState<string | null>(null)
 
     // Form state
     const [title, setTitle] = useState('')
@@ -110,6 +111,17 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
             alert('Failed to send: ' + result.error)
         }
         setSending(false)
+    }
+
+    const handleRetry = async (id: string) => {
+        setRetryingId(id)
+        const result = await retryBroadcast(id)
+        setRetryingId(null)
+        if (result.success) {
+            setPollingId(id)
+        } else {
+            alert('Retry failed: ' + result.error)
+        }
     }
 
     const handleRepeat = (broadcast: PushBroadcast) => {
@@ -289,6 +301,20 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
                                     </td>
                                     <td className="py-3 px-4 text-right">
                                         <div className="flex items-center justify-end gap-1">
+                                            {(broadcast.status === 'pending' || broadcast.status === 'failed') && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-8 w-8 p-0"
+                                                    title="Retry this broadcast"
+                                                    disabled={retryingId === broadcast.id}
+                                                    onClick={() => handleRetry(broadcast.id)}
+                                                >
+                                                    {retryingId === broadcast.id
+                                                        ? <Loader2 className="h-4 w-4 text-indigo-500 animate-spin" />
+                                                        : <Repeat className="h-4 w-4 text-indigo-400" />}
+                                                </Button>
+                                            )}
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
