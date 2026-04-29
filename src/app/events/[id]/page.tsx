@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
-import { Calendar, MapPin, Share2, ShieldCheck, Clock, Ticket, Phone } from 'lucide-react'
+import { Calendar, MapPin, Share2, ShieldCheck, Clock, Ticket, Phone, ExternalLink } from 'lucide-react'
 import type { Metadata } from 'next'
 import { TicketSelector } from '@/components/events/ticket-selector'
 import { EventGallery } from '@/components/events/event-gallery'
@@ -92,6 +92,12 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
             isSoldOut = true
         }
     }
+
+    // External ticketing redirect URL (edge function handles click tracking + 302 redirect)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const externalRedirectUrl = event.is_external
+        ? `${supabaseUrl}/functions/v1/redirect-to-external?event_id=${event.id}`
+        : undefined
     const eventDate = new Date(event.start_datetime)
 
     // Theme Logic
@@ -296,39 +302,70 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
         <Card className="my-8 border-2 border-primary/10 shadow-lg overflow-hidden" id="tickets">
             <div className="bg-primary/5 p-6 border-b border-primary/10 flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-primary text-primary-foreground rounded-lg">
+                    <div className={`p-2 rounded-lg ${event.is_external ? 'bg-blue-600 text-white' : 'bg-primary text-primary-foreground'}`}>
                         <Ticket className="h-6 w-6" />
                     </div>
                     <div>
-                        <h2 className="text-2xl font-bold">{isSoldOut ? 'Sold Out' : 'Get Tickets'}</h2>
-                        <p className="text-muted-foreground text-sm">{isSoldOut ? 'Tickets are no longer available' : 'Secure your spot now'}</p>
+                        <h2 className="text-2xl font-bold">
+                            {event.is_external
+                                ? `Get Tickets${event.external_provider_name ? ` on ${event.external_provider_name}` : ''}`
+                                : (isSoldOut ? 'Sold Out' : 'Get Tickets')}
+                        </h2>
+                        <p className="text-muted-foreground text-sm">
+                            {event.is_external
+                                ? 'Tickets sold by external provider'
+                                : (isSoldOut ? 'Tickets are no longer available' : 'Secure your spot now')}
+                        </p>
                     </div>
                 </div>
                 <div className="text-right">
-                    <span className="block text-sm text-muted-foreground uppercase tracking-wider font-semibold">Starting at</span>
+                    <span className="block text-sm text-muted-foreground uppercase tracking-wider font-semibold">
+                        {event.is_external ? 'From' : 'Starting at'}
+                    </span>
                     <span className="text-3xl font-extrabold text-primary">
                         {event.ticket_price === 0 ? 'Free' : `₱${event.ticket_price.toLocaleString()}`}
                     </span>
                 </div>
             </div>
             <div className="p-8">
-                <TicketSelector
-                    eventId={event.id}
-                    ticketPrice={event.ticket_price}
-                    minTickets={event.min_tickets_per_purchase}
-                    maxTickets={event.max_tickets_per_purchase}
-                    isSoldOut={isSoldOut}
-                    tiers={event.ticket_tiers}
-                    fullWidth
-                    trigger={null}
-                />
-                <p className="text-center text-xs text-muted-foreground mt-6 flex items-center justify-center gap-1">
-                    <ShieldCheck className="h-3 w-3" /> Secure checkout powered by Xendit
-                </p>
-                <p className="text-center text-xs text-muted-foreground mt-2 flex items-center justify-center gap-1">
-                    <Phone className="h-3 w-3" /> Need help? Contact us at{' '}
-                    <a href="tel:+639618478642" className="text-primary hover:underline font-medium">+63 961 847 8642</a>
-                </p>
+                {event.is_external ? (
+                    <>
+                        <a
+                            href={externalRedirectUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block"
+                        >
+                            <button className="w-full h-14 text-lg font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors flex items-center justify-center gap-2 shadow-md">
+                                Get Tickets{event.external_provider_name ? ` on ${event.external_provider_name}` : ''}
+                                <ExternalLink className="h-5 w-5" />
+                            </button>
+                        </a>
+                        <p className="text-center text-xs text-muted-foreground mt-4">
+                            You will be redirected to {event.external_provider_name || 'the ticketing provider'} to complete your purchase.
+                        </p>
+                    </>
+                ) : (
+                    <>
+                        <TicketSelector
+                            eventId={event.id}
+                            ticketPrice={event.ticket_price}
+                            minTickets={event.min_tickets_per_purchase}
+                            maxTickets={event.max_tickets_per_purchase}
+                            isSoldOut={isSoldOut}
+                            tiers={event.ticket_tiers}
+                            fullWidth
+                            trigger={null}
+                        />
+                        <p className="text-center text-xs text-muted-foreground mt-6 flex items-center justify-center gap-1">
+                            <ShieldCheck className="h-3 w-3" /> Secure checkout powered by Xendit
+                        </p>
+                        <p className="text-center text-xs text-muted-foreground mt-2 flex items-center justify-center gap-1">
+                            <Phone className="h-3 w-3" /> Need help? Contact us at{' '}
+                            <a href="tel:+639618478642" className="text-primary hover:underline font-medium">+63 961 847 8642</a>
+                        </p>
+                    </>
+                )}
             </div>
         </Card>
     )
@@ -437,7 +474,12 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
             </main>
 
             {/* Mobile Sticky Footer Action */}
-            <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} />
+            <MobileTicketButton
+                showTickets={showTickets}
+                isSoldOut={isSoldOut}
+                isExternal={event.is_external}
+                externalUrl={externalRedirectUrl}
+            />
         </div>
     )
 }

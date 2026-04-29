@@ -39,6 +39,9 @@ interface EventFormData {
     status: 'draft' | 'active' | 'paused' | 'cancelled' | 'hidden'
     seating_type: 'general_admission' | 'assigned_seating'
     max_seats_per_order: string
+    ticketing_type: 'internal' | 'external'
+    external_ticket_url: string
+    external_provider_name: string
 }
 
 interface EventFormProps {
@@ -90,6 +93,9 @@ export function EventForm({
         status: initialData?.status || 'draft',
         seating_type: initialData?.seating_type || 'general_admission',
         max_seats_per_order: initialData?.max_seats_per_order?.toString() || '10',
+        ticketing_type: initialData?.is_external ? 'external' : 'internal',
+        external_ticket_url: initialData?.external_ticket_url || '',
+        external_provider_name: initialData?.external_provider_name || '',
     })
 
     // Calculate pricing preview
@@ -203,11 +209,21 @@ export function EventForm({
         if (formData.end_datetime && new Date(formData.end_datetime) <= new Date(formData.start_datetime)) {
             newErrors.end_datetime = 'End time must be after start time'
         }
-        if (!formData.ticket_price || parseFloat(formData.ticket_price) < 0) {
-            newErrors.ticket_price = 'Ticket price must be 0 or greater'
-        }
-        if (!formData.capacity || parseInt(formData.capacity) < 1) {
-            newErrors.capacity = 'Capacity must be at least 1'
+        if (formData.ticketing_type === 'external') {
+            if (!formData.external_ticket_url) {
+                newErrors.external_ticket_url = 'External ticket URL is required'
+            } else {
+                try { new URL(formData.external_ticket_url) } catch {
+                    newErrors.external_ticket_url = 'Please enter a valid URL (e.g. https://ticketworld.com.ph/event)'
+                }
+            }
+        } else {
+            if (!formData.ticket_price || parseFloat(formData.ticket_price) < 0) {
+                newErrors.ticket_price = 'Ticket price must be 0 or greater'
+            }
+            if (!formData.capacity || parseInt(formData.capacity) < 1) {
+                newErrors.capacity = 'Capacity must be at least 1'
+            }
         }
         if (!isEditing && !formData.cover_image) {
             // Required for new events, optional for updates (keep existing)
@@ -256,6 +272,9 @@ export function EventForm({
             formDataToSend.append('status', status)
             formDataToSend.append('seating_type', formData.seating_type)
             formDataToSend.append('max_seats_per_order', formData.max_seats_per_order)
+            formDataToSend.append('is_external', formData.ticketing_type === 'external' ? 'true' : 'false')
+            formDataToSend.append('external_ticket_url', formData.external_ticket_url || '')
+            formDataToSend.append('external_provider_name', formData.external_provider_name || '')
 
             // Only send organizer_id for create, backend handles auth for update
             if (!isEditing) {
@@ -478,39 +497,118 @@ export function EventForm({
                         Ticketing & Pricing
                     </h2>
                     <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <Label htmlFor="ticket_price">Ticket Price (₱) *</Label>
-                                <Input
-                                    id="ticket_price"
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={formData.ticket_price}
-                                    onChange={(e) => handleInputChange('ticket_price', e.target.value)}
-                                    placeholder="0 for free events"
-                                    className={errors.ticket_price ? 'border-red-500' : ''}
-                                />
-                                {errors.ticket_price && <p className="text-sm text-red-500 mt-1">{errors.ticket_price}</p>}
-                            </div>
-
-                            <div>
-                                <Label htmlFor="capacity">Total Capacity *</Label>
-                                <Input
-                                    id="capacity"
-                                    type="number"
-                                    min="1"
-                                    value={formData.capacity}
-                                    onChange={(e) => handleInputChange('capacity', e.target.value)}
-                                    placeholder="e.g., 100"
-                                    className={errors.capacity ? 'border-red-500' : ''}
-                                />
-                                {errors.capacity && <p className="text-sm text-red-500 mt-1">{errors.capacity}</p>}
+                        {/* Ticketing Type Toggle */}
+                        <div>
+                            <Label>Ticketing Type</Label>
+                            <div className="grid grid-cols-2 gap-3 mt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleInputChange('ticketing_type', 'internal')}
+                                    className={`p-4 rounded-lg border-2 text-left transition-all ${
+                                        formData.ticketing_type === 'internal'
+                                            ? 'border-primary bg-primary/5'
+                                            : 'border-border hover:border-muted-foreground/30'
+                                    }`}
+                                >
+                                    <div className="font-semibold">HangHut Ticketing</div>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                        Sell tickets directly through HangHut
+                                    </p>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleInputChange('ticketing_type', 'external')}
+                                    className={`p-4 rounded-lg border-2 text-left transition-all ${
+                                        formData.ticketing_type === 'external'
+                                            ? 'border-blue-500 bg-blue-50/50'
+                                            : 'border-border hover:border-muted-foreground/30'
+                                    }`}
+                                >
+                                    <div className="font-semibold">External URL</div>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                        Link to an external ticketing site
+                                    </p>
+                                </button>
                             </div>
                         </div>
 
-                        {/* Pricing Preview */}
-                        {ticketPrice > 0 && (
+                        {formData.ticketing_type === 'external' ? (
+                            <>
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
+                                    Clicks on the &quot;Get Tickets&quot; button will be tracked and billed at <strong>$0.10 USD per unique click</strong> per user. Monthly invoicing applies.
+                                </div>
+                                <div>
+                                    <Label htmlFor="external_ticket_url">Ticket URL * <span className="text-muted-foreground font-normal">(where buyers go to purchase)</span></Label>
+                                    <Input
+                                        id="external_ticket_url"
+                                        type="url"
+                                        value={formData.external_ticket_url}
+                                        onChange={(e) => handleInputChange('external_ticket_url', e.target.value)}
+                                        placeholder="https://ticketworld.com.ph/events/your-event"
+                                        className={errors.external_ticket_url ? 'border-red-500' : ''}
+                                    />
+                                    {errors.external_ticket_url && <p className="text-sm text-red-500 mt-1">{errors.external_ticket_url}</p>}
+                                </div>
+                                <div>
+                                    <Label htmlFor="external_provider_name">Ticketing Provider <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                                    <Input
+                                        id="external_provider_name"
+                                        value={formData.external_provider_name}
+                                        onChange={(e) => handleInputChange('external_provider_name', e.target.value)}
+                                        placeholder="e.g. TicketWorld, SM Tickets, Eventbrite"
+                                    />
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        Shown on the CTA button as &quot;Get Tickets on {formData.external_provider_name || 'Provider'}&quot;
+                                    </p>
+                                </div>
+                                <div>
+                                    <Label htmlFor="ticket_price">Starting Price (₱) <span className="text-muted-foreground font-normal">(shown as &quot;From ₱X&quot;)</span></Label>
+                                    <Input
+                                        id="ticket_price"
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={formData.ticket_price}
+                                        onChange={(e) => handleInputChange('ticket_price', e.target.value)}
+                                        placeholder="0"
+                                    />
+                                </div>
+                            </>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <Label htmlFor="ticket_price">Ticket Price (₱) *</Label>
+                                    <Input
+                                        id="ticket_price"
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={formData.ticket_price}
+                                        onChange={(e) => handleInputChange('ticket_price', e.target.value)}
+                                        placeholder="0 for free events"
+                                        className={errors.ticket_price ? 'border-red-500' : ''}
+                                    />
+                                    {errors.ticket_price && <p className="text-sm text-red-500 mt-1">{errors.ticket_price}</p>}
+                                </div>
+
+                                <div>
+                                    <Label htmlFor="capacity">Total Capacity *</Label>
+                                    <Input
+                                        id="capacity"
+                                        type="number"
+                                        min="1"
+                                        value={formData.capacity}
+                                        onChange={(e) => handleInputChange('capacity', e.target.value)}
+                                        placeholder="e.g., 100"
+                                        className={errors.capacity ? 'border-red-500' : ''}
+                                    />
+                                    {errors.capacity && <p className="text-sm text-red-500 mt-1">{errors.capacity}</p>}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Pricing Preview — only for internal */}
+                        {formData.ticketing_type === 'internal' && ticketPrice > 0 && (
                             <Card className="p-4 bg-muted/50">
                                 <h3 className="font-semibold mb-2">Pricing Breakdown</h3>
                                 <div className="space-y-1 text-sm">
@@ -559,7 +657,8 @@ export function EventForm({
                     </div>
                 </Card>
 
-                {/* Seating Configuration */}
+                {/* Seating Configuration — only for internal ticketing */}
+                {formData.ticketing_type === 'internal' && (
                 <Card className="p-6">
                     <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
                         <Armchair className="h-6 w-6" />
@@ -623,6 +722,7 @@ export function EventForm({
                         )}
                     </div>
                 </Card>
+                )}
 
                 {/* Media & Images */}
                 <Card className="p-6">

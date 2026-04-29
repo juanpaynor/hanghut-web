@@ -98,6 +98,10 @@ export async function createEvent(formData: FormData) {
         // Default sales_end to 1 hour before event if not provided
         const defaultSalesEnd = new Date(new Date(startDatetime).getTime() - 3600000).toISOString()
 
+        const isExternal = formData.get('is_external') === 'true'
+        const externalTicketUrl = formData.get('external_ticket_url') as string || null
+        const externalProviderName = formData.get('external_provider_name') as string || null
+
         const eventData = {
             organizer_id: partner.id,
             title: formData.get('title') as string,
@@ -111,8 +115,8 @@ export async function createEvent(formData: FormData) {
             start_datetime: startDatetime,
             end_datetime: formData.get('end_datetime') as string || null,
             sales_end_datetime: salesEndDatetime || defaultSalesEnd,
-            ticket_price: parseFloat(formData.get('ticket_price') as string),
-            capacity: parseInt(formData.get('capacity') as string),
+            ticket_price: parseFloat(formData.get('ticket_price') as string) || 0,
+            capacity: isExternal ? 999999 : parseInt(formData.get('capacity') as string),
             tickets_sold: 0,
             min_tickets_per_purchase: 1, // Default from migration
             max_tickets_per_purchase: 10, // Default from migration
@@ -121,8 +125,11 @@ export async function createEvent(formData: FormData) {
             status: formData.get('status') as string,
             custom_tos: (formData.get('custom_tos') as string) || null,
             is_featured: false,
-            seating_type: (formData.get('seating_type') as string) || 'general_admission',
+            seating_type: isExternal ? 'general_admission' : ((formData.get('seating_type') as string) || 'general_admission'),
             max_seats_per_order: parseInt(formData.get('max_seats_per_order') as string) || 10,
+            is_external: isExternal,
+            external_ticket_url: externalTicketUrl || null,
+            external_provider_name: externalProviderName || null,
         }
 
         // 4. Insert event
@@ -137,24 +144,26 @@ export async function createEvent(formData: FormData) {
             return { error: 'Failed to create event: ' + eventError.message }
         }
 
-        // 5. Create default "General Admission" ticket tier
-        const { error: tierError } = await adminSupabase
-            .from('ticket_tiers')
-            .insert({
-                event_id: event.id,
-                name: 'General Admission',
-                description: 'Standard entry ticket',
-                price: parseFloat(formData.get('ticket_price') as string),
-                quantity_total: parseInt(formData.get('capacity') as string),
-                quantity_sold: 0,
-                is_active: true,
-                sort_order: 0,
-            })
+        // 5. Create default "General Admission" ticket tier (internal ticketing only)
+        if (!isExternal) {
+            const { error: tierError } = await adminSupabase
+                .from('ticket_tiers')
+                .insert({
+                    event_id: event.id,
+                    name: 'General Admission',
+                    description: 'Standard entry ticket',
+                    price: parseFloat(formData.get('ticket_price') as string),
+                    quantity_total: parseInt(formData.get('capacity') as string),
+                    quantity_sold: 0,
+                    is_active: true,
+                    sort_order: 0,
+                })
 
-        if (tierError) {
-            console.error('Ticket tier creation error:', tierError)
-            // Don't fail the entire operation if tier creation fails
-            // The event is still valid, we can add tiers later
+            if (tierError) {
+                console.error('Ticket tier creation error:', tierError)
+                // Don't fail the entire operation if tier creation fails
+                // The event is still valid, we can add tiers later
+            }
         }
 
         revalidatePath('/organizer/events')
@@ -255,6 +264,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
         const startDatetime = formData.get('start_datetime') as string
         const salesEndDatetime = formData.get('sales_end_datetime') as string
         const defaultSalesEnd = new Date(new Date(startDatetime).getTime() - 3600000).toISOString()
+        const isExternal = formData.get('is_external') === 'true'
 
         const updateData = {
             title: formData.get('title') as string,
@@ -268,15 +278,18 @@ export async function updateEvent(eventId: string, formData: FormData) {
             start_datetime: startDatetime,
             end_datetime: formData.get('end_datetime') as string || null,
             sales_end_datetime: salesEndDatetime || defaultSalesEnd,
-            ticket_price: parseFloat(formData.get('ticket_price') as string),
-            capacity: parseInt(formData.get('capacity') as string),
+            ticket_price: parseFloat(formData.get('ticket_price') as string) || 0,
+            capacity: isExternal ? 999999 : parseInt(formData.get('capacity') as string),
             cover_image_url: coverUrl,
             images: finalImages.length > 0 ? finalImages : null,
             status: formData.get('status') as string,
             custom_tos: (formData.get('custom_tos') as string) || null,
             updated_at: new Date().toISOString(),
-            seating_type: (formData.get('seating_type') as string) || 'general_admission',
+            seating_type: isExternal ? 'general_admission' : ((formData.get('seating_type') as string) || 'general_admission'),
             max_seats_per_order: parseInt(formData.get('max_seats_per_order') as string) || 10,
+            is_external: isExternal,
+            external_ticket_url: (formData.get('external_ticket_url') as string) || null,
+            external_provider_name: (formData.get('external_provider_name') as string) || null,
         }
 
         const { error: updateError } = await adminSupabase

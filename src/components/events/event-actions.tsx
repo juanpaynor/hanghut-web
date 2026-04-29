@@ -1,16 +1,31 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { Share2 } from 'lucide-react'
+import { ExternalLink, Share2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface MobileTicketButtonProps {
     showTickets: boolean
     isSoldOut: boolean
+    isExternal?: boolean
+    externalUrl?: string
 }
 
-export function MobileTicketButton({ showTickets, isSoldOut }: MobileTicketButtonProps) {
-    if (!showTickets || isSoldOut) return null
+export function MobileTicketButton({ showTickets, isSoldOut, isExternal, externalUrl }: MobileTicketButtonProps) {
+    if (!showTickets) return null
+    if (!isExternal && isSoldOut) return null
+
+    if (isExternal && externalUrl) {
+        return (
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur border-t md:hidden z-50 animate-in slide-in-from-bottom">
+                <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="block">
+                    <Button className="w-full h-12 text-lg font-bold shadow-lg bg-blue-600 hover:bg-blue-700">
+                        Get Tickets <ExternalLink className="h-4 w-4 ml-2" />
+                    </Button>
+                </a>
+            </div>
+        )
+    }
 
     return (
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur border-t md:hidden z-50 animate-in slide-in-from-bottom">
