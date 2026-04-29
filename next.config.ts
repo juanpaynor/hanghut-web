@@ -47,6 +47,19 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // App store badges
+      {
+        protocol: 'https',
+        hostname: 'developer.apple.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'play.google.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
   async headers() {

@@ -3,10 +3,7 @@
 import { useRef, useEffect } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { Button } from "@/components/ui/button";
-import { ArrowRight } from "lucide-react";
-import { WaitlistDialog } from "./waitlist-dialog";
-import Link from "next/link";
+import { StoreButtons } from "@/components/landing/store-buttons";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -86,17 +83,7 @@ export default function CTASection() {
                     Less scrolling. More living. Join the community that brings people together IRL.
                 </p>
 
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                    <WaitlistDialog>
-                        <Button
-                            size="lg"
-                            className="rounded-full px-10 py-7 text-lg font-bold bg-white text-primary hover:bg-white/90 shadow-2xl shadow-black/20 hover:scale-105 transition-all"
-                        >
-                            Join the Waitlist
-                            <ArrowRight className="ml-2 h-5 w-5" />
-                        </Button>
-                    </WaitlistDialog>
-                </div>
+                <StoreButtons variant="light" className="justify-center" />
             </div>
         </section>
     );

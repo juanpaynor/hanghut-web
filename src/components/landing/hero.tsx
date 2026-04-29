@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import { useRef, useEffect } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { WaitlistDialog } from "./waitlist-dialog";
+import { StoreButtons } from "@/components/landing/store-buttons";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -103,14 +103,7 @@ export default function Hero() {
             REAL CONNECTIONS. UNFORGETTABLE EXPERIENCES.
           </motion.p>
 
-          <WaitlistDialog>
-            <Button
-              size="lg"
-              className="rounded-full px-8 md:px-12 py-6 md:py-8 text-lg md:text-xl font-medium shadow-glow hover:scale-105 transition-transform bg-primary text-primary-foreground border-0"
-            >
-              Join The Waitlist!
-            </Button>
-          </WaitlistDialog>
+          <StoreButtons variant="dark" />
         </div>
       </div>
 

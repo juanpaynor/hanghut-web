@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import Image from "next/image";
-import { WaitlistDialog } from "./waitlist-dialog";
+
 
 export default function Header() {
   return (
@@ -31,11 +31,15 @@ export default function Header() {
               Partner Login
             </Button>
           </Link>
-          <Link href="/waitlist">
+          <a
+            href="https://apps.apple.com/ph/app/hanghut-social-hangouts/id6764278827"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             <Button className="rounded-full px-4 md:px-6 transition-all hover:scale-105">
-              Join Waitlist
+              Download App
             </Button>
-          </Link>
+          </a>
         </nav>
       </div>
     </header>
