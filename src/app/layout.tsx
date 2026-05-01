@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { SmoothScroll } from '@/components/landing/smooth-scroll';
@@ -91,6 +92,7 @@ export default function RootLayout({
             <Toaster />
             <CookieConsent />
           </LoadingProvider>
+          <Analytics />
         </SmoothScroll>
       </body>
     </html>
