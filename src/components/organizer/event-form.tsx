@@ -18,6 +18,7 @@ import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair } 
 import { createEvent, updateEvent } from '@/lib/organizer/event-actions'
 import { GooglePlacesAutocomplete } from '@/components/organizer/google-places-autocomplete'
 import { useToast } from '@/hooks/use-toast'
+import { TicketTiersManager } from '@/components/organizer/ticket-tiers-manager'
 
 interface EventFormData {
     title: string
@@ -72,6 +73,8 @@ export function EventForm({
     const [errors, setErrors] = useState<Record<string, string>>({})
 
     const isEditing = !!eventId
+    const [step, setStep] = useState<1 | 2>(1)
+    const [createdEventId, setCreatedEventId] = useState<string | null>(null)
 
     const [formData, setFormData] = useState<EventFormData>({
         title: initialData?.title || '',
@@ -315,9 +318,15 @@ export function EventForm({
             } else {
                 toast({
                     title: "Success",
-                    description: isEditing ? "Event updated successfully" : "Event created successfully",
+                    description: isEditing ? "Event updated successfully" : "Event saved! Now add your ticket tiers.",
                 })
-                router.push('/organizer/events')
+                if (isEditing) {
+                    router.push('/organizer/events')
+                } else {
+                    setCreatedEventId(result.eventId)
+                    setStep(2)
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                }
             }
         } catch (error) {
             console.error('Error saving event:', error)
@@ -328,9 +337,62 @@ export function EventForm({
         }
     }
 
+    if (step === 2 && createdEventId) {
+        return (
+            <div className="max-w-4xl mx-auto space-y-8 pb-20">
+                <div>
+                    <div className="flex items-center gap-3 mb-1">
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-muted text-muted-foreground text-xs font-semibold">1</span>
+                        <span className="text-muted-foreground text-sm">Event Details</span>
+                        <span className="text-muted-foreground">›</span>
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-semibold">2</span>
+                        <span className="text-sm font-medium">Ticket Tiers</span>
+                    </div>
+                    <h1 className="text-4xl font-bold mb-2">Add Ticket Tiers</h1>
+                    <p className="text-muted-foreground">Set up pricing tiers for your event. You can always add more later.</p>
+                </div>
+                <TicketTiersManager
+                    eventId={createdEventId}
+                    tiers={[]}
+                    commissionRate={commissionRate}
+                    passFeesToCustomer={passFeesToCustomer}
+                    fixedFeePerTicket={fixedFeePerTicket}
+                />
+                <div className="flex gap-4 sticky bottom-0 bg-background pt-4 border-t">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="lg"
+                        className="flex-1"
+                        onClick={() => router.push(`/organizer/events/${createdEventId}`)}
+                    >
+                        Skip for now
+                    </Button>
+                    <Button
+                        type="button"
+                        size="lg"
+                        className="flex-1 bg-primary"
+                        onClick={() => router.push(`/organizer/events/${createdEventId}`)}
+                    >
+                        Finish & View Event
+                    </Button>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="max-w-4xl mx-auto space-y-8 pb-20">
             <div>
+                {!isEditing && (
+                    <div className="flex items-center gap-3 mb-1">
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-semibold">1</span>
+                        <span className="text-sm font-medium">Event Details</span>
+                        <span className="text-muted-foreground">›</span>
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-muted text-muted-foreground text-xs font-semibold">2</span>
+                        <span className="text-muted-foreground text-sm">Ticket Tiers</span>
+                    </div>
+                )}
                 <h1 className="text-4xl font-bold mb-2">
                     {isEditing ? 'Edit Event' : 'Create Event'}
                 </h1>
@@ -959,7 +1021,7 @@ export function EventForm({
                         onClick={() => handleSubmit('active')}
                         disabled={isLoading || formData.status === 'cancelled'}
                     >
-                        {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (isEditing ? 'Update Event' : 'Publish Event')}
+                        {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (isEditing ? 'Update Event' : 'Next: Add Tiers →')}
                     </Button>
                 </div>
             </div>
