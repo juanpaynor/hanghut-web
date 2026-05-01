@@ -101,7 +101,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         setIsLoading(false)
 
         if (result.error) {
-            setPromoError(result.error)
+            setPromoError(result.appOnly ? 'APP_ONLY' : result.error)
             setAppliedPromo(null)
         } else if (result.success) {
             setAppliedPromo({
@@ -408,7 +408,17 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                     </Button>
                                 )}
                             </div>
-                            {promoError && <p className="text-xs text-destructive w-full">{promoError}</p>}
+                            {promoError === 'APP_ONLY' ? (
+                                <div className="w-full flex items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                    <span className="text-lg leading-none">📱</span>
+                                    <div>
+                                        <p className="font-semibold">App-Exclusive Code</p>
+                                        <p className="text-xs text-amber-700 mt-0.5">This promo code can only be redeemed through the HangHut app. <a href="https://apps.apple.com/ph/app/hanghut-social-hangouts/id6764278827" target="_blank" rel="noopener noreferrer" className="underline font-medium">Download the app</a> to use it.</p>
+                                    </div>
+                                </div>
+                            ) : promoError ? (
+                                <p className="text-xs text-destructive w-full">{promoError}</p>
+                            ) : null}
                             {appliedPromo && (
                                 <div className="w-full flex justify-between text-sm text-green-600 bg-green-50 p-2 rounded border border-green-200">
                                     <span>Discount applied ({appliedPromo.code})</span>

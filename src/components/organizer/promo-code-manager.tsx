@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, Tag, Loader2, Calendar, Hash, TrendingUp, BarChart3 } from 'lucide-react'
+import { Plus, Trash2, Tag, Loader2, Calendar, Hash, TrendingUp, BarChart3, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -36,6 +36,7 @@ export function PromoCodeManager({ eventId, initialCodes }: PromoCodeManagerProp
     const [amount, setAmount] = useState('')
     const [usageLimit, setUsageLimit] = useState('')
     const [expiresAt, setExpiresAt] = useState('')
+    const [appOnly, setAppOnly] = useState(false)
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -47,6 +48,7 @@ export function PromoCodeManager({ eventId, initialCodes }: PromoCodeManagerProp
         formData.append('discount_amount', amount)
         if (usageLimit) formData.append('usage_limit', usageLimit)
         if (expiresAt) formData.append('expires_at', expiresAt)
+        formData.append('app_only', appOnly ? 'true' : 'false')
 
         const result = await createPromoCode(eventId, formData)
 
@@ -66,6 +68,7 @@ export function PromoCodeManager({ eventId, initialCodes }: PromoCodeManagerProp
             setAmount('')
             setUsageLimit('')
             setExpiresAt('')
+            setAppOnly(false)
             setIsCreating(false)
         }
         setIsLoading(false)
@@ -207,7 +210,17 @@ export function PromoCodeManager({ eventId, initialCodes }: PromoCodeManagerProp
                             </div>
                         </div>
 
-                        <div className="flex justify-end gap-2 pt-2">
+                        <div className="flex items-center justify-between pt-2">
+                            <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                                <Smartphone className="h-4 w-4 text-amber-600 shrink-0" />
+                                <div className="flex-1">
+                                    <p className="text-sm font-medium text-amber-900">App Only</p>
+                                    <p className="text-xs text-amber-700">Restrict this code to the HangHut app — won't work on web checkout</p>
+                                </div>
+                                <Switch checked={appOnly} onCheckedChange={setAppOnly} />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
                             <Button type="button" variant="ghost" onClick={() => setIsCreating(false)}>
                                 Cancel
                             </Button>
@@ -250,6 +263,11 @@ export function PromoCodeManager({ eventId, initialCodes }: PromoCodeManagerProp
                                                 </Badge>
                                                 {isExpired && <Badge variant="destructive" className="text-xs">Expired</Badge>}
                                                 {isExhausted && <Badge variant="destructive" className="text-xs">Limit Reached</Badge>}
+                                                {code.app_only && (
+                                                    <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-100">
+                                                        <Smartphone className="h-3 w-3 mr-1" />App Only
+                                                    </Badge>
+                                                )}
                                             </div>
                                             <div className="flex gap-4 text-sm text-muted-foreground mt-1 flex-wrap">
                                                 <span className="flex items-center gap-1">

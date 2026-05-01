@@ -15,6 +15,7 @@ export interface PromoCode {
     starts_at: string
     expires_at: string | null
     is_active: boolean
+    app_only: boolean
 }
 
 export async function getPromoCodes(eventId: string) {
@@ -45,6 +46,7 @@ export async function createPromoCode(eventId: string, formData: FormData) {
     const discount_amount = parseFloat(formData.get('discount_amount') as string)
     const usage_limit_raw = formData.get('usage_limit') as string
     const expires_at_raw = formData.get('expires_at') as string
+    const app_only = formData.get('app_only') === 'true'
 
     if (!code || code.length < 3) {
         return { error: 'Code must be at least 3 characters' }
@@ -65,7 +67,8 @@ export async function createPromoCode(eventId: string, formData: FormData) {
             discount_amount,
             usage_limit: usage_limit_raw ? parseInt(usage_limit_raw) : null,
             expires_at: expires_at_raw || null,
-            is_active: true
+            is_active: true,
+            app_only,
         })
 
     if (error) {
@@ -134,7 +137,10 @@ export async function validatePromoCode(eventId: string, code: string, subtotal:
         return { error: 'Invalid promo code' }
     }
 
-    // 2. Check Expiry
+    // 1b. Block app-only codes from web checkout
+    if (promo.app_only) {
+        return { error: 'APP_ONLY', appOnly: true }
+    }
     if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
         return { error: 'Promo code has expired' }
     }
