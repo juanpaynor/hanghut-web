@@ -10,7 +10,7 @@ import { CheckInStats } from '@/components/organizer/check-in-stats'
 import { EventDashboardOverview } from '@/components/organizer/event-dashboard-overview'
 import { StorefrontCustomizationForm } from '@/components/organizer/storefront-customization-form'
 import { SeatMapTab } from '@/components/organizer/seat-map-tab'
-import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair } from 'lucide-react'
+import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair, ExternalLink } from 'lucide-react'
 import { Attendee } from '@/lib/organizer/attendee-actions'
 import { PromoCode } from '@/lib/organizer/promo-actions'
 
@@ -101,22 +101,30 @@ export function EventDashboardTabs({
             </TabsContent>
 
             <TabsContent value="tickets" className="mt-6 animate-in fade-in-50 duration-300 space-y-8">
-                <div className="grid gap-8">
-                    <div>
-                        <h3 className="text-xl font-semibold mb-4">Ticket Tiers</h3>
-                        <TicketTiersManager
-                            eventId={eventId}
-                            tiers={tiers}
-                            commissionRate={commissionRate}
-                            passFeesToCustomer={passFeesToCustomer}
-                            fixedFeePerTicket={fixedFeePerTicket}
-                        />
+                {event.is_external ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground border-2 border-dashed rounded-xl">
+                        <ExternalLink className="h-10 w-10 mb-3 opacity-40" />
+                        <p className="font-semibold text-foreground">External Ticketing Event</p>
+                        <p className="text-sm mt-1 max-w-sm">Ticket tiers and promo codes are managed by your external ticketing provider, not HangHut.</p>
                     </div>
-                    <div className="border-t pt-8">
-                        <h3 className="text-xl font-semibold mb-4">Promo Codes</h3>
-                        <PromoCodeManager eventId={eventId} initialCodes={promoCodes} />
+                ) : (
+                    <div className="grid gap-8">
+                        <div>
+                            <h3 className="text-xl font-semibold mb-4">Ticket Tiers</h3>
+                            <TicketTiersManager
+                                eventId={eventId}
+                                tiers={tiers}
+                                commissionRate={commissionRate}
+                                passFeesToCustomer={passFeesToCustomer}
+                                fixedFeePerTicket={fixedFeePerTicket}
+                            />
+                        </div>
+                        <div className="border-t pt-8">
+                            <h3 className="text-xl font-semibold mb-4">Promo Codes</h3>
+                            <PromoCodeManager eventId={eventId} initialCodes={promoCodes} />
+                        </div>
                     </div>
-                </div>
+                )}
             </TabsContent>
 
             <TabsContent value="edit" className="mt-6 animate-in fade-in-50 duration-300">
