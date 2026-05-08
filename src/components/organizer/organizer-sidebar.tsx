@@ -75,9 +75,10 @@ interface Props {
     isVerified: boolean
     businessName: string
     partnerSlug: string | null
+    storefrontUrl?: string | null
 }
 
-export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug }: Props) {
+export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, storefrontUrl }: Props) {
     const pathname = usePathname()
     const router = useRouter()
     const supabase = createClient()
@@ -164,10 +165,10 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug }
                 })}
 
                 {/* My Storefront external link */}
-                {isVerified && partnerSlug && (
+                {isVerified && (storefrontUrl || partnerSlug) && (
                     <div>
                         <a
-                            href={`https://${partnerSlug}.hanghut.com`}
+                            href={storefrontUrl ?? `https://${partnerSlug}.hanghut.com`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-2.5 px-2 py-2 rounded-md text-sm font-medium text-primary hover:text-primary/80 hover:bg-primary/5 transition-colors"

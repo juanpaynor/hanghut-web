@@ -62,6 +62,17 @@ export default async function OrganizerLayout({
     const role = userRole?.role ?? 'scanner'
     const isVerified = true
 
+    // Fetch custom domain for storefront link
+    const supabase = await createClient()
+    const { data: partnerFull } = await supabase
+        .from('partners')
+        .select('custom_domain, custom_domain_verified')
+        .eq('id', partner.id)
+        .single()
+    const storefrontUrl = partnerFull?.custom_domain && partnerFull?.custom_domain_verified
+        ? `https://${partnerFull.custom_domain}`
+        : partner.slug ? `https://${partner.slug}.hanghut.com` : null
+
     return (
         <div className="min-h-screen bg-background flex">
             {/* Sidebar */}
@@ -70,6 +81,7 @@ export default async function OrganizerLayout({
                 isVerified={isVerified}
                 businessName={partner.business_name}
                 partnerSlug={partner.slug ?? null}
+                storefrontUrl={storefrontUrl}
             />
 
             {/* Main content — offset by sidebar width on md+ */}

@@ -285,7 +285,9 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                 </div>
                 <div className="flex items-center gap-3">
                     <a
-                        href={formData.slug ? `https://${formData.slug}.hanghut.com` : '#'}
+                        href={initialData.custom_domain && initialData.custom_domain_verified
+                            ? `https://${initialData.custom_domain}`
+                            : formData.slug ? `https://${formData.slug}.hanghut.com` : '#'}
                         target="_blank"
                         rel="noopener noreferrer"
                         className={!formData.slug ? 'pointer-events-none opacity-50' : ''}
@@ -416,14 +418,25 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                             {formData.slug && (
                                                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                                                     Your storefront:{' '}
-                                                    <a
-                                                        href={`https://${formData.slug}.hanghut.com`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-primary font-medium hover:underline"
-                                                    >
-                                                        {formData.slug}.hanghut.com
-                                                    </a>
+                                                    {initialData.custom_domain && initialData.custom_domain_verified ? (
+                                                        <a
+                                                            href={`https://${initialData.custom_domain}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-primary font-medium hover:underline"
+                                                        >
+                                                            {initialData.custom_domain}
+                                                        </a>
+                                                    ) : (
+                                                        <a
+                                                            href={`https://${formData.slug}.hanghut.com`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-primary font-medium hover:underline"
+                                                        >
+                                                            {formData.slug}.hanghut.com
+                                                        </a>
+                                                    )}
                                                 </p>
                                             )}
                                             {errors.slug && <p className="text-red-500 text-sm mt-1">{errors.slug}</p>}
