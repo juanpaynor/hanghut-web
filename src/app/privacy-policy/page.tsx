@@ -88,11 +88,12 @@ export default function PrivacyPolicy() {
                             <li>
                                 <strong>To Service Providers:</strong> We use trusted third-party services to operate the App:
                                 <ul className="list-circle pl-5 mt-2 space-y-1 text-muted-foreground">
-                                    <li><strong>Amazon Web Services (AWS):</strong> For secure database hosting, authentication, and file storage on private servers.</li>
-                                    <li><strong>Mapbox:</strong> For map and location display services.</li>
-                                    <li><strong>Ably:</strong> For real-time messaging and status updates.</li>
-                                    <li><strong>Google Places API:</strong> For venue search functionality.</li>
-                                </ul>
+                                        <li><strong>Amazon Web Services (AWS):</strong> For secure database hosting, authentication, and file storage on private servers.</li>
+                                        <li><strong>Xendit:</strong> For secure payment processing, including credit/debit cards, e-wallets, and QR payments. Xendit is a PCI-DSS compliant payment gateway. HangHut does not store full card details; all payment data is handled directly by Xendit. See <a href="https://www.xendit.co/en/privacy-policy/" target="_blank" rel="noopener noreferrer" className="underline">Xendit&rsquo;s Privacy Policy</a>.</li>
+                                        <li><strong>Mapbox:</strong> For map and location display services.</li>
+                                        <li><strong>Ably:</strong> For real-time messaging and status updates.</li>
+                                        <li><strong>Google Places API:</strong> For venue search functionality.</li>
+                                    </ul>
                             </li>
                             <li><strong>Legal Requirements:</strong> If required by law or to protect the safety of our users.</li>
                         </ul>

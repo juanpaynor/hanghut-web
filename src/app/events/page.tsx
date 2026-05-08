@@ -83,7 +83,7 @@ export default async function EventsPage() {
                                 <Phone className="h-3.5 w-3.5" /> +63 961 847 8642
                             </a>
                             <Link href="/terms" className="hover:text-foreground">Terms of Service</Link>
-                            <Link href="/privacy" className="hover:text-foreground">Privacy Policy</Link>
+                            <Link href="/privacy-policy" className="hover:text-foreground">Privacy Policy</Link>
                         </div>
                     </div>
                     <p className="text-xs text-muted-foreground mt-4 text-center">
