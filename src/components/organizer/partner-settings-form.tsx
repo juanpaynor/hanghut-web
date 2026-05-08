@@ -572,25 +572,6 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                         Custom Domain
                                     </CardTitle>
                                     <CardDescription>
-                                        Use your own domain (e.g. <code className="text-xs bg-muted px-1 rounded">tickets.yourdomain.com</code>) instead of your hanghut.com subdomain.
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <CustomDomainManager
-                                        currentDomain={initialData.custom_domain ?? null}
-                                        currentVerified={initialData.custom_domain_verified ?? false}
-                                    />
-                                </CardContent>
-                            </Card>
-
-                            {/* Custom Domain Section */}
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="flex items-center gap-2">
-                                        <Globe className="h-5 w-5" />
-                                        Custom Domain
-                                    </CardTitle>
-                                    <CardDescription>
                                         Use your own domain (e.g.{' '}
                                         <code className="text-xs bg-muted px-1 rounded">tickets.yourdomain.com</code>
                                         ) instead of your hanghut.com subdomain.
