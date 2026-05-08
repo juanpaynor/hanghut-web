@@ -143,35 +143,67 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
                     </div>
 
                     {/* DNS instructions (shown until verified) */}
-                    {!verified && verification && (
-                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+                    {!verified && (
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-4">
                             <div className="flex items-center gap-2 text-amber-700">
                                 <AlertTriangle className="h-4 w-4 shrink-0" />
-                                <p className="text-sm font-medium">Add this DNS record to your domain</p>
+                                <p className="text-sm font-semibold">Action required: add a DNS record</p>
                             </div>
-                            <div className="grid grid-cols-[auto_1fr_auto] gap-x-4 gap-y-2 text-xs font-mono bg-background rounded-md p-3 border">
-                                <span className="text-muted-foreground">Type</span>
-                                <span className="text-muted-foreground">Name</span>
-                                <span className="text-muted-foreground">Value</span>
-                                <span className="font-semibold">{verification.type}</span>
-                                <span className="truncate">{verification.domain}</span>
-                                <div className="flex items-center gap-1">
-                                    <span className="truncate max-w-[160px]">{verification.value}</span>
-                                    <button onClick={() => copy(verification.value, 'value')} className="text-muted-foreground hover:text-foreground ml-1">
-                                        <Copy className="h-3 w-3" />
-                                    </button>
-                                    {copied === 'value' && <span className="text-green-600 text-[10px]">Copied!</span>}
-                                </div>
-                            </div>
-                            <p className="text-xs text-muted-foreground">DNS changes can take up to 48 hours to propagate. Click "Check Status" once you've added the record.</p>
-                        </div>
-                    )}
 
-                    {/* No verification info yet but still unverified */}
-                    {!verified && !verification && (
-                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
-                            <p className="text-sm text-amber-700">
-                                Add a <strong>CNAME</strong> record pointing <code className="bg-amber-100 px-1 rounded">{activeDomain}</code> → <code className="bg-amber-100 px-1 rounded">cname.vercel-dns.com</code> in your DNS provider, then click "Check Status".
+                            <ol className="text-sm text-amber-900 space-y-1 list-decimal list-inside">
+                                <li>Log in to your domain registrar (GoDaddy, Cloudflare, Namecheap, etc.)</li>
+                                <li>Go to the <strong>DNS settings</strong> for <strong>{activeDomain?.split('.').slice(1).join('.')}</strong></li>
+                                <li>Add the record below, then click <strong>Check Status</strong></li>
+                            </ol>
+
+                            {/* DNS record table */}
+                            <div className="rounded-md border bg-white overflow-hidden text-sm">
+                                <div className="grid grid-cols-[80px_1fr_1fr] bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                    <span>Type</span>
+                                    <span>Name</span>
+                                    <span>Value</span>
+                                </div>
+                                {verification ? (
+                                    <div className="grid grid-cols-[80px_1fr_1fr] px-3 py-3 font-mono text-xs items-center gap-2">
+                                        <span className="font-semibold">{verification.type}</span>
+                                        <div className="flex items-center gap-1 min-w-0">
+                                            <span className="truncate">{verification.domain}</span>
+                                            <button onClick={() => copy(verification.domain, 'name')} className="text-muted-foreground hover:text-foreground shrink-0">
+                                                <Copy className="h-3 w-3" />
+                                            </button>
+                                            {copied === 'name' && <span className="text-green-600 text-[10px]">Copied!</span>}
+                                        </div>
+                                        <div className="flex items-center gap-1 min-w-0">
+                                            <span className="truncate">{verification.value}</span>
+                                            <button onClick={() => copy(verification.value, 'value')} className="text-muted-foreground hover:text-foreground shrink-0">
+                                                <Copy className="h-3 w-3" />
+                                            </button>
+                                            {copied === 'value' && <span className="text-green-600 text-[10px]">Copied!</span>}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-[80px_1fr_1fr] px-3 py-3 font-mono text-xs items-center gap-2">
+                                        <span className="font-semibold">CNAME</span>
+                                        <div className="flex items-center gap-1 min-w-0">
+                                            <span className="truncate">{activeDomain?.split('.')[0]}</span>
+                                            <button onClick={() => copy(activeDomain!.split('.')[0], 'name')} className="text-muted-foreground hover:text-foreground shrink-0">
+                                                <Copy className="h-3 w-3" />
+                                            </button>
+                                            {copied === 'name' && <span className="text-green-600 text-[10px]">Copied!</span>}
+                                        </div>
+                                        <div className="flex items-center gap-1 min-w-0">
+                                            <span className="truncate">cname.vercel-dns.com</span>
+                                            <button onClick={() => copy('cname.vercel-dns.com', 'value')} className="text-muted-foreground hover:text-foreground shrink-0">
+                                                <Copy className="h-3 w-3" />
+                                            </button>
+                                            {copied === 'value' && <span className="text-green-600 text-[10px]">Copied!</span>}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <p className="text-xs text-amber-700/80">
+                                ⏱ DNS changes usually propagate within minutes, but can take up to 48 hours.
                             </p>
                         </div>
                     )}
