@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createPublicClient } from '@/lib/supabase/public'
 import { EventsFilterGrid } from '@/components/events/events-filter-grid'
 import Link from 'next/link'
 import { Phone } from 'lucide-react'
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 }
 
 export default async function EventsPage() {
-    const supabase = await createClient()
+    const supabase = createPublicClient()
 
     // Single query — fetch all active upcoming events, filter client-side
     const { data: events } = await supabase

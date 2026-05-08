@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createPublicClient } from '@/lib/supabase/public'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -18,10 +18,10 @@ import sanitizeHtml from 'sanitize-html'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { cache } from 'react'
 
-export const revalidate = 30 // ISR: revalidate every 30 seconds
+export const revalidate = 60 // ISR: revalidate every 60 seconds
 
 const getEvent = cache(async (eventId: string) => {
-    const supabase = await createClient()
+    const supabase = createPublicClient()
 
     const { data: event, error } = await supabase
         .from('events')
