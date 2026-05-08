@@ -192,8 +192,8 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
                                             {copied === 'name' && <span className="text-green-600 text-[10px]">Copied!</span>}
                                         </div>
                                         <div className="flex items-center gap-1 min-w-0">
-                                            <span className="truncate">cname.vercel-dns.com</span>
-                                            <button onClick={() => copy('cname.vercel-dns.com', 'value')} className="text-muted-foreground hover:text-foreground shrink-0">
+                                            <span className="truncate">cname.hanghut.com</span>
+                                            <button onClick={() => copy('cname.hanghut.com', 'value')} className="text-muted-foreground hover:text-foreground shrink-0">
                                                 <Copy className="h-3 w-3" />
                                             </button>
                                             {copied === 'value' && <span className="text-green-600 text-[10px]">Copied!</span>}
