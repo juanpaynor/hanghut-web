@@ -1,8 +1,24 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'
 const RESERVED_SUBDOMAINS = ['www', 'admin', 'api', 'mail', 'smtp', 'send']
+
+async function getPartnerSlugForCustomDomain(hostname: string): Promise<string | null> {
+    try {
+        const supabase = await createServerClient()
+        const { data } = await supabase
+            .from('partners')
+            .select('slug')
+            .eq('custom_domain', hostname)
+            .eq('custom_domain_verified', true)
+            .single()
+        return data?.slug ?? null
+    } catch {
+        return null
+    }
+}
 
 function getSubdomain(request: NextRequest): string | null {
     const hostname = (request.headers.get('host') || '').split(':')[0]
@@ -45,10 +61,25 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(callbackUrl)
     }
 
-    // 1. Partner subdomain → rewrite to storefront (no auth needed)
+    const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan', '/embed']
+
+    // 1a. Custom domain → look up partner slug and rewrite to storefront
+    const isHanghutDomain = hostname === ROOT_DOMAIN || hostname.endsWith(`.${ROOT_DOMAIN}`) || hostname.endsWith('.localhost') || hostname === 'localhost'
+    if (!isHanghutDomain) {
+        const isAppRoute = appRoutePrefixes.some(prefix => url.pathname.startsWith(prefix))
+        if (isAppRoute) return NextResponse.next()
+
+        const slug = await getPartnerSlugForCustomDomain(hostname)
+        if (slug) {
+            url.pathname = `/${slug}${url.pathname}`
+            return NextResponse.rewrite(url)
+        }
+        // Unknown custom domain — let it 404
+        return NextResponse.next()
+    }
+
+    // 1b. Partner subdomain → rewrite to storefront (no auth needed)
     if (subdomain) {
-        // Known app routes should work normally on subdomains (e.g. acme.hanghut.com/events/[id])
-        const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan', '/embed']
         const isAppRoute = appRoutePrefixes.some(prefix => url.pathname.startsWith(prefix))
 
         if (isAppRoute) {

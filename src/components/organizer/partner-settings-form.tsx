@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils'
 import { SectionList } from './section-editor/section-list'
 import { SectionTemplates } from './section-editor/section-templates'
 import { StorefrontSection, TemplateName } from '@/lib/storefront/section-types'
+import { CustomDomainManager } from './custom-domain-manager'
 
 interface PartnerSettingsFormProps {
     initialData: {
@@ -34,6 +35,8 @@ interface PartnerSettingsFormProps {
         profile_photo_url?: string
         cover_image_url?: string
         custom_tos?: string | null
+        custom_domain?: string | null
+        custom_domain_verified?: boolean
         social_links?: {
             facebook?: string
             instagram?: string
@@ -558,6 +561,46 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                             )}
                                         </div>
                                     </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Custom Domain Section */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Globe className="h-5 w-5" />
+                                        Custom Domain
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Use your own domain (e.g. <code className="text-xs bg-muted px-1 rounded">tickets.yourdomain.com</code>) instead of your hanghut.com subdomain.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <CustomDomainManager
+                                        currentDomain={initialData.custom_domain ?? null}
+                                        currentVerified={initialData.custom_domain_verified ?? false}
+                                    />
+                                </CardContent>
+                            </Card>
+
+                            {/* Custom Domain Section */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Globe className="h-5 w-5" />
+                                        Custom Domain
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Use your own domain (e.g.{' '}
+                                        <code className="text-xs bg-muted px-1 rounded">tickets.yourdomain.com</code>
+                                        ) instead of your hanghut.com subdomain.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <CustomDomainManager
+                                        currentDomain={initialData.custom_domain ?? null}
+                                        currentVerified={initialData.custom_domain_verified ?? false}
+                                    />
                                 </CardContent>
                             </Card>
 
