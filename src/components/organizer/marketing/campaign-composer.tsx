@@ -21,7 +21,7 @@ interface EventOption {
     tickets_sold: number
 }
 
-type AudienceType = 'all_subscribers' | 'event_attendees'
+type AudienceType = 'all_subscribers' | 'event_attendees' | 'event_subscribers'
 
 export function CampaignComposer() {
     const [subject, setSubject] = useState('')
@@ -49,7 +49,9 @@ export function CampaignComposer() {
     useEffect(() => {
         if (audienceType === 'all_subscribers') {
             loadSubscriberCount()
-        } else if (selectedEventId) {
+        } else if (audienceType === 'event_subscribers' && selectedEventId) {
+            loadEventSubscriberCount(selectedEventId)
+        } else if (audienceType === 'event_attendees' && selectedEventId) {
             loadEventAttendeeCount(selectedEventId)
         } else {
             setAudienceCount(null)
@@ -141,6 +143,27 @@ export function CampaignComposer() {
         }
     }
 
+    async function loadEventSubscriberCount(eventId: string) {
+        setLoadingCount(true)
+        try {
+            const partnerId = await getPartnerId()
+            if (!partnerId) return
+
+            const { count } = await supabase
+                .from('partner_subscribers')
+                .select('*', { count: 'exact', head: true })
+                .eq('partner_id', partnerId)
+                .eq('event_id', eventId)
+                .eq('is_active', true)
+
+            setAudienceCount(count || 0)
+        } catch (err) {
+            console.error('Failed to load event subscriber count:', err)
+        } finally {
+            setLoadingCount(false)
+        }
+    }
+
     async function getEventAttendeeEmails(eventId: string): Promise<string[]> {
         const { data: intents } = await supabase
             .from('purchase_intents')
@@ -166,18 +189,21 @@ export function CampaignComposer() {
             return
         }
 
-        if (audienceType === 'event_attendees' && !selectedEventId) {
+        if ((audienceType === 'event_attendees' || audienceType === 'event_subscribers') && !selectedEventId) {
             toast({
                 title: "Select an event",
-                description: "Please select which event's attendees to email.",
+                description: "Please select which event to target.",
                 variant: "destructive"
             })
             return
         }
 
+        const selectedEventTitle = events.find(e => e.id === selectedEventId)?.title
         const audienceLabel = audienceType === 'all_subscribers'
             ? 'ALL active subscribers'
-            : `attendees of "${events.find(e => e.id === selectedEventId)?.title}"`
+            : audienceType === 'event_subscribers'
+            ? `subscribers who opted in at "${selectedEventTitle}"`
+            : `all attendees of "${selectedEventTitle}"`
 
         const confirmSend = window.confirm(`Are you sure you want to send this email to ${audienceLabel}? This cannot be undone.`)
         if (!confirmSend) return
@@ -222,8 +248,12 @@ export function CampaignComposer() {
                 sender_name: partner.business_name
             }
 
-            if (audienceType === 'event_attendees' && selectedEventId) {
-                // Get attendee emails and pass them directly
+            if (audienceType === 'event_subscribers' && selectedEventId) {
+                // Subscribers who opted in at this specific event's checkout
+                body.segment = 'event_subscribers'
+                body.event_id = selectedEventId
+            } else if (audienceType === 'event_attendees' && selectedEventId) {
+                // All buyers regardless of newsletter opt-in
                 const emails = await getEventAttendeeEmails(selectedEventId)
                 if (emails.length === 0) {
                     throw new Error("No attendee emails found for this event")
@@ -280,7 +310,7 @@ export function CampaignComposer() {
                     {/* Audience Selector */}
                     <div className="space-y-3">
                         <Label className="text-base font-semibold">Audience</Label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <button
                                 type="button"
                                 onClick={() => { setAudienceType('all_subscribers'); setSelectedEventId('') }}
@@ -293,7 +323,22 @@ export function CampaignComposer() {
                                 <Users className={`h-5 w-5 shrink-0 ${audienceType === 'all_subscribers' ? 'text-primary' : 'text-muted-foreground'}`} />
                                 <div>
                                     <p className="font-medium text-sm">All Subscribers</p>
-                                    <p className="text-xs text-muted-foreground">Send to your full subscriber list</p>
+                                    <p className="text-xs text-muted-foreground">Everyone on your list</p>
+                                </div>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setAudienceType('event_subscribers')}
+                                className={`flex items-center gap-3 p-4 rounded-lg border-2 transition-all text-left ${
+                                    audienceType === 'event_subscribers'
+                                        ? 'border-primary bg-primary/5 shadow-sm'
+                                        : 'border-border hover:border-primary/40'
+                                }`}
+                            >
+                                <Users className={`h-5 w-5 shrink-0 ${audienceType === 'event_subscribers' ? 'text-primary' : 'text-muted-foreground'}`} />
+                                <div>
+                                    <p className="font-medium text-sm">Event Subscribers</p>
+                                    <p className="text-xs text-muted-foreground">Opted in at event checkout</p>
                                 </div>
                             </button>
                             <button
@@ -307,14 +352,14 @@ export function CampaignComposer() {
                             >
                                 <Calendar className={`h-5 w-5 shrink-0 ${audienceType === 'event_attendees' ? 'text-primary' : 'text-muted-foreground'}`} />
                                 <div>
-                                    <p className="font-medium text-sm">Event Attendees</p>
-                                    <p className="text-xs text-muted-foreground">Target people who bought tickets</p>
+                                    <p className="font-medium text-sm">All Attendees</p>
+                                    <p className="text-xs text-muted-foreground">Everyone who bought tickets</p>
                                 </div>
                             </button>
                         </div>
 
-                        {/* Event Picker (shown when event_attendees selected) */}
-                        {audienceType === 'event_attendees' && (
+                        {/* Event Picker (shown when event-specific audience selected) */}
+                        {(audienceType === 'event_attendees' || audienceType === 'event_subscribers') && (
                             <div className="space-y-2 animate-in fade-in-50 duration-300">
                                 <Label htmlFor="event-select">Select Event</Label>
                                 <select
@@ -347,9 +392,9 @@ export function CampaignComposer() {
                                     )}
                                     {audienceCount} recipient{audienceCount !== 1 ? 's' : ''}
                                 </Badge>
-                                {audienceType === 'event_attendees' && selectedEvent && (
+                                {(audienceType === 'event_attendees' || audienceType === 'event_subscribers') && selectedEvent && (
                                     <span className="text-xs text-muted-foreground">
-                                        from {selectedEvent.title}
+                                        {audienceType === 'event_subscribers' ? 'opted in at' : 'all buyers from'} {selectedEvent.title}
                                     </span>
                                 )}
                             </div>
@@ -442,7 +487,7 @@ export function CampaignComposer() {
             <CardFooter className="justify-end pt-2 pb-6 px-6">
                 <Button
                     onClick={handleSend}
-                    disabled={sending || !subject || !content || (audienceType === 'event_attendees' && !selectedEventId)}
+                    disabled={sending || !subject || !content || ((audienceType === 'event_attendees' || audienceType === 'event_subscribers') && !selectedEventId)}
                     size="lg"
                     className="w-full sm:w-auto"
                 >
