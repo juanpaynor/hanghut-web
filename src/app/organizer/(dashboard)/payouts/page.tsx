@@ -8,6 +8,7 @@ import { format } from 'date-fns'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BankSettingsForm } from '@/components/organizer/payouts/bank-settings-form'
 import { RequestPayoutCard } from '@/components/organizer/payouts/request-payout-card'
+import { PayoutHistoryItem } from '@/components/organizer/payouts/payout-history-item'
 import { TransactionsHistory } from '@/components/organizer/payouts/transactions-history'
 import { PayoutsDateFilter } from '@/components/organizer/payouts/payouts-date-filter'
 import { WalletCard } from '@/components/organizer/payouts/wallet-card'
@@ -204,17 +205,6 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
     const transactions = [...ticketTransactions.map((t: any) => ({ ...t, _type: 'ticket' })), ...topups]
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'completed': return 'bg-green-500/10 text-green-600'
-            case 'pending_request': return 'bg-yellow-500/10 text-yellow-600'
-            case 'approved': return 'bg-blue-500/10 text-blue-600'
-            case 'processing': return 'bg-purple-500/10 text-purple-600'
-            case 'rejected': return 'bg-red-500/10 text-red-600'
-            default: return 'bg-slate-500/10 text-slate-600'
-        }
-    }
-
     return (
         <div className="space-y-8">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -334,29 +324,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                         ) : (
                             <div className="space-y-2">
                                 {payouts.map((payout: any) => (
-                                    <Link
-                                        key={payout.id}
-                                        href={`/organizer/payouts/${payout.id}`}
-                                        className="flex items-center justify-between p-4 rounded-xl border border-border/50 hover:border-border hover:bg-muted/30 transition-all block"
-                                    >
-                                        <div>
-                                            <p className="font-semibold">₱{Number(payout.amount).toLocaleString()}</p>
-                                            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                                                <span>{format(new Date(payout.requested_at), 'MMM d, yyyy')}</span>
-                                                <span className="opacity-40">•</span>
-                                                <span>{payout.bank_name}</span>
-                                            </div>
-                                            {payout.admin_notes && (
-                                                <p className="text-xs text-yellow-600 mt-1">{payout.admin_notes}</p>
-                                            )}
-                                            {payout.rejection_reason && (
-                                                <p className="text-xs text-red-600 mt-1">Reason: {payout.rejection_reason}</p>
-                                            )}
-                                        </div>
-                                        <Badge className={`text-[10px] ${getStatusColor(payout.status)}`}>
-                                            {payout.status.replace('_', ' ').toUpperCase()}
-                                        </Badge>
-                                    </Link>
+                                    <PayoutHistoryItem key={payout.id} payout={payout} />
                                 ))}
                             </div>
                         )}

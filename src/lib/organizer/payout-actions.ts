@@ -65,3 +65,70 @@ export async function requestPayout(partnerId: string, amount: number) {
     revalidatePath('/organizer/payouts')
     return { success: true, message: 'Payout request processed successfully.' }
 }
+
+/**
+ * Cancel a pending payout request.
+ * Only allowed when status is 'pending_request'.
+ * Unlinks transactions so funds become available again.
+ */
+export async function cancelPayoutRequest(payoutId: string) {
+    const supabase = await createClient()
+
+    const { user } = await import('@/lib/auth/cached').then(m => m.getAuthUser())
+    if (!user) return { success: false, message: 'Unauthorized' }
+
+    // 1. Fetch payout and verify ownership
+    const { data: payout, error: fetchError } = await supabase
+        .from('payouts')
+        .select('id, status, partner_id')
+        .eq('id', payoutId)
+        .single()
+
+    if (fetchError || !payout) {
+        return { success: false, message: 'Payout not found' }
+    }
+
+    // 2. Verify the payout belongs to this user's partner account
+    const { data: partner } = await supabase
+        .from('partners')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
+
+    if (!partner || partner.id !== payout.partner_id) {
+        return { success: false, message: 'Unauthorized' }
+    }
+
+    // 3. Only allow cancellation of pending_request
+    if (payout.status !== 'pending_request') {
+        return {
+            success: false,
+            message: `Cannot cancel a payout that is already ${payout.status.replace('_', ' ')}.`
+        }
+    }
+
+    // 4. Cancel + unlink transactions atomically
+    const { error: cancelError } = await supabase
+        .from('payouts')
+        .update({ status: 'cancelled' })
+        .eq('id', payoutId)
+        .eq('status', 'pending_request') // Optimistic concurrency — prevent race condition
+
+    if (cancelError) {
+        return { success: false, message: 'Failed to cancel payout. Please try again.' }
+    }
+
+    // 5. Unlink transactions so funds are freed
+    await supabase
+        .from('transactions')
+        .update({ payout_id: null })
+        .eq('payout_id', payoutId)
+
+    await supabase
+        .from('experience_transactions')
+        .update({ payout_id: null })
+        .eq('payout_id', payoutId)
+
+    revalidatePath('/organizer/payouts')
+    return { success: true, message: 'Payout request cancelled successfully.' }
+}
