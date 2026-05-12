@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { executeXenditPayout } from '@/lib/payment/xendit-payouts'
 import { BankCode } from '@/lib/constants/banks'
+import { getAuthUser } from '@/lib/auth/cached'
 
 export async function requestPayout(partnerId: string, amount: number) {
     if (amount <= 0) {
@@ -74,7 +75,7 @@ export async function requestPayout(partnerId: string, amount: number) {
 export async function cancelPayoutRequest(payoutId: string) {
     const supabase = await createClient()
 
-    const { user } = await import('@/lib/auth/cached').then(m => m.getAuthUser())
+    const { user } = await getAuthUser()
     if (!user) return { success: false, message: 'Unauthorized' }
 
     // 1. Fetch payout and verify ownership

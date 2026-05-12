@@ -58,6 +58,8 @@ export function PayoutHistoryItem({ payout }: PayoutHistoryItemProps) {
             if (result.success) {
                 toast({ title: 'Request Cancelled', description: result.message })
                 router.refresh()
+                // Force a hard re-fetch of the server component
+                window.location.reload()
             } else {
                 toast({ title: 'Error', description: result.message, variant: 'destructive' })
             }
