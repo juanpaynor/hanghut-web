@@ -48,7 +48,8 @@ export async function approvePayout(payoutId: string) {
 }
 
 /**
- * Reject a payout request
+ * Reject a payout request.
+ * Unlinks associated transactions so funds become available again.
  */
 export async function rejectPayout(payoutId: string, reason: string) {
     const supabase = await createClient()
@@ -65,6 +66,17 @@ export async function rejectPayout(payoutId: string, reason: string) {
         console.error('Error rejecting payout:', error)
         throw new Error('Failed to reject payout')
     }
+
+    // Unlink transactions so funds return to available balance
+    await supabase
+        .from('transactions')
+        .update({ payout_id: null })
+        .eq('payout_id', payoutId)
+
+    await supabase
+        .from('experience_transactions')
+        .update({ payout_id: null })
+        .eq('payout_id', payoutId)
 
     return { success: true }
 }

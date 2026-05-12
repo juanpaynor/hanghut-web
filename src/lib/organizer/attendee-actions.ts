@@ -73,6 +73,7 @@ export async function getEventAttendees(
         `, { count: 'exact' })
         .eq('event_id', eventId)
         .neq('status', 'available') // Filter out pre-minted inventory
+        .neq('status', 'reserved') // Filter out abandoned/incomplete checkouts
 
     // Search Filter
     if (search) {

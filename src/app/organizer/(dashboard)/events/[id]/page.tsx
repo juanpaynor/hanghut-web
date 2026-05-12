@@ -68,7 +68,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
             .from('tickets')
             .select('tier_id')
             .eq('event_id', id)
-            .not('status', 'in', '("available","refunded")'),
+            .not('status', 'in', '("available","refunded","reserved")'),
 
         // 3. Attendees
         getEventAttendees(id),
@@ -89,7 +89,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
             .eq('event_id', id)
             .neq('status', 'cancelled')
             .neq('status', 'refunded')
-            .neq('status', 'available'),
+            .neq('status', 'available')
+            .neq('status', 'reserved'),
 
         // 6. Refunded tickets stats
         supabase
