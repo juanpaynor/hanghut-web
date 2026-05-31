@@ -130,6 +130,12 @@ export async function createEvent(formData: FormData) {
             is_external: isExternal,
             external_ticket_url: externalTicketUrl || null,
             external_provider_name: externalProviderName || null,
+            require_approval: formData.get('require_approval') === 'true',
+            hide_venue_until_registered: formData.get('hide_venue_until_registered') === 'true',
+            approval_email_subject: (formData.get('approval_email_subject') as string) || null,
+            approval_email_body: (formData.get('approval_email_body') as string) || null,
+            rejection_email_subject: (formData.get('rejection_email_subject') as string) || null,
+            rejection_email_body: (formData.get('rejection_email_body') as string) || null,
         }
 
         // 4. Insert event
@@ -290,6 +296,12 @@ export async function updateEvent(eventId: string, formData: FormData) {
             is_external: isExternal,
             external_ticket_url: (formData.get('external_ticket_url') as string) || null,
             external_provider_name: (formData.get('external_provider_name') as string) || null,
+            require_approval: formData.get('require_approval') === 'true',
+            hide_venue_until_registered: formData.get('hide_venue_until_registered') === 'true',
+            approval_email_subject: (formData.get('approval_email_subject') as string) || null,
+            approval_email_body: (formData.get('approval_email_body') as string) || null,
+            rejection_email_subject: (formData.get('rejection_email_subject') as string) || null,
+            rejection_email_body: (formData.get('rejection_email_body') as string) || null,
         }
 
         const { error: updateError } = await adminSupabase
@@ -378,4 +390,51 @@ export async function updateEventStorefront(eventId: string, data: {
         console.error('Update error:', error)
         return { error: 'Failed to update event: ' + error.message }
     }
+}
+
+export async function uploadEventBgImage(eventId: string, formData: FormData) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { data: partner } = await supabase
+        .from('partners')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
+    if (!partner) return { error: 'Partner account not found' }
+
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    if (!serviceRoleKey || !supabaseUrl) return { error: 'Server configuration error' }
+
+    const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey, {
+        auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false }
+    })
+
+    // Verify ownership
+    const { data: existingEvent } = await adminSupabase
+        .from('events')
+        .select('organizer_id')
+        .eq('id', eventId)
+        .single()
+    if (!existingEvent || existingEvent.organizer_id !== partner.id) return { error: 'Unauthorized' }
+
+    const file = formData.get('file') as File
+    if (!file) return { error: 'No file provided' }
+
+    const ext = file.name.split('.').pop()
+    const path = `${partner.id}/bg-${eventId}-${Date.now()}.${ext}`
+
+    const { error: uploadError } = await adminSupabase.storage
+        .from('event-covers')
+        .upload(path, file, { contentType: file.type, upsert: true })
+
+    if (uploadError) return { error: uploadError.message }
+
+    const { data: { publicUrl } } = adminSupabase.storage
+        .from('event-covers')
+        .getPublicUrl(path)
+
+    return { url: publicUrl }
 }

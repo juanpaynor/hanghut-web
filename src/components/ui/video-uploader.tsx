@@ -58,7 +58,7 @@ export function VideoUploader({ value, onChange, className, disabled }: VideoUpl
             if (!user) throw new Error("Not authenticated")
 
             const fileExt = file.name.split('.').pop()
-            const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+            const fileName = `videos/${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
 
             // Simulate progress
             const progressInterval = setInterval(() => {
@@ -69,7 +69,7 @@ export function VideoUploader({ value, onChange, className, disabled }: VideoUpl
             }, 500)
 
             const { data, error } = await supabase.storage
-                .from('event-videos')
+                .from('event-covers')
                 .upload(fileName, file, {
                     cacheControl: '3600',
                     upsert: false
@@ -83,7 +83,7 @@ export function VideoUploader({ value, onChange, className, disabled }: VideoUpl
 
             // Get Public URL
             const { data: { publicUrl } } = supabase.storage
-                .from('event-videos')
+                .from('event-covers')
                 .getPublicUrl(data.path)
 
             onChange(publicUrl)

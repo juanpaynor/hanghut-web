@@ -43,6 +43,12 @@ interface EventFormData {
     ticketing_type: 'internal' | 'external'
     external_ticket_url: string
     external_provider_name: string
+    require_approval: boolean
+    hide_venue_until_registered: boolean
+    approval_email_subject: string
+    approval_email_body: string
+    rejection_email_subject: string
+    rejection_email_body: string
 }
 
 interface EventFormProps {
@@ -99,6 +105,12 @@ export function EventForm({
         ticketing_type: initialData?.is_external ? 'external' : 'internal',
         external_ticket_url: initialData?.external_ticket_url || '',
         external_provider_name: initialData?.external_provider_name || '',
+        require_approval: initialData?.require_approval || false,
+        hide_venue_until_registered: initialData?.hide_venue_until_registered || false,
+        approval_email_subject: initialData?.approval_email_subject || '',
+        approval_email_body: initialData?.approval_email_body || '',
+        rejection_email_subject: initialData?.rejection_email_subject || '',
+        rejection_email_body: initialData?.rejection_email_body || '',
     })
 
     // Calculate pricing preview
@@ -278,6 +290,12 @@ export function EventForm({
             formDataToSend.append('is_external', formData.ticketing_type === 'external' ? 'true' : 'false')
             formDataToSend.append('external_ticket_url', formData.external_ticket_url || '')
             formDataToSend.append('external_provider_name', formData.external_provider_name || '')
+            formDataToSend.append('require_approval', formData.require_approval ? 'true' : 'false')
+            formDataToSend.append('hide_venue_until_registered', formData.hide_venue_until_registered ? 'true' : 'false')
+            formDataToSend.append('approval_email_subject', formData.approval_email_subject || '')
+            formDataToSend.append('approval_email_body', formData.approval_email_body || '')
+            formDataToSend.append('rejection_email_subject', formData.rejection_email_subject || '')
+            formDataToSend.append('rejection_email_body', formData.rejection_email_body || '')
 
             // Only send organizer_id for create, backend handles auth for update
             if (!isEditing) {
@@ -786,6 +804,228 @@ export function EventForm({
                 </Card>
                 )}
 
+                {/* Registration Settings */}
+                {formData.ticketing_type === 'internal' && (
+                <Card className="p-6">
+                    <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
+                        Registration Settings
+                    </h2>
+                    <p className="text-sm text-muted-foreground mb-6">
+                        Control how attendees register for your event.
+                    </p>
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between p-4 border rounded-lg">
+                            <div>
+                                <h3 className="font-semibold">Require Approval</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Attendees must be approved before their spot is confirmed.
+                                    {formData.ticket_price !== '0' && parseFloat(formData.ticket_price) > 0 && (
+                                        <span className="text-orange-500 block mt-1">Available for free events only in this version.</span>
+                                    )}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                disabled={formData.ticket_price !== '0' && parseFloat(formData.ticket_price) > 0}
+                                onClick={() => handleInputChange('require_approval', !formData.require_approval)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                                    formData.require_approval ? 'bg-primary' : 'bg-muted-foreground/30'
+                                } disabled:opacity-40 disabled:cursor-not-allowed`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                    formData.require_approval ? 'translate-x-6' : 'translate-x-1'
+                                }`} />
+                            </button>
+                        </div>
+                        {/* Approval email templates — shown when require_approval is on */}
+                        {formData.require_approval && (
+                            <div className="border rounded-lg p-4 space-y-6">
+                                <p className="text-sm font-semibold text-foreground">Registration Email Templates</p>
+                                <p className="text-xs text-muted-foreground -mt-4">
+                                    Customize the emails sent when you approve or reject a registration.
+                                    Use merge tags to personalize.
+                                </p>
+
+                                {/* Merge tag chips */}
+                                <div>
+                                    <p className="text-xs font-medium text-muted-foreground mb-2">Merge tags (click to copy):</p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {['{{name}}', '{{event_title}}', '{{event_date}}', '{{event_venue}}', '{{organizer_name}}'].map(tag => (
+                                            <button
+                                                key={tag}
+                                                type="button"
+                                                onClick={() => navigator.clipboard.writeText(tag)}
+                                                className="text-xs bg-muted px-2 py-1 rounded font-mono hover:bg-primary/10 hover:text-primary transition-colors"
+                                            >
+                                                {tag}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Approval Email */}
+                                <div className="space-y-3">
+                                    <h4 className="text-sm font-semibold text-green-700 dark:text-green-400">✅ Approval Email</h4>
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Subject</label>
+                                        <input
+                                            type="text"
+                                            value={formData.approval_email_subject}
+                                            onChange={e => handleInputChange('approval_email_subject', e.target.value)}
+                                            placeholder="Your registration for {{event_title}} has been approved!"
+                                            className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                                        />
+                                    </div>
+                                    <div>
+                                        <div className="flex gap-2 mb-2">
+                                            {(['visual', 'html', 'preview'] as const).map(mode => (
+                                                <button
+                                                    key={mode}
+                                                    type="button"
+                                                    onClick={() => handleInputChange('_approval_mode', mode)}
+                                                    className={`text-xs px-3 py-1 rounded-md border transition-colors capitalize ${
+                                                        ((formData as any)._approval_mode || 'visual') === mode
+                                                            ? 'bg-primary text-primary-foreground border-primary'
+                                                            : 'bg-background border-border hover:bg-muted'
+                                                    }`}
+                                                >{mode}</button>
+                                            ))}
+                                        </div>
+                                        {(formData as any)._approval_mode === 'html' ? (
+                                            <textarea
+                                                value={formData.approval_email_body}
+                                                onChange={e => handleInputChange('approval_email_body', e.target.value)}
+                                                placeholder="<h1>You're in!</h1><p>Hi {{name}}, your registration for {{event_title}} has been approved.</p>"
+                                                rows={8}
+                                                className="w-full border rounded-md px-3 py-2 text-sm font-mono bg-slate-950 text-green-400 border-slate-700 placeholder:text-slate-600"
+                                            />
+                                        ) : (formData as any)._approval_mode === 'preview' ? (
+                                            <div className="border rounded-md overflow-hidden bg-white" style={{ height: 340 }}>
+                                                <iframe
+                                                    srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:sans-serif;font-size:14px;line-height:1.6;color:#111;padding:20px;margin:0}h1,h2,h3{margin-top:0}</style></head><body>${
+                                                        (formData.approval_email_body || '<p><em>No content yet.</em></p>')
+                                                            .replace(/\{\{name\}\}/g, 'Juan dela Cruz')
+                                                            .replace(/\{\{event_title\}\}/g, formData.title || 'Your Event')
+                                                            .replace(/\{\{event_date\}\}/g, 'Saturday, June 14 · 7:00 PM')
+                                                            .replace(/\{\{event_venue\}\}/g, formData.venue_name || 'The Venue')
+                                                            .replace(/\{\{organizer_name\}\}/g, 'The Organizer')
+                                                    }</body></html>`}
+                                                    className="w-full h-full"
+                                                    sandbox="allow-same-origin"
+                                                    title="Approval Email Preview"
+                                                />
+                                            </div>
+                                        ) : (
+                                            <textarea
+                                                value={formData.approval_email_body}
+                                                onChange={e => handleInputChange('approval_email_body', e.target.value)}
+                                                placeholder={`Hi {{name}},\n\nGreat news! Your registration for {{event_title}} on {{event_date}} at {{event_venue}} has been approved.\n\nWe look forward to seeing you there!\n\n— {{organizer_name}}`}
+                                                rows={8}
+                                                className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Rejection Email */}
+                                <div className="space-y-3 pt-4 border-t">
+                                    <h4 className="text-sm font-semibold text-red-700 dark:text-red-400">❌ Rejection Email</h4>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => navigator.clipboard.writeText('{{reason}}')}
+                                            className="text-xs bg-muted px-2 py-1 rounded font-mono hover:bg-primary/10 hover:text-primary transition-colors"
+                                        >
+                                            {'{{reason}}'}
+                                        </button>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Subject</label>
+                                        <input
+                                            type="text"
+                                            value={formData.rejection_email_subject}
+                                            onChange={e => handleInputChange('rejection_email_subject', e.target.value)}
+                                            placeholder="Update on your registration for {{event_title}}"
+                                            className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                                        />
+                                    </div>
+                                    <div>
+                                        <div className="flex gap-2 mb-2">
+                                            {(['visual', 'html', 'preview'] as const).map(mode => (
+                                                <button
+                                                    key={mode}
+                                                    type="button"
+                                                    onClick={() => handleInputChange('_rejection_mode', mode)}
+                                                    className={`text-xs px-3 py-1 rounded-md border transition-colors capitalize ${
+                                                        ((formData as any)._rejection_mode || 'visual') === mode
+                                                            ? 'bg-primary text-primary-foreground border-primary'
+                                                            : 'bg-background border-border hover:bg-muted'
+                                                    }`}
+                                                >{mode}</button>
+                                            ))}
+                                        </div>
+                                        {(formData as any)._rejection_mode === 'html' ? (
+                                            <textarea
+                                                value={formData.rejection_email_body}
+                                                onChange={e => handleInputChange('rejection_email_body', e.target.value)}
+                                                placeholder="<h1>Registration Update</h1><p>Hi {{name}}, unfortunately your registration for {{event_title}} was not approved.</p><p>{{reason}}</p>"
+                                                rows={8}
+                                                className="w-full border rounded-md px-3 py-2 text-sm font-mono bg-slate-950 text-green-400 border-slate-700 placeholder:text-slate-600"
+                                            />
+                                        ) : (formData as any)._rejection_mode === 'preview' ? (
+                                            <div className="border rounded-md overflow-hidden bg-white" style={{ height: 340 }}>
+                                                <iframe
+                                                    srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:sans-serif;font-size:14px;line-height:1.6;color:#111;padding:20px;margin:0}h1,h2,h3{margin-top:0}</style></head><body>${
+                                                        (formData.rejection_email_body || '<p><em>No content yet.</em></p>')
+                                                            .replace(/\{\{name\}\}/g, 'Juan dela Cruz')
+                                                            .replace(/\{\{event_title\}\}/g, (formData as any).title || 'Your Event')
+                                                            .replace(/\{\{event_date\}\}/g, 'Saturday, June 14 · 7:00 PM')
+                                                            .replace(/\{\{event_venue\}\}/g, (formData as any).venue_name || 'The Venue')
+                                                            .replace(/\{\{organizer_name\}\}/g, 'The Organizer')
+                                                            .replace(/\{\{reason\}\}/g, "We've reached capacity for this event.")
+                                                    }</body></html>`}
+                                                    className="w-full h-full"
+                                                    sandbox="allow-same-origin"
+                                                    title="Rejection Email Preview"
+                                                />
+                                            </div>
+                                        ) : (
+                                            <textarea
+                                                value={formData.rejection_email_body}
+                                                onChange={e => handleInputChange('rejection_email_body', e.target.value)}
+                                                placeholder={`Hi {{name}},\n\nThank you for your interest in {{event_title}}. Unfortunately, we were unable to approve your registration at this time.\n\n{{reason}}\n\n— {{organizer_name}}`}
+                                                rows={8}
+                                                className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-between p-4 border rounded-lg">
+                            <div>
+                                <h3 className="font-semibold">Hide Venue Until Registered</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    The venue address is hidden from the public event page. Only registered attendees can see it.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => handleInputChange('hide_venue_until_registered', !formData.hide_venue_until_registered)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                                    formData.hide_venue_until_registered ? 'bg-primary' : 'bg-muted-foreground/30'
+                                }`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                    formData.hide_venue_until_registered ? 'translate-x-6' : 'translate-x-1'
+                                }`} />
+                            </button>
+                        </div>
+                    </div>
+                </Card>
+                )}
+
                 {/* Media & Images */}
                 <Card className="p-6">
                     <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
@@ -1003,7 +1243,7 @@ export function EventForm({
                 )}
 
                 {/* Action Buttons */}
-                <div className="flex gap-4 sticky bottom-0 bg-background pt-4 border-t">
+                <div className="flex gap-4 sticky bottom-0 bg-background pt-4 border-t flex-wrap">
                     <Button
                         type="button"
                         variant="outline"
@@ -1014,11 +1254,23 @@ export function EventForm({
                     >
                         {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Save as Draft'}
                     </Button>
+                    {!isEditing && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="lg"
+                            className="flex-1 border-purple-300 text-purple-700 hover:bg-purple-50"
+                            onClick={() => handleSubmit('hidden')}
+                            disabled={isLoading}
+                        >
+                            {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : '🔒 Publish as Unlisted'}
+                        </Button>
+                    )}
                     <Button
                         type="button"
                         size="lg"
                         className="flex-1 bg-primary"
-                        onClick={() => handleSubmit('active')}
+                        onClick={() => handleSubmit(isEditing ? formData.status : 'active')}
                         disabled={isLoading || formData.status === 'cancelled'}
                     >
                         {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (isEditing ? 'Update Event' : 'Next: Add Tiers →')}

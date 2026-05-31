@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Plus, Calendar, Users, DollarSign } from 'lucide-react'
+import { Plus, Calendar, Users, Ticket } from 'lucide-react'
 import { format } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
@@ -76,6 +76,7 @@ export default async function OrganizerEventsPage(props: Props) {
             case 'sold_out': return 'bg-yellow-500/10 text-yellow-600'
             case 'cancelled': return 'bg-red-500/10 text-red-600'
             case 'completed': return 'bg-blue-500/10 text-blue-600'
+            case 'hidden': return 'bg-purple-500/10 text-purple-600'
             default: return 'bg-slate-500/10 text-slate-600'
         }
     }
@@ -134,6 +135,11 @@ export default async function OrganizerEventsPage(props: Props) {
                                         <Badge className={getStatusColor(getDisplayStatus(event))}>
                                             {getDisplayStatus(event).toUpperCase()}
                                         </Badge>
+                                        {event.status === 'hidden' && (
+                                            <Badge variant="outline" className="text-xs border-purple-300 text-purple-600">
+                                                🔒 Unlisted
+                                            </Badge>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="p-6 space-y-4">
@@ -154,7 +160,7 @@ export default async function OrganizerEventsPage(props: Props) {
                                         <div>
                                             <p className="text-xs text-muted-foreground mb-1">Price</p>
                                             <p className="text-lg font-bold flex items-center gap-1">
-                                                <DollarSign className="h-4 w-4" />
+                                                <Ticket className="h-4 w-4" />
                                                 ₱{event.ticket_price}
                                             </p>
                                         </div>

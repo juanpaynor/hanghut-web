@@ -1,4 +1,4 @@
-import sanitizeHtml from 'sanitize-html'
+import { sanitize } from '@/lib/sanitize'
 import { cn } from '@/lib/utils'
 
 interface AboutSectionProps {
@@ -35,7 +35,7 @@ export function AboutSection({ config, description, descriptionHtml }: AboutSect
                             'prose dark:prose-invert max-w-none prose-lg',
                             variant === 'centered' ? 'mx-auto' : ''
                         )}
-                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(descriptionHtml) }}
+                        dangerouslySetInnerHTML={{ __html: sanitize(descriptionHtml) }}
                     />
                 ) : (
                     <p className={cn(

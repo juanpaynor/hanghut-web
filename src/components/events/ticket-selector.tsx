@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { fireConfetti } from '@/lib/utils/confetti'
 
 interface TicketSelectorProps {
     eventId: string
@@ -27,6 +28,8 @@ interface TicketSelectorProps {
     fullWidth?: boolean
     trigger?: React.ReactNode
     tiers?: any[]
+    autoOpen?: boolean
+    onClose?: () => void
 }
 
 export function TicketSelector({
@@ -37,10 +40,12 @@ export function TicketSelector({
     isSoldOut,
     fullWidth = false,
     trigger,
-    tiers = []
+    tiers = [],
+    autoOpen = false,
+    onClose
 }: TicketSelectorProps) {
     const router = useRouter()
-    const [isOpen, setIsOpen] = useState(false)
+    const [isOpen, setIsOpen] = useState(autoOpen)
     const [quantity, setQuantity] = useState(minTickets)
     const [isLoading, setIsLoading] = useState(false)
 
@@ -75,6 +80,7 @@ export function TicketSelector({
 
     const handleCheckout = () => {
         setIsLoading(true)
+        fireConfetti()
         const params = new URLSearchParams()
         params.set('eventId', eventId)
         params.set('quantity', quantity.toString())
@@ -86,7 +92,7 @@ export function TicketSelector({
     }
 
     return (
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <Dialog open={isOpen} onOpenChange={(open) => { setIsOpen(open); if (!open && onClose) onClose() }}>
             <DialogTrigger asChild>
                 {trigger ? (
                     trigger

@@ -1,8 +1,82 @@
 'use client'
 
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { ExternalLink, Share2 } from 'lucide-react'
+import { ExternalLink, Share2, CalendarPlus } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+
+interface AddToCalendarButtonProps {
+    title: string
+    startDatetime: string
+    endDatetime?: string | null
+    location?: string | null
+    description?: string | null
+}
+
+export function AddToCalendarButton({ title, startDatetime, endDatetime, location, description }: AddToCalendarButtonProps) {
+    function formatGcal(dt: string) {
+        return new Date(dt).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+    }
+
+    const start = formatGcal(startDatetime)
+    const end = endDatetime ? formatGcal(endDatetime) : formatGcal(new Date(new Date(startDatetime).getTime() + 2 * 60 * 60 * 1000).toISOString())
+    const loc = location || ''
+    const desc = description || ''
+
+    const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${start}/${end}&location=${encodeURIComponent(loc)}&details=${encodeURIComponent(desc)}`
+
+    function downloadIcs() {
+        const ics = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//HangHut//EN',
+            'BEGIN:VEVENT',
+            `DTSTART:${start}`,
+            `DTEND:${end}`,
+            `SUMMARY:${title}`,
+            loc ? `LOCATION:${loc}` : '',
+            desc ? `DESCRIPTION:${desc.replace(/\n/g, '\\n')}` : '',
+            `UID:${startDatetime}-${title.replace(/\s+/g, '')}@hanghut.com`,
+            'END:VEVENT',
+            'END:VCALENDAR',
+        ].filter(Boolean).join('\r\n')
+
+        const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${title.replace(/[^a-z0-9]/gi, '_')}.ics`
+        a.click()
+        URL.revokeObjectURL(url)
+    }
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <div className="flex items-center gap-1 mt-2 text-xs text-primary bg-primary/10 hover:bg-primary/20 cursor-pointer px-2 py-1 rounded-full w-fit transition-colors font-medium">
+                    <CalendarPlus className="h-3 w-3" />
+                    Add to Calendar
+                </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+                <DropdownMenuItem asChild>
+                    <a href={googleUrl} target="_blank" rel="noopener noreferrer">
+                        Google Calendar
+                    </a>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={downloadIcs}>
+                    Apple / Outlook (.ics)
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
+    )
+}
 
 interface MobileTicketButtonProps {
     showTickets: boolean

@@ -10,9 +10,12 @@ import { CheckInStats } from '@/components/organizer/check-in-stats'
 import { EventDashboardOverview } from '@/components/organizer/event-dashboard-overview'
 import { StorefrontCustomizationForm } from '@/components/organizer/storefront-customization-form'
 import { SeatMapTab } from '@/components/organizer/seat-map-tab'
-import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair, ExternalLink } from 'lucide-react'
+import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair, ExternalLink, ClipboardList, UserCheck } from 'lucide-react'
 import { Attendee } from '@/lib/organizer/attendee-actions'
 import { PromoCode } from '@/lib/organizer/promo-actions'
+import { RegistrationQuestionsManager, RegistrationQuestion } from '@/components/organizer/registration-questions-manager'
+import { RegistrationsManager } from '@/components/organizer/registrations-manager'
+import { EventRegistration } from '@/lib/organizer/registration-management-actions'
 
 interface EventDashboardTabsProps {
     partnerId: string
@@ -31,6 +34,8 @@ interface EventDashboardTabsProps {
     }
     passFeesToCustomer: boolean
     fixedFeePerTicket: number
+    initialQuestions: RegistrationQuestion[]
+    initialRegistrations: EventRegistration[]
 }
 
 export function EventDashboardTabs({
@@ -43,13 +48,15 @@ export function EventDashboardTabs({
     promoCodes,
     stats,
     passFeesToCustomer,
-    fixedFeePerTicket
+    fixedFeePerTicket,
+    initialQuestions,
+    initialRegistrations
 }: EventDashboardTabsProps) {
     const [activeTab, setActiveTab] = useState('overview')
 
     return (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className={`grid w-full max-w-4xl bg-muted/50 p-1 ${event.seating_type === 'assigned_seating' ? 'grid-cols-6' : 'grid-cols-5'}`}>
+            <TabsList className={`grid w-full max-w-5xl bg-muted/50 p-1 ${event.seating_type === 'assigned_seating' ? (event.require_approval ? 'grid-cols-8' : 'grid-cols-7') : (event.require_approval ? 'grid-cols-7' : 'grid-cols-6')}`}>
                 <TabsTrigger value="overview" className="flex items-center gap-2">
                     <LayoutDashboard className="h-4 w-4" />
                     Overview
@@ -70,6 +77,21 @@ export function EventDashboardTabs({
                     <Palette className="h-4 w-4" />
                     Design
                 </TabsTrigger>
+                <TabsTrigger value="questions" className="flex items-center gap-2">
+                    <ClipboardList className="h-4 w-4" />
+                    Questions
+                </TabsTrigger>
+                {event.require_approval && (
+                    <TabsTrigger value="registrations" className="flex items-center gap-2">
+                        <UserCheck className="h-4 w-4" />
+                        Registrations
+                        {initialRegistrations.filter(r => r.status === 'pending').length > 0 && (
+                            <span className="ml-1 bg-amber-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-bold">
+                                {initialRegistrations.filter(r => r.status === 'pending').length}
+                            </span>
+                        )}
+                    </TabsTrigger>
+                )}
                 {event.seating_type === 'assigned_seating' && (
                     <TabsTrigger value="seatmap" className="flex items-center gap-2">
                         <Armchair className="h-4 w-4" />
@@ -144,6 +166,26 @@ export function EventDashboardTabs({
                     initialData={event}
                 />
             </TabsContent>
+
+            <TabsContent value="questions" className="mt-6 animate-in fade-in-50 duration-300">
+                <RegistrationQuestionsManager
+                    eventId={eventId}
+                    initialQuestions={initialQuestions}
+                />
+            </TabsContent>
+
+            {event.require_approval && (
+                <TabsContent value="registrations" className="mt-6 animate-in fade-in-50 duration-300">
+                    <div className="mb-4">
+                        <h3 className="text-xl font-semibold">Registration Requests</h3>
+                        <p className="text-sm text-muted-foreground mt-1">Review and approve or reject attendee registration requests.</p>
+                    </div>
+                    <RegistrationsManager
+                        eventId={eventId}
+                        initialRegistrations={initialRegistrations}
+                    />
+                </TabsContent>
+            )}
 
             {event.seating_type === 'assigned_seating' && (
                 <TabsContent value="seatmap" className="mt-6 animate-in fade-in-50 duration-300">

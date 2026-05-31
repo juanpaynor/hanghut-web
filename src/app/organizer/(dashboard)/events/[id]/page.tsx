@@ -3,6 +3,8 @@ import { redirect, notFound } from 'next/navigation'
 import { EventDashboardTabs } from '@/components/organizer/event-dashboard-tabs'
 import { getAuthUser, getPartner } from '@/lib/auth/cached'
 
+export const dynamic = 'force-dynamic'
+
 interface EditEventPageProps {
     params: Promise<{
         id: string
@@ -47,6 +49,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
     // ─── PARALLEL: All event-dependent queries at once ─────────────────
     const { getEventAttendees } = await import('@/lib/organizer/attendee-actions')
     const { getPromoCodes } = await import('@/lib/organizer/promo-actions')
+    const { getRegistrationQuestions } = await import('@/lib/organizer/registration-actions')
+    const { getEventRegistrations } = await import('@/lib/organizer/registration-management-actions')
 
     const [
         { data: rawTiers },
@@ -54,7 +58,9 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         { attendees },
         { data: promoCodes },
         { count: ticketsSold, data: soldTickets },
-        { data: refundedTickets }
+        { data: refundedTickets },
+        registrationQuestions,
+        initialRegistrations
     ] = await Promise.all([
         // 1. Ticket tiers
         supabase
@@ -101,7 +107,13 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                 )
             `)
             .eq('event_id', id)
-            .eq('status', 'refunded')
+            .eq('status', 'refunded'),
+
+        // 7. Registration questions
+        getRegistrationQuestions(id),
+
+        // 8. Registration requests
+        getEventRegistrations(id)
     ])
 
     // ─── COMPUTE from parallel results ────────────────────────────────
@@ -157,6 +169,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                 }}
                 passFeesToCustomer={partnerPricing?.pass_fees_to_customer || false}
                 fixedFeePerTicket={parseFloat(partnerPricing?.fixed_fee_per_ticket?.toString() || '15.00')}
+                initialQuestions={registrationQuestions}
+                initialRegistrations={initialRegistrations}
             />
         </div>
     )

@@ -636,7 +636,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function getPaymentMethodLabel(method: string | null) {
-    if (!method) return '-'
+    if (!method || method === 'UNKNOWN') return '-'
     const map: Record<string, string> = {
         'GCASH': 'GCash',
         'PAYMAYA': 'Maya',

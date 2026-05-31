@@ -95,8 +95,9 @@ export async function POST(request: Request) {
     const passFees = partner?.pass_fees_to_customer || false
 
     const unitPrice = tierToUse ? tierToUse.price : event.ticket_price
+    const isFree = unitPrice === 0
     const platformFee = Math.round(unitPrice * quantity * commissionRate)
-    const fixedFeeTotal = fixedFeePerTicket * quantity
+    const fixedFeeTotal = isFree ? 0 : fixedFeePerTicket * quantity
     const totalFees = platformFee + fixedFeeTotal
 
     // Call the create-purchase-intent edge function

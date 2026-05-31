@@ -35,6 +35,7 @@ export default async function CheckoutPage({
                 tickets_sold,
                 theme_color,
                 custom_tos,
+                require_approval,
                 organizer:partners (
                     id,
                     business_name,
@@ -51,6 +52,14 @@ export default async function CheckoutPage({
                     quantity_total,
                     quantity_sold,
                     is_active
+                ),
+                registration_questions (
+                    id,
+                    label,
+                    question_type,
+                    options,
+                    is_required,
+                    display_order
                 )
             `)
             .eq('id', eventId)
@@ -139,6 +148,7 @@ export default async function CheckoutPage({
                     tier={tierToUse}
                     customTos={customTos}
                     organizerName={organizerName}
+                    registrationQuestions={(event.registration_questions || []).sort((a: any, b: any) => a.display_order - b.display_order)}
                 />
             </main>
         </div>

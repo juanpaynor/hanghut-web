@@ -6,19 +6,25 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
-import { Calendar, MapPin, Share2, ShieldCheck, Clock, Ticket, Phone, ExternalLink } from 'lucide-react'
+import { Calendar, MapPin, Share2, ShieldCheck, Ticket, Phone, ExternalLink } from 'lucide-react'
 import type { Metadata } from 'next'
 import { TicketSelector } from '@/components/events/ticket-selector'
 import { EventGallery } from '@/components/events/event-gallery'
+import { RegistrationGate } from '@/components/events/registration-gate'
+import type { QuestionForForm } from '@/components/events/registration-questions-form'
 import { cn, hexToHsl, getYouTubeEmbedUrl } from '@/lib/utils'
 
-import { MobileTicketButton, ShareButton } from '@/components/events/event-actions'
-import sanitizeHtml from 'sanitize-html'
+import { MobileTicketButton, ShareButton, AddToCalendarButton } from '@/components/events/event-actions'
+import { sanitize } from '@/lib/sanitize'
+import { EventPageBackground, type BgStyle } from '@/components/events/event-bg'
+import { EventCountdown } from '@/components/events/event-countdown'
+import { SocialProofTicker } from '@/components/events/social-proof-ticker'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import { cache } from 'react'
 
-export const revalidate = 60 // ISR: revalidate every 60 seconds
+export const dynamic = 'force-dynamic' // always fresh — bg style changes show immediately
 
 const getEvent = cache(async (eventId: string) => {
     const supabase = createPublicClient()
@@ -34,7 +40,8 @@ const getEvent = cache(async (eventId: string) => {
         profile_photo_url,
         slug
       ),
-      ticket_tiers(*)
+      ticket_tiers(*),
+      registration_questions(*)
     `)
         .eq('id', eventId)
         .in('status', ['active', 'hidden'])
@@ -81,6 +88,28 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
 
     if (!event) notFound()
 
+    // Venue gating: check if current user has a confirmed ticket
+    let venueVisible = !event.hide_venue_until_registered
+    if (!venueVisible) {
+        try {
+            const authClient = await createClient()
+            const { data: { user } } = await authClient.auth.getUser()
+            if (user) {
+                const { data: ticket } = await authClient
+                    .from('tickets')
+                    .select('id')
+                    .eq('event_id', id)
+                    .eq('user_id', user.id)
+                    .in('status', ['confirmed', 'approved'])
+                    .limit(1)
+                    .maybeSingle()
+                if (ticket) venueVisible = true
+            }
+        } catch {
+            // If auth check fails, keep venue hidden
+        }
+    }
+
     const ticketsRemaining = event.capacity - event.tickets_sold
     let isSoldOut = ticketsRemaining <= 0
 
@@ -112,6 +141,76 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
     const hiddenSections = new Set(event.layout_config?.hidden || [])
     const rawVideoPosition = event.layout_config?.video_position || 'center 50%'
 
+    // New style config
+    const bgStyle: BgStyle = event.layout_config?.bg_style || 'default'
+    const pageLayout: 'default' | 'poster' | 'minimal' = event.layout_config?.page_layout || 'default'
+    const showCountdown = event.layout_config?.show_countdown ?? false
+    const countdownLabel = event.layout_config?.countdown_label || 'Event starts in'
+    const showSocialProof = event.layout_config?.show_social_proof ?? false
+    const bgImageUrl: string | undefined = event.layout_config?.bg_image_url || undefined
+
+    // Font config
+    const fontHeading: string = event.layout_config?.font_heading || 'inter'
+    const fontBody: string = event.layout_config?.font_body || 'inter'
+    const FONT_MAP: Record<string, { name: string; url: string; css: string }> = {
+        inter:      { name: 'Inter',             url: '',                                                                                css: 'Inter, sans-serif' },
+        playfair:   { name: 'Playfair Display',  url: 'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&display=swap', css: "'Playfair Display', serif" },
+        grotesk:    { name: 'Space Grotesk',     url: 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap',    css: "'Space Grotesk', sans-serif" },
+        bebas:      { name: 'Bebas Neue',        url: 'https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap',                        css: "'Bebas Neue', cursive" },
+        cormorant:  { name: 'Cormorant Garamond',url: 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&display=swap', css: "'Cormorant Garamond', serif" },
+        mono:       { name: 'JetBrains Mono',    url: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap',       css: "'JetBrains Mono', monospace" },
+        outfit:     { name: 'Outfit',            url: 'https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&display=swap',        css: "'Outfit', sans-serif" },
+        dmserif:    { name: 'DM Serif Display',  url: 'https://fonts.googleapis.com/css2?family=DM+Serif+Display&display=swap',                  css: "'DM Serif Display', serif" },
+    }
+    const headingFont = FONT_MAP[fontHeading] || FONT_MAP.inter
+    const bodyFont    = FONT_MAP[fontBody]    || FONT_MAP.inter
+    const googleFontUrls = [...new Set([headingFont.url, bodyFont.url].filter(Boolean))]
+
+    // Color overrides
+    const textColor: string  = event.layout_config?.text_color  || ''
+    const headingColor: string = event.layout_config?.heading_color || ''
+    // Whether a dark bg is active — drives glass card mode
+    const isDarkBg = bgStyle !== 'default'
+
+    const fontStyle = {
+        ...themeStyle,
+        '--font-heading': headingFont.css,
+        '--font-body': bodyFont.css,
+        ...(textColor    ? { '--hh-text':    textColor }    : {}),
+        ...(headingColor ? { '--hh-heading': headingColor } : {}),
+    } as React.CSSProperties
+
+    // Fetch anonymised recent registrations for social proof ticker
+    const recentNames: string[] = []
+    if (showSocialProof) {
+        try {
+            const adminForProof = createAdminClient()
+            const { data: regs } = await adminForProof
+                .from('event_registrations')
+                .select('guest_name, user_id, users!event_registrations_user_id_fkey(display_name)')
+                .eq('event_id', id)
+                .in('status', ['approved', 'auto_approved'])
+                .order('created_at', { ascending: false })
+                .limit(12)
+            if (regs) {
+                for (const reg of regs) {
+                    const full: string =
+                        reg.guest_name ||
+                        (reg as any).users?.display_name ||
+                        'Someone'
+                    const parts = full.trim().split(' ')
+                    const anonymised =
+                        parts.length > 1
+                            ? `${parts[0]} ${parts[parts.length - 1][0]}.`
+                            : parts[0]
+                    recentNames.push(anonymised)
+                }
+            }
+        } catch {
+            // non-fatal
+        }
+    }
+
     // Parse the new scale/x/y format
     let objectPosition = 'center 50%'
     let transform = 'none'
@@ -139,6 +238,55 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
 
     const HeroSection = () => {
         const youtubeEmbed = event.video_url ? getYouTubeEmbedUrl(event.video_url) : null
+
+        // When a visual bg style is chosen, the hero becomes an immersive header with
+        // the event title + countdown overlaid. Video/image takes a back seat.
+        if (bgStyle !== 'default') {
+            return (
+                <div className="relative w-full h-[65vh] min-h-[520px] overflow-hidden">
+                    <EventPageBackground
+                        bgStyle={bgStyle}
+                        themeColor={event.theme_color || '#6366f1'}
+                        coverImageUrl={event.cover_image_url || undefined}
+                        bgImageUrl={bgImageUrl}
+                        videoUrl={!youtubeEmbed ? (event.video_url || undefined) : undefined}
+                    />
+                    {/* Dark vignette at bottom so content reads cleanly below */}
+                    <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background/80 pointer-events-none z-10" />
+                    {/* Centered overlay content */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-center px-4 z-20">
+                        <div className="flex gap-2 justify-center">
+                            <span className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
+                                {event.event_type || 'Event'}
+                            </span>
+                            {event.is_featured && (
+                                <span className="bg-yellow-400/90 text-yellow-900 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
+                                    Featured
+                                </span>
+                            )}
+                        </div>
+                        <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white drop-shadow-2xl leading-[1.05] tracking-tight max-w-3xl">
+                            {event.title}
+                        </h1>
+                        <div className="flex items-center gap-3 text-white/75 text-sm font-medium flex-wrap justify-center">
+                            <span>📅 {format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
+                            {event.venue_name && (
+                                <>
+                                    <span className="w-1 h-1 rounded-full bg-white/40" />
+                                    <span>📍 {event.venue_name}</span>
+                                </>
+                            )}
+                        </div>
+                        {showCountdown && (
+                            <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />
+                        )}
+                        {showSocialProof && recentNames.length > 0 && (
+                            <SocialProofTicker names={recentNames} />
+                        )}
+                    </div>
+                </div>
+            )
+        }
 
         return (
             <div className="relative w-full h-[50vh] min-h-[400px] overflow-hidden bg-muted group">
@@ -179,6 +327,17 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                         <h1 className="text-4xl font-bold opacity-20">{event.title}</h1>
                     </div>
                 )}
+                {/* Countdown + social proof on default hero too, if enabled */}
+                {(showCountdown || (showSocialProof && recentNames.length > 0)) && (
+                    <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center gap-3 z-10">
+                        {showSocialProof && recentNames.length > 0 && (
+                            <SocialProofTicker names={recentNames} />
+                        )}
+                        {showCountdown && (
+                            <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />
+                        )}
+                    </div>
+                )}
             </div>
         )
     }
@@ -192,6 +351,11 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                     {event.event_type ? event.event_type.toUpperCase() : 'EVENT'}
                 </Badge>
                 {event.is_featured && <Badge className="bg-yellow-500 text-white hover:bg-yellow-600">Featured</Badge>}
+                {event.status === 'hidden' && (
+                    <Badge variant="outline" className="border-purple-300 text-purple-600 bg-purple-50/80 backdrop-blur">
+                        🔒 Unlisted Event
+                    </Badge>
+                )}
             </div>
             <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight leading-tight text-foreground drop-shadow-sm">
                 {event.title}
@@ -200,7 +364,7 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
     )
 
     const DetailsSection = () => (
-        <Card className="p-0 overflow-hidden border-none shadow-xl my-8">
+        <Card data-hh-card className="p-0 overflow-hidden border-none shadow-xl my-8">
             <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x border-b">
                 <div className="p-6 flex items-start gap-4 hover:bg-muted/30 transition-colors">
                     <div className="p-3 bg-primary/10 rounded-2xl text-primary">
@@ -209,10 +373,13 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                     <div>
                         <p className="font-semibold text-lg">{format(eventDate, 'EEEE, MMMM d')}</p>
                         <p className="text-muted-foreground">{format(eventDate, 'h:mm a')}</p>
-                        <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground bg-secondary/50 px-2 py-1 rounded-full w-fit">
-                            <Clock className="h-3 w-3" />
-                            Add to Calendar
-                        </div>
+                        <AddToCalendarButton
+                            title={event.title}
+                            startDatetime={event.start_datetime}
+                            endDatetime={event.end_datetime}
+                            location={event.venue_name ? `${event.venue_name}, ${event.address || ''} ${event.city || ''}`.trim() : event.city}
+                            description={event.description}
+                        />
                     </div>
                 </div>
                 <div className="p-6 flex items-start gap-4 hover:bg-muted/30 transition-colors">
@@ -220,16 +387,25 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                         <MapPin className="h-6 w-6" />
                     </div>
                     <div>
-                        <p className="font-semibold text-lg line-clamp-1">{event.venue_name}</p>
-                        <p className="text-muted-foreground line-clamp-2">{event.address}, {event.city}</p>
-                        <a
-                            href={`https://maps.google.com/?q=${event.latitude},${event.longitude}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs text-primary font-medium hover:underline mt-2 inline-block"
-                        >
-                            Get Directions
-                        </a>
+                        {venueVisible ? (
+                            <>
+                                <p className="font-semibold text-lg line-clamp-1">{event.venue_name}</p>
+                                <p className="text-muted-foreground line-clamp-2">{event.address}, {event.city}</p>
+                                <a
+                                    href={`https://maps.google.com/?q=${event.latitude},${event.longitude}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-xs text-primary font-medium hover:underline mt-2 inline-block"
+                                >
+                                    Get Directions
+                                </a>
+                            </>
+                        ) : (
+                            <>
+                                <p className="font-semibold text-lg">{event.city}</p>
+                                <p className="text-muted-foreground text-sm mt-1 italic">📍 Venue revealed after registration</p>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
@@ -241,7 +417,7 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
             <h2 className="text-2xl font-bold mb-4">About this Event</h2>
             {event.description_html ? (
                 <div
-                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(event.description_html) }}
+                    dangerouslySetInnerHTML={{ __html: sanitize(event.description_html) }}
                     className="description-html"
                 />
             ) : (
@@ -253,7 +429,7 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
     )
 
     const OrganizerSection = () => (
-        <div className="flex items-center gap-4 py-6 border-y border-border/50 my-8">
+        <div data-hh-card className="flex items-center gap-4 py-6 px-5 rounded-2xl border border-border/50 my-8">
             <div className="w-16 h-16 rounded-full bg-muted overflow-hidden shrink-0 border-2 border-background shadow-md">
                 {event.organizer?.profile_photo_url ? (
                     <img src={event.organizer.profile_photo_url} alt="" className="w-full h-full object-cover" />
@@ -299,7 +475,7 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
     }
 
     const TicketsSection = () => (
-        <Card className="my-8 border-2 border-primary/10 shadow-lg overflow-hidden" id="tickets">
+        <Card data-hh-card className="my-8 border-2 border-primary/10 shadow-lg overflow-hidden" id="tickets">
             <div className="bg-primary/5 p-6 border-b border-primary/10 flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${event.is_external ? 'bg-blue-600 text-white' : 'bg-primary text-primary-foreground'}`}>
@@ -370,16 +546,19 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
         </Card>
     )
 
-    const LocationSection = () => (
-        // Only render if we haven't already rendered details, or if user wants specific map
-        <div className="py-8">
-            <h3 className="text-xl font-bold mb-4">Location</h3>
-            <Card className="h-[300px] flex items-center justify-center bg-muted">
-                {/* Embed map or placeholder */}
-                <p className="text-muted-foreground">Map View ({event.latitude}, {event.longitude})</p>
-            </Card>
-        </div>
-    )
+    const LocationSection = () => {
+        if (!venueVisible) return null
+        return (
+            // Only render if we haven't already rendered details, or if user wants specific map
+            <div className="py-8">
+                <h3 className="text-xl font-bold mb-4">Location</h3>
+                <Card className="h-[300px] flex items-center justify-center bg-muted">
+                    {/* Embed map or placeholder */}
+                    <p className="text-muted-foreground">Map View ({event.latitude}, {event.longitude})</p>
+                </Card>
+            </div>
+        )
+    }
 
     const renderSection = (sectionId: string) => {
         if (hiddenSections.has(sectionId)) return null
@@ -402,10 +581,255 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
     const showHero = !hiddenSections.has('hero')
     const showTickets = !hiddenSections.has('tickets')
 
+    // ─── POSTER LAYOUT ───────────────────────────────────────────────────────
+    if (pageLayout === 'poster') {
+        const formattedPosterDate = format(eventDate, 'EEEE, MMMM d · h:mm a')
+        return (
+            <div className="min-h-screen bg-black text-white" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+                {googleFontUrls.map(url => (
+                    <link key={url} rel="stylesheet" href={url} />
+                ))}
+                {/* Fixed background effect */}
+                {bgStyle !== 'default' ? (
+                    <EventPageBackground
+                        bgStyle={bgStyle}
+                        themeColor={event.theme_color || '#6366f1'}
+                        coverImageUrl={event.cover_image_url || undefined}
+                        bgImageUrl={bgImageUrl}
+                        videoUrl={event.video_url ? (getYouTubeEmbedUrl(event.video_url) ? undefined : event.video_url) : undefined}
+                        className="fixed inset-0 z-0"
+                    />
+                ) : event.cover_image_url ? (
+                    <div className="fixed inset-0 z-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={event.cover_image_url} alt="" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/65" />
+                    </div>
+                ) : (
+                    <div className="fixed inset-0 z-0 bg-gradient-to-br from-zinc-950 via-zinc-900 to-black" />
+                )}
+
+                {/* Transparent sticky header */}
+                <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4">
+                    {event.organizer ? (
+                        <a
+                            href={`https://${event.organizer.slug}.hanghut.com`}
+                            className="flex items-center gap-3 font-bold text-white/80 hover:text-white transition-colors"
+                        >
+                            {event.organizer.profile_photo_url ? (
+                                <div className="relative w-9 h-9 rounded-full overflow-hidden border border-white/30">
+                                    <Image src={event.organizer.profile_photo_url} alt={event.organizer.business_name} fill className="object-cover" />
+                                </div>
+                            ) : (
+                                <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center font-bold text-sm">
+                                    {event.organizer.business_name.charAt(0)}
+                                </div>
+                            )}
+                            <span className="text-sm">{event.organizer.business_name}</span>
+                        </a>
+                    ) : (
+                        <Link href="/" className="bg-white/15 backdrop-blur px-3 py-1 rounded-md text-white font-black text-sm">
+                            HANGHUT
+                        </Link>
+                    )}
+                    <ShareButton title={event.title} description={event.description} />
+                </header>
+
+                {/* Full-viewport poster hero */}
+                <section className="relative z-10 min-h-screen flex flex-col items-center justify-center text-center px-4 pt-24 pb-16 gap-6">
+                    {/* Badges */}
+                    <div className="flex gap-2 justify-center">
+                        <span className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-[0.15em] px-4 py-1.5 rounded-full">
+                            {event.event_type || 'Event'}
+                        </span>
+                        {event.is_featured && (
+                            <span className="bg-yellow-400/90 text-yellow-900 text-xs font-bold uppercase tracking-[0.15em] px-4 py-1.5 rounded-full">
+                                ⭐ Featured
+                            </span>
+                        )}
+                    </div>
+
+                    {/* Giant title */}
+                    <h1
+                        className="font-black text-white drop-shadow-2xl leading-[0.95] tracking-[-0.03em]"
+                        style={{ fontSize: 'clamp(2.8rem, 9vw, 8.5rem)', fontFamily: 'var(--font-heading)' }}
+                    >
+                        {event.title}
+                    </h1>
+
+                    {/* Date + venue */}
+                    <div className="flex items-center gap-3 text-white/70 text-sm font-medium flex-wrap justify-center">
+                        <span>📅 {formattedPosterDate}</span>
+                        {event.venue_name && (
+                            <>
+                                <span className="w-1 h-1 rounded-full bg-white/35" />
+                                <span>📍 {event.venue_name}</span>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Countdown */}
+                    {showCountdown && (
+                        <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />
+                    )}
+
+                    {/* Social proof */}
+                    {showSocialProof && recentNames.length > 0 && (
+                        <SocialProofTicker names={recentNames} />
+                    )}
+
+                    {/* Ticket CTA */}
+                    {showTickets && (
+                        <div className="mt-2">
+                            <TicketsSection />
+                        </div>
+                    )}
+
+                    {/* Scroll cue */}
+                    <div className="absolute bottom-8 flex flex-col items-center gap-1 text-white/40 text-xs animate-bounce">
+                        <span>Scroll</span>
+                        <span>↓</span>
+                    </div>
+                </section>
+
+                {/* Content section slides up over the fixed bg */}
+                <div className="relative z-20 bg-background rounded-t-3xl shadow-2xl">
+                    <div className="container mx-auto px-4 py-16 max-w-3xl">
+                        {mainContentOrder.map(sectionId => (
+                            <div key={sectionId}>{renderSection(sectionId)}</div>
+                        ))}
+                    </div>
+                </div>
+
+                <MobileTicketButton
+                    showTickets={showTickets}
+                    isSoldOut={isSoldOut}
+                    isExternal={event.is_external}
+                    externalUrl={externalRedirectUrl}
+                />
+            </div>
+        )
+    }
+
+    // ─── MINIMAL LAYOUT ──────────────────────────────────────────────────────
+    if (pageLayout === 'minimal') {
+        return (
+            <div className="min-h-screen bg-background pb-20" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+                {googleFontUrls.map(url => (
+                    <link key={url} rel="stylesheet" href={url} />
+                ))}
+                <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                    <div className="container mx-auto px-4 flex h-16 items-center justify-between">
+                        {event.organizer ? (
+                            <a href={`https://${event.organizer.slug}.hanghut.com`} className="flex items-center gap-3 font-bold text-xl hover:opacity-80 transition-opacity">
+                                {event.organizer.profile_photo_url ? (
+                                    <div className="relative w-8 h-8 rounded-full overflow-hidden border border-border">
+                                        <Image src={event.organizer.profile_photo_url} alt={event.organizer.business_name} fill className="object-cover" />
+                                    </div>
+                                ) : (
+                                    <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
+                                        {event.organizer.business_name.charAt(0)}
+                                    </div>
+                                )}
+                                <span className="truncate max-w-[180px] text-base">{event.organizer.business_name}</span>
+                            </a>
+                        ) : (
+                            <Link href="/" className="font-bold text-xl">HANGHUT</Link>
+                        )}
+                        <ShareButton title={event.title} description={event.description} />
+                    </div>
+                </header>
+
+                <main className="container mx-auto px-4 py-16 max-w-2xl">
+                    {/* Compact title block */}
+                    <div className="space-y-3 mb-10">
+                        <div className="flex gap-2">
+                            <Badge variant="secondary">{event.event_type || 'Event'}</Badge>
+                            {event.is_featured && <Badge className="bg-yellow-500 text-white">Featured</Badge>}
+                        </div>
+                        <h1 className="text-4xl md:text-5xl font-black leading-tight tracking-tight">{event.title}</h1>
+                        <div className="flex items-center gap-2 text-muted-foreground text-sm pt-1 flex-wrap">
+                            <span>📅 {format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
+                            {event.venue_name && (
+                                <>
+                                    <span>·</span>
+                                    <span>📍 {event.venue_name}</span>
+                                </>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Countdown if enabled */}
+                    {showCountdown && (
+                        <div className="mb-10 p-6 bg-muted rounded-2xl flex flex-col items-center">
+                            <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />
+                        </div>
+                    )}
+
+                    {/* Cover image (small, optional) */}
+                    {event.cover_image_url && (
+                        <div className="mb-10 rounded-2xl overflow-hidden aspect-video">
+                            <Image src={event.cover_image_url} alt={event.title} width={672} height={378} className="w-full h-full object-cover" />
+                        </div>
+                    )}
+
+                    {/* Content sections inline */}
+                    {mainContentOrder.map(sectionId => (
+                        <div key={sectionId}>{renderSection(sectionId)}</div>
+                    ))}
+
+                    {/* Tickets full width */}
+                    {showTickets && <TicketsSection />}
+                </main>
+
+                <MobileTicketButton
+                    showTickets={showTickets}
+                    isSoldOut={isSoldOut}
+                    isExternal={event.is_external}
+                    externalUrl={externalRedirectUrl}
+                />
+            </div>
+        )
+    }
+
+    // ─── DEFAULT LAYOUT ──────────────────────────────────────────────────────
     return (
-        <div className="min-h-screen bg-background font-sans pb-20" style={themeStyle}>
+        <div
+            data-hh-event
+            className="min-h-screen bg-background pb-20 relative"
+            style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}
+        >
+            {/* Google Fonts */}
+            {googleFontUrls.map(url => (
+                <link key={url} rel="stylesheet" href={url} />
+            ))}
+            {/* Apply heading font to all headings within this page */}
+            <style>{`[data-hh-event] h1,[data-hh-event] h2,[data-hh-event] h3,[data-hh-event] h4{font-family:var(--font-heading)}${textColor ? `[data-hh-event]{color:var(--hh-text)}` : ''}${headingColor ? `[data-hh-event] h1,[data-hh-event] h2,[data-hh-event] h3,[data-hh-event] h4{color:var(--hh-heading)}` : ''}${isDarkBg ? `
+[data-hh-event]{color:#f1f5f9}
+[data-hh-event] .text-foreground,[data-hh-event] .text-muted-foreground{color:rgba(248,250,252,0.9)}
+[data-hh-event] [class*=prose] p,[data-hh-event] [class*=prose] li{color:rgba(226,232,240,0.9)}
+[data-hh-event] .border-border\/50{border-color:rgba(255,255,255,0.12)}
+[data-hh-event] .divide-x>*,[data-hh-event] .divide-y>*{border-color:rgba(255,255,255,0.1)}
+[data-hh-event] [data-hh-card]{background:rgba(255,255,255,0.08);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.15);color:#f1f5f9}
+[data-hh-event] [data-hh-card] p,[data-hh-event] [data-hh-card] span{color:rgba(248,250,252,0.85)}
+[data-hh-event] [data-hh-card] .text-muted-foreground{color:rgba(203,213,225,0.8)}
+[data-hh-event] header{background:rgba(0,0,0,0.45)!important;border-color:rgba(255,255,255,0.1)!important;backdrop-filter:blur(20px)!important;color:#fff}
+[data-hh-event] header a,[data-hh-event] header span{color:#fff!important}
+` : ''}`}</style>
+
+            {/* Full-page background — fixed so it covers the entire scroll */}
+            {bgStyle !== 'default' && (
+                <EventPageBackground
+                    bgStyle={bgStyle}
+                    themeColor={event.theme_color || '#6366f1'}
+                    coverImageUrl={event.cover_image_url || undefined}
+                    bgImageUrl={bgImageUrl}
+                    videoUrl={event.video_url ? (getYouTubeEmbedUrl(event.video_url) ? undefined : event.video_url) : undefined}
+                    className="fixed inset-0 z-0"
+                />
+            )}
             {/* Navbar */}
-            <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 relative z-50">
                 <div className="container mx-auto px-4 flex h-16 items-center justify-between">
                     {event.organizer ? (
                         <a href={`https://${event.organizer.slug}.hanghut.com`} className="flex items-center gap-3 font-bold text-xl hover:opacity-80 transition-opacity">
@@ -435,13 +859,33 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                 </div>
             </header>
 
-            <main>
-                {/* Hero is always full width if visible */}
-                {showHero && <HeroSection />}
+            <main className="relative z-10">
+                {/* Hero: only show the section component when using default bg (no fixed full-page bg) */}
+                {showHero && !isDarkBg && <HeroSection />}
+                {/* When dark bg is active, show a compact title overlay instead of the hero */}
+                {isDarkBg && (
+                    <div className="w-full py-20 px-4 flex flex-col items-center justify-center text-center gap-4" style={{ minHeight: '40vh' }}>
+                        <div className="flex gap-2 justify-center">
+                            <span className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
+                                {event.event_type || 'Event'}
+                            </span>
+                            {event.is_featured && <span className="bg-yellow-400/90 text-yellow-900 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">Featured</span>}
+                        </div>
+                        <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white drop-shadow-2xl leading-tight tracking-tight max-w-4xl" style={{ fontFamily: 'var(--font-heading)' }}>
+                            {event.title}
+                        </h1>
+                        <div className="flex items-center gap-3 text-white/75 text-sm font-medium flex-wrap justify-center">
+                            <span>📅 {format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
+                            {event.venue_name && <><span className="w-1 h-1 rounded-full bg-white/40" /><span>📍 {event.venue_name}</span></>}
+                        </div>
+                        {showCountdown && <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />}
+                        {showSocialProof && recentNames.length > 0 && <SocialProofTicker names={recentNames} />}
+                    </div>
+                )}
 
                 <div className={cn(
                     "container mx-auto px-4 relative z-10",
-                    showHero ? "-mt-8 md:-mt-32" : "mt-8"
+                    (!isDarkBg && showHero) ? "-mt-8 md:-mt-32" : "mt-4"
                 )}>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
 

@@ -16,6 +16,16 @@ import { Badge } from '@/components/ui/badge'
 import { validatePromoCode } from '@/lib/organizer/promo-actions'
 import { subscribeGuestToNewsletter } from '@/lib/marketing/actions'
 import { hexToHsl } from '@/lib/utils'
+import { CheckCircle2, ClipboardList } from 'lucide-react'
+
+interface RegistrationQuestion {
+    id: string
+    label: string
+    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company'
+    options: string[] | null
+    is_required: boolean
+    display_order: number
+}
 
 interface CheckoutClientProps {
     event: any
@@ -30,9 +40,10 @@ interface CheckoutClientProps {
     }
     customTos?: string | null
     organizerName?: string
+    registrationQuestions?: RegistrationQuestion[]
 }
 
-export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName }: CheckoutClientProps) {
+export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName, registrationQuestions = [] }: CheckoutClientProps) {
     const router = useRouter()
     const searchParams = useSearchParams()
     const { toast } = useToast()
@@ -41,6 +52,16 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     // Embed mode detection — force guest checkout if embedded
     const isEmbed = searchParams.get('embed') === 'true'
     const effectiveUser = isEmbed ? null : user
+
+    // Registration state
+    const requireApproval = event.require_approval === true
+    const hasQuestions = registrationQuestions.length > 0
+    const [regAnswers, setRegAnswers] = useState<Record<string, any>>({})
+    const [registrationPending, setRegistrationPending] = useState(false)
+    const [approvedRegistrationId, setApprovedRegistrationId] = useState<string | null>(
+        // If user is returning post-approval, they may have it in sessionStorage
+        typeof window !== 'undefined' ? sessionStorage.getItem(`approved_reg_${event.id}`) : null
+    )
 
     // Promo Code State
     const [promoCodeInput, setPromoCodeInput] = useState('')
@@ -67,6 +88,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         : 0.04
     const fixedFeePerTicket = parseFloat(organizer.fixed_fee_per_ticket || '15')
 
+    const isFree = tier.price === 0
     const subtotal = tier.price * quantity
     const discount = appliedPromo ? appliedPromo.discountAmount : 0
 
@@ -75,8 +97,8 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     let fixedFeeTotal = 0
     let processingFee = 0
 
-    // Calculate Fees (if passed)
-    if (passFees) {
+    // Calculate Fees (if passed) — never charge a booking fee on free tickets
+    if (passFees && !isFree) {
         // User Request: "15 pesos (Fixed Fee) should be paid by the customer, but the 3% processing fee is still paid by the organizer"
         // We only add the Fixed Fee to the customer's total.
         fixedFeeTotal = fixedFeePerTicket * quantity
@@ -148,6 +170,25 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             return
         }
 
+        // Validate required registration questions
+        if ((requireApproval || hasQuestions) && !approvedRegistrationId) {
+            for (const q of registrationQuestions) {
+                if (q.is_required) {
+                    const val = regAnswers[q.id]
+                    const empty = val === undefined || val === null || val === '' ||
+                        (Array.isArray(val) && val.length === 0)
+                    if (empty) {
+                        toast({
+                            title: "Required Field Missing",
+                            description: `"${q.label}" is required.`,
+                            variant: "destructive"
+                        })
+                        return
+                    }
+                }
+            }
+        }
+
         // [Workaround] Subscribe directly via server action since Edge Function might miss it
         if (newsletterSubscribed && event.organizer_id) {
             const email = effectiveUser?.email || guestDetails.email
@@ -163,13 +204,57 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         const supabase = createClient()
 
         try {
-            const requestPayload = {
+            // ── STEP 1: For require_approval events, call submit_event_request first ──
+            // Skip if user is returning with an already-approved registration_id
+            let registrationId = approvedRegistrationId
+
+            if (requireApproval && !registrationId) {
+                const answers = registrationQuestions.map(q => ({
+                    question_id: q.id,
+                    answer: regAnswers[q.id] ?? null,
+                }))
+
+                const { data: regResult, error: regError } = await supabase.rpc('submit_event_request', {
+                    p_event_id: event.id,
+                    p_answers: answers,
+                    p_tier_id: tier.id || null,
+                    p_guest_email: !effectiveUser ? guestDetails.email : null,
+                    p_guest_name: !effectiveUser ? guestDetails.name : null,
+                })
+
+                if (regError) {
+                    const msg = regError.message || ''
+                    if (msg.includes('already registered')) {
+                        toast({ title: "Already Registered", description: "You have already submitted a registration for this event.", variant: "destructive" })
+                    } else if (msg.includes('Required questions not answered')) {
+                        toast({ title: "Required Fields Missing", description: "Please answer all required questions.", variant: "destructive" })
+                    } else {
+                        toast({ title: "Registration Failed", description: msg || "Please try again.", variant: "destructive" })
+                    }
+                    setIsLoading(false)
+                    return
+                }
+
+                if (regResult?.status === 'pending') {
+                    // Organizer must approve before payment — stop here
+                    setRegistrationPending(true)
+                    setIsLoading(false)
+                    return
+                }
+
+                // auto_approved — proceed to checkout with the registration_id
+                registrationId = regResult?.registration_id || null
+            }
+
+            // ── STEP 2: Create purchase intent ──
+            const requestPayload: any = {
                 event_id: event.id,
                 quantity: quantity,
                 tier_id: tier.id || undefined,
                 guest_details: !effectiveUser ? guestDetails : undefined,
                 promo_code: appliedPromo ? appliedPromo.code : undefined,
                 subscribed_to_newsletter: newsletterSubscribed,
+                registration_id: registrationId || undefined,
                 // [NEW] Fee Metadata for Edge Function
                 metadata: {
                     pass_fees: passFees,
@@ -213,6 +298,26 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             console.log('🔵 [CHECKOUT] Response data:', data)
 
             if (!data.success) {
+                // Handle approval-specific 403 error codes gracefully
+                const code = data.error?.code
+                if (code === 'REGISTRATION_PENDING') {
+                    setRegistrationPending(true)
+                    setIsLoading(false)
+                    return
+                } else if (code === 'REGISTRATION_REQUIRED') {
+                    toast({ title: "Registration Required", description: "Please complete the registration form to proceed.", variant: "destructive" })
+                    setIsLoading(false)
+                    return
+                } else if (code === 'REGISTRATION_REJECTED') {
+                    toast({ title: "Registration Not Approved", description: "Your registration for this event was not approved.", variant: "destructive" })
+                    setIsLoading(false)
+                    return
+                } else if (code === 'REGISTRATION_INVALID' || code === 'REGISTRATION_NOT_APPROVED') {
+                    toast({ title: "Registration Invalid", description: "Your registration could not be verified. Please try again.", variant: "destructive" })
+                    setApprovedRegistrationId(null)
+                    setIsLoading(false)
+                    return
+                }
                 console.error('🔴 [CHECKOUT] Edge Function returned success=false:', data.error)
                 throw new Error(data.error?.message || 'Failed to create order')
             }
@@ -259,6 +364,29 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         '--primary': hexToHsl(event.theme_color),
         '--ring': hexToHsl(event.theme_color),
     } as React.CSSProperties : undefined;
+
+    // Pending approval state — show confirmation and stop
+    if (registrationPending) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[400px] gap-6 text-center" style={themeStyle}>
+                <div className="rounded-full bg-amber-100 p-6">
+                    <ClipboardList className="w-12 h-12 text-amber-600" />
+                </div>
+                <div className="space-y-2">
+                    <h2 className="text-2xl font-bold">Registration Submitted!</h2>
+                    <p className="text-muted-foreground max-w-sm">
+                        Your registration for <span className="font-semibold">{event.title}</span> has been submitted and is awaiting organizer approval.
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                        You&apos;ll receive an email once your registration is approved.
+                    </p>
+                </div>
+                <Button variant="outline" onClick={() => window.location.href = `/events/${event.id}`}>
+                    Back to Event
+                </Button>
+            </div>
+        )
+    }
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8" style={themeStyle}>
@@ -327,6 +455,113 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                         )}
                     </CardContent>
                 </Card>
+
+                {/* Registration Questions */}
+                {(requireApproval || hasQuestions) && (
+                    <Card className="border-border/50 shadow-sm">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2 text-primary">
+                                <ClipboardList className="w-5 h-5" />
+                                Registration Questions
+                            </CardTitle>
+                            <CardDescription>
+                                {requireApproval
+                                    ? 'The organizer requires approval for this event. Please answer the questions below.'
+                                    : 'Please answer the following questions to complete your registration.'}
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-5">
+                            {registrationQuestions.map((q) => (
+                                <div key={q.id} className="space-y-2">
+                                    <Label htmlFor={`q_${q.id}`}>
+                                        {q.label}
+                                        {q.is_required && <span className="text-destructive ml-1">*</span>}
+                                    </Label>
+                                    {(q.question_type === 'short_text' || q.question_type === 'url' || q.question_type === 'social_profile' || q.question_type === 'company') && (
+                                        <Input
+                                            id={`q_${q.id}`}
+                                            placeholder={
+                                                q.question_type === 'url' ? 'https://...'
+                                                : q.question_type === 'social_profile' ? '@username'
+                                                : q.question_type === 'company' ? 'Company name'
+                                                : ''
+                                            }
+                                            value={regAnswers[q.id] ?? ''}
+                                            onChange={(e) => setRegAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                                            className="bg-muted/30"
+                                        />
+                                    )}
+                                    {q.question_type === 'long_text' && (
+                                        <textarea
+                                            id={`q_${q.id}`}
+                                            rows={3}
+                                            className="w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                            value={regAnswers[q.id] ?? ''}
+                                            onChange={(e) => setRegAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                                        />
+                                    )}
+                                    {q.question_type === 'single_choice' && q.options && (
+                                        <div className="space-y-2">
+                                            {q.options.map((opt) => (
+                                                <Label key={opt} className="flex items-center gap-3 cursor-pointer font-normal">
+                                                    <input
+                                                        type="radio"
+                                                        name={`q_${q.id}`}
+                                                        value={opt}
+                                                        checked={regAnswers[q.id] === opt}
+                                                        onChange={() => setRegAnswers(prev => ({ ...prev, [q.id]: opt }))}
+                                                        className="h-4 w-4 text-primary"
+                                                    />
+                                                    {opt}
+                                                </Label>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {q.question_type === 'multi_choice' && q.options && (
+                                        <div className="space-y-2">
+                                            {q.options.map((opt) => (
+                                                <Label key={opt} className="flex items-center gap-3 cursor-pointer font-normal">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={Array.isArray(regAnswers[q.id]) && regAnswers[q.id].includes(opt)}
+                                                        onChange={(e) => {
+                                                            const current: string[] = Array.isArray(regAnswers[q.id]) ? regAnswers[q.id] : []
+                                                            setRegAnswers(prev => ({
+                                                                ...prev,
+                                                                [q.id]: e.target.checked
+                                                                    ? [...current, opt]
+                                                                    : current.filter(v => v !== opt)
+                                                            }))
+                                                        }}
+                                                        className="h-4 w-4 rounded text-primary"
+                                                    />
+                                                    {opt}
+                                                </Label>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {q.question_type === 'checkbox' && (
+                                        <Label className="flex items-center gap-3 cursor-pointer font-normal">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!regAnswers[q.id]}
+                                                onChange={(e) => setRegAnswers(prev => ({ ...prev, [q.id]: e.target.checked }))}
+                                                className="h-4 w-4 rounded text-primary"
+                                            />
+                                            {q.label}
+                                        </Label>
+                                    )}
+                                </div>
+                            ))}
+                            {requireApproval && (
+                                <div className="flex items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                    <span className="text-base leading-none">⏳</span>
+                                    <p>This event requires organizer approval. After submitting, you&apos;ll be notified by email when your registration is reviewed.</p>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
             </div>
 
             {/* Sticky Order Summary */}
@@ -372,7 +607,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                     <span className="text-muted-foreground">Tickets ({quantity}x)</span>
                                     <span className="font-medium">₱{subtotal.toLocaleString()}</span>
                                 </div>
-                                {passFees && (
+                                {passFees && !isFree && (
                                     <div className="flex justify-between text-sm text-muted-foreground">
                                         <div className="flex flex-col">
                                             <span>Booking Fee</span>
