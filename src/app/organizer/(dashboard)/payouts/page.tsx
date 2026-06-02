@@ -238,6 +238,8 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                         kycStatus={walletInfo.kycStatus}
                         xenditAvailableBalance={walletInfo.xenditAvailableBalance}
                         pendingSettlement={walletInfo.pendingSettlement}
+                        useMainWallet={walletInfo.useMainWallet}
+                        ledgerBalance={stats.availableBalance}
                     />
 
                     {/* Secondary Stats Row */}
@@ -294,9 +296,10 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
 
                     {/* Request Payout */}
                     <RequestPayoutCard
-                        balance={walletInfo.xenditAvailableBalance}
+                        balance={walletInfo.useMainWallet ? stats.availableBalance : walletInfo.xenditAvailableBalance}
                         partnerId={partnerId}
                         hasBank={bankAccounts.some((b: any) => b.is_primary)}
+                        useMainWallet={walletInfo.useMainWallet}
                     />
 
                     {/* Withdrawal History */}

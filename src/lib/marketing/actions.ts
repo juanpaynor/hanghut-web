@@ -86,7 +86,53 @@ export async function processUnsubscribe(token: string): Promise<UnsubscribeResu
     }
 }
 
-export async function subscribeGuestToNewsletter(partnerId: string, email: string, name: string) {
+export async function getAudienceCount(
+    partnerId: string,
+    audienceType: 'all_subscribers' | 'event_attendees',
+    eventId?: string
+): Promise<number> {
+    const supabase = createAdminClient()
+
+    if (audienceType === 'all_subscribers') {
+        const { count } = await supabase
+            .from('partner_subscribers')
+            .select('*', { count: 'exact', head: true })
+            .eq('partner_id', partnerId)
+            .eq('is_active', true)
+        return count || 0
+    }
+
+    if (audienceType === 'event_attendees' && eventId) {
+        const emails = await getEventAttendeeEmails(eventId)
+        return emails.length
+    }
+
+    return 0
+}
+
+/**
+ * Resolves the unique set of attendee emails for an event from completed
+ * purchase intents. Runs with the admin client so it bypasses RLS on
+ * purchase_intents (organizers cannot read that table directly).
+ */
+export async function getEventAttendeeEmails(eventId: string): Promise<string[]> {
+    const supabase = createAdminClient()
+
+    const { data } = await supabase
+        .from('purchase_intents')
+        .select('guest_email')
+        .eq('event_id', eventId)
+        .eq('status', 'completed')
+        .not('guest_email', 'is', null)
+
+    const unique = new Set<string>()
+    for (const row of data || []) {
+        if ((row as any).guest_email) unique.add((row as any).guest_email.toLowerCase())
+    }
+    return Array.from(unique)
+}
+
+export async function subscribeGuestToNewsletter(partnerId: string, email: string, name: string, eventId?: string) {
     if (!partnerId || !email) {
         return { success: false, message: 'Missing fields' }
     }
@@ -102,7 +148,8 @@ export async function subscribeGuestToNewsletter(partnerId: string, email: strin
                 full_name: name,
                 source: 'checkout',
                 is_active: true,
-                unsubscribed_at: null // Clear unsubscribe if returning
+                unsubscribed_at: null,
+                ...(eventId ? { event_id: eventId } : {}),
             }, {
                 onConflict: 'partner_id,email'
             })

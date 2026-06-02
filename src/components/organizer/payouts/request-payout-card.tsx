@@ -7,15 +7,31 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { requestPayout } from '@/lib/organizer/payout-actions'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Building2 } from 'lucide-react'
 
 interface RequestPayoutCardProps {
     balance: number
     partnerId: string
     hasBank: boolean
+    useMainWallet?: boolean
 }
 
-export function RequestPayoutCard({ balance, partnerId, hasBank }: RequestPayoutCardProps) {
+export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet = false }: RequestPayoutCardProps) {
+    if (useMainWallet) {
+        return (
+            <Card className="border-emerald-500/30 bg-emerald-500/5">
+                <CardHeader>
+                    <div className="flex items-center gap-2">
+                        <Building2 className="h-5 w-5 text-emerald-600" />
+                        <CardTitle className="text-emerald-700">Payouts Managed by HangHut</CardTitle>
+                    </div>
+                    <CardDescription className="text-emerald-600/80">
+                        Your earnings settle directly into the HangHut platform account. Payout disbursements are handled by the HangHut team — no action needed on your end.
+                    </CardDescription>
+                </CardHeader>
+            </Card>
+        )
+    }
     const { toast } = useToast()
     const [amount, setAmount] = useState('')
     const [isLoading, setIsLoading] = useState(false)

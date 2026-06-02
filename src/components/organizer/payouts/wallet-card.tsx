@@ -15,7 +15,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog'
-import { Wallet, Plus, AlertTriangle, ExternalLink, Shield, Clock, ArrowDown } from 'lucide-react'
+import { Wallet, Plus, AlertTriangle, ExternalLink, Shield, Clock, Building2 } from 'lucide-react'
 import { initiateTopUp } from '@/lib/organizer/wallet-actions'
 
 interface WalletCardProps {
@@ -24,6 +24,8 @@ interface WalletCardProps {
     kycStatus: string | null
     xenditAvailableBalance: number
     pendingSettlement: number
+    useMainWallet?: boolean
+    ledgerBalance?: number
 }
 
 export function WalletCard({
@@ -32,6 +34,8 @@ export function WalletCard({
     kycStatus,
     xenditAvailableBalance,
     pendingSettlement,
+    useMainWallet = false,
+    ledgerBalance = 0,
 }: WalletCardProps) {
     const [topUpOpen, setTopUpOpen] = useState(false)
     const [amount, setAmount] = useState('')
@@ -65,6 +69,41 @@ export function WalletCard({
         }
 
         setLoading(false)
+    }
+
+    // Main-wallet partners settle directly into the HangHut platform account
+    if (useMainWallet) {
+        return (
+            <Card className="p-6 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-500/20">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                        <Building2 className="h-5 w-5 text-emerald-500" />
+                        <p className="text-sm font-medium text-muted-foreground">Earnings Balance</p>
+                        <Badge className="bg-emerald-500/10 text-emerald-600 text-[10px]">PLATFORM MANAGED</Badge>
+                    </div>
+                </div>
+                <div className="p-4 rounded-lg bg-background/60 border border-border/50">
+                    <div className="flex items-center gap-1.5 mb-1">
+                        <Wallet className="h-3.5 w-3.5 text-green-500" />
+                        <p className="text-xs text-muted-foreground font-medium">Available to Withdraw</p>
+                    </div>
+                    <p className="text-3xl font-bold text-green-600">
+                        ₱{ledgerBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                        Based on completed sales minus previous payouts
+                    </p>
+                </div>
+                {receivable > 0 && (
+                    <div className="flex items-center gap-1.5 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                        <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                        <p className="text-xs text-amber-600 font-medium">
+                            ₱{receivable.toLocaleString()} owed to platform — will be deducted from next payout
+                        </p>
+                    </div>
+                )}
+            </Card>
+        )
     }
 
     // Not yet set up

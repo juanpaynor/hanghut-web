@@ -117,8 +117,26 @@ export async function approveRegistration(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { success: false, error: 'Unauthorized' }
 
-    // Update status
-    const { error: updateError } = await supabase
+    // Explicit ownership check — don't rely on RLS silently blocking
+    const { data: partner } = await supabase
+        .from('partners')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
+
+    if (!partner) return { success: false, error: 'Unauthorized' }
+
+    const { data: eventCheck } = await supabase
+        .from('events')
+        .select('id')
+        .eq('id', eventId)
+        .eq('organizer_id', partner.id)
+        .single()
+
+    if (!eventCheck) return { success: false, error: 'Unauthorized: not the organizer of this event' }
+
+    // Use admin client so RLS cannot silently swallow the update
+    const { data: updated, error: updateError } = await adminClient
         .from('event_registrations')
         .update({
             status: 'approved',
@@ -126,8 +144,10 @@ export async function approveRegistration(
             reviewed_at: new Date().toISOString(),
         })
         .eq('id', registrationId)
+        .select('id')
 
     if (updateError) return { success: false, error: updateError.message }
+    if (!updated?.length) return { success: false, error: 'Registration not found' }
 
     // Fetch registration to determine if free (check tier price or event price)
     const { data: reg } = await adminClient
@@ -305,7 +325,25 @@ export async function rejectRegistration(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { success: false, error: 'Unauthorized' }
 
-    const { error: updateError } = await supabase
+    // Explicit ownership check
+    const { data: partner } = await supabase
+        .from('partners')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
+
+    if (!partner) return { success: false, error: 'Unauthorized' }
+
+    const { data: eventCheck } = await supabase
+        .from('events')
+        .select('id')
+        .eq('id', eventId)
+        .eq('organizer_id', partner.id)
+        .single()
+
+    if (!eventCheck) return { success: false, error: 'Unauthorized: not the organizer of this event' }
+
+    const { data: updated, error: updateError } = await adminClient
         .from('event_registrations')
         .update({
             status: 'rejected',
@@ -314,8 +352,10 @@ export async function rejectRegistration(
             reviewed_at: new Date().toISOString(),
         })
         .eq('id', registrationId)
+        .select('id')
 
     if (updateError) return { success: false, error: updateError.message }
+    if (!updated?.length) return { success: false, error: 'Registration not found' }
 
     // Fire push notification
     try {

@@ -53,7 +53,7 @@ export function EventGallery({ images, title, aspectRatio = 3 / 4 }: EventGaller
                                                 <img
                                                     src={image}
                                                     alt={`${title} - Image ${index + 1}`}
-                                                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                                    className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                                                 />
                                                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                                             </div>

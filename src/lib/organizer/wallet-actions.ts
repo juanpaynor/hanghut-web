@@ -15,7 +15,7 @@ export async function getWalletInfo(partnerId: string) {
     // 1. Get partner basics from DB
     const { data: partner, error } = await supabase
         .from('partners')
-        .select('xendit_account_id, platform_fee_receivable, kyc_status')
+        .select('xendit_account_id, platform_fee_receivable, kyc_status, use_main_wallet')
         .eq('id', partnerId)
         .single()
 
@@ -26,14 +26,17 @@ export async function getWalletInfo(partnerId: string) {
             kycStatus: null,
             xenditAvailableBalance: 0,
             pendingSettlement: 0,
+            useMainWallet: false,
         }
     }
 
-    // 2. If they have a Xendit sub-account, fetch real balance from Xendit
+    // 2. Main-wallet partners (e.g. Acme Events) settle directly into the HangHut
+    //    main Xendit account — there is no per-partner sub-account balance to fetch.
+    //    Skip the API call entirely; the payouts page uses the transactions ledger instead.
     let xenditAvailableBalance = 0
     let pendingSettlement = 0
 
-    if (partner.xendit_account_id) {
+    if (partner.xendit_account_id && !partner.use_main_wallet) {
         try {
             const { data, error: fnError } = await supabase.functions.invoke(
                 'get-subaccount-balance',
@@ -46,7 +49,6 @@ export async function getWalletInfo(partnerId: string) {
             }
         } catch (err) {
             console.error('[Wallet] Failed to fetch Xendit balance:', err)
-            // Fail silently — show 0 rather than crashing the page
         }
     }
 
@@ -56,6 +58,7 @@ export async function getWalletInfo(partnerId: string) {
         kycStatus: partner.kyc_status,
         xenditAvailableBalance,
         pendingSettlement,
+        useMainWallet: partner.use_main_wallet ?? false,
     }
 }
 

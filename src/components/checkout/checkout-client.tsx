@@ -195,7 +195,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             const name = effectiveUser ? (effectiveUser.user_metadata?.full_name || effectiveUser.email) : guestDetails.name
 
             // Execute in background
-            subscribeGuestToNewsletter(event.organizer_id, email, name).catch(err =>
+            subscribeGuestToNewsletter(event.organizer_id, email, name, event.id).catch(err =>
                 console.error("Subscription background task failed:", err)
             )
         }
