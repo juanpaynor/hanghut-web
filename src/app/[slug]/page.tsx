@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import { PublicEventCard } from '@/components/events/public-event-card'
-import { Globe, Instagram, Facebook, Twitter, Calendar, MapPin, Megaphone, X, History } from 'lucide-react'
+import { Globe, Instagram, Facebook, Twitter, Calendar, MapPin, Megaphone, X, History, Crown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Metadata } from 'next'
 import { Inter, Playfair_Display, Space_Mono } from 'next/font/google'
@@ -16,6 +16,8 @@ import { cn, getYouTubeEmbedUrl } from '@/lib/utils'
 import { sanitize } from '@/lib/sanitize'
 import { SectionRenderer } from '@/components/storefront/section-renderer'
 import { StorefrontNavbar } from '@/components/storefront/storefront-navbar'
+import { SubscriptionSection } from '@/components/storefront/subscription-section'
+import { getSubscriptionStatus } from '@/lib/subscriptions/access'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
@@ -90,7 +92,25 @@ const getPartnerAndEvents = cache(async (slug: string) => {
         tickets_sold: ticketCountMap.get(event.id) || 0,
     }))
 
-    return { partner, upcoming, past: enrichedPast }
+    // Subscription tiers + published posts
+    const [tiersRes, postsRes] = await Promise.all([
+        supabase
+            .from('subscription_tiers')
+            .select('id, name, description, price_monthly')
+            .eq('partner_id', partner.id)
+            .eq('is_active', true)
+            .order('price_monthly', { ascending: true }),
+        supabase
+            .from('subscription_posts')
+            .select('id, title, body, published_at, gated_url, gated_url_label, subscription_tiers(name)')
+            .eq('partner_id', partner.id)
+            .not('published_at', 'is', null)
+            .lte('published_at', new Date().toISOString())
+            .order('published_at', { ascending: false })
+            .limit(10),
+    ])
+
+    return { partner, upcoming, past: enrichedPast, tiers: tiersRes.data || [], posts: postsRes.data || [] }
 })
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -115,7 +135,12 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
 
     if (!data) notFound()
 
-    const { partner, upcoming, past } = data
+    const { partner, upcoming, past, tiers, posts } = data
+
+    // Subscription status for the current viewer (non-blocking, no auth = not subscribed)
+    const subscriptionStatus = await getSubscriptionStatus(partner.id).catch(() => ({
+        isAuthenticated: false, isActive: false, status: null, tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null,
+    }))
     const social = partner.social_links || {}
     const branding = partner.branding || {}
     const layout = branding.design?.layout || 'modern'
@@ -316,50 +341,48 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                         </div>
                                     )}
 
-                                    <div className="space-y-6">
-                                        <div className="flex items-center justify-between">
-                                            <h2 className="text-2xl font-bold flex items-center gap-2">
-                                                <Calendar className="h-6 w-6 text-primary" />
-                                                Upcoming Events
-                                            </h2>
-                                            {sortBy !== 'upcoming' && (
-                                                <Badge variant="outline" className="text-muted-foreground">
-                                                    Sorted by {sortBy === 'newest' ? 'Newest' : 'A-Z'}
-                                                </Badge>
+                                    <div className="space-y-8">
+                                            <div className="space-y-6">
+                                                <div className="flex items-center justify-between">
+                                                    <h2 className="text-2xl font-bold flex items-center gap-2">
+                                                        <Calendar className="h-6 w-6 text-primary" />
+                                                        Upcoming Events
+                                                    </h2>
+                                                    {sortBy !== 'upcoming' && (
+                                                        <Badge variant="outline" className="text-muted-foreground">
+                                                            Sorted by {sortBy === 'newest' ? 'Newest' : 'A-Z'}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                                {sortedUpcoming.length > 0 ? (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                        {sortedUpcoming.map((event: any) => (
+                                                            <div key={event.id} className={animate('delay-500')}>
+                                                                <PublicEventCard event={event} />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <EmptyState partnerName={partner.business_name} />
+                                                )}
+                                            </div>
+
+                                            {past.length > 0 && (
+                                                <div className={cn("space-y-6 pt-8 border-t opacity-80 hover:opacity-100 transition-opacity", animate('delay-700'))}>
+                                                    <h2 className="text-xl font-bold text-muted-foreground flex items-center gap-2">
+                                                        <History className="h-5 w-5" />
+                                                        Past Events
+                                                    </h2>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 opacity-75">
+                                                        {past.map((event: any) => (
+                                                            <div key={event.id} className="grayscale hover:grayscale-0 transition-all">
+                                                                <PublicEventCard event={event} />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             )}
-                                        </div>
-
-                                        {sortedUpcoming.length > 0 ? (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                {sortedUpcoming.map((event: any) => (
-                                                    <div key={event.id} className={animate('delay-500')}>
-                                                        <PublicEventCard event={event} />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <EmptyState partnerName={partner.business_name} />
-                                        )}
                                     </div>
-
-                                    {/* Past Events Section */}
-                                    {past.length > 0 && (
-                                        <div className={cn("space-y-6 pt-8 border-t opacity-80 hover:opacity-100 transition-opacity", animate('delay-700'))}>
-                                            <div className="flex items-center gap-2">
-                                                <h2 className="text-xl font-bold text-muted-foreground flex items-center gap-2">
-                                                    <History className="h-5 w-5" />
-                                                    Past Events
-                                                </h2>
-                                            </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 opacity-75">
-                                                {past.map((event: any) => (
-                                                    <div key={event.id} className="grayscale hover:grayscale-0 transition-all">
-                                                        <PublicEventCard event={event} />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
                             </div>
                         </div>
@@ -461,6 +484,19 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                 )}
 
                 </>) /* end legacy fallback */}
+
+                {/* --- SUBSCRIPTIONS --- always rendered regardless of layout */}
+                {(tiers.length > 0 || posts.length > 0) && (
+                    <div className="container mx-auto px-4 py-16">
+                        <SubscriptionSection
+                            tiers={tiers}
+                            posts={posts as any}
+                            subscriptionStatus={subscriptionStatus as any}
+                            isLoggedIn={subscriptionStatus.isAuthenticated}
+                            partnerName={partner.business_name}
+                        />
+                    </div>
+                )}
 
                 {/* --- FOOTER --- */}
                 {showFooter && (

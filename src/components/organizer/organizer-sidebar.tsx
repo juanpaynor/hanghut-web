@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
     LayoutDashboard, CalendarDays, Wallet, Mail, Users, ScanLine,
     Settings, Code2, ShieldCheck, ExternalLink, LogOut, Megaphone,
-    MousePointerClick,
+    MousePointerClick, Crown,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/auth/cached'
@@ -37,7 +37,8 @@ const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
     {
         title: 'Audience',
         items: [
-            { label: 'Email',        href: '/organizer/marketing',     icon: Mail,            section: 'email' },
+            { label: 'Email',          href: '/organizer/marketing',      icon: Mail,            section: 'email' },
+            { label: 'Subscriptions',  href: '/organizer/subscriptions',  icon: Crown,           section: 'subscriptions' },
         ],
     },
     {
@@ -62,7 +63,8 @@ const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
     events:       ['owner', 'manager'],
     payouts:      ['owner', 'finance'],
     advertising:  ['owner', 'finance'],
-    email:        ['owner', 'marketing'],
+    email:         ['owner', 'marketing'],
+    subscriptions: ['owner', 'manager'],
     team:         ['owner'],
     scanner:      ['owner', 'manager', 'scanner'],
     settings:     ['owner', 'manager'],
@@ -168,7 +170,12 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, 
                 {isVerified && (storefrontUrl || partnerSlug) && (
                     <div>
                         <a
-                            href={storefrontUrl ?? `https://${partnerSlug}.hanghut.com`}
+                            href={
+                                storefrontUrl ??
+                                (typeof window !== 'undefined' && window.location.hostname === 'localhost'
+                                    ? `/${partnerSlug}`
+                                    : `https://${partnerSlug}.hanghut.com`)
+                            }
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-2.5 px-2 py-2 rounded-md text-sm font-medium text-primary hover:text-primary/80 hover:bg-primary/5 transition-colors"

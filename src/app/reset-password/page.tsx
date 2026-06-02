@@ -76,7 +76,7 @@ export default function ResetPasswordPage() {
 
             // Redirect after 2 seconds
             setTimeout(() => {
-                router.push('/organizer/login')
+                router.push('/account/login')
             }, 2000)
         } catch (err) {
             setError('An unexpected error occurred.')
@@ -166,7 +166,7 @@ export default function ResetPasswordPage() {
                         </Button>
 
                         <div className="text-center text-sm text-muted-foreground">
-                            <Link href="/organizer/login" className="text-primary hover:underline">
+                            <Link href="/account/login" className="text-primary hover:underline">
                                 Back to Login
                             </Link>
                         </div>
