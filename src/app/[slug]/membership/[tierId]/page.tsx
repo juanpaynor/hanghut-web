@@ -64,7 +64,7 @@ export default async function TierPage({ params }: Props) {
 
     const subscriptionStatus = await getSubscriptionStatus(partner.id).catch(() => ({
         isAuthenticated: false, isActive: false, status: null,
-        tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null,
+        subscriptionId: null, tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null,
     }))
 
     return (

@@ -67,7 +67,7 @@ export default async function MembershipLandingPage({ params }: Props) {
 
     const subscriptionStatus = await getSubscriptionStatus(partner.id).catch(() => ({
         isAuthenticated: false, isActive: false, status: null,
-        tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null,
+        subscriptionId: null, tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null,
     }))
 
     // Fetch subscription row id + existing claims — only if user is an active subscriber

@@ -143,9 +143,9 @@ export function TierDetailPage({ partner, tier, subscriptionStatus }: Props) {
 
     const handleCancel = () => {
         if (!confirm('Cancel your subscription? You keep access until the end of your current period.')) return
-        if (!effectiveStatus.tierId) return
+        if (!effectiveStatus.subscriptionId) return
         startTransition(async () => {
-            const result = await cancelSubscription(effectiveStatus.tierId!)
+            const result = await cancelSubscription(effectiveStatus.subscriptionId!)
             if (result.error) {
                 toast({ title: 'Error', description: result.error, variant: 'destructive' })
             } else {

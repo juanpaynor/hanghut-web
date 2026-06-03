@@ -139,7 +139,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
 
     // Subscription status for the current viewer (non-blocking, no auth = not subscribed)
     const subscriptionStatus = await getSubscriptionStatus(partner.id).catch(() => ({
-        isAuthenticated: false, isActive: false, status: null, tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null,
+        isAuthenticated: false, isActive: false, status: null, subscriptionId: null, tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null,
     }))
     const social = partner.social_links || {}
     const branding = partner.branding || {}

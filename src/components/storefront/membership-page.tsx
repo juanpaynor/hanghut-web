@@ -183,7 +183,7 @@ export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subs
                                 size="sm"
                                 className="text-muted-foreground text-xs shrink-0"
                                 disabled={isPending}
-                                onClick={() => handleCancel(effectiveStatus.tierId!)}
+                                onClick={() => handleCancel(effectiveStatus.subscriptionId!)}
                             >
                                 Cancel membership
                             </Button>

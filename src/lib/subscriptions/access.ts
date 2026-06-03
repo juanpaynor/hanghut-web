@@ -7,6 +7,7 @@ export interface SubscriptionStatus {
     isAuthenticated: boolean
     isActive: boolean
     status: 'active' | 'grace_period' | 'cancelled' | 'expired' | null
+    subscriptionId: string | null  // fan_subscriptions row id — pass this to cancelSubscription()
     tierId: string | null
     tierName: string | null
     currentPeriodEnd: string | null
@@ -23,18 +24,18 @@ export async function getSubscriptionStatus(partnerId: string): Promise<Subscrip
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-        return { isAuthenticated: false, isActive: false, status: null, tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null }
+        return { isAuthenticated: false, isActive: false, status: null, subscriptionId: null, tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null }
     }
 
     const { data: sub } = await supabase
         .from('fan_subscriptions')
-        .select('status, tier_id, current_period_end, cancelled_at, subscription_tiers(name)')
+        .select('id, status, tier_id, current_period_end, cancelled_at, subscription_tiers(name)')
         .eq('fan_id', user.id)
         .eq('partner_id', partnerId)
         .maybeSingle()
 
     if (!sub) {
-        return { isAuthenticated: true, isActive: false, status: null, tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null }
+        return { isAuthenticated: true, isActive: false, status: null, subscriptionId: null, tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null }
     }
 
     const isActive = (sub.status === 'active' || sub.status === 'grace_period')
@@ -44,6 +45,7 @@ export async function getSubscriptionStatus(partnerId: string): Promise<Subscrip
         isAuthenticated: true,
         isActive,
         status: sub.status as SubscriptionStatus['status'],
+        subscriptionId: sub.id,
         tierId: sub.tier_id,
         tierName: (sub.subscription_tiers as any)?.name ?? null,
         currentPeriodEnd: sub.current_period_end,
