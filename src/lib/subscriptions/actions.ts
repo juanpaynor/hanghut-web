@@ -13,7 +13,6 @@ import { getPartnerMonthlyRevenue } from './access'
 
 export async function initiateSubscriptionCheckout(tierId: string) {
     const supabase = await createClient()
-    const adminClient = createAdminClient()
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
@@ -199,7 +198,8 @@ export interface PerkItem {
     type: 'gated_posts' | 'early_access' | 'digital_download' | 'community_link' | 'merch' | 'shoutout' | 'custom'
     label: string
     description?: string
-    url?: string
+    url?: string           // external URL (Google Drive, Discord invite, etc.)
+    file_path?: string     // Supabase Storage path in subscription-downloads bucket
     claim_frequency?: 'once' | 'monthly' | 'unlimited'
 }
 
@@ -337,6 +337,98 @@ export async function deleteSubscriptionPost(postId: string) {
 
     revalidatePath('/organizer/subscriptions/posts')
     return { success: true }
+}
+
+// ─────────────────────────────────────────────
+// EVENT SUBSCRIPTION DISCOUNTS (organizer)
+// ─────────────────────────────────────────────
+
+export async function upsertEventDiscount(
+    eventId: string,
+    subscriptionTierId: string,
+    discountType: 'fixed_price' | 'percentage',
+    discountValue: number,
+    maxTickets: number = 1
+) {
+    const supabase = await createClient()
+    const adminClient = createAdminClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { data: partner } = await supabase
+        .from('partners')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
+
+    if (!partner) return { error: 'Partner account not found' }
+
+    // Ownership check — verify event belongs to this partner
+    const { data: event } = await supabase
+        .from('events')
+        .select('id')
+        .eq('id', eventId)
+        .eq('organizer_id', partner.id)
+        .single()
+
+    if (!event) return { error: 'Event not found or access denied' }
+
+    if (discountValue <= 0) return { error: 'Discount value must be greater than 0' }
+    if (discountType === 'percentage' && discountValue > 100) return { error: 'Percentage discount cannot exceed 100%' }
+    if (maxTickets < 1) return { error: 'Max tickets must be at least 1' }
+
+    const { error } = await adminClient
+        .from('event_subscription_discounts')
+        .upsert({
+            event_id: eventId,
+            subscription_tier_id: subscriptionTierId,
+            discount_type: discountType,
+            discount_value: discountValue,
+            max_tickets: maxTickets,
+        }, { onConflict: 'event_id,subscription_tier_id' })
+
+    if (error) return { error: error.message }
+
+    revalidatePath(`/organizer/events/${eventId}`)
+    return { success: true as const }
+}
+
+export async function deleteEventDiscount(eventId: string, subscriptionTierId: string) {
+    const supabase = await createClient()
+    const adminClient = createAdminClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { data: partner } = await supabase
+        .from('partners')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
+
+    if (!partner) return { error: 'Partner account not found' }
+
+    // Ownership check
+    const { data: event } = await supabase
+        .from('events')
+        .select('id')
+        .eq('id', eventId)
+        .eq('organizer_id', partner.id)
+        .single()
+
+    if (!event) return { error: 'Event not found or access denied' }
+
+    const { error } = await adminClient
+        .from('event_subscription_discounts')
+        .delete()
+        .eq('event_id', eventId)
+        .eq('subscription_tier_id', subscriptionTierId)
+
+    if (error) return { error: error.message }
+
+    revalidatePath(`/organizer/events/${eventId}`)
+    return { success: true as const }
 }
 
 // ─────────────────────────────────────────────

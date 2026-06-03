@@ -110,6 +110,26 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
         }
     }
 
+    // Subscriber discount — non-blocking, null for guests / no subscription
+    let subscriberDiscount: {
+        has_discount: boolean
+        discount_type?: 'fixed_price' | 'percentage'
+        discount_value?: number
+        original_price?: number
+        discounted_price?: number
+        max_tickets?: number
+    } | null = null
+    try {
+        const authClient = await createClient()
+        const { data: { user } } = await authClient.auth.getUser()
+        if (user) {
+            const { data } = await authClient.rpc('get_subscriber_event_discount', { p_event_id: id })
+            if (data?.has_discount) subscriberDiscount = data
+        }
+    } catch {
+        // Non-blocking — discount display is best-effort
+    }
+
     const ticketsRemaining = event.capacity - event.tickets_sold
     let isSoldOut = ticketsRemaining <= 0
 
@@ -532,6 +552,7 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                             tiers={event.ticket_tiers}
                             fullWidth
                             trigger={null}
+                            subscriberDiscount={subscriberDiscount}
                         />
                         <p className="text-center text-xs text-muted-foreground mt-6 flex items-center justify-center gap-1">
                             <ShieldCheck className="h-3 w-3" /> Secure checkout powered by Xendit

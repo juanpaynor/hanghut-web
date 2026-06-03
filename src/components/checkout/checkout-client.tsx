@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { Calendar, MapPin, Ticket, ShieldCheck, Loader2, ArrowRight, Lock, Mail, Phone, User, LogIn } from 'lucide-react'
+import { Calendar, MapPin, Ticket, ShieldCheck, Loader2, ArrowRight, Lock, Mail, Phone, User, LogIn, Crown } from 'lucide-react'
 import { format } from 'date-fns'
 import { useToast } from '@/hooks/use-toast'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -27,6 +27,15 @@ interface RegistrationQuestion {
     display_order: number
 }
 
+interface SubscriberDiscount {
+    has_discount: boolean
+    discount_type?: 'fixed_price' | 'percentage'
+    discount_value?: number
+    original_price?: number
+    discounted_price?: number
+    max_tickets?: number
+}
+
 interface CheckoutClientProps {
     event: any
     quantity: number
@@ -41,9 +50,10 @@ interface CheckoutClientProps {
     customTos?: string | null
     organizerName?: string
     registrationQuestions?: RegistrationQuestion[]
+    subscriberDiscount?: SubscriberDiscount | null
 }
 
-export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName, registrationQuestions = [] }: CheckoutClientProps) {
+export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName, registrationQuestions = [], subscriberDiscount = null }: CheckoutClientProps) {
     const router = useRouter()
     const searchParams = useSearchParams()
     const { toast } = useToast()
@@ -90,7 +100,14 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
 
     const isFree = tier.price === 0
     const subtotal = tier.price * quantity
-    const discount = appliedPromo ? appliedPromo.discountAmount : 0
+
+    // Subscriber discount — applies to max_tickets (default 1), price diff per qualifying ticket
+    const subscriberSaving = subscriberDiscount?.has_discount && !isFree
+        ? (Number(subscriberDiscount.original_price) - Number(subscriberDiscount.discounted_price)) *
+          Math.min(quantity, subscriberDiscount.max_tickets ?? 1)
+        : 0
+
+    const discount = (appliedPromo ? appliedPromo.discountAmount : 0) + subscriberSaving
 
     // Calculate Fees (if passed)
     let platformFee = 0
@@ -265,7 +282,11 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                         fixed_fee: fixedFeeTotal,
                         processing_fee: processingFee,
                         total_fees: totalFees
-                    }
+                    },
+                    // Subscriber discount flag — edge function must independently verify
+                    // via get_subscriber_event_discount(event_id) RPC. Do NOT trust the
+                    // client-sent amount; re-calculate server-side (Option B).
+                    has_subscriber_discount: subscriberDiscount?.has_discount ?? false,
                 },
                 success_url: `${window.location.origin}/checkout/success`,
                 failure_url: `${window.location.origin}/events/${event.id}`
@@ -625,6 +646,20 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                             </div>
                         </CardContent>
                         <CardFooter className="flex-col gap-3 bg-muted/20 pt-6">
+                            {/* Subscriber discount line item */}
+                            {subscriberDiscount?.has_discount && !isFree && subscriberSaving > 0 && (
+                                <div className="w-full flex items-center justify-between text-sm text-primary bg-primary/10 border border-primary/20 rounded-lg px-3 py-2">
+                                    <span className="flex items-center gap-1.5">
+                                        <Crown className="h-3.5 w-3.5" />
+                                        Subscriber discount
+                                        <span className="text-xs text-muted-foreground">
+                                            ({Math.min(quantity, subscriberDiscount.max_tickets ?? 1)} ticket)
+                                        </span>
+                                    </span>
+                                    <span className="font-semibold">-₱{subscriberSaving.toLocaleString()}</span>
+                                </div>
+                            )}
+
                             {/* Promo Code Input */}
                             <div className="w-full flex gap-2 mb-2">
                                 <Input

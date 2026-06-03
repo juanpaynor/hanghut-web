@@ -16,6 +16,7 @@ import { PromoCode } from '@/lib/organizer/promo-actions'
 import { RegistrationQuestionsManager, RegistrationQuestion } from '@/components/organizer/registration-questions-manager'
 import { RegistrationsManager } from '@/components/organizer/registrations-manager'
 import { EventRegistration } from '@/lib/organizer/registration-management-actions'
+import { type SubscriptionTierBasic, type ExistingDiscount } from '@/components/organizer/subscriber-discounts-section'
 
 interface EventDashboardTabsProps {
     partnerId: string
@@ -36,6 +37,8 @@ interface EventDashboardTabsProps {
     fixedFeePerTicket: number
     initialQuestions: RegistrationQuestion[]
     initialRegistrations: EventRegistration[]
+    subscriptionTiers?: SubscriptionTierBasic[]
+    existingDiscounts?: ExistingDiscount[]
 }
 
 export function EventDashboardTabs({
@@ -50,7 +53,9 @@ export function EventDashboardTabs({
     passFeesToCustomer,
     fixedFeePerTicket,
     initialQuestions,
-    initialRegistrations
+    initialRegistrations,
+    subscriptionTiers = [],
+    existingDiscounts = [],
 }: EventDashboardTabsProps) {
     const [activeTab, setActiveTab] = useState('overview')
 
@@ -157,6 +162,8 @@ export function EventDashboardTabs({
                     eventId={eventId}
                     passFeesToCustomer={passFeesToCustomer}
                     fixedFeePerTicket={fixedFeePerTicket}
+                    subscriptionTiers={subscriptionTiers}
+                    existingDiscounts={existingDiscounts}
                 />
             </TabsContent>
 

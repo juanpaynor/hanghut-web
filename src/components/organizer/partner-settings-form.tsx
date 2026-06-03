@@ -26,6 +26,7 @@ import { SectionList } from './section-editor/section-list'
 import { SectionTemplates } from './section-editor/section-templates'
 import { StorefrontSection, TemplateName } from '@/lib/storefront/section-types'
 import { CustomDomainManager } from './custom-domain-manager'
+import { MembershipTabToggle } from './membership-tab-toggle'
 
 interface PartnerSettingsFormProps {
     initialData: {
@@ -43,6 +44,7 @@ interface PartnerSettingsFormProps {
             twitter?: string
             website?: string
         }
+        show_membership_tab?: boolean
         branding?: {
             colors?: {
                 primary?: string
@@ -741,6 +743,16 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                             onCheckedChange={(checked) => handleBrandingChange('content', 'show_past_events', checked)}
                                         />
                                     </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Membership</CardTitle>
+                                    <CardDescription>Control your membership tab visibility on your public storefront.</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <MembershipTabToggle initialValue={initialData.show_membership_tab ?? false} />
                                 </CardContent>
                             </Card>
 

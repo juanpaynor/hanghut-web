@@ -68,6 +68,65 @@ interface Props {
 
 const EMPTY_PERK = (): PerkItem => ({ type: 'custom', label: '', description: '' })
 
+// ─── Download file uploader (for digital_download perk) ─────
+function DownloadFileUploader({ onUploaded }: { onUploaded: (path: string) => void }) {
+    const supabase = createClient()
+    const [uploading, setUploading] = useState(false)
+    const inputRef = useRef<HTMLInputElement>(null)
+
+    const handleFile = async (file: File) => {
+        setUploading(true)
+        try {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) throw new Error('Not authenticated')
+
+            const { data: partner } = await supabase
+                .from('partners')
+                .select('id')
+                .eq('user_id', user.id)
+                .single()
+
+            if (!partner) throw new Error('Partner not found')
+
+            const ext = file.name.split('.').pop()
+            const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+            const path = `${partner.id}/${filename}`
+
+            const { error } = await supabase.storage
+                .from('subscription-downloads')
+                .upload(path, file, { upsert: false })
+
+            if (error) throw error
+            onUploaded(path)
+        } catch (err: any) {
+            console.error('Upload failed:', err)
+        } finally {
+            setUploading(false)
+        }
+    }
+
+    return (
+        <div>
+            <input
+                ref={inputRef}
+                type="file"
+                className="hidden"
+                onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}
+            />
+            <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                disabled={uploading}
+                onClick={() => inputRef.current?.click()}
+            >
+                {uploading ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Uploading…</> : <><Upload className="h-3.5 w-3.5 mr-1.5" />Upload File (max 5GB)</>}
+            </Button>
+        </div>
+    )
+}
+
 // ─── Component ─────────────────────────────────────────────
 export function TierEditor({ open, onClose, onSaved, tier, partnerId }: Props) {
     const { toast } = useToast()
@@ -320,7 +379,51 @@ export function TierEditor({ open, onClose, onSaved, tier, partnerId }: Props) {
                                     />
                                 </div>
 
-                                {config?.hasUrl && (
+                                {config?.hasUrl && newPerk.type === 'digital_download' && (
+                                    <div className="space-y-3">
+                                        <Label className="text-xs">File Source</Label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {(['upload', 'url'] as const).map(mode => (
+                                                <button
+                                                    key={mode}
+                                                    type="button"
+                                                    onClick={() => setNewPerk(p => ({ ...p, file_path: undefined, url: '' }))}
+                                                    className={cn(
+                                                        'py-2 px-3 rounded-lg border text-xs font-medium transition-colors',
+                                                        (mode === 'upload' ? !!newPerk.file_path : !newPerk.file_path && mode === 'url')
+                                                            ? 'border-primary bg-primary/5 text-primary'
+                                                            : 'border-border text-muted-foreground hover:border-primary/50'
+                                                    )}
+                                                >
+                                                    {mode === 'upload' ? '⬆ Upload File' : '🔗 External URL'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {newPerk.file_path ? (
+                                            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 rounded-lg p-2">
+                                                <FileText className="h-3.5 w-3.5 shrink-0" />
+                                                <span className="truncate">{newPerk.file_path.split('/').pop()}</span>
+                                                <button type="button" onClick={() => setNewPerk(p => ({ ...p, file_path: undefined }))} className="ml-auto hover:text-destructive">
+                                                    <X className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                <DownloadFileUploader
+                                                    onUploaded={(path) => setNewPerk(p => ({ ...p, file_path: path, url: '' }))}
+                                                />
+                                                <p className="text-xs text-center text-muted-foreground">— or —</p>
+                                                <Input
+                                                    placeholder="https://drive.google.com/..."
+                                                    value={newPerk.url || ''}
+                                                    onChange={e => setNewPerk(p => ({ ...p, url: e.target.value, file_path: undefined }))}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {config?.hasUrl && newPerk.type !== 'digital_download' && (
                                     <div className="space-y-1.5">
                                         <Label className="text-xs">URL</Label>
                                         <Input
@@ -328,6 +431,9 @@ export function TierEditor({ open, onClose, onSaved, tier, partnerId }: Props) {
                                             value={newPerk.url || ''}
                                             onChange={e => setNewPerk(p => ({ ...p, url: e.target.value }))}
                                         />
+                                        {newPerk.type === 'community_link' && (
+                                            <p className="text-xs text-muted-foreground">Tip: Use a limited-use invite link so you control how many people can join.</p>
+                                        )}
                                     </div>
                                 )}
 

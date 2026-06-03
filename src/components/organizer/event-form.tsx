@@ -19,6 +19,7 @@ import { createEvent, updateEvent } from '@/lib/organizer/event-actions'
 import { GooglePlacesAutocomplete } from '@/components/organizer/google-places-autocomplete'
 import { useToast } from '@/hooks/use-toast'
 import { TicketTiersManager } from '@/components/organizer/ticket-tiers-manager'
+import { SubscriberDiscountsSection, type SubscriptionTierBasic, type ExistingDiscount } from '@/components/organizer/subscriber-discounts-section'
 
 interface EventFormData {
     title: string
@@ -58,6 +59,8 @@ interface EventFormProps {
     eventId?: string
     passFeesToCustomer: boolean
     fixedFeePerTicket: number
+    subscriptionTiers?: SubscriptionTierBasic[]
+    existingDiscounts?: ExistingDiscount[]
 }
 
 export function EventForm({
@@ -66,7 +69,9 @@ export function EventForm({
     initialData,
     eventId,
     passFeesToCustomer,
-    fixedFeePerTicket
+    fixedFeePerTicket,
+    subscriptionTiers = [],
+    existingDiscounts = [],
 }: EventFormProps) {
     const router = useRouter()
     const { toast } = useToast()
@@ -1156,6 +1161,15 @@ export function EventForm({
                         </div>
                     </div>
                 </Card>
+
+                {/* Subscriber Discounts — edit only (requires an eventId) */}
+                {eventId && (
+                    <SubscriberDiscountsSection
+                        eventId={eventId}
+                        subscriptionTiers={subscriptionTiers}
+                        existingDiscounts={existingDiscounts}
+                    />
+                )}
 
                 {/* Custom Terms & Conditions */}
                 <Card className="p-6">

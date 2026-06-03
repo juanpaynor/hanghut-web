@@ -29,7 +29,7 @@ const getPartnerAndEvents = cache(async (slug: string) => {
     const supabase = await createClient()
     const { data: partner, error } = await supabase
         .from('partners')
-        .select('id, business_name, slug, description, profile_photo_url, cover_image_url, social_links, branding, verified')
+        .select('id, business_name, slug, description, profile_photo_url, cover_image_url, social_links, branding, verified, show_membership_tab')
         .eq('slug', slug)
         .single()
 
@@ -223,10 +223,10 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                 {hasSections ? (
                     <>
                         {showNavbar && (
-                            <StorefrontNavbar 
-                                partner={partner} 
-                                sections={branding.sections} 
-                                fontClass={fontClass} 
+                            <StorefrontNavbar
+                                partner={partner}
+                                sections={branding.sections}
+                                fontClass={fontClass}
                             />
                         )}
                         <SectionRenderer
@@ -485,15 +485,15 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
 
                 </>) /* end legacy fallback */}
 
-                {/* --- SUBSCRIPTIONS --- always rendered regardless of layout */}
-                {(tiers.length > 0 || posts.length > 0) && (
+                {/* --- MEMBERSHIP TEASER --- only shown when organizer enables the tab */}
+                {tiers.length > 0 && partner.show_membership_tab && (
                     <div className="container mx-auto px-4 py-16">
                         <SubscriptionSection
                             tiers={tiers}
-                            posts={posts as any}
+                            postCount={posts.length}
                             subscriptionStatus={subscriptionStatus as any}
-                            isLoggedIn={subscriptionStatus.isAuthenticated}
                             partnerName={partner.business_name}
+                            partnerSlug={partner.slug}
                         />
                     </div>
                 )}

@@ -12,12 +12,21 @@ import {
     DialogTrigger,
     DialogFooter,
 } from '@/components/ui/dialog'
-import { Ticket, Minus, Plus, Loader2, Check } from 'lucide-react'
+import { Ticket, Minus, Plus, Loader2, Check, Crown } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { fireConfetti } from '@/lib/utils/confetti'
+
+interface SubscriberDiscount {
+    has_discount: boolean
+    discount_type?: 'fixed_price' | 'percentage'
+    discount_value?: number
+    original_price?: number
+    discounted_price?: number
+    max_tickets?: number
+}
 
 interface TicketSelectorProps {
     eventId: string
@@ -30,6 +39,7 @@ interface TicketSelectorProps {
     tiers?: any[]
     autoOpen?: boolean
     onClose?: () => void
+    subscriberDiscount?: SubscriberDiscount | null
 }
 
 export function TicketSelector({
@@ -42,7 +52,8 @@ export function TicketSelector({
     trigger,
     tiers = [],
     autoOpen = false,
-    onClose
+    onClose,
+    subscriberDiscount = null,
 }: TicketSelectorProps) {
     const router = useRouter()
     const [isOpen, setIsOpen] = useState(autoOpen)
@@ -163,6 +174,22 @@ export function TicketSelector({
                                 </div>
                                 <div className="text-xs text-muted-foreground">per ticket</div>
                             </div>
+                        </div>
+                    )}
+
+                    {/* Subscriber discount badge */}
+                    {subscriberDiscount?.has_discount && (
+                        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-sm">
+                            <Crown className="h-4 w-4 text-primary shrink-0" />
+                            <span>
+                                <span className="font-semibold text-primary">Subscriber price: </span>
+                                {subscriberDiscount.discount_type === 'fixed_price'
+                                    ? `₱${Number(subscriberDiscount.discounted_price).toLocaleString()}`
+                                    : `${subscriberDiscount.discount_value}% off`
+                                }
+                                {' '}
+                                <span className="text-muted-foreground text-xs">(applies to {subscriberDiscount.max_tickets ?? 1} ticket at checkout)</span>
+                            </span>
                         </div>
                     )}
 

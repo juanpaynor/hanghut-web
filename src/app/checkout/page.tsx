@@ -20,8 +20,8 @@ export default async function CheckoutPage({
 
     const supabase = await createClient()
 
-    // Run event fetch and auth check in parallel
-    const [eventResult, userResult] = await Promise.all([
+    // Run event fetch, auth check, and subscriber discount check in parallel
+    const [eventResult, userResult, subscriberDiscountResult] = await Promise.all([
         supabase
             .from('events')
             .select(`
@@ -64,7 +64,8 @@ export default async function CheckoutPage({
             `)
             .eq('id', eventId)
             .single(),
-        supabase.auth.getUser()
+        supabase.auth.getUser(),
+        supabase.rpc('get_subscriber_event_discount', { p_event_id: eventId }),
     ])
 
     const event = eventResult.data
@@ -106,6 +107,11 @@ export default async function CheckoutPage({
 
     // 4. User State (already fetched in parallel above)
     const user = userResult.data?.user ?? null
+
+    // 5a. Subscriber discount (only meaningful for logged-in users)
+    const subscriberDiscount = user && subscriberDiscountResult.data?.has_discount
+        ? subscriberDiscountResult.data
+        : null
 
     // 5. Check Availability (use real-time count from tickets table using adminClient to bypass RLS)
     const adminClient = createAdminClient()
@@ -149,6 +155,7 @@ export default async function CheckoutPage({
                     customTos={customTos}
                     organizerName={organizerName}
                     registrationQuestions={(event.registration_questions || []).sort((a: any, b: any) => a.display_order - b.display_order)}
+                    subscriberDiscount={subscriberDiscount}
                 />
             </main>
         </div>

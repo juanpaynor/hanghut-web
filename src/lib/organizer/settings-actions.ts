@@ -220,3 +220,29 @@ export async function updatePartnerProfile(
 
     return { message: 'Profile updated successfully!' }
 }
+
+export async function updateMembershipTabVisibility(show: boolean): Promise<{ error?: string }> {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { data: partner } = await supabase
+        .from('partners')
+        .select('id, slug')
+        .eq('user_id', user.id)
+        .single()
+
+    if (!partner) return { error: 'Partner account not found' }
+
+    const { error } = await supabase
+        .from('partners')
+        .update({ show_membership_tab: show })
+        .eq('id', partner.id)
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/organizer/settings')
+    revalidatePath(`/${partner.slug}`)
+    return {}
+}

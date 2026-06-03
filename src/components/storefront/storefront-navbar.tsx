@@ -8,7 +8,9 @@ import { cn } from '@/lib/utils'
 interface StorefrontNavbarProps {
     partner: {
         business_name: string
+        slug: string
         profile_photo_url?: string | null
+        show_membership_tab?: boolean
     }
     sections: StorefrontSection[]
     fontClass?: string
@@ -110,6 +112,17 @@ export function StorefrontNavbar({ partner, sections, fontClass }: StorefrontNav
                                 {link.label}
                             </a>
                         ))}
+                        {partner.show_membership_tab && (
+                            <a
+                                href={`/${partner.slug}/membership`}
+                                className={cn(
+                                    "text-sm font-medium transition-colors hover:text-primary",
+                                    scrolled ? "text-muted-foreground" : "text-white/80 drop-shadow-sm hover:text-white"
+                                )}
+                            >
+                                Members
+                            </a>
+                        )}
                     </nav>
 
                     {/* Right: CTA */}

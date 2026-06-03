@@ -60,7 +60,9 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         { count: ticketsSold, data: soldTickets },
         { data: refundedTickets },
         registrationQuestions,
-        initialRegistrations
+        initialRegistrations,
+        { data: rawSubscriptionTiers },
+        { data: rawExistingDiscounts },
     ] = await Promise.all([
         // 1. Ticket tiers
         supabase
@@ -113,7 +115,20 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         getRegistrationQuestions(id),
 
         // 8. Registration requests
-        getEventRegistrations(id)
+        getEventRegistrations(id),
+
+        // 9. Partner's subscription tiers (for subscriber discounts section)
+        supabase
+            .from('subscription_tiers')
+            .select('id, name, price_monthly, is_active')
+            .eq('partner_id', partner.id)
+            .order('price_monthly', { ascending: true }),
+
+        // 10. Existing subscriber discounts for this event
+        supabase
+            .from('event_subscription_discounts')
+            .select('subscription_tier_id, discount_type, discount_value, max_tickets')
+            .eq('event_id', id),
     ])
 
     // ─── COMPUTE from parallel results ────────────────────────────────
@@ -171,6 +186,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                 fixedFeePerTicket={parseFloat(partnerPricing?.fixed_fee_per_ticket?.toString() || '15.00')}
                 initialQuestions={registrationQuestions}
                 initialRegistrations={initialRegistrations}
+                subscriptionTiers={rawSubscriptionTiers || []}
+                existingDiscounts={rawExistingDiscounts || []}
             />
         </div>
     )
