@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ShieldCheck, Users, Clock, AlertTriangle, CheckCircle, ArrowLeft, MapPin, Package, Star } from 'lucide-react'
+import { ShieldCheck, Users, Clock, CheckCircle, ArrowLeft, MapPin, Package, Star } from 'lucide-react'
 import type { Metadata } from 'next'
 import { ExperienceHeroCarousel } from '@/components/experiences/experience-hero-carousel'
 import { ExperienceSlotPicker } from '@/components/experiences/experience-slot-picker'
@@ -147,8 +147,9 @@ export default async function ExperienceDetailPage({ params }: { params: Promise
     const hostName: string = hostUser?.display_name ?? hostPartner?.business_name ?? 'Your Host'
     const hostAvatarUrl: string | null = hostPhotoUrl ?? exp.host_avatar_url ?? hostUser?.avatar_url ?? null
     const typeLabel = EXPERIENCE_TYPE_LABELS[exp.experience_type ?? ''] ?? 'Experience'
-    const successUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/experiences/success`
-    const failureUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/experiences/${id}`
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://hanghut.com'
+    const successUrl = `${baseUrl}/experiences/success`
+    const failureUrl = `${baseUrl}/experiences/${id}`
     const symbol = exp.currency === 'PHP' ? '₱' : (exp.currency ?? '₱')
 
     // Stats
