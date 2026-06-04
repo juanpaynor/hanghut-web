@@ -9,6 +9,7 @@ const TABS = [
     { label: 'Subscribers', href: '/organizer/subscriptions/subscribers' },
     { label: 'Posts',       href: '/organizer/subscriptions/posts' },
     { label: 'Claims',      href: '/organizer/subscriptions/claims' },
+    { label: 'Analytics',   href: '/organizer/subscriptions/analytics' },
 ]
 
 export function SubscriptionTabs() {

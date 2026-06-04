@@ -110,7 +110,7 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
         }
     }
 
-    // Subscriber discount — non-blocking, null for guests / no subscription
+    // Subscriber checks — discount, early access, subscriber-only gating
     let subscriberDiscount: {
         has_discount: boolean
         discount_type?: 'fixed_price' | 'percentage'
@@ -119,16 +119,36 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
         discounted_price?: number
         max_tickets?: number
     } | null = null
+    let isActiveSubscriber = false
+
     try {
         const authClient = await createClient()
         const { data: { user } } = await authClient.auth.getUser()
-        if (user) {
-            const { data } = await authClient.rpc('get_subscriber_event_discount', { p_event_id: id })
-            if (data?.has_discount) subscriberDiscount = data
+        if (user && event.organizer?.id) {
+            const [discountRes, subRes] = await Promise.all([
+                authClient.rpc('get_subscriber_event_discount', { p_event_id: id }),
+                authClient.rpc('is_active_subscriber', { p_partner_id: event.organizer.id }),
+            ])
+            if (discountRes.data?.has_discount) subscriberDiscount = discountRes.data
+            if (subRes.data === true) isActiveSubscriber = true
         }
     } catch {
-        // Non-blocking — discount display is best-effort
+        // Non-blocking
     }
+
+    // Early access window check
+    const earlyAccessHours: number | null = event.subscriber_early_access_hours ?? null
+    const isSubscriberOnly: boolean = event.is_subscriber_only ?? false
+    const now = new Date()
+    const eventStart = new Date(event.start_datetime)
+    const publicSaleOpen = earlyAccessHours
+        ? new Date(eventStart.getTime() - earlyAccessHours * 60 * 60 * 1000)
+        : null
+    const inEarlyAccessWindow = publicSaleOpen !== null && now < publicSaleOpen
+    // Subscribers can always buy if in early access window; non-subscribers wait
+    const ticketingBlocked =
+        (isSubscriberOnly && !isActiveSubscriber) ||
+        (inEarlyAccessWindow && !isActiveSubscriber)
 
     const ticketsRemaining = event.capacity - event.tickets_sold
     let isSoldOut = ticketsRemaining <= 0
@@ -541,6 +561,38 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                             You will be redirected to {event.external_provider_name || 'the ticketing provider'} to complete your purchase.
                         </p>
                     </>
+                ) : ticketingBlocked ? (
+                    <div className="flex flex-col items-center text-center gap-4 py-4">
+                        {isSubscriberOnly && !isActiveSubscriber ? (
+                            <>
+                                <p className="font-semibold">Members only event</p>
+                                <p className="text-sm text-muted-foreground">
+                                    This event is exclusive to subscribers of {event.organizer?.business_name}.
+                                </p>
+                                {event.organizer?.slug && (
+                                    <Link href={`/${event.organizer.slug}/membership`} className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                                        View membership options →
+                                    </Link>
+                                )}
+                            </>
+                        ) : inEarlyAccessWindow && !isActiveSubscriber ? (
+                            <>
+                                <p className="font-semibold">Early access for subscribers</p>
+                                <p className="text-sm text-muted-foreground">
+                                    Subscribers of {event.organizer?.business_name} get early access.
+                                    Public sale opens{' '}
+                                    <span className="font-medium text-foreground">
+                                        {publicSaleOpen ? publicSaleOpen.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                                    </span>.
+                                </p>
+                                {event.organizer?.slug && (
+                                    <Link href={`/${event.organizer.slug}/membership`} className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                                        Become a member for early access →
+                                    </Link>
+                                )}
+                            </>
+                        ) : null}
+                    </div>
                 ) : (
                     <>
                         <TicketSelector

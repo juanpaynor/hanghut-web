@@ -41,13 +41,14 @@ const getPartnerAndEvents = cache(async (slug: string) => {
     const now = new Date().toISOString()
     const showPast = partner.branding?.content?.show_past_events ?? false
 
-    // Parallel fetch for events
+    // Parallel fetch for events — subscriber-only events hidden from public listings
     const queries = [
         supabase
             .from('events')
             .select('id, title, description, status, start_datetime, end_datetime, venue_name, address, city, capacity, cover_image_url, ticket_price, event_type, created_at')
             .eq('organizer_id', partner.id)
             .eq('status', 'active')
+            .neq('is_subscriber_only', true)
             .gte('start_datetime', now)
             .order('start_datetime', { ascending: true })
     ]
@@ -59,6 +60,7 @@ const getPartnerAndEvents = cache(async (slug: string) => {
                 .select('id, title, description, status, start_datetime, end_datetime, venue_name, address, city, capacity, cover_image_url, ticket_price, event_type, created_at')
                 .eq('organizer_id', partner.id)
                 .eq('status', 'active')
+                .neq('is_subscriber_only', true)
                 .lt('start_datetime', now)
                 .order('start_datetime', { ascending: false })
                 .limit(12)
