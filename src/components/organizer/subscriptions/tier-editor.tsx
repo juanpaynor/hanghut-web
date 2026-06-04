@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast'
 import { createClient } from '@/lib/supabase/client'
 import {
     Plus, Trash2, Loader2, Upload, X, ImageIcon,
-    FileText, Link2, Package, Mic2, Star, Users, Ticket, ChevronUp, ChevronDown
+    FileText, Link2, Package, Mic2, Star, Users, Ticket, ChevronUp, ChevronDown, MessageCircle
 } from 'lucide-react'
 import { RichTextEditor } from '@/components/organizer/marketing/rich-text-editor'
 import { createSubscriptionTier, updateSubscriptionTier, type PerkItem } from '@/lib/subscriptions/actions'
@@ -35,6 +35,7 @@ const PERK_TYPES: {
     { value: 'community_link',   label: 'Community Access',     icon: Users,    hasUrl: true,  hasDescription: false, hasFrequency: false, urlPlaceholder: 'https://discord.gg/...' },
     { value: 'merch',            label: 'Physical Merch',       icon: Package,  hasUrl: false, hasDescription: true,  hasFrequency: true  },
     { value: 'shoutout',         label: 'Shoutout / Request',   icon: Mic2,     hasUrl: false, hasDescription: true,  hasFrequency: true  },
+    { value: 'subscriber_chat',  label: 'Subscriber Chat Group', icon: MessageCircle, hasUrl: false, hasDescription: false, hasFrequency: false },
     { value: 'custom',           label: 'Custom Perk',          icon: Star,     hasUrl: false, hasDescription: true,  hasFrequency: false },
 ]
 

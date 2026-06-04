@@ -152,6 +152,41 @@ async function provisionSubscription(params: {
         billing_period_start: periodStart,
         billing_period_end: periodEnd,
     })
+
+    // Fire welcome / renewal email — failure does not block provisioning
+    try {
+        const { data: tierData } = await adminClient
+            .from('subscription_tiers')
+            .select('name, perks, partners!inner(business_name, slug)')
+            .eq('id', params.tierId)
+            .single()
+
+        if (tierData) {
+            const partner = tierData.partners as any
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+            const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+            await fetch(`${supabaseUrl}/functions/v1/send-subscription-welcome`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${serviceRoleKey}`,
+                },
+                body: JSON.stringify({
+                    fan_id: params.fanId,
+                    tier_name: tierData.name,
+                    partner_name: partner.business_name,
+                    partner_slug: partner.slug,
+                    price_monthly: params.amount,
+                    current_period_end: periodEnd,
+                    perks: tierData.perks || [],
+                    is_renewal: !!params.existingSubId,
+                }),
+            })
+        }
+    } catch {
+        // Email failure is non-fatal
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -195,7 +230,7 @@ export async function cancelSubscription(subscriptionId: string) {
 // ─────────────────────────────────────────────
 
 export interface PerkItem {
-    type: 'gated_posts' | 'early_access' | 'digital_download' | 'community_link' | 'merch' | 'shoutout' | 'custom'
+    type: 'gated_posts' | 'early_access' | 'digital_download' | 'community_link' | 'merch' | 'shoutout' | 'subscriber_chat' | 'custom'
     label: string
     description?: string
     url?: string           // external URL (Google Drive, Discord invite, etc.)
@@ -246,6 +281,31 @@ export async function createSubscriptionTier(data: {
 
     if (error) return { error: error.message }
 
+    // If subscriber_chat perk is included, provision the subscriber group
+    if (data.perks?.some(p => p.type === 'subscriber_chat')) {
+        const adminClient = createAdminClient()
+        const { data: group } = await adminClient
+            .from('groups')
+            .insert({
+                name: `${data.name.trim()} Members`,
+                group_type: 'subscriber',
+                subscription_tier_id: tier.id,
+                privacy: 'private',
+                created_by: user.id,
+            })
+            .select('id')
+            .single()
+
+        if (group) {
+            await adminClient.from('group_members').insert({
+                group_id: group.id,
+                user_id: user.id,
+                role: 'admin',
+                status: 'approved',
+            })
+        }
+    }
+
     revalidatePath('/organizer/subscriptions')
     return { success: true as const, tier: tier as any }
 }
@@ -270,6 +330,41 @@ export async function updateSubscriptionTier(tierId: string, data: {
         .eq('id', tierId)
 
     if (error) return { error: error.message }
+
+    // If subscriber_chat perk is being set, ensure the subscriber group exists
+    if (data.perks?.some(p => p.type === 'subscriber_chat')) {
+        const adminClient = createAdminClient()
+        const { data: existingGroup } = await adminClient
+            .from('groups')
+            .select('id')
+            .eq('subscription_tier_id', tierId)
+            .eq('group_type', 'subscriber')
+            .maybeSingle()
+
+        if (!existingGroup) {
+            const tierName = data.name?.trim() || tierId
+            const { data: group } = await adminClient
+                .from('groups')
+                .insert({
+                    name: `${tierName} Members`,
+                    group_type: 'subscriber',
+                    subscription_tier_id: tierId,
+                    privacy: 'private',
+                    created_by: user.id,
+                })
+                .select('id')
+                .single()
+
+            if (group) {
+                await adminClient.from('group_members').insert({
+                    group_id: group.id,
+                    user_id: user.id,
+                    role: 'admin',
+                    status: 'approved',
+                })
+            }
+        }
+    }
 
     revalidatePath('/organizer/subscriptions')
     return { success: true }

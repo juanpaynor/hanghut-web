@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import {
     Crown, Check, Loader2, ArrowLeft, Lock, ExternalLink, ArrowRight,
-    Package, Megaphone, Zap, Download, Link2, Gift, Star,
+    Package, Megaphone, Zap, Download, Link2, Gift, Star, MessageCircle,
 } from 'lucide-react'
 import { YourPerks } from '@/components/storefront/your-perks'
 import { format } from 'date-fns'
@@ -23,6 +23,7 @@ const PERK_ICONS: Record<PerkItem['type'], typeof Crown> = {
     community_link:   Link2,
     merch:            Package,
     shoutout:         Megaphone,
+    subscriber_chat:  MessageCircle,
     custom:           Star,
 }
 
@@ -68,12 +69,13 @@ interface Props {
     posts: Post[]
     subscriptionStatus: SubscriptionStatus
     subscriptionId?: string | null
+    subscriberGroupId?: string | null
     existingClaims?: { perk_type: string; claim_period: string; status: string }[]
     fontClass?: string
     themeStyle?: React.CSSProperties
 }
 
-export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subscriptionId, existingClaims = [], fontClass, themeStyle }: Props) {
+export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subscriptionId, subscriberGroupId, existingClaims = [], fontClass, themeStyle }: Props) {
     const { toast } = useToast()
     const [isPending, startTransition] = useTransition()
     const [loadingTierId, setLoadingTierId] = useState<string | null>(null)
@@ -205,6 +207,7 @@ export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subs
                             partnerName={partner.business_name}
                             perks={activeTier.perks as any}
                             existingClaims={existingClaims}
+                            subscriberGroupId={subscriberGroupId}
                         />
                     )
                 })()}

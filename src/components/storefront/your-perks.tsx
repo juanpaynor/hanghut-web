@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import {
     Crown, Download, Link2, Package, Megaphone, Zap, Star, Gift,
-    ExternalLink, CheckCircle2, Loader2, X,
+    ExternalLink, CheckCircle2, Loader2, X, MessageCircle,
 } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { PerkItem } from '@/lib/subscriptions/actions'
@@ -22,6 +22,7 @@ const PERK_ICONS: Record<PerkItem['type'], typeof Crown> = {
     community_link:   Link2,
     merch:            Package,
     shoutout:         Megaphone,
+    subscriber_chat:  MessageCircle,
     custom:           Star,
 }
 
@@ -32,6 +33,7 @@ interface Props {
     partnerName: string
     perks: PerkItem[]
     existingClaims: { perk_type: string; claim_period: string; status: string }[]
+    subscriberGroupId?: string | null
 }
 
 function currentPeriod() {
@@ -39,7 +41,7 @@ function currentPeriod() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-export function YourPerks({ tierId, subscriptionId, partnerId, partnerName, perks, existingClaims }: Props) {
+export function YourPerks({ tierId, subscriptionId, partnerId, partnerName, perks, existingClaims, subscriberGroupId }: Props) {
     const { toast } = useToast()
     const [claimModal, setClaimModal] = useState<{ perk: PerkItem } | null>(null)
 
@@ -64,6 +66,7 @@ export function YourPerks({ tierId, subscriptionId, partnerId, partnerName, perk
                             tierId={tierId}
                             partnerName={partnerName}
                             existingClaims={existingClaims}
+                            subscriberGroupId={subscriberGroupId}
                             onClaim={() => setClaimModal({ perk })}
                         />
                     ))}
@@ -88,12 +91,13 @@ export function YourPerks({ tierId, subscriptionId, partnerId, partnerName, perk
 }
 
 function PerkRow({
-    perk, tierId, partnerName, existingClaims, onClaim,
+    perk, tierId, partnerName, existingClaims, subscriberGroupId, onClaim,
 }: {
     perk: PerkItem
     tierId: string
     partnerName: string
     existingClaims: { perk_type: string; claim_period: string; status: string }[]
+    subscriberGroupId?: string | null
     onClaim: () => void
 }) {
     const Icon = PERK_ICONS[perk.type] ?? Gift
@@ -140,6 +144,17 @@ function PerkRow({
                     <Button size="sm" variant="outline" onClick={onClaim}>
                         {perk.type === 'merch' ? <Package className="h-3.5 w-3.5 mr-1.5" /> : <Megaphone className="h-3.5 w-3.5 mr-1.5" />}
                         {perk.type === 'merch' ? 'Claim' : 'Request'}
+                    </Button>
+                )
+
+            case 'subscriber_chat':
+                if (!subscriberGroupId) return <span className="text-xs text-muted-foreground">Chat available on app</span>
+                return (
+                    <Button size="sm" variant="outline" asChild>
+                        <a href={`hanghut://groups/${subscriberGroupId}`}>
+                            <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
+                            Chat on app
+                        </a>
                     </Button>
                 )
 

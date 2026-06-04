@@ -94,8 +94,10 @@ export default async function MembershipLandingPage({ params }: Props) {
     let subscriptionId: string | null = null
     let existingClaims: { perk_type: string; claim_period: string; status: string }[] = []
 
+    let subscriberGroupId: string | null = null
+
     if (user && subscriptionStatus.isActive && subscriptionStatus.tierId) {
-        const [subRes, claimsRes] = await Promise.all([
+        const [subRes, claimsRes, groupRes] = await Promise.all([
             supabase
                 .from('fan_subscriptions')
                 .select('id')
@@ -108,9 +110,16 @@ export default async function MembershipLandingPage({ params }: Props) {
                 .select('perk_type, claim_period, status')
                 .eq('fan_id', user.id)
                 .eq('partner_id', partner.id),
+            supabase
+                .from('groups')
+                .select('id')
+                .eq('subscription_tier_id', subscriptionStatus.tierId)
+                .eq('group_type', 'subscriber')
+                .maybeSingle(),
         ])
         subscriptionId = subRes.data?.id ?? null
         existingClaims = claimsRes.data || []
+        subscriberGroupId = groupRes.data?.id ?? null
     }
 
     return (
@@ -127,6 +136,7 @@ export default async function MembershipLandingPage({ params }: Props) {
             posts={posts as any}
             subscriptionStatus={subscriptionStatus as any}
             subscriptionId={subscriptionId}
+            subscriberGroupId={subscriberGroupId}
             existingClaims={existingClaims}
             fontClass={fontClass}
             themeStyle={themeStyle}

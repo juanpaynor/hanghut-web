@@ -4,10 +4,11 @@ import { useState, useMemo } from 'react'
 import { format, parseISO, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isToday, isBefore } from 'date-fns'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Loader2, CalendarClock, Users, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
-import { useRouter, usePathname } from 'next/navigation'
 
 interface Schedule {
     id: string
@@ -40,12 +41,13 @@ export function ExperienceSlotPicker({
     failureUrl,
 }: ExperienceSlotPickerProps) {
     const { toast } = useToast()
-    const router = useRouter()
-    const pathname = usePathname()
     const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
     const [quantity, setQuantity] = useState(1)
     const [loading, setLoading] = useState(false)
     const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+    const [guestName, setGuestName] = useState('')
+    const [guestEmail, setGuestEmail] = useState('')
+    const [guestPhone, setGuestPhone] = useState('')
     const [calendarMonth, setCalendarMonth] = useState(() => {
         // Initialize to the month of the first future open slot
         const futureSlots = schedules
@@ -94,29 +96,39 @@ export function ExperienceSlotPicker({
     }, [calendarMonth])
 
     const handleBook = async () => {
-        if (!isLoggedIn) {
-            router.push(`/experiences/login?next=${encodeURIComponent(pathname)}`)
-            return
-        }
-
         if (!selectedScheduleId) {
             toast({ title: 'Select a slot', description: 'Please choose an available time slot.', variant: 'destructive' })
             return
+        }
+
+        if (!isLoggedIn) {
+            if (!guestName.trim() || !guestEmail.trim()) {
+                toast({ title: 'Contact details required', description: 'Please enter your name and email to continue.', variant: 'destructive' })
+                return
+            }
         }
 
         setLoading(true)
         const supabase = createClient()
 
         try {
-            const { data, error } = await supabase.functions.invoke('create-experience-intent', {
-                body: {
-                    table_id: tableId,
-                    schedule_id: selectedScheduleId,
-                    quantity,
-                    success_url: successUrl,
-                    failure_url: failureUrl,
-                },
-            })
+            const body: Record<string, unknown> = {
+                table_id: tableId,
+                schedule_id: selectedScheduleId,
+                quantity,
+                success_url: successUrl,
+                failure_url: failureUrl,
+            }
+
+            if (!isLoggedIn) {
+                body.guest_details = {
+                    name: guestName.trim(),
+                    email: guestEmail.trim(),
+                    ...(guestPhone.trim() ? { phone: guestPhone.trim() } : {}),
+                }
+            }
+
+            const { data, error } = await supabase.functions.invoke('create-experience-intent', { body })
 
             if (error) throw new Error(error.message)
             if (!data?.success) throw new Error(data?.error?.message ?? 'Failed to create booking')
@@ -333,6 +345,39 @@ export function ExperienceSlotPicker({
                 </div>
             )}
 
+            {/* Guest details — shown for unauthenticated users after slot selection */}
+            {selectedScheduleId && !isLoggedIn && (
+                <div className="space-y-3 rounded-xl border border-border p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <p className="text-sm font-medium">Your contact details</p>
+                    <div className="space-y-1.5">
+                        <Label className="text-xs">Full Name <span className="text-destructive">*</span></Label>
+                        <Input
+                            placeholder="Juan dela Cruz"
+                            value={guestName}
+                            onChange={e => setGuestName(e.target.value)}
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label className="text-xs">Email Address <span className="text-destructive">*</span></Label>
+                        <Input
+                            type="email"
+                            placeholder="juan@email.com"
+                            value={guestEmail}
+                            onChange={e => setGuestEmail(e.target.value)}
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label className="text-xs">Phone Number <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                        <Input
+                            type="tel"
+                            placeholder="+63 912 345 6789"
+                            value={guestPhone}
+                            onChange={e => setGuestPhone(e.target.value)}
+                        />
+                    </div>
+                </div>
+            )}
+
             {/* Price summary */}
             {selectedScheduleId && (
                 <div className="flex justify-between items-baseline text-sm text-muted-foreground animate-in fade-in duration-200">
@@ -344,7 +389,7 @@ export function ExperienceSlotPicker({
             {/* Book button */}
             <Button
                 onClick={handleBook}
-                disabled={!selectedScheduleId || loading}
+                disabled={!selectedScheduleId || loading || (!isLoggedIn && (!guestName.trim() || !guestEmail.trim()))}
                 className="w-full h-12 font-semibold text-base"
             >
                 {loading ? (
