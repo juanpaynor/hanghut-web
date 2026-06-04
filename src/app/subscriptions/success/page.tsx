@@ -1,8 +1,21 @@
 import { Suspense } from 'react'
-import { CheckCircle, Crown, ArrowLeft } from 'lucide-react'
+import { CheckCircle, Crown, ArrowLeft, ArrowRight,
+    Download, Link2, Package, Megaphone, Zap, Star, Gift, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { format } from 'date-fns'
+import type { PerkItem } from '@/lib/subscriptions/actions'
+
+const PERK_ICONS: Record<string, typeof Crown> = {
+    gated_posts:      Crown,
+    early_access:     Zap,
+    digital_download: Download,
+    community_link:   Link2,
+    merch:            Package,
+    shoutout:         Megaphone,
+    custom:           Star,
+}
 
 async function getLatestSubscription() {
     const supabase = await createClient()
@@ -13,7 +26,7 @@ async function getLatestSubscription() {
         .from('fan_subscriptions')
         .select(`
             id, current_period_end, status,
-            subscription_tiers ( name, price_monthly ),
+            subscription_tiers ( id, name, price_monthly, perks ),
             partners ( business_name, slug, profile_photo_url )
         `)
         .eq('fan_id', user.id)
@@ -29,6 +42,7 @@ async function SuccessContent() {
     const sub = await getLatestSubscription()
     const tier = sub?.subscription_tiers as any
     const partner = sub?.partners as any
+    const perks: PerkItem[] = tier?.perks || []
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -48,10 +62,11 @@ async function SuccessContent() {
 
                 {/* Copy */}
                 <div className="space-y-2">
-                    <h1 className="text-3xl font-bold">You're in! 🎉</h1>
+                    <h1 className="text-3xl font-bold">You&apos;re in!</h1>
                     {tier && partner ? (
                         <p className="text-muted-foreground">
-                            You're now a <span className="font-semibold text-foreground">{tier.name}</span> member of{' '}
+                            You&apos;re now a{' '}
+                            <span className="font-semibold text-foreground">{tier.name}</span> member of{' '}
                             <span className="font-semibold text-foreground">{partner.business_name}</span>.
                         </p>
                     ) : (
@@ -59,39 +74,54 @@ async function SuccessContent() {
                     )}
                     {sub?.current_period_end && (
                         <p className="text-sm text-muted-foreground">
-                            Your membership renews on{' '}
-                            {new Date(sub.current_period_end).toLocaleDateString('en-PH', {
-                                month: 'long', day: 'numeric', year: 'numeric'
-                            })}
+                            Renews {format(new Date(sub.current_period_end), 'MMMM d, yyyy')}
                         </p>
                     )}
                 </div>
 
-                {/* Perks reminder */}
+                {/* Perks — real data if available, generic fallback if not */}
                 <div className="bg-muted/50 rounded-2xl p-5 space-y-3 text-sm text-left">
-                    <p className="font-semibold text-center text-foreground">What you unlock</p>
-                    {[
-                        'Exclusive subscriber posts',
-                        'Early event access',
-                        'Subscriber-only ticket prices',
-                        'Access to subscriber-only events',
-                    ].map(perk => (
-                        <div key={perk} className="flex items-center gap-2.5 text-muted-foreground">
-                            <CheckCircle className="h-4 w-4 text-primary shrink-0" />
-                            {perk}
-                        </div>
-                    ))}
+                    <p className="font-semibold text-center text-foreground">What you&apos;ve unlocked</p>
+                    {perks.length > 0 ? (
+                        perks.map((perk, i) => {
+                            const Icon = PERK_ICONS[perk.type] ?? Gift
+                            return (
+                                <div key={i} className="flex items-center gap-2.5">
+                                    <Icon className="h-4 w-4 text-primary shrink-0" />
+                                    <span className="font-medium">{perk.label}</span>
+                                </div>
+                            )
+                        })
+                    ) : (
+                        [
+                            'Exclusive subscriber posts',
+                            'Early event access',
+                            'Subscriber-only ticket prices',
+                        ].map(p => (
+                            <div key={p} className="flex items-center gap-2.5 text-muted-foreground">
+                                <CheckCircle className="h-4 w-4 text-primary shrink-0" />
+                                {p}
+                            </div>
+                        ))
+                    )}
                 </div>
 
                 {/* CTAs */}
                 <div className="flex flex-col gap-3">
                     {partner?.slug && (
                         <Button asChild size="lg">
-                            <Link href={`/${partner.slug}`}>
-                                Go to {partner.business_name}
+                            <Link href={`/${partner.slug}/membership`} className="gap-2">
+                                View your perks
+                                <ArrowRight className="h-4 w-4" />
                             </Link>
                         </Button>
                     )}
+                    <Button asChild variant="outline" size="sm">
+                        <Link href="/account" className="gap-1.5 text-muted-foreground">
+                            <Crown className="h-4 w-4" />
+                            My memberships
+                        </Link>
+                    </Button>
                     <Button asChild variant="ghost" size="sm">
                         <Link href="/" className="flex items-center gap-1.5 text-muted-foreground">
                             <ArrowLeft className="h-4 w-4" />

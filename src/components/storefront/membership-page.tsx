@@ -69,9 +69,11 @@ interface Props {
     subscriptionStatus: SubscriptionStatus
     subscriptionId?: string | null
     existingClaims?: { perk_type: string; claim_period: string; status: string }[]
+    fontClass?: string
+    themeStyle?: React.CSSProperties
 }
 
-export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subscriptionId, existingClaims = [] }: Props) {
+export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subscriptionId, existingClaims = [], fontClass, themeStyle }: Props) {
     const { toast } = useToast()
     const [isPending, startTransition] = useTransition()
     const [loadingTierId, setLoadingTierId] = useState<string | null>(null)
@@ -112,7 +114,7 @@ export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subs
     }
 
     return (
-        <div className="min-h-screen bg-background">
+        <div className={`min-h-screen bg-background${fontClass ? ` ${fontClass}` : ''}`} style={themeStyle}>
             {/* Cover + Header */}
             <div className="relative h-52 sm:h-72 w-full overflow-hidden bg-gradient-to-br from-primary/30 via-primary/10 to-background">
                 {partner.cover_image_url ? (

@@ -52,6 +52,8 @@ interface Props {
     partner: Partner
     tier: Tier
     subscriptionStatus: SubscriptionStatus
+    fontClass?: string
+    themeStyle?: React.CSSProperties
 }
 
 function SubscribeButton({
@@ -111,7 +113,7 @@ function SubscribeButton({
     )
 }
 
-export function TierDetailPage({ partner, tier, subscriptionStatus }: Props) {
+export function TierDetailPage({ partner, tier, subscriptionStatus, fontClass, themeStyle }: Props) {
     const { toast } = useToast()
     const [isPending, startTransition] = useTransition()
     const [isLoading, setIsLoading] = useState(false)
@@ -156,7 +158,7 @@ export function TierDetailPage({ partner, tier, subscriptionStatus }: Props) {
     }
 
     return (
-        <div className="min-h-screen bg-background">
+        <div className={`min-h-screen bg-background${fontClass ? ` ${fontClass}` : ''}`} style={themeStyle}>
             {/* Hero */}
             <div className="relative h-64 sm:h-80 w-full overflow-hidden bg-gradient-to-br from-primary/30 via-primary/10 to-background">
                 {tier.image_url ? (

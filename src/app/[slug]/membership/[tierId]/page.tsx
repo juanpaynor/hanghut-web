@@ -2,7 +2,13 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { getSubscriptionStatus } from '@/lib/subscriptions/access'
 import { TierDetailPage } from '@/components/storefront/tier-detail-page'
+import { Inter, Playfair_Display, Space_Mono } from 'next/font/google'
+import { hexToHsl } from '@/lib/utils'
 import type { Metadata } from 'next'
+
+const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
+const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
+const spaceMono = Space_Mono({ weight: '400', subsets: ['latin'], variable: '--font-mono' })
 
 export const revalidate = 60
 
@@ -15,7 +21,7 @@ async function getTierWithPartner(slug: string, tierId: string) {
 
     const { data: partner } = await supabase
         .from('partners')
-        .select('id, business_name, slug, description, profile_photo_url, cover_image_url')
+        .select('id, business_name, slug, description, profile_photo_url, cover_image_url, branding')
         .eq('slug', slug)
         .single()
 
@@ -62,6 +68,19 @@ export default async function TierPage({ params }: Props) {
 
     const { partner, tier } = data
 
+    const branding = (partner as any).branding || {}
+    const primaryColor = branding.colors?.primary
+    const fontPref = branding.design?.font || 'sans'
+    const fontMap: Record<string, string> = {
+        sans:  inter.className,
+        serif: playfair.className,
+        mono:  spaceMono.className,
+    }
+    const fontClass = fontMap[fontPref] || inter.className
+    const themeStyle = primaryColor
+        ? { '--primary': hexToHsl(primaryColor), '--ring': hexToHsl(primaryColor) } as React.CSSProperties
+        : undefined
+
     const subscriptionStatus = await getSubscriptionStatus(partner.id).catch(() => ({
         isAuthenticated: false, isActive: false, status: null,
         subscriptionId: null, tierId: null, tierName: null, currentPeriodEnd: null, cancelledAt: null,
@@ -78,6 +97,8 @@ export default async function TierPage({ params }: Props) {
             }}
             tier={tier as any}
             subscriptionStatus={subscriptionStatus as any}
+            fontClass={fontClass}
+            themeStyle={themeStyle}
         />
     )
 }
