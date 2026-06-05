@@ -26,7 +26,7 @@ const faqs = [
     },
     {
         q: "Who pays the payment processing fee?",
-        a: "Xendit (our payment gateway) charges a processing fee directly on each transaction. You can choose to absorb it yourself, or enable our 'Pass Fee' option to add a small fixed convenience fee to the buyer's total — your call.",
+        a: "Xendit (our payment gateway) charges a processing fee of 1.5% to 3% per transaction, depending on the payment method used (e-wallets, cards, direct debit, etc.). This is separate from HangHut's 4% platform fee. You can choose to absorb it yourself, or enable our 'Pass Fee' option to add a small convenience fee to the buyer's total — your call.",
     },
     {
         q: "When do I get paid?",
@@ -82,11 +82,26 @@ export function TicketingFeatures() {
                         <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-6 py-2 rounded-full font-bold text-sm uppercase tracking-wider shadow-lg whitespace-nowrap">
                             ✨ One Plan. Everything Included.
                         </div>
-                        <div className="mt-4">
-                            <span className="text-7xl font-headline font-black text-primary">4%</span>
-                            <p className="text-xl text-muted-foreground mt-2 font-light">platform fee per ticket sold</p>
-                            <p className="text-sm text-muted-foreground mt-1">Deducted from your payout — buyers pay face value only</p>
+                        <div className="mt-4 space-y-5">
+                            {/* HangHut fee */}
+                            <div>
+                                <span className="text-7xl font-headline font-black text-primary">4%</span>
+                                <p className="text-xl text-muted-foreground mt-2 font-light">HangHut platform fee per ticket sold</p>
+                                <p className="text-sm text-muted-foreground mt-1">Deducted from your payout — buyers pay face value only</p>
+                            </div>
+
+                            {/* Processing fee callout */}
+                            <div className="rounded-xl bg-muted/50 border border-border px-5 py-4 text-left space-y-1">
+                                <p className="text-sm font-semibold flex items-center gap-2">
+                                    + 1.5% – 3% payment processing fee
+                                    <span className="text-xs font-normal text-muted-foreground">(via Xendit)</span>
+                                </p>
+                                <p className="text-xs text-muted-foreground leading-relaxed">
+                                    Charged by Xendit per transaction — rate varies by payment method (e.g. e-wallets, cards, direct debit). You can absorb this yourself or pass it to buyers as a convenience fee.
+                                </p>
+                            </div>
                         </div>
+
                         <div className="mt-8 pt-6 border-t grid grid-cols-2 gap-3 text-left">
                             {[
                                 "Free organizer storefront",
@@ -121,6 +136,7 @@ export function TicketingFeatures() {
                             <tbody className="divide-y divide-border">
                                 {[
                                     { feature: "Platform Fee", others: "7% – 15%", us: "4% flat" },
+                                    { feature: "Payment Processing Fee", others: "Included in their %", us: "1.5% – 3% (Xendit)" },
                                     { feature: "Monthly Subscription", others: "₱500 – ₱5,000/mo", us: "Free" },
                                     { feature: "Organizer Storefront", others: "Paid add-on", us: "Free" },
                                     { feature: "Custom Domain", others: "Not available", us: "Free" },
@@ -151,7 +167,7 @@ export function TicketingFeatures() {
                     </div>
 
                     <p className="text-center text-xs text-muted-foreground mt-4">
-                        * Payment gateway processing fees (charged by Xendit) apply per transaction and may be passed to buyers or absorbed by the organizer.
+                        * Xendit processing fees (1.5%–3%) vary by payment method and are separate from HangHut&apos;s 4% platform fee. Organizers can absorb this or enable the &ldquo;Pass Fee&rdquo; option to add a convenience fee to the buyer&apos;s total.
                     </p>
                 </div>
 
