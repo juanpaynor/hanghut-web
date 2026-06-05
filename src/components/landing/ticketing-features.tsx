@@ -26,7 +26,7 @@ const faqs = [
     },
     {
         q: "Who pays the payment processing fee?",
-        a: "Xendit (our payment gateway) charges a processing fee of 1.5% to 3% per transaction, depending on the payment method used (e-wallets, cards, direct debit, etc.). This is separate from HangHut's 4% platform fee. You can choose to absorb it yourself, or enable our 'Pass Fee' option to add a small convenience fee to the buyer's total — your call.",
+        a: "Xendit (our payment gateway) charges a processing fee of 1.5% to 3% per transaction, depending on the payment method used (e-wallets, cards, direct debit, etc.). This is separate from HangHut's 4% platform fee.",
     },
     {
         q: "When do I get paid?",
@@ -97,7 +97,7 @@ export function TicketingFeatures() {
                                     <span className="text-xs font-normal text-muted-foreground">(via Xendit)</span>
                                 </p>
                                 <p className="text-xs text-muted-foreground leading-relaxed">
-                                    Charged by Xendit per transaction — rate varies by payment method (e.g. e-wallets, cards, direct debit). You can absorb this yourself or pass it to buyers as a convenience fee.
+                                    Charged by Xendit per transaction — rate varies by payment method (e.g. e-wallets, cards, direct debit).
                                 </p>
                             </div>
                         </div>
@@ -167,7 +167,7 @@ export function TicketingFeatures() {
                     </div>
 
                     <p className="text-center text-xs text-muted-foreground mt-4">
-                        * Xendit processing fees (1.5%–3%) vary by payment method and are separate from HangHut&apos;s 4% platform fee. Organizers can absorb this or enable the &ldquo;Pass Fee&rdquo; option to add a convenience fee to the buyer&apos;s total.
+                        * Xendit processing fees (1.5%–3%) vary by payment method and are separate from HangHut&apos;s 4% platform fee.
                     </p>
                 </div>
 
