@@ -22,7 +22,7 @@ export const getPartner = cache(async (userId: string) => {
     // Check direct ownership first
     const { data: partner } = await supabase
         .from('partners')
-        .select('id, business_name, kyc_status, slug, profile_photo_url')
+        .select('id, business_name, kyc_status, slug, profile_photo_url, capabilities')
         .eq('user_id', userId)
         .single()
 
@@ -31,12 +31,11 @@ export const getPartner = cache(async (userId: string) => {
     // Fallback: check team membership
     const { data: teamMember } = await supabase
         .from('partner_team_members')
-        .select('partner_id, partners(id, business_name, kyc_status, slug, profile_photo_url)')
+        .select('partner_id, partners(id, business_name, kyc_status, slug, profile_photo_url, capabilities)')
         .eq('user_id', userId)
         .single()
 
     if (teamMember?.partners) {
-        // Team member's partner data has the same shape
         const p = teamMember.partners as any
         return {
             id: p.id,
@@ -44,6 +43,7 @@ export const getPartner = cache(async (userId: string) => {
             kyc_status: p.kyc_status,
             slug: p.slug,
             profile_photo_url: p.profile_photo_url,
+            capabilities: p.capabilities,
         }
     }
 

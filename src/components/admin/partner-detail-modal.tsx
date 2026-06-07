@@ -23,7 +23,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
 import { CheckCircle, XCircle, Ban, DollarSign, ExternalLink, Phone, MapPin, FileText } from 'lucide-react'
-import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts } from '@/lib/admin/partner-actions'
+import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities } from '@/lib/admin/partner-actions'
 import { useRouter } from 'next/navigation'
 
 interface Partner {
@@ -67,6 +67,8 @@ interface Partner {
     articles_of_incorporation_url: string | null
     secretary_certificate_url: string | null
     latest_gis_url: string | null
+    // Capabilities
+    capabilities: string[] | null
     // Admin notes
     admin_notes: string | null
     user: {
@@ -153,6 +155,27 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
         } catch (error) {
             console.error('Error reactivating partner:', error)
             alert('Failed to reinstate partner')
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    const [capabilities, setCapabilities] = useState<string[]>(partner.capabilities ?? ['organizer'])
+
+    const toggleCapability = (cap: string) => {
+        setCapabilities(prev =>
+            prev.includes(cap) ? prev.filter(c => c !== cap) : [...prev, cap]
+        )
+    }
+
+    const handleSaveCapabilities = async () => {
+        if (capabilities.length === 0) return
+        setIsLoading(true)
+        try {
+            await setPartnerCapabilities(partner.id, capabilities)
+            router.refresh()
+        } catch {
+            alert('Failed to update capabilities')
         } finally {
             setIsLoading(false)
         }
@@ -403,6 +426,39 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                             <p className="text-sm text-slate-400 bg-slate-800/50 rounded-md p-3 border border-slate-700">{partner.admin_notes}</p>
                         </div>
                     )}
+
+                    {/* Partner Type / Capabilities */}
+                    <div className="space-y-4 border-t border-slate-700 pt-6">
+                        <h3 className="text-lg font-semibold">Partner Type</h3>
+                        <p className="text-sm text-slate-400">Controls which dashboard sections this partner can access.</p>
+                        <div className="flex gap-3">
+                            {[
+                                { value: 'organizer', label: 'Event Organizer', desc: 'Events, tickets, campaigns' },
+                                { value: 'experience_host', label: 'Experience Host', desc: 'Experiences, calendar, bookings' },
+                            ].map(({ value, label, desc }) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => toggleCapability(value)}
+                                    className={`flex-1 p-3 rounded-xl border text-left transition-colors ${
+                                        capabilities.includes(value)
+                                            ? 'border-primary bg-primary/10 text-white'
+                                            : 'border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-500'
+                                    }`}
+                                >
+                                    <p className="font-semibold text-sm">{label}</p>
+                                    <p className="text-xs mt-0.5 opacity-70">{desc}</p>
+                                </button>
+                            ))}
+                        </div>
+                        <Button
+                            onClick={handleSaveCapabilities}
+                            disabled={isLoading || capabilities.length === 0}
+                            className="w-full bg-primary hover:bg-primary/90"
+                        >
+                            Save Partner Type
+                        </Button>
+                    </div>
 
                     {/* Pricing Configuration */}
                     <div className="space-y-4 border-t border-slate-700 pt-6">

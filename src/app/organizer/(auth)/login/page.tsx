@@ -87,7 +87,7 @@ export default function OrganizerLoginPage() {
                 .maybeSingle()
 
             if (!teamMember) {
-                setError('No partner account found. Please register for a partner account or ask your team admin to invite you.')
+                setError('No partner account found. If you applied as an experience host via the app, please wait for approval. Otherwise, register a partner account or ask your team admin to invite you.')
                 await supabase.auth.signOut()
                 setLoading(false)
                 return
@@ -133,7 +133,7 @@ export default function OrganizerLoginPage() {
                     </Link>
                     <div className="flex items-center justify-center gap-2 text-muted-foreground mt-4">
                         <Briefcase className="h-5 w-5" />
-                        <p className="text-lg font-medium">Event Organizer Portal</p>
+                        <p className="text-lg font-medium">Partner Portal</p>
                     </div>
                 </div>
 
@@ -143,7 +143,7 @@ export default function OrganizerLoginPage() {
                         <div className="text-center">
                             <h2 className="text-2xl font-bold mb-2">Welcome Back!</h2>
                             <p className="text-muted-foreground">
-                                Sign in to manage your events
+                                Sign in to your dashboard
                             </p>
                         </div>
 
@@ -274,12 +274,13 @@ export default function OrganizerLoginPage() {
 
                         <div className="text-center space-y-2">
                             <p className="text-sm text-muted-foreground">
-                                Don't have a partner account?
-                            </p>
-                            <p className="text-sm">
+                                Event organizer?{' '}
                                 <Link href="/organizer/register" className="text-primary hover:underline font-medium">
-                                    Create Partner Account
+                                    Create a partner account
                                 </Link>
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                                Experience host? Apply via the HangHut app.
                             </p>
                         </div>
                     </div>

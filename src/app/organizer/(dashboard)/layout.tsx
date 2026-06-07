@@ -73,6 +73,8 @@ export default async function OrganizerLayout({
         ? `https://${partnerFull.custom_domain}`
         : partner.slug ? `https://${partner.slug}.hanghut.com` : null
 
+    const capabilities: string[] = (partner as any).capabilities ?? ['organizer']
+
     return (
         <div className="min-h-screen bg-background flex">
             {/* Sidebar */}
@@ -82,6 +84,7 @@ export default async function OrganizerLayout({
                 businessName={partner.business_name}
                 partnerSlug={partner.slug ?? null}
                 storefrontUrl={storefrontUrl}
+                capabilities={capabilities}
             />
 
             {/* Main content — offset by sidebar width on md+ */}

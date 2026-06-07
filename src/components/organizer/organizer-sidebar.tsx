@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
     LayoutDashboard, CalendarDays, Wallet, Mail, Users, ScanLine,
     Settings, Code2, ShieldCheck, ExternalLink, LogOut, Megaphone,
-    MousePointerClick, Crown,
+    MousePointerClick, Crown, Compass, BookOpen, CalendarClock,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/auth/cached'
@@ -17,59 +17,70 @@ interface NavItem {
     icon: React.ElementType
     section: string
     external?: boolean
-    pulse?: boolean
+    capability?: 'organizer' | 'experience_host' // undefined = shown to all
 }
 
 const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
     {
         items: [
             { label: 'Dashboard',    href: '/organizer',               icon: LayoutDashboard, section: 'dashboard' },
-            { label: 'My Events',    href: '/organizer/events',        icon: CalendarDays,    section: 'events' },
+            { label: 'My Events',    href: '/organizer/events',        icon: CalendarDays,    section: 'events',       capability: 'organizer' },
+        ],
+    },
+    {
+        title: 'Experiences',
+        items: [
+            { label: 'My Experiences', href: '/organizer/experiences',          icon: Compass,       section: 'experiences',  capability: 'experience_host' },
+            { label: 'Bookings',       href: '/organizer/experiences/bookings', icon: BookOpen,      section: 'exp_bookings', capability: 'experience_host' },
+            { label: 'Calendar',       href: '/organizer/experiences/calendar', icon: CalendarClock, section: 'exp_calendar', capability: 'experience_host' },
         ],
     },
     {
         title: 'Money',
         items: [
-            { label: 'Payouts',      href: '/organizer/payouts',       icon: Wallet,          section: 'payouts' },
-            { label: 'Advertising',  href: '/organizer/advertising',   icon: MousePointerClick, section: 'advertising' },
+            { label: 'Payouts',      href: '/organizer/payouts',       icon: Wallet,            section: 'payouts' },
+            { label: 'Advertising',  href: '/organizer/advertising',   icon: MousePointerClick, section: 'advertising', capability: 'organizer' },
         ],
     },
     {
         title: 'Audience',
         items: [
-            { label: 'Email',          href: '/organizer/marketing',      icon: Mail,            section: 'email' },
-            { label: 'Subscriptions',  href: '/organizer/subscriptions',  icon: Crown,           section: 'subscriptions' },
+            { label: 'Email',          href: '/organizer/marketing',      icon: Mail,  section: 'email',          capability: 'organizer' },
+            { label: 'Subscriptions',  href: '/organizer/subscriptions',  icon: Crown, section: 'subscriptions',  capability: 'organizer' },
         ],
     },
     {
         title: 'Team',
         items: [
-            { label: 'Team',         href: '/organizer/team',          icon: Users,           section: 'team' },
-            { label: 'Scanner',      href: '/scan',                    icon: ScanLine,        section: 'scanner', external: true },
+            { label: 'Team',    href: '/organizer/team', icon: Users,   section: 'team' },
+            { label: 'Scanner', href: '/scan',           icon: ScanLine, section: 'scanner', external: true },
         ],
     },
     {
         title: 'Account',
         items: [
-            { label: 'Settings',     href: '/organizer/settings',      icon: Settings,        section: 'settings' },
-            { label: 'Developers',   href: '/organizer/developers',    icon: Code2,           section: 'developers' },
-            { label: 'Verification', href: '/organizer/verification',  icon: ShieldCheck,     section: 'verification' },
+            { label: 'Settings',     href: '/organizer/settings',      icon: Settings,   section: 'settings' },
+            { label: 'Developers',   href: '/organizer/developers',    icon: Code2,      section: 'developers', capability: 'organizer' },
+            { label: 'Verification', href: '/organizer/verification',  icon: ShieldCheck, section: 'verification' },
         ],
     },
 ]
 
 const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
-    dashboard:    ['owner', 'manager', 'finance', 'marketing'],
-    events:       ['owner', 'manager'],
-    payouts:      ['owner', 'finance'],
-    advertising:  ['owner', 'finance'],
+    dashboard:     ['owner', 'manager', 'finance', 'marketing'],
+    events:        ['owner', 'manager'],
+    experiences:   ['owner', 'manager'],
+    exp_bookings:  ['owner', 'manager'],
+    exp_calendar:  ['owner', 'manager'],
+    payouts:       ['owner', 'finance'],
+    advertising:   ['owner', 'finance'],
     email:         ['owner', 'marketing'],
     subscriptions: ['owner', 'manager'],
-    team:         ['owner'],
-    scanner:      ['owner', 'manager', 'scanner'],
-    settings:     ['owner', 'manager'],
-    developers:   ['owner'],
-    verification: ['owner'],
+    team:          ['owner'],
+    scanner:       ['owner', 'manager', 'scanner'],
+    settings:      ['owner', 'manager'],
+    developers:    ['owner'],
+    verification:  ['owner'],
 }
 
 interface Props {
@@ -78,9 +89,10 @@ interface Props {
     businessName: string
     partnerSlug: string | null
     storefrontUrl?: string | null
+    capabilities?: string[]
 }
 
-export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, storefrontUrl }: Props) {
+export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, storefrontUrl, capabilities = ['organizer'] }: Props) {
     const pathname = usePathname()
     const router = useRouter()
     const supabase = createClient()
@@ -111,7 +123,9 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, 
             <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
                 {NAV_GROUPS.map((group, gi) => {
                     const visibleItems = group.items.filter(item =>
-                        canSee(item.section) && (isVerified || item.section === 'verification')
+                        canSee(item.section) &&
+                        (isVerified || item.section === 'verification') &&
+                        (!item.capability || capabilities.includes(item.capability))
                     )
                     if (visibleItems.length === 0) return null
 

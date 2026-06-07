@@ -251,6 +251,25 @@ export async function resetToStandardPricing(partnerId: string) {
 }
 
 /**
+ * Set partner capabilities (organizer, experience_host, or both)
+ */
+export async function setPartnerCapabilities(partnerId: string, capabilities: string[]) {
+    const supabase = await createClient()
+
+    const { error } = await supabase
+        .from('partners')
+        .update({ capabilities })
+        .eq('id', partnerId)
+
+    if (error) {
+        console.error('Error setting partner capabilities:', error)
+        throw new Error('Failed to set partner capabilities')
+    }
+
+    return { success: true }
+}
+
+/**
  * Set auto-approve payouts flag for a partner
  */
 export async function setAutoApprovePayouts(partnerId: string, autoApprove: boolean) {

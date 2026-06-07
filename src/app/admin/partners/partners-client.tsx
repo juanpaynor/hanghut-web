@@ -61,6 +61,7 @@ interface Partner {
     articles_of_incorporation_url: string | null
     secretary_certificate_url: string | null
     latest_gis_url: string | null
+    capabilities: string[] | null
     admin_notes: string | null
     user: {
         id: string
