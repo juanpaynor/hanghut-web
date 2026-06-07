@@ -229,6 +229,7 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                 partner={partner}
                                 sections={branding.sections}
                                 fontClass={fontClass}
+                                isLoggedIn={subscriptionStatus.isAuthenticated}
                             />
                         )}
                         <SectionRenderer

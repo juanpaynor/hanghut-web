@@ -7,6 +7,7 @@ import { ShieldCheck, Users, Clock, CheckCircle, ArrowLeft, MapPin, Package, Sta
 import type { Metadata } from 'next'
 import { ExperienceHeroCarousel } from '@/components/experiences/experience-hero-carousel'
 import { ExperienceSlotPicker } from '@/components/experiences/experience-slot-picker'
+import { LoginNudge } from '@/components/shared/login-nudge'
 
 export const dynamic = 'force-dynamic'
 
@@ -449,6 +450,12 @@ export default async function ExperienceDetailPage({ params }: { params: Promise
                                     </div>
                                 </div>
                                 <CardContent className="pt-5">
+                                    {!isLoggedIn && (
+                                        <LoginNudge
+                                            label="Have an account? Sign in to skip the form"
+                                            className="mb-4"
+                                        />
+                                    )}
                                     <ExperienceSlotPicker
                                         tableId={exp.id}
                                         schedules={schedules as any[]}

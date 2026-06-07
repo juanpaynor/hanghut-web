@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { StorefrontSection } from '@/lib/storefront/section-types'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import Link from 'next/link'
+import { LogIn } from 'lucide-react'
 
 interface StorefrontNavbarProps {
     partner: {
@@ -14,9 +16,10 @@ interface StorefrontNavbarProps {
     }
     sections: StorefrontSection[]
     fontClass?: string
+    isLoggedIn?: boolean
 }
 
-export function StorefrontNavbar({ partner, sections, fontClass }: StorefrontNavbarProps) {
+export function StorefrontNavbar({ partner, sections, fontClass, isLoggedIn }: StorefrontNavbarProps) {
     const [scrolled, setScrolled] = useState(false)
 
     useEffect(() => {
@@ -126,14 +129,30 @@ export function StorefrontNavbar({ partner, sections, fontClass }: StorefrontNav
                     </nav>
 
                     {/* Right: CTA */}
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
+                        {!isLoggedIn && (
+                            <Button
+                                asChild
+                                variant="ghost"
+                                size="sm"
+                                className={cn(
+                                    "gap-1.5 font-medium",
+                                    scrolled ? "text-muted-foreground hover:text-foreground" : "text-white/80 hover:text-white"
+                                )}
+                            >
+                                <Link href={`/account/login?next=/${partner.slug}`}>
+                                    <LogIn className="h-4 w-4" />
+                                    Sign In
+                                </Link>
+                            </Button>
+                        )}
                         {hasEvents && (
-                            <Button 
+                            <Button
                                 asChild
                                 className={cn(
                                     "rounded-full font-bold transition-all shadow-lg",
-                                    scrolled 
-                                        ? "bg-primary text-primary-foreground hover:bg-primary/90" 
+                                    scrolled
+                                        ? "bg-primary text-primary-foreground hover:bg-primary/90"
                                         : "bg-white text-black hover:bg-white/90"
                                 )}
                             >

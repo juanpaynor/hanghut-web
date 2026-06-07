@@ -23,6 +23,7 @@ import { SocialProofTicker } from '@/components/events/social-proof-ticker'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { cache } from 'react'
+import { LoginNudge } from '@/components/shared/login-nudge'
 
 export const dynamic = 'force-dynamic' // always fresh — bg style changes show immediately
 
@@ -120,10 +121,12 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
         max_tickets?: number
     } | null = null
     let isActiveSubscriber = false
+    let isLoggedIn = false
 
     try {
         const authClient = await createClient()
         const { data: { user } } = await authClient.auth.getUser()
+        isLoggedIn = !!user
         if (user && event.organizer?.id) {
             const [discountRes, subRes] = await Promise.all([
                 authClient.rpc('get_subscriber_event_discount', { p_event_id: id }),
@@ -606,7 +609,13 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                             trigger={null}
                             subscriberDiscount={subscriberDiscount}
                         />
-                        <p className="text-center text-xs text-muted-foreground mt-6 flex items-center justify-center gap-1">
+                        {!isLoggedIn && (
+                            <LoginNudge
+                                label="Have a HangHut account? Sign in for faster checkout"
+                                className="mt-4"
+                            />
+                        )}
+                        <p className="text-center text-xs text-muted-foreground mt-4 flex items-center justify-center gap-1">
                             <ShieldCheck className="h-3 w-3" /> Secure checkout powered by Xendit
                         </p>
                         <p className="text-center text-xs text-muted-foreground mt-2 flex items-center justify-center gap-1">
