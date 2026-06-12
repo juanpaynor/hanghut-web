@@ -1,0 +1,60 @@
+'use client'
+
+import { useState } from 'react'
+import dynamic from 'next/dynamic'
+import { Button } from '@/components/ui/button'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog'
+import { Armchair, Loader2 } from 'lucide-react'
+
+const SeatMapPicker = dynamic(
+    () => import('@/components/events/seat-map-picker').then(m => m.SeatMapPicker),
+    {
+        ssr: false,
+        loading: () => (
+            <div className="flex items-center justify-center h-[420px]">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+        ),
+    }
+)
+
+interface SeatPickerLauncherProps {
+    eventId: string
+    fullWidth?: boolean
+}
+
+export function SeatPickerLauncher({ eventId, fullWidth = false }: SeatPickerLauncherProps) {
+    const [open, setOpen] = useState(false)
+
+    return (
+        <>
+            <Button
+                size="lg"
+                variant="outline"
+                className={fullWidth ? 'w-full' : 'w-full md:w-auto'}
+                onClick={() => setOpen(true)}
+            >
+                <Armchair className="h-5 w-5 mr-2" />
+                Pick Your Seats
+            </Button>
+
+            <Dialog open={open} onOpenChange={setOpen}>
+                <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Choose Your Seats</DialogTitle>
+                        <DialogDescription>
+                            Tap a section, then tap seats to select them. Prices are shown per category.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {open && <SeatMapPicker eventId={eventId} />}
+                </DialogContent>
+            </Dialog>
+        </>
+    )
+}

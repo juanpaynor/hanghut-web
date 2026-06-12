@@ -1,0 +1,527 @@
+'use client'
+
+/**
+ * Buyer-facing seat picker. Renders the event's seat map (from the
+ * get_event_seat_map RPC) in a customer-facing style: light theme, venue
+ * overview with price-colored sections, tap a section to zoom into seats.
+ *
+ * Selection is optimistic — seats are validated and held server-side at
+ * checkout (assign_seats_to_intent). A SEATS_UNAVAILABLE error there sends
+ * the buyer back here with fresh availability.
+ *
+ * The Flutter app renders the same RPC payload with CustomPainter; this
+ * component and that one share the JSON contract, not the rendering code.
+ */
+
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { Stage, Layer, Line, Circle, Text, Rect } from 'react-konva'
+import type Konva from 'konva'
+import { createClient } from '@/lib/supabase/client'
+import { Button } from '@/components/ui/button'
+import { Loader2, Minus, Plus, RotateCcw, ArrowLeft, Armchair } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
+
+// ─── RPC payload types (shared contract with the Flutter app) ───────────────
+
+interface MapTier {
+    id: string
+    name: string
+    price: number
+    sort_order: number
+}
+
+interface MapSeat {
+    id: string
+    row: string
+    seat: number
+    label: string
+    x: number
+    y: number
+    tier_id: string | null
+    status: 'available' | 'held' | 'booked' | 'disabled'
+}
+
+interface MapSection {
+    id: string
+    label: string
+    color: string
+    section_type: string
+    polygon_points: number[]
+    tier_id: string | null
+    row_tier_overrides: Record<string, string>
+    available_count: number
+    seats: MapSeat[]
+}
+
+interface SeatMapData {
+    event_id: string
+    canvas_width: number
+    canvas_height: number
+    tiers: MapTier[]
+    sections: MapSection[]
+}
+
+interface SeatMapPickerProps {
+    eventId: string
+}
+
+const TIER_PALETTE = [
+    '#f59e0b', '#6366f1', '#22c55e', '#ec4899',
+    '#06b6d4', '#8b5cf6', '#f97316', '#14b8a6',
+    '#f43f5e', '#3b82f6', '#84cc16', '#d946ef',
+]
+
+const TAKEN_COLOR = '#d1d5db'
+const SELECTED_COLOR = '#0f172a'
+
+export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
+    const router = useRouter()
+    const { toast } = useToast()
+    const containerRef = useRef<HTMLDivElement>(null)
+    const stageRef = useRef<Konva.Stage>(null)
+
+    const [mapData, setMapData] = useState<SeatMapData | null>(null)
+    const [loading, setLoading] = useState(true)
+    const [stageSize, setStageSize] = useState({ width: 800, height: 520 })
+    const [activeSection, setActiveSection] = useState<string | null>(null)
+    const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([])
+    const [view, setView] = useState({ scale: 1, x: 0, y: 0 })
+    const [navigating, setNavigating] = useState(false)
+
+    // ─── Data loading + periodic availability refresh ────────────────────
+    const loadMap = useCallback(async () => {
+        const supabase = createClient()
+        const { data, error } = await supabase.rpc('get_event_seat_map', { p_event_id: eventId })
+        if (!error && data) setMapData(data as SeatMapData)
+        setLoading(false)
+    }, [eventId])
+
+    useEffect(() => {
+        loadMap()
+        const interval = setInterval(loadMap, 30000)
+        return () => clearInterval(interval)
+    }, [loadMap])
+
+    // Live updates: booked seats grey out as other buyers complete payment
+    useEffect(() => {
+        const supabase = createClient()
+        const channel = supabase
+            .channel(`seats-${eventId}`)
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'seats',
+                filter: `event_id=eq.${eventId}`,
+            }, (payload) => {
+                const updated = payload.new as { id: string; status: string }
+                setMapData(prev => prev ? {
+                    ...prev,
+                    sections: prev.sections.map(sec => ({
+                        ...sec,
+                        seats: sec.seats.map(s =>
+                            s.id === updated.id
+                                ? { ...s, status: (updated.status === 'available' ? 'available' : updated.status) as MapSeat['status'] }
+                                : s
+                        ),
+                    })),
+                } : prev)
+                setSelectedSeatIds(prev => prev.filter(id => id !== updated.id || updated.status === 'available'))
+            })
+            .subscribe()
+        return () => { supabase.removeChannel(channel) }
+    }, [eventId])
+
+    // ─── Responsive stage ────────────────────────────────────────────────
+    useEffect(() => {
+        const update = () => {
+            if (containerRef.current) {
+                const rect = containerRef.current.getBoundingClientRect()
+                setStageSize({ width: rect.width, height: rect.height })
+            }
+        }
+        update()
+        const ro = new ResizeObserver(update)
+        if (containerRef.current) ro.observe(containerRef.current)
+        return () => ro.disconnect()
+    }, [])
+
+    // ─── Derived data ────────────────────────────────────────────────────
+    const tierColors = useMemo(() => {
+        const map = new Map<string, string>()
+        mapData?.tiers.forEach((t, i) => map.set(t.id, TIER_PALETTE[i % TIER_PALETTE.length]))
+        return map
+    }, [mapData])
+
+    const tierById = useMemo(
+        () => new Map((mapData?.tiers ?? []).map(t => [t.id, t])),
+        [mapData]
+    )
+
+    const allSeats = useMemo(() => {
+        const map = new Map<string, MapSeat>()
+        mapData?.sections.forEach(sec => sec.seats.forEach(s => map.set(s.id, s)))
+        return map
+    }, [mapData])
+
+    const selectedSeats = selectedSeatIds.map(id => allSeats.get(id)).filter(Boolean) as MapSeat[]
+    const selectedTierId = selectedSeats[0]?.tier_id ?? null
+    const selectedTier = selectedTierId ? tierById.get(selectedTierId) : null
+    const totalPrice = selectedTier ? Number(selectedTier.price) * selectedSeats.length : 0
+
+    // Fit-to-content view for the overview
+    const fitOverview = useCallback(() => {
+        if (!mapData) return
+        const pad = 40
+        const scale = Math.min(
+            stageSize.width / (mapData.canvas_width + pad * 2),
+            stageSize.height / (mapData.canvas_height + pad * 2),
+        )
+        setView({
+            scale,
+            x: (stageSize.width - mapData.canvas_width * scale) / 2,
+            y: (stageSize.height - mapData.canvas_height * scale) / 2,
+        })
+        setActiveSection(null)
+    }, [mapData, stageSize])
+
+    useEffect(() => { fitOverview() }, [fitOverview])
+
+    // Zoom into one section's bounding box
+    const zoomToSection = useCallback((section: MapSection) => {
+        const pts = section.polygon_points
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+        for (let i = 0; i < pts.length; i += 2) {
+            minX = Math.min(minX, pts[i]); maxX = Math.max(maxX, pts[i])
+            minY = Math.min(minY, pts[i + 1]); maxY = Math.max(maxY, pts[i + 1])
+        }
+        const pad = 30
+        const w = maxX - minX + pad * 2
+        const h = maxY - minY + pad * 2
+        const scale = Math.min(stageSize.width / w, stageSize.height / h, 4)
+        setView({
+            scale,
+            x: stageSize.width / 2 - (minX + (maxX - minX) / 2) * scale,
+            y: stageSize.height / 2 - (minY + (maxY - minY) / 2) * scale,
+        })
+        setActiveSection(section.id)
+    }, [stageSize])
+
+    // ─── Interactions ────────────────────────────────────────────────────
+    const handleSeatTap = useCallback((seat: MapSeat) => {
+        if (seat.status !== 'available' || !seat.tier_id) return
+
+        setSelectedSeatIds(prev => {
+            if (prev.includes(seat.id)) return prev.filter(id => id !== seat.id)
+
+            const currentTier = prev.length > 0 ? allSeats.get(prev[0])?.tier_id : null
+            if (currentTier && currentTier !== seat.tier_id) {
+                toast({
+                    title: 'One price category per order',
+                    description: 'Finish this order first, or clear your selection to switch categories.',
+                })
+                return prev
+            }
+            if (prev.length >= 10) {
+                toast({ title: 'Limit reached', description: 'Maximum of 10 seats per order.' })
+                return prev
+            }
+            return [...prev, seat.id]
+        })
+    }, [allSeats, toast])
+
+    const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
+        e.evt.preventDefault()
+        const stage = stageRef.current
+        if (!stage) return
+        const pointer = stage.getPointerPosition()
+        if (!pointer) return
+        const scaleBy = 1.06
+        const oldScale = view.scale
+        const newScale = Math.max(0.2, Math.min(5, e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy))
+        const worldPos = { x: (pointer.x - view.x) / oldScale, y: (pointer.y - view.y) / oldScale }
+        setView({
+            scale: newScale,
+            x: pointer.x - worldPos.x * newScale,
+            y: pointer.y - worldPos.y * newScale,
+        })
+    }, [view])
+
+    const zoomButton = useCallback((factor: number) => {
+        const center = { x: stageSize.width / 2, y: stageSize.height / 2 }
+        const newScale = Math.max(0.2, Math.min(5, view.scale * factor))
+        const worldPos = { x: (center.x - view.x) / view.scale, y: (center.y - view.y) / view.scale }
+        setView({
+            scale: newScale,
+            x: center.x - worldPos.x * newScale,
+            y: center.y - worldPos.y * newScale,
+        })
+    }, [view, stageSize])
+
+    const handleContinue = () => {
+        if (!selectedTierId || selectedSeats.length === 0) return
+        setNavigating(true)
+        const params = new URLSearchParams()
+        params.set('eventId', eventId)
+        params.set('quantity', String(selectedSeats.length))
+        params.set('tierId', selectedTierId)
+        params.set('seatIds', selectedSeatIds.join(','))
+        router.push(`/checkout?${params.toString()}`)
+    }
+
+    // Section fill: resolved tier color (price category) wins over builder color
+    const sectionFill = (section: MapSection) =>
+        (section.tier_id && tierColors.get(section.tier_id)) || section.color
+
+    // Seat dot fill by status/selection
+    const seatFill = (seat: MapSeat) => {
+        if (selectedSeatIds.includes(seat.id)) return SELECTED_COLOR
+        if (seat.status !== 'available') return TAKEN_COLOR
+        return (seat.tier_id && tierColors.get(seat.tier_id)) || '#6366f1'
+    }
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-[420px] rounded-2xl border bg-muted/20">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+        )
+    }
+
+    if (!mapData || mapData.sections.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center h-[300px] rounded-2xl border bg-muted/20 text-muted-foreground gap-2">
+                <Armchair className="h-8 w-8 opacity-40" />
+                <p className="text-sm">Seat map unavailable</p>
+            </div>
+        )
+    }
+
+    const activeSectionData = activeSection
+        ? mapData.sections.find(s => s.id === activeSection)
+        : null
+
+    return (
+        <div className="space-y-3">
+            {/* Price legend */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {mapData.tiers.map(tier => (
+                    <div key={tier.id} className="flex items-center gap-1.5 text-xs">
+                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: tierColors.get(tier.id) }} />
+                        <span className="font-medium">{tier.name}</span>
+                        <span className="text-muted-foreground">₱{Number(tier.price).toLocaleString()}</span>
+                    </div>
+                ))}
+                <div className="flex items-center gap-1.5 text-xs">
+                    <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: TAKEN_COLOR }} />
+                    <span className="text-muted-foreground">Taken</span>
+                </div>
+            </div>
+
+            {/* Map canvas */}
+            <div
+                ref={containerRef}
+                className="relative h-[420px] sm:h-[480px] rounded-2xl border bg-white dark:bg-slate-100 overflow-hidden touch-none"
+            >
+                <Stage
+                    ref={stageRef}
+                    width={stageSize.width}
+                    height={stageSize.height}
+                    scaleX={view.scale}
+                    scaleY={view.scale}
+                    x={view.x}
+                    y={view.y}
+                    draggable
+                    onWheel={handleWheel}
+                    onDragEnd={(e) => setView(v => ({ ...v, x: e.target.x(), y: e.target.y() }))}
+                >
+                    <Layer>
+                        {/* Section polygons */}
+                        {mapData.sections.map(section => {
+                            const isActive = section.id === activeSection
+                            const soldOut = section.available_count === 0
+                            const center = sectionCenter(section.polygon_points)
+                            return (
+                                <SectionShape
+                                    key={section.id}
+                                    section={section}
+                                    fill={sectionFill(section)}
+                                    isActive={isActive}
+                                    soldOut={soldOut}
+                                    center={center}
+                                    showLabel={!activeSection || isActive}
+                                    onTap={() => !soldOut && zoomToSection(section)}
+                                />
+                            )
+                        })}
+
+                        {/* Seats — only the active section's, drawn above polygons */}
+                        {activeSectionData?.seats.map(seat => (
+                            <Circle
+                                key={seat.id}
+                                x={seat.x}
+                                y={seat.y}
+                                radius={selectedSeatIds.includes(seat.id) ? 8 : 6}
+                                fill={seatFill(seat)}
+                                stroke={selectedSeatIds.includes(seat.id) ? '#ffffff' : undefined}
+                                strokeWidth={2}
+                                opacity={seat.status === 'available' ? 1 : 0.55}
+                                onClick={() => handleSeatTap(seat)}
+                                onTap={() => handleSeatTap(seat)}
+                                hitStrokeWidth={10}
+                                perfectDrawEnabled={false}
+                            />
+                        ))}
+                    </Layer>
+                </Stage>
+
+                {/* Controls overlay */}
+                <div className="absolute top-3 right-3 flex flex-col gap-1.5">
+                    <Button size="icon" variant="secondary" className="h-8 w-8 shadow-sm" onClick={() => zoomButton(1.3)}>
+                        <Plus className="h-4 w-4" />
+                    </Button>
+                    <Button size="icon" variant="secondary" className="h-8 w-8 shadow-sm" onClick={() => zoomButton(1 / 1.3)}>
+                        <Minus className="h-4 w-4" />
+                    </Button>
+                    <Button size="icon" variant="secondary" className="h-8 w-8 shadow-sm" onClick={fitOverview}>
+                        <RotateCcw className="h-4 w-4" />
+                    </Button>
+                </div>
+
+                {activeSection && (
+                    <Button
+                        size="sm"
+                        variant="secondary"
+                        className="absolute top-3 left-3 shadow-sm"
+                        onClick={fitOverview}
+                    >
+                        <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
+                        All sections
+                    </Button>
+                )}
+
+                {!activeSection && (
+                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-background/90 backdrop-blur-sm border rounded-full px-4 py-1.5 text-xs text-muted-foreground shadow-sm pointer-events-none">
+                        Tap a section to pick seats
+                    </div>
+                )}
+            </div>
+
+            {/* Selection bar */}
+            <div className={cn(
+                'rounded-2xl border p-4 transition-colors',
+                selectedSeats.length > 0 ? 'bg-primary/5 border-primary/30' : 'bg-muted/20'
+            )}>
+                {selectedSeats.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center">
+                        No seats selected yet
+                    </p>
+                ) : (
+                    <div className="space-y-3">
+                        <div className="flex flex-wrap gap-1.5">
+                            {selectedSeats
+                                .slice()
+                                .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+                                .map(seat => (
+                                    <button
+                                        key={seat.id}
+                                        onClick={() => handleSeatTap(seat)}
+                                        className="px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:opacity-80 transition-opacity"
+                                        title="Tap to remove"
+                                    >
+                                        {seat.label} ✕
+                                    </button>
+                                ))}
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm">
+                                <span className="font-semibold">{selectedSeats.length} seat{selectedSeats.length !== 1 ? 's' : ''}</span>
+                                {selectedTier && (
+                                    <span className="text-muted-foreground"> · {selectedTier.name}</span>
+                                )}
+                                <div className="font-bold text-lg">₱{totalPrice.toLocaleString()}</div>
+                            </div>
+                            <Button onClick={handleContinue} disabled={navigating} className="h-11 px-6 font-semibold">
+                                {navigating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Continue'}
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}
+
+// ─── Section polygon + label ────────────────────────────────────────────────
+
+function SectionShape({
+    section,
+    fill,
+    isActive,
+    soldOut,
+    center,
+    showLabel,
+    onTap,
+}: {
+    section: MapSection
+    fill: string
+    isActive: boolean
+    soldOut: boolean
+    center: { x: number; y: number }
+    showLabel: boolean
+    onTap: () => void
+}) {
+    return (
+        <>
+            <Line
+                points={section.polygon_points}
+                closed
+                fill={soldOut ? '#e5e7eb' : fill + (isActive ? '30' : '99')}
+                stroke={soldOut ? '#9ca3af' : fill}
+                strokeWidth={isActive ? 2.5 : 1.5}
+                onClick={onTap}
+                onTap={onTap}
+                hitStrokeWidth={8}
+                perfectDrawEnabled={false}
+            />
+            {showLabel && !isActive && (
+                <>
+                    <Text
+                        x={center.x - 70}
+                        y={center.y - 14}
+                        width={140}
+                        align="center"
+                        text={section.label}
+                        fontSize={15}
+                        fontStyle="bold"
+                        fill={soldOut ? '#6b7280' : '#1e293b'}
+                        listening={false}
+                        perfectDrawEnabled={false}
+                    />
+                    <Text
+                        x={center.x - 70}
+                        y={center.y + 4}
+                        width={140}
+                        align="center"
+                        text={soldOut ? 'Sold out' : `${section.available_count} left`}
+                        fontSize={11}
+                        fill="#64748b"
+                        listening={false}
+                        perfectDrawEnabled={false}
+                    />
+                </>
+            )}
+        </>
+    )
+}
+
+function sectionCenter(points: number[]): { x: number; y: number } {
+    let sumX = 0, sumY = 0
+    const count = points.length / 2
+    for (let i = 0; i < points.length; i += 2) {
+        sumX += points[i]
+        sumY += points[i + 1]
+    }
+    return { x: sumX / count, y: sumY / count }
+}

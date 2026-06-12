@@ -14,7 +14,9 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import { getEventSeatMap, saveEventSeatMap, getPublishedVenueTemplates } from '@/lib/seat-map/seat-map-actions'
-import type { CanvasData } from '@/components/seat-map/types'
+import type { CanvasData, TierInfo } from '@/components/seat-map/types'
+import { TIER_PALETTE } from '@/components/seat-map/types'
+import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
 
 const CanvasBuilder = dynamic(
@@ -61,17 +63,36 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
         }
     }
 
-    // Load existing seat map
+    const [tiers, setTiers] = useState<TierInfo[]>([])
+
+    // Load existing seat map + the event's ticket tiers (price categories)
     useEffect(() => {
         async function load() {
             setLoading(true)
             try {
-                const map = await getEventSeatMap(eventId)
+                const supabase = createClient()
+                const [map, tiersRes] = await Promise.all([
+                    getEventSeatMap(eventId),
+                    supabase
+                        .from('ticket_tiers')
+                        .select('id, name, price, sort_order')
+                        .eq('event_id', eventId)
+                        .eq('is_active', true)
+                        .order('sort_order', { ascending: true }),
+                ])
                 if (map) {
                     setExistingMap(map)
                     setCanvasData(map.canvas_data as unknown as CanvasData)
                     setView('builder')
                 }
+                setTiers(
+                    (tiersRes.data ?? []).map((t, i) => ({
+                        id: t.id,
+                        name: t.name,
+                        price: Number(t.price),
+                        color: TIER_PALETTE[i % TIER_PALETTE.length],
+                    }))
+                )
             } catch (err) {
                 console.error('Failed to load seat map:', err)
             } finally {
@@ -79,6 +100,29 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
             }
         }
         load()
+    }, [eventId])
+
+    // Upload floor-plan images to Storage so canvas_data stays small
+    const handleUploadImageFile = useCallback(async (file: File): Promise<string | null> => {
+        try {
+            const supabase = createClient()
+            const ext = file.name.split('.').pop() || 'png'
+            const path = `seat-maps/${eventId}/${Date.now()}.${ext}`
+            const { data, error } = await supabase.storage
+                .from('event-images')
+                .upload(path, file, { upsert: false })
+            if (error || !data) {
+                console.error('Floor plan upload failed:', error)
+                return null
+            }
+            const { data: { publicUrl } } = supabase.storage
+                .from('event-images')
+                .getPublicUrl(data.path)
+            return publicUrl
+        } catch (err) {
+            console.error('Floor plan upload failed:', err)
+            return null
+        }
     }, [eventId])
 
     // Load available templates
@@ -259,6 +303,8 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                         initialData={canvasData}
                         onSave={handleSave}
                         mode="organizer"
+                        tiers={tiers}
+                        onUploadImageFile={handleUploadImageFile}
                     />
                 </div>
             </div>

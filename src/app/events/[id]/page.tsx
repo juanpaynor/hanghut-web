@@ -9,6 +9,7 @@ import { format } from 'date-fns'
 import { Calendar, MapPin, Share2, ShieldCheck, Ticket, Phone, ExternalLink } from 'lucide-react'
 import type { Metadata } from 'next'
 import { TicketSelector } from '@/components/events/ticket-selector'
+import { SeatPickerLauncher } from '@/components/events/seat-picker-launcher'
 import { EventGallery } from '@/components/events/event-gallery'
 import { RegistrationGate } from '@/components/events/registration-gate'
 import type { QuestionForForm } from '@/components/events/registration-questions-form'
@@ -152,6 +153,20 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
     const ticketingBlocked =
         (isSubscriberOnly && !isActiveSubscriber) ||
         (inEarlyAccessWindow && !isActiveSubscriber)
+
+    // Seated event check — shows the "Pick Your Seats" option alongside Get Tickets
+    let hasSeatMap = false
+    try {
+        const publicClient = createPublicClient()
+        const { data: seatMapRow } = await publicClient
+            .from('event_seat_maps')
+            .select('id')
+            .eq('event_id', id)
+            .maybeSingle()
+        hasSeatMap = !!seatMapRow
+    } catch {
+        // Non-blocking — falls back to quantity-based checkout
+    }
 
     const ticketsRemaining = event.capacity - event.tickets_sold
     let isSoldOut = ticketsRemaining <= 0
@@ -609,6 +624,11 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                             trigger={null}
                             subscriberDiscount={subscriberDiscount}
                         />
+                        {hasSeatMap && !isSoldOut && (
+                            <div className="mt-3">
+                                <SeatPickerLauncher eventId={event.id} fullWidth />
+                            </div>
+                        )}
                         {!isLoggedIn && (
                             <LoginNudge
                                 label="Have a HangHut account? Sign in for faster checkout"

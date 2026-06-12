@@ -185,6 +185,16 @@ export async function getEventSeatMap(eventId: string) {
   return data
 }
 
+/**
+ * Non-destructive seat map save.
+ *
+ * Canvas IDs ARE the database IDs (sections and seats are upserted by the
+ * UUIDs the builder generates), so canvas_data and the relational tables
+ * stay linkable — required for the buyer-side hold/purchase flow.
+ *
+ * Existing seat status is preserved (a re-save never resurrects a booked
+ * seat), and seats/sections with booked seats are never deleted.
+ */
 export async function saveEventSeatMap(
   eventId: string,
   canvasData: CanvasData,
@@ -213,52 +223,103 @@ export async function saveEventSeatMap(
 
   if (mapError) throw new Error(mapError.message)
 
-  // Delete existing sections and seats (cascade handles seats)
-  await supabase
+  // Snapshot existing seats: preserve sold/held status across saves and
+  // protect booked seats from deletion
+  const { data: existingSeats } = await supabase
+    .from('seats')
+    .select('id, status')
+    .eq('event_id', eventId)
+  const existingStatus = new Map((existingSeats ?? []).map((s) => [s.id, s.status]))
+
+  // ── Upsert sections (canvas ID = DB ID) ───────────────────────────────
+  const sectionRecords = canvasData.sections.map((section) => ({
+    id: section.id,
+    seat_map_id: seatMap.id,
+    event_id: eventId,
+    label: section.label,
+    color: section.color,
+    section_type: section.sectionType || 'general',
+    polygon_points: section.polygonPoints,
+    arc_config: section.arcConfig || null,
+    tier_id: section.tierId || null,
+    row_tier_overrides: section.rowTierOverrides ?? {},
+    is_active: section.isActive,
+    sort_order: section.sortOrder,
+  }))
+
+  if (sectionRecords.length > 0) {
+    const { error: secError } = await supabase
+      .from('event_sections')
+      .upsert(sectionRecords, { onConflict: 'id' })
+    if (secError) throw new Error(secError.message)
+  }
+
+  // ── Upsert seats (canvas ID = DB ID, existing status wins) ────────────
+  const seatRecords = canvasData.sections.flatMap((section) =>
+    section.seats.map((seat) => ({
+      id: seat.id,
+      section_id: section.id,
+      event_id: eventId,
+      row_label: seat.rowLabel,
+      seat_number: seat.seatNumber,
+      label: seat.label,
+      x: seat.x,
+      y: seat.y,
+      custom_price: seat.customPrice || null,
+      tier_id: seat.tierId || null,
+      status: existingStatus.get(seat.id) ?? 'available',
+    }))
+  )
+
+  if (seatRecords.length > 0) {
+    const { error: seatError } = await supabase
+      .from('seats')
+      .upsert(seatRecords, { onConflict: 'id' })
+    if (seatError) throw new Error(seatError.message)
+  }
+
+  // ── Remove seats/sections no longer in the canvas ─────────────────────
+  // Booked seats are never deleted — the map can't orphan a sold ticket.
+  const keptSeatIds = new Set(seatRecords.map((s) => s.id))
+  const staleSeatIds = (existingSeats ?? [])
+    .filter((s) => !keptSeatIds.has(s.id) && s.status !== 'booked')
+    .map((s) => s.id)
+
+  if (staleSeatIds.length > 0) {
+    const { error: delSeatError } = await supabase
+      .from('seats')
+      .delete()
+      .in('id', staleSeatIds)
+    if (delSeatError) throw new Error(delSeatError.message)
+  }
+
+  const keptSectionIds = canvasData.sections.map((s) => s.id)
+  let staleSections = supabase
     .from('event_sections')
     .delete()
     .eq('seat_map_id', seatMap.id)
+  if (keptSectionIds.length > 0) {
+    staleSections = staleSections.not('id', 'in', `(${keptSectionIds.join(',')})`)
+  }
+  const { error: delSecError } = await staleSections
+  if (delSecError) throw new Error(delSecError.message)
 
-  // Insert sections with their seats
+  // ── Sync tier capacity from seat assignments ──────────────────────────
+  // For seated events the map is the source of truth for how many tickets
+  // exist in each price category.
+  const tierCounts = new Map<string, number>()
   for (const section of canvasData.sections) {
-    const { data: newSection, error: secError } = await supabase
-      .from('event_sections')
-      .insert({
-        seat_map_id: seatMap.id,
-        event_id: eventId,
-        label: section.label,
-        color: section.color,
-        section_type: section.sectionType || 'general',
-        polygon_points: section.polygonPoints,
-        arc_config: section.arcConfig || null,
-        is_active: section.isActive,
-        sort_order: section.sortOrder,
-      })
-      .select()
-      .single()
-
-    if (secError) throw new Error(secError.message)
-
-    // Insert seats for this section
-    if (section.seats.length > 0) {
-      const seatRecords = section.seats.map((seat) => ({
-        section_id: newSection.id,
-        event_id: eventId,
-        row_label: seat.rowLabel,
-        seat_number: seat.seatNumber,
-        label: seat.label,
-        x: seat.x,
-        y: seat.y,
-        custom_price: seat.customPrice || null,
-        status: 'available',
-      }))
-
-      const { error: seatError } = await supabase
-        .from('seats')
-        .insert(seatRecords)
-
-      if (seatError) throw new Error(seatError.message)
+    for (const seat of section.seats) {
+      const tierId = seat.tierId ?? section.rowTierOverrides?.[seat.rowLabel] ?? section.tierId ?? null
+      if (tierId) tierCounts.set(tierId, (tierCounts.get(tierId) ?? 0) + 1)
     }
+  }
+  for (const [tierId, count] of tierCounts) {
+    await supabase
+      .from('ticket_tiers')
+      .update({ quantity_total: count })
+      .eq('id', tierId)
+      .eq('event_id', eventId)
   }
 
   revalidatePath(`/organizer/events/${eventId}`)

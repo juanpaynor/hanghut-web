@@ -22,8 +22,10 @@ const profileSchema = z.object({
         design: z.object({
             layout: z.enum(['modern', 'classic']).optional(),
             font: z.enum(['sans', 'serif', 'mono']).optional(),
+            primary_mode: z.enum(['auto', 'events', 'membership', 'hybrid']).optional(),
             enable_animations: z.boolean().optional(),
             show_footer: z.boolean().optional(),
+            show_navbar: z.boolean().optional(),
         }).optional(),
         announcement: z.object({
             enabled: z.boolean().optional(),

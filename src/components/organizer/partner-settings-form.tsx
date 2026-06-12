@@ -54,6 +54,7 @@ interface PartnerSettingsFormProps {
             design?: {
                 layout?: 'modern' | 'classic'
                 font?: 'sans' | 'serif' | 'mono'
+                primary_mode?: 'auto' | 'events' | 'membership' | 'hybrid'
                 enable_animations?: boolean
                 show_footer?: boolean
                 show_navbar?: boolean
@@ -108,9 +109,10 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             design: {
                 layout: initialData.branding?.design?.layout || 'modern',
                 font: initialData.branding?.design?.font || 'sans',
+                primary_mode: initialData.branding?.design?.primary_mode || 'auto',
                 show_footer: initialData.branding?.design?.show_footer ?? true,
                 enable_animations: initialData.branding?.design?.enable_animations ?? true,
-                show_navbar: initialData.branding?.design?.show_navbar ?? 
+                show_navbar: initialData.branding?.design?.show_navbar ??
                     (initialData.branding?.selected_template === 'festival' || initialData.branding?.selected_template === 'classic')
             },
             announcement: {
@@ -812,6 +814,35 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                                     <p className={cn("font-semibold", font.font)}>{font.label}</p>
                                                     <p className="text-xs text-muted-foreground">{font.desc}</p>
                                                 </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Storefront Mode</CardTitle>
+                                    <CardDescription>Choose what leads your storefront. Auto-detect picks based on your content.</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        {[
+                                            { value: 'auto', label: 'Auto', desc: 'Detect from content' },
+                                            { value: 'events', label: 'Events', desc: 'Event-first layout' },
+                                            { value: 'membership', label: 'Membership', desc: 'Subscription-first' },
+                                            { value: 'hybrid', label: 'Hybrid', desc: 'Both, side by side' },
+                                        ].map((mode) => (
+                                            <div
+                                                key={mode.value}
+                                                onClick={() => handleBrandingChange('design', 'primary_mode', mode.value)}
+                                                className={cn(
+                                                    "cursor-pointer border-2 rounded-xl p-4 hover:border-primary/50 transition-colors flex flex-col gap-1 text-center",
+                                                    formData.branding.design.primary_mode === mode.value ? "border-primary bg-primary/5" : "border-border"
+                                                )}
+                                            >
+                                                <p className="font-semibold text-sm">{mode.label}</p>
+                                                <p className="text-xs text-muted-foreground">{mode.desc}</p>
                                             </div>
                                         ))}
                                     </div>

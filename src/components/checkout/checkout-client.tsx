@@ -51,9 +51,10 @@ interface CheckoutClientProps {
     organizerName?: string
     registrationQuestions?: RegistrationQuestion[]
     subscriberDiscount?: SubscriberDiscount | null
+    selectedSeatIds?: string[]
 }
 
-export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName, registrationQuestions = [], subscriberDiscount = null }: CheckoutClientProps) {
+export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName, registrationQuestions = [], subscriberDiscount = null, selectedSeatIds = [] }: CheckoutClientProps) {
     const router = useRouter()
     const searchParams = useSearchParams()
     const { toast } = useToast()
@@ -268,6 +269,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 event_id: event.id,
                 quantity: quantity,
                 tier_id: tier.id || undefined,
+                seat_ids: selectedSeatIds.length > 0 ? selectedSeatIds : undefined,
                 guest_details: !effectiveUser ? guestDetails : undefined,
                 promo_code: appliedPromo ? appliedPromo.code : undefined,
                 subscribed_to_newsletter: newsletterSubscribed,
@@ -336,6 +338,18 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 } else if (code === 'REGISTRATION_INVALID' || code === 'REGISTRATION_NOT_APPROVED') {
                     toast({ title: "Registration Invalid", description: "Your registration could not be verified. Please try again.", variant: "destructive" })
                     setApprovedRegistrationId(null)
+                    setIsLoading(false)
+                    return
+                } else if (code === 'SEATS_UNAVAILABLE') {
+                    toast({
+                        title: "Seats no longer available",
+                        description: selectedSeatIds.length > 0
+                            ? "Someone grabbed one of your seats. Pick again from the updated map."
+                            : "Not enough seats together in this category. Try a smaller quantity.",
+                        variant: "destructive",
+                    })
+                    // Back to the event page so the buyer can reselect with fresh availability
+                    setTimeout(() => router.push(`/events/${event.id}`), 1500)
                     setIsLoading(false)
                     return
                 }
@@ -628,6 +642,12 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                     <span className="text-muted-foreground">Tickets ({quantity}x)</span>
                                     <span className="font-medium">₱{subtotal.toLocaleString()}</span>
                                 </div>
+                                {selectedSeatIds.length > 0 && (
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-muted-foreground">Seats</span>
+                                        <span className="font-medium text-primary">Picked on map · confirmed at payment</span>
+                                    </div>
+                                )}
                                 {passFees && !isFree && (
                                     <div className="flex justify-between text-sm text-muted-foreground">
                                         <div className="flex flex-col">

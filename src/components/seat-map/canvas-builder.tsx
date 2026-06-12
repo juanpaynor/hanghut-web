@@ -13,8 +13,9 @@ import type Konva from 'konva'
 import { useCanvasState } from './canvas-state'
 import { CanvasToolbar } from './canvas-toolbar'
 import { CanvasProperties } from './canvas-properties'
-import type { CanvasData, SectionData, SeatData, BackgroundShape, SeatShape } from './types'
-import { SEAT_COLORS } from './types'
+import type { CanvasData, SectionData, SeatData, BackgroundShape, SeatShape, TierInfo } from './types'
+import { SEAT_COLORS, resolveSeatTier } from './types'
+import { pointInPolygon, flatToVertices } from './algorithms/point-in-polygon'
 
 // ─── Memoized seat dot ─────────────────────────────────────────────────────
 const SeatDot = memo(function SeatDot({
@@ -26,6 +27,7 @@ const SeatDot = memo(function SeatDot({
   onClick,
   radius,
   shape,
+  tierColor,
 }: {
   x: number
   y: number
@@ -35,10 +37,15 @@ const SeatDot = memo(function SeatDot({
   onClick?: () => void
   radius: number
   shape: SeatShape
+  tierColor?: string
 }) {
   const r = isSelected ? radius + 2 : radius
-  const fill = isSelected ? '#818cf8' : isMultiSelected ? '#f59e0b' : (SEAT_COLORS[status as keyof typeof SEAT_COLORS] ?? '#6366f1')
-  const stroke = isSelected ? '#ffffff' : isMultiSelected ? '#fbbf24' : status === 'available' ? '#16a34a' : undefined
+  // Available seats show their price-category color; sold/held/disabled keep status colors
+  const baseFill = status === 'available' && tierColor
+    ? tierColor
+    : (SEAT_COLORS[status as keyof typeof SEAT_COLORS] ?? '#6366f1')
+  const fill = isSelected ? '#818cf8' : isMultiSelected ? '#f59e0b' : baseFill
+  const stroke = isSelected ? '#ffffff' : isMultiSelected ? '#fbbf24' : status === 'available' ? (tierColor ?? '#16a34a') : undefined
   const strokeW = isSelected || isMultiSelected ? 2.5 : 1
 
   if (shape === 'square') {
@@ -113,6 +120,7 @@ const SectionGroup = memo(function SectionGroup({
   onSeatClick,
   seatRadius,
   seatShape,
+  tierColorMap,
 }: {
   section: SectionData
   isSelected: boolean
@@ -124,6 +132,7 @@ const SectionGroup = memo(function SectionGroup({
   onSeatClick?: (seatId: string) => void
   seatRadius: number
   seatShape: SeatShape
+  tierColorMap?: Map<string, string>
 }) {
   const center = useMemo(
     () => getSectionCenter(section.polygonPoints),
@@ -161,19 +170,23 @@ const SectionGroup = memo(function SectionGroup({
         perfectDrawEnabled={false}
       />
       {/* Seats */}
-      {section.seats.map((seat) => (
-        <SeatDot
-          key={seat.id}
-          x={seat.x}
-          y={seat.y}
-          status={seat.status}
-          isSelected={seat.id === selectedSeatId}
-          isMultiSelected={selectedSeatIds.includes(seat.id)}
-          onClick={onSeatClick ? () => onSeatClick(seat.id) : undefined}
-          radius={seatRadius}
-          shape={seatShape}
-        />
-      ))}
+      {section.seats.map((seat) => {
+        const resolvedTier = resolveSeatTier(seat, section)
+        return (
+          <SeatDot
+            key={seat.id}
+            x={seat.x}
+            y={seat.y}
+            status={seat.status}
+            isSelected={seat.id === selectedSeatId}
+            isMultiSelected={selectedSeatIds.includes(seat.id)}
+            onClick={onSeatClick ? () => onSeatClick(seat.id) : undefined}
+            radius={seatRadius}
+            shape={seatShape}
+            tierColor={resolvedTier ? tierColorMap?.get(resolvedTier) : undefined}
+          />
+        )
+      })}
     </Group>
   )
 })
@@ -253,6 +266,10 @@ interface CanvasBuilderProps {
   onSave?: (data: CanvasData) => void
   mode?: 'admin' | 'organizer'
   readOnly?: boolean
+  /** Price categories (ticket tiers) available for section/row/seat assignment */
+  tiers?: TierInfo[]
+  /** Uploads a floor-plan image and returns its public URL. Falls back to inline data URL if not provided. */
+  onUploadImageFile?: (file: File) => Promise<string | null>
 }
 
 export function CanvasBuilder({
@@ -260,6 +277,8 @@ export function CanvasBuilder({
   onSave,
   mode = 'admin',
   readOnly = false,
+  tiers = [],
+  onUploadImageFile,
 }: CanvasBuilderProps) {
   const stageRef = useRef<Konva.Stage>(null)
   const { state, dispatch, dispatchWithHistory, undo, redo } = useCanvasState()
@@ -351,30 +370,19 @@ export function CanvasBuilder({
           break
       }
 
-      // Delete key — delete selected seat OR selected section
+      // Delete key — seats take priority over sections so multi-selecting
+      // seats and pressing Delete can never nuke the whole section
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (state.selectedSeatIds.length > 0) {
-          // Delete all multi-selected seats
-          state.sections.forEach((section) => {
-            section.seats.forEach((seat) => {
-              if (state.selectedSeatIds.includes(seat.id)) {
-                dispatchWithHistory({ type: 'DELETE_SEAT', sectionId: section.id, seatId: seat.id })
-              }
-            })
-          })
-          dispatch({ type: 'SELECT_SEATS', seatIds: [] })
+          dispatchWithHistory({ type: 'DELETE_SEATS', seatIds: state.selectedSeatIds })
         } else if (state.selectedSeatId && state.selectedIds.length > 0) {
-          // Delete the selected seat
           dispatchWithHistory({
             type: 'DELETE_SEAT',
             sectionId: state.selectedIds[0],
             seatId: state.selectedSeatId,
           })
         } else if (state.selectedIds.length > 0) {
-          // Delete the selected section
-          state.selectedIds.forEach((id) => {
-            dispatchWithHistory({ type: 'DELETE_SECTION', id })
-          })
+          dispatchWithHistory({ type: 'DELETE_SECTION', id: state.selectedIds[0] })
           dispatch({ type: 'DESELECT_ALL' })
         }
       }
@@ -390,7 +398,7 @@ export function CanvasBuilder({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [readOnly, state.selectedIds, state.selectedSeatId, undo, redo, dispatch, dispatchWithHistory]) // eslint-disable-line
+  }, [readOnly, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, undo, redo, dispatch, dispatchWithHistory])
 
   // ─── Zoom via Mouse Wheel ────────────────────────────────────────────
   const handleWheel = useCallback(
@@ -432,6 +440,27 @@ export function CanvasBuilder({
       }
     },
     [state.zoom, state.panOffset, dispatch]
+  )
+
+  // ─── Toolbar zoom (keeps viewport center fixed) ─────────────────────
+  const handleToolbarZoom = useCallback(
+    (newZoom: number) => {
+      const clamped = Math.max(0.1, Math.min(5, newZoom))
+      const center = { x: stageSize.width / 2, y: stageSize.height / 2 }
+      const worldCenter = {
+        x: (center.x - state.panOffset.x) / state.zoom,
+        y: (center.y - state.panOffset.y) / state.zoom,
+      }
+      dispatch({ type: 'SET_ZOOM', zoom: clamped })
+      dispatch({
+        type: 'SET_PAN',
+        offset: {
+          x: center.x - worldCenter.x * clamped,
+          y: center.y - worldCenter.y * clamped,
+        },
+      })
+    },
+    [stageSize, state.zoom, state.panOffset, dispatch]
   )
 
   // ─── Mouse move for live preview ─────────────────────────────────────
@@ -514,12 +543,15 @@ export function CanvasBuilder({
             const spacing = state.seatRadius * 2.5
             const isDrag = dist > spacing
             const count = isDrag ? Math.max(2, Math.round(dist / spacing)) : 1
+            // Seats must land inside their section's polygon
+            const polygon = flatToVertices(section.polygonPoints)
             const newSeats: SeatData[] = []
+            let num = state.dropSeatNumber
             for (let i = 0; i < count; i++) {
               const t = count === 1 ? 0 : i / (count - 1)
               const sx = isDrag ? state.dragSeatStart.x + dx * t : state.dragSeatStart.x
               const sy = isDrag ? state.dragSeatStart.y + dy * t : state.dragSeatStart.y
-              const num = state.dropSeatNumber + i
+              if (!pointInPolygon(sx, sy, polygon)) continue
               newSeats.push({
                 id: crypto.randomUUID(),
                 rowLabel: state.dropRow,
@@ -529,13 +561,16 @@ export function CanvasBuilder({
                 y: sy,
                 status: 'available',
               })
+              num++
             }
-            dispatchWithHistory({
-              type: 'UPDATE_SECTION',
-              id: sectionId,
-              updates: { seats: [...section.seats, ...newSeats] },
-            })
-            dispatch({ type: 'SET_DROP_SEAT_NUMBER', num: state.dropSeatNumber + count })
+            if (newSeats.length > 0) {
+              dispatchWithHistory({
+                type: 'UPDATE_SECTION',
+                id: sectionId,
+                updates: { seats: [...section.seats, ...newSeats] },
+              })
+              dispatch({ type: 'SET_DROP_SEAT_NUMBER', num })
+            }
           }
         }
         dispatch({ type: 'SET_DRAG_SEAT_START', point: null })
@@ -609,19 +644,25 @@ export function CanvasBuilder({
 
   // ─── Stage Click (polygon + select + seat drop) ──────────────────────
   const handleStageClick = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
+    (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
       if (readOnly) return
       const stage = stageRef.current
       if (!stage) return
       const pointer = stage.getPointerPosition()
       if (!pointer) return
       const { x, y } = screenToCanvas(pointer)
+      const clickCount = 'detail' in e.evt ? e.evt.detail : 1
 
       // ── Polygon drawing ───────────────────────────────────
       if (state.tool === 'draw-polygon') {
-        // Double-click closes the polygon
-        if (e.evt.detail >= 2 && state.drawingPoints.length >= 6) {
-          const newSection = createEmptySection([...state.drawingPoints], state.sections.length)
+        // Double-click closes the polygon. The first click of the double-click
+        // already added a vertex at this position — drop it so the polygon
+        // doesn't end with a stray duplicate point.
+        if (clickCount >= 2 && state.drawingPoints.length >= 6) {
+          const closingPoints = state.drawingPoints.length >= 8
+            ? state.drawingPoints.slice(0, -2)
+            : [...state.drawingPoints]
+          const newSection = createEmptySection(closingPoints, state.sections.length)
           dispatchWithHistory({ type: 'ADD_SECTION', section: newSection })
           dispatch({ type: 'SET_DRAWING_POINTS', points: [] })
           dispatch({ type: 'SET_IS_DRAWING', isDrawing: false })
@@ -699,11 +740,16 @@ export function CanvasBuilder({
         x: seat.x + dx,
         y: seat.y + dy,
       }))
+      // Arc center must move with the section or arc re-fill generates
+      // seats at the old location
+      const newArcConfig = section.arcConfig
+        ? { ...section.arcConfig, cx: section.arcConfig.cx + dx, cy: section.arcConfig.cy + dy }
+        : section.arcConfig
 
       dispatchWithHistory({
         type: 'UPDATE_SECTION',
         id: sectionId,
-        updates: { polygonPoints: newPoints, seats: newSeats },
+        updates: { polygonPoints: newPoints, seats: newSeats, arcConfig: newArcConfig },
       })
     },
     [readOnly, state.tool, state.sections, dispatchWithHistory]
@@ -734,34 +780,77 @@ export function CanvasBuilder({
     fileInputRef.current?.click()
   }, [])
 
+  const [uploadingImage, setUploadingImage] = useState(false)
+
   const handleFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       if (!file) return
+      if (fileInputRef.current) fileInputRef.current.value = ''
 
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string
+      setUploadingImage(true)
+      try {
+        // Prefer Storage upload (keeps canvas_data small); fall back to data URL
+        let imageUrl: string | null = null
+        if (onUploadImageFile) {
+          imageUrl = await onUploadImageFile(file)
+        }
+        if (!imageUrl) {
+          imageUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = (ev) => resolve(ev.target?.result as string)
+            reader.onerror = reject
+            reader.readAsDataURL(file)
+          })
+        }
+
+        // Measure natural size so we can fit the image to the canvas
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const image = new window.Image()
+          image.crossOrigin = 'anonymous'
+          image.onload = () => resolve(image)
+          image.onerror = reject
+          image.src = imageUrl!
+        })
+
+        const fitScale = Math.min(
+          1,
+          state.canvasWidth / img.naturalWidth,
+          state.canvasHeight / img.naturalHeight
+        )
+
         const newShape: BackgroundShape = {
           id: crypto.randomUUID(),
           type: 'image',
-          x: state.panOffset.x * -1 / state.zoom + 100,
-          y: state.panOffset.y * -1 / state.zoom + 100,
+          x: (state.canvasWidth - img.naturalWidth * fitScale) / 2,
+          y: (state.canvasHeight - img.naturalHeight * fitScale) / 2,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
           fill: 'transparent',
-          imageUrl: dataUrl,
+          imageUrl,
           opacity: 0.5,
+          scale: fitScale,
+          locked: false,
         }
         dispatchWithHistory({ type: 'ADD_SHAPE', shape: newShape })
+      } catch (err) {
+        console.error('Failed to add background image:', err)
+      } finally {
+        setUploadingImage(false)
       }
-      reader.readAsDataURL(file)
-      if (fileInputRef.current) fileInputRef.current.value = ''
     },
-    [dispatchWithHistory, state.panOffset, state.zoom]
+    [dispatchWithHistory, state.canvasWidth, state.canvasHeight, onUploadImageFile]
   )
 
   // ─── Selected section ───────────────────────────────────────────────
   const selectedSection = state.sections.find((s) =>
     state.selectedIds.includes(s.id)
+  )
+
+  // ─── Tier colors ────────────────────────────────────────────────────
+  const tierColorMap = useMemo(
+    () => new Map(tiers.map((t) => [t.id, t.color])),
+    [tiers]
   )
 
   // ─── Live drawing preview ───────────────────────────────────────────
@@ -842,7 +931,7 @@ export function CanvasBuilder({
           onRedo={redo}
           onSave={handleExport}
           zoom={state.zoom}
-          onZoomChange={(z) => dispatch({ type: 'SET_ZOOM', zoom: z })}
+          onZoomChange={handleToolbarZoom}
           onUploadImage={handleUploadClick}
         />
       )}
@@ -906,6 +995,7 @@ export function CanvasBuilder({
                 onSeatClick={state.tool === 'select' ? handleSeatClick : undefined}
                 seatRadius={state.seatRadius}
                 seatShape={state.seatShape}
+                tierColorMap={tierColorMap}
               />
             ))}
           </Layer>
@@ -1019,6 +1109,13 @@ export function CanvasBuilder({
           {Math.round(state.zoom * 100)}%
         </div>
 
+        {/* Image upload progress */}
+        {uploadingImage && (
+          <div className="absolute top-4 right-4 bg-slate-800/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none">
+            Uploading image…
+          </div>
+        )}
+
         {/* Tool hint bar */}
         {toolHint && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur-sm text-white text-sm px-4 py-2 rounded-lg border border-slate-700 select-none whitespace-nowrap pointer-events-none">
@@ -1039,6 +1136,10 @@ export function CanvasBuilder({
           selectedSection={selectedSection || null}
           sections={state.sections}
           tool={state.tool}
+          tiers={tiers}
+          onAssignSeatsTier={(seatIds, tierId) => {
+            dispatchWithHistory({ type: 'ASSIGN_SEATS_TIER', seatIds, tierId })
+          }}
           onUpdateSection={(id, updates) =>
             dispatchWithHistory({ type: 'UPDATE_SECTION', id, updates })
           }
@@ -1076,14 +1177,7 @@ export function CanvasBuilder({
             dispatchWithHistory({ type: 'RENUMBER_SEATS', sectionId, seatIds, startRow: rowLabel, startNum: startNumber })
           }}
           onDeleteSelectedSeats={() => {
-            state.sections.forEach((section) => {
-              section.seats.forEach((seat) => {
-                if (state.selectedSeatIds.includes(seat.id)) {
-                  dispatchWithHistory({ type: 'DELETE_SEAT', sectionId: section.id, seatId: seat.id })
-                }
-              })
-            })
-            dispatch({ type: 'SELECT_SEATS', seatIds: [] })
+            dispatchWithHistory({ type: 'DELETE_SEATS', seatIds: state.selectedSeatIds })
           }}
           seatRadius={state.seatRadius}
           seatShape={state.seatShape}
@@ -1197,7 +1291,8 @@ const RenderBackgroundShape = memo(function RenderBackgroundShape({
         y={shape.y}
         imageUrl={shape.imageUrl}
         opacity={shape.opacity ?? 0.5}
-        draggable={draggable}
+        scale={shape.scale ?? 1}
+        draggable={draggable && !shape.locked}
         onDragEnd={onDragEnd}
       />
     )
@@ -1211,6 +1306,7 @@ const BackgroundImage = memo(function BackgroundImage({
   y,
   imageUrl,
   opacity,
+  scale,
   draggable,
   onDragEnd,
 }: {
@@ -1218,6 +1314,7 @@ const BackgroundImage = memo(function BackgroundImage({
   y: number
   imageUrl: string
   opacity: number
+  scale: number
   draggable?: boolean
   onDragEnd?: (newX: number, newY: number) => void
 }) {
@@ -1244,6 +1341,8 @@ const BackgroundImage = memo(function BackgroundImage({
       x={x}
       y={y}
       image={img}
+      width={img.naturalWidth * scale}
+      height={img.naturalHeight * scale}
       opacity={opacity}
       draggable={draggable}
       onDragEnd={handleDragEnd}

@@ -1,15 +1,17 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
-import type { SectionData, CanvasTool, SectionType, SeatData, BackgroundShape, SeatShape } from './types'
-import { SECTION_TYPE_COLORS } from './types'
+import { useState, useCallback, useEffect, useMemo } from 'react'
+import type { SectionData, CanvasTool, SectionType, SeatData, BackgroundShape, SeatShape, TierInfo } from './types'
+import { SECTION_TYPE_COLORS, resolveSeatTier } from './types'
 import { fillStraightSeats, fillArcSeats } from './algorithms/fill-seats'
-import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, MapPin, XCircle, Circle, Square, Diamond } from 'lucide-react'
+import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, XCircle, Circle, Square, Diamond, Lock, Unlock, Banknote } from 'lucide-react'
 
 interface CanvasPropertiesProps {
   selectedSection: SectionData | null
   sections: SectionData[]
   tool: CanvasTool
+  tiers?: TierInfo[]
+  onAssignSeatsTier?: (seatIds: string[], tierId: string | null) => void
   onUpdateSection: (id: string, updates: Partial<SectionData>) => void
   onDeleteSection: (id: string) => void
   onSelectSection: (id: string) => void
@@ -47,10 +49,40 @@ const colorPresets = [
   '#d946ef', '#14b8a6', '#f97316', '#64748b',
 ]
 
+/** Dropdown of price categories with a configurable "inherit" option */
+function TierSelect({
+  tiers,
+  value,
+  inheritLabel,
+  onChange,
+}: {
+  tiers: TierInfo[]
+  value: string | null | undefined
+  inheritLabel: string
+  onChange: (tierId: string | null) => void
+}) {
+  return (
+    <select
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value || null)}
+      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+    >
+      <option value="">{inheritLabel}</option>
+      {tiers.map((t) => (
+        <option key={t.id} value={t.id}>
+          {t.name} — ₱{Number(t.price).toLocaleString()}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 export function CanvasProperties({
   selectedSection,
   sections,
   tool,
+  tiers = [],
+  onAssignSeatsTier,
   onUpdateSection,
   onDeleteSection,
   onSelectSection,
@@ -137,6 +169,15 @@ export function CanvasProperties({
   const selectedSeat = selectedSection?.seats.find((s) => s.id === selectedSeatId) ?? null
   const [renumberRow, setRenumberRow] = useState('A')
   const [renumberStart, setRenumberStart] = useState(1)
+  const [multiTierId, setMultiTierId] = useState<string | null>(null)
+
+  const tierById = useMemo(() => new Map(tiers.map((t) => [t.id, t])), [tiers])
+
+  // Distinct row labels in the selected section (for row-level pricing)
+  const sectionRows = useMemo(() => {
+    if (!selectedSection) return []
+    return [...new Set(selectedSection.seats.map((s) => s.rowLabel))].sort()
+  }, [selectedSection])
 
   return (
     <div className="w-72 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0 overflow-y-auto">
@@ -165,7 +206,41 @@ export function CanvasProperties({
             <p className="text-[11px] text-slate-400">
               Section: {selectedSection.label}
             </p>
+            {(() => {
+              const resolved = resolveSeatTier(selectedSeat, selectedSection)
+              const tier = resolved ? tierById.get(resolved) : null
+              return (
+                <p className="text-[11px] mt-1.5 flex items-center gap-1.5">
+                  {tier ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: tier.color }} />
+                      <span className="text-white font-medium">{tier.name}</span>
+                      <span className="text-slate-400">₱{Number(tier.price).toLocaleString()}</span>
+                      {selectedSeat.tierId && <span className="text-amber-400">(seat override)</span>}
+                    </>
+                  ) : (
+                    <span className="text-amber-400">No price category assigned</span>
+                  )}
+                </p>
+              )
+            })()}
           </div>
+
+          {/* Per-seat price override */}
+          {tiers.length > 0 && onAssignSeatsTier && (
+            <div>
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                <Banknote className="w-3.5 h-3.5" />
+                Seat Price Override
+              </label>
+              <TierSelect
+                tiers={tiers}
+                value={selectedSeat.tierId}
+                inheritLabel="Inherit from row / section"
+                onChange={(tierId) => onAssignSeatsTier([selectedSeat.id], tierId)}
+              />
+            </div>
+          )}
 
           <button
             onClick={() => {
@@ -192,9 +267,31 @@ export function CanvasProperties({
               {selectedSeatIds.length} Seats Selected
             </p>
             <p className="text-[11px] text-slate-400">
-              Renumber or delete the selected seats
+              Assign pricing, renumber, or delete the selected seats
             </p>
           </div>
+
+          {/* Assign price category to selection */}
+          {tiers.length > 0 && onAssignSeatsTier && (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Banknote className="w-3.5 h-3.5" />
+                Price Category
+              </label>
+              <TierSelect
+                tiers={tiers}
+                value={multiTierId}
+                inheritLabel="Inherit from row / section"
+                onChange={setMultiTierId}
+              />
+              <button
+                onClick={() => onAssignSeatsTier(selectedSeatIds, multiTierId)}
+                className="w-full flex items-center justify-center gap-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-sm font-medium py-2.5 rounded-lg transition-all border border-emerald-600/30"
+              >
+                Apply to {selectedSeatIds.length} Seats
+              </button>
+            </div>
+          )}
 
           {/* Renumber controls */}
           <div className="space-y-3">
@@ -306,6 +403,70 @@ export function CanvasProperties({
                 />
               ))}
             </div>
+          </div>
+
+          {/* ─── Pricing ────────────────────────────────────────────── */}
+          <div className="border-t border-slate-800 pt-4">
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+              <Banknote className="w-3.5 h-3.5" />
+              Pricing
+            </label>
+            {tiers.length === 0 ? (
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                No ticket tiers on this event yet. Create tiers in the Tickets tab to price sections.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] text-slate-500 mb-1 block">Section Price Category</label>
+                  <TierSelect
+                    tiers={tiers}
+                    value={selectedSection.tierId}
+                    inheritLabel="— Not assigned —"
+                    onChange={(tierId) => onUpdateSection(selectedSection.id, { tierId })}
+                  />
+                </div>
+
+                {/* Row-level overrides */}
+                {sectionRows.length > 0 && (
+                  <div>
+                    <label className="text-[11px] text-slate-500 mb-1.5 block">
+                      Row Overrides <span className="text-slate-600">(beats section price)</span>
+                    </label>
+                    <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                      {sectionRows.map((row) => {
+                        const overrideId = selectedSection.rowTierOverrides?.[row]
+                        const override = overrideId ? tierById.get(overrideId) : null
+                        return (
+                          <div key={row} className="flex items-center gap-2">
+                            <span className={`text-xs font-mono w-7 shrink-0 text-center py-1 rounded ${override ? 'bg-indigo-600/40 text-indigo-200' : 'bg-slate-800 text-slate-400'}`}>
+                              {row}
+                            </span>
+                            <select
+                              value={overrideId ?? ''}
+                              onChange={(e) => {
+                                const next = { ...(selectedSection.rowTierOverrides ?? {}) }
+                                if (e.target.value) next[row] = e.target.value
+                                else delete next[row]
+                                onUpdateSection(selectedSection.id, { rowTierOverrides: next })
+                              }}
+                              className="flex-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            >
+                              <option value="">Section default</option>
+                              {tiers.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name} — ₱{Number(t.price).toLocaleString()}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* ─── Seats Section ──────────────────────────────────────── */}
@@ -483,6 +644,32 @@ export function CanvasProperties({
       ) : (
         /* ─── No Selection View ──────────────────────────────────────── */
         <div className="p-4 space-y-4">
+          {/* Price Legend */}
+          {tiers.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3 block flex items-center gap-1.5">
+                <Banknote className="w-3.5 h-3.5" />
+                Price Categories
+              </label>
+              <div className="space-y-1.5">
+                {tiers.map((tier) => {
+                  const seatCount = sections.reduce(
+                    (sum, s) => sum + s.seats.filter((seat) => resolveSeatTier(seat, s) === tier.id).length,
+                    0
+                  )
+                  return (
+                    <div key={tier.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/50">
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: tier.color }} />
+                      <span className="text-sm text-white truncate flex-1">{tier.name}</span>
+                      <span className="text-xs text-slate-400">₱{Number(tier.price).toLocaleString()}</span>
+                      <span className="text-[10px] text-slate-500 w-12 text-right">{seatCount} seats</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Section List */}
           <div>
             <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3 block">
@@ -533,12 +720,21 @@ export function CanvasProperties({
                   <div key={shape.id} className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm text-white">Image {i + 1}</span>
-                      <button
-                        onClick={() => onDeleteShape(shape.id)}
-                        className="text-red-400 hover:text-red-300 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => onUpdateShape(shape.id, { locked: !shape.locked })}
+                          className={`transition-colors ${shape.locked ? 'text-amber-400 hover:text-amber-300' : 'text-slate-500 hover:text-slate-300'}`}
+                          title={shape.locked ? 'Unlock (allow dragging)' : 'Lock in place for tracing'}
+                        >
+                          {shape.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          onClick={() => onDeleteShape(shape.id)}
+                          className="text-red-400 hover:text-red-300 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <label className="text-[11px] text-slate-500 flex justify-between mb-1">
                       <span>Opacity</span>
@@ -554,6 +750,24 @@ export function CanvasProperties({
                       onChange={(e) =>
                         onUpdateShape(shape.id, {
                           opacity: parseInt(e.target.value) / 100,
+                        })
+                      }
+                      className="w-full accent-indigo-500 cursor-pointer"
+                    />
+                    <label className="text-[11px] text-slate-500 flex justify-between mb-1 mt-2">
+                      <span>Size</span>
+                      <span className="text-slate-400">
+                        {Math.round((shape.scale ?? 1) * 100)}%
+                      </span>
+                    </label>
+                    <input
+                      type="range"
+                      min="5"
+                      max="300"
+                      value={Math.round((shape.scale ?? 1) * 100)}
+                      onChange={(e) =>
+                        onUpdateShape(shape.id, {
+                          scale: parseInt(e.target.value) / 100,
                         })
                       }
                       className="w-full accent-indigo-500 cursor-pointer"

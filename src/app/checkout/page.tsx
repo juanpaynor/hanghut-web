@@ -8,11 +8,15 @@ export const dynamic = 'force-dynamic'
 export default async function CheckoutPage({
     searchParams,
 }: {
-    searchParams: Promise<{ eventId: string; quantity: string; tierId?: string }>
+    searchParams: Promise<{ eventId: string; quantity: string; tierId?: string; seatIds?: string }>
 }) {
     // 1. Validate params
-    const { eventId, quantity, tierId } = await searchParams
+    const { eventId, quantity, tierId, seatIds } = await searchParams
     const qty = parseInt(quantity || '0')
+
+    // Seat picker handoff: comma-separated seat UUIDs; count must match quantity
+    const seatIdList = (seatIds || '').split(',').map(s => s.trim()).filter(Boolean)
+    const selectedSeatIds = seatIdList.length === qty ? seatIdList : []
 
     if (!eventId || qty < 1) {
         redirect('/')
@@ -156,6 +160,7 @@ export default async function CheckoutPage({
                     organizerName={organizerName}
                     registrationQuestions={(event.registration_questions || []).sort((a: any, b: any) => a.display_order - b.display_order)}
                     subscriberDiscount={subscriberDiscount}
+                    selectedSeatIds={selectedSeatIds}
                 />
             </main>
         </div>

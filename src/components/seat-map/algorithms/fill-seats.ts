@@ -76,17 +76,13 @@ export function fillStraightSeats(
 
   if (innerWidth <= 0 || innerHeight <= 0) return []
 
-  // Auto-calculate how many rows/cols actually fit in the polygon bounds
-  const maxRows = config.autoFit
-    ? Math.floor(innerHeight / cellHeight)
-    : config.rowCount
-  const maxCols = config.autoFit
-    ? Math.floor(innerWidth / cellWidth)
-    : config.seatsPerRow
+  // How many rows/cols physically fit in the polygon bounds
+  const fitRows = Math.max(1, Math.floor(innerHeight / cellHeight))
+  const fitCols = Math.max(1, Math.floor(innerWidth / cellWidth))
 
-  // Use min of requested and physically possible
-  const effectiveRows = Math.min(config.rowCount, Math.max(1, Math.floor(innerHeight / cellHeight)))
-  const effectiveCols = Math.min(config.seatsPerRow, Math.max(1, Math.floor(innerWidth / cellWidth)))
+  // autoFit packs as many as fit; otherwise cap the requested counts at what fits
+  const effectiveRows = config.autoFit ? fitRows : Math.min(config.rowCount, fitRows)
+  const effectiveCols = config.autoFit ? fitCols : Math.min(config.seatsPerRow, fitCols)
 
   const seats: SeatPosition[] = []
 

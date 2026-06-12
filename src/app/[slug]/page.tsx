@@ -3,16 +3,15 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import { PublicEventCard } from '@/components/events/public-event-card'
-import { Globe, Instagram, Facebook, Twitter, Calendar, MapPin, Megaphone, X, History, Crown } from 'lucide-react'
+import { Globe, Instagram, Facebook, Twitter, Calendar, Megaphone, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Metadata } from 'next'
 import { Inter, Playfair_Display, Space_Mono } from 'next/font/google'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BrandingProvider } from '@/components/storefront/branding-provider'
 import { StorefrontHeroVideo } from '@/components/storefront/storefront-hero-video'
 import { ProfileActions } from '@/components/storefront/profile-actions'
-import { cn, getYouTubeEmbedUrl } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { sanitize } from '@/lib/sanitize'
 import { SectionRenderer } from '@/components/storefront/section-renderer'
 import { StorefrontNavbar } from '@/components/storefront/storefront-navbar'
@@ -174,6 +173,27 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
     // Animation Helpers
     const animate = (delay: string = '') => enableAnimations ? `animate-in fade-in slide-in-from-bottom-4 duration-700 ${delay} fill-mode-both` : ''
 
+    // Storefront mode resolution: honor branding override, else auto-detect from content
+    const primaryModeOverride = branding.design?.primary_mode as string | undefined
+    const hasUpcoming = upcoming.length > 0
+    const hasTiers = tiers.length > 0
+    const resolvedMode: 'events' | 'membership' | 'hybrid' | 'profile' =
+        (primaryModeOverride && primaryModeOverride !== 'auto')
+            ? (primaryModeOverride as 'events' | 'membership' | 'hybrid' | 'profile')
+            : hasTiers && !hasUpcoming ? 'membership'
+            : hasTiers && hasUpcoming ? 'hybrid'
+            : hasUpcoming ? 'events'
+            : 'profile'
+
+    const stat1 = resolvedMode === 'membership'
+        ? { value: tiers.length, label: tiers.length === 1 ? 'Tier' : 'Tiers' }
+        : { value: upcoming.length, label: 'Events' }
+    const stat2 = resolvedMode === 'membership'
+        ? { value: posts.length, label: 'Posts' }
+        : resolvedMode === 'hybrid'
+        ? { value: tiers.length, label: tiers.length === 1 ? 'Tier' : 'Tiers' }
+        : { value: past.length, label: 'Past' }
+
     // Helper for Social Buttons
     const SocialButtons = () => (
         <div className="flex gap-2 mb-6 justify-center lg:justify-start">
@@ -238,6 +258,18 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                             events={upcoming}
                             pastEvents={past}
                         />
+                        {/* Membership section for section-based storefronts: show unless mode is explicitly events-only */}
+                        {hasTiers && resolvedMode !== 'events' && (
+                            <div className="container mx-auto px-4 py-12">
+                                <SubscriptionSection
+                                    tiers={tiers}
+                                    postCount={posts.length}
+                                    subscriptionStatus={subscriptionStatus as any}
+                                    partnerName={partner.business_name}
+                                    partnerSlug={partner.slug}
+                                />
+                            </div>
+                        )}
                         <div className="flex-grow" />
                     </>
                 ) : (
@@ -318,17 +350,19 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                     </div>
 
                                     {/* Mini Stats */}
-                                    <div className={cn("bg-card border rounded-2xl p-4 flex justify-around text-center", animate('delay-200'))}>
-                                        <div>
-                                            <div className="text-2xl font-bold">{upcoming.length}</div>
-                                            <div className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Events</div>
+                                    {resolvedMode !== 'profile' && (
+                                        <div className={cn("bg-card border rounded-2xl p-4 flex justify-around text-center", animate('delay-200'))}>
+                                            <div>
+                                                <div className="text-2xl font-bold">{stat1.value}</div>
+                                                <div className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">{stat1.label}</div>
+                                            </div>
+                                            <div className="w-px bg-border my-1" />
+                                            <div>
+                                                <div className="text-2xl font-bold">{stat2.value}</div>
+                                                <div className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">{stat2.label}</div>
+                                            </div>
                                         </div>
-                                        <div className="w-px bg-border my-1" />
-                                        <div>
-                                            <div className="text-2xl font-bold">4.9</div>
-                                            <div className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Rating</div>
-                                        </div>
-                                    </div>
+                                    )}
                                 </div>
 
                                 {/* Right Column: Content */}
@@ -344,7 +378,20 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                         </div>
                                     )}
 
-                                    <div className="space-y-8">
+                                    {/* Membership / hybrid: subscription section leads content */}
+                                    {(resolvedMode === 'membership' || resolvedMode === 'hybrid') && (
+                                        <SubscriptionSection
+                                            tiers={tiers}
+                                            postCount={posts.length}
+                                            subscriptionStatus={subscriptionStatus as any}
+                                            partnerName={partner.business_name}
+                                            partnerSlug={partner.slug}
+                                        />
+                                    )}
+
+                                    {/* Events section: shown for events and hybrid modes */}
+                                    {(resolvedMode === 'events' || resolvedMode === 'hybrid') && (
+                                        <div className="space-y-8">
                                             <div className="space-y-6">
                                                 <div className="flex items-center justify-between">
                                                     <h2 className="text-2xl font-bold flex items-center gap-2">
@@ -385,7 +432,8 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                                     </div>
                                                 </div>
                                             )}
-                                    </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -451,20 +499,35 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
                                         </div>
                                     )}
 
-                                    <div className="space-y-6">
-                                        <h2 className="text-2xl font-bold text-center">Events</h2>
-                                        {sortedUpcoming.length > 0 ? (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                {sortedUpcoming.map((event: any) => (
-                                                    <div key={event.id} className={animate('delay-500')}>
-                                                        <PublicEventCard event={event} />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <EmptyState partnerName={partner.business_name} />
-                                        )}
-                                    </div>
+                                    {resolvedMode !== 'profile' && (
+                                        <div className="space-y-6">
+                                            {(resolvedMode === 'membership' || resolvedMode === 'hybrid') && (
+                                                <SubscriptionSection
+                                                    tiers={tiers}
+                                                    postCount={posts.length}
+                                                    subscriptionStatus={subscriptionStatus as any}
+                                                    partnerName={partner.business_name}
+                                                    partnerSlug={partner.slug}
+                                                />
+                                            )}
+                                            {(resolvedMode === 'events' || resolvedMode === 'hybrid') && (
+                                                <>
+                                                    <h2 className="text-2xl font-bold text-center">Events</h2>
+                                                    {sortedUpcoming.length > 0 ? (
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                            {sortedUpcoming.map((event: any) => (
+                                                                <div key={event.id} className={animate('delay-500')}>
+                                                                    <PublicEventCard event={event} />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <EmptyState partnerName={partner.business_name} />
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
 
                                     {/* Past Events for Classic */}
                                     {past.length > 0 && (
@@ -488,18 +551,6 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
 
                 </>) /* end legacy fallback */}
 
-                {/* --- MEMBERSHIP TEASER --- only shown when organizer enables the tab */}
-                {tiers.length > 0 && partner.show_membership_tab && (
-                    <div className="container mx-auto px-4 py-16">
-                        <SubscriptionSection
-                            tiers={tiers}
-                            postCount={posts.length}
-                            subscriptionStatus={subscriptionStatus as any}
-                            partnerName={partner.business_name}
-                            partnerSlug={partner.slug}
-                        />
-                    </div>
-                )}
 
                 {/* --- FOOTER --- */}
                 {showFooter && (

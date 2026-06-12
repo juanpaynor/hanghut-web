@@ -1,6 +1,6 @@
 'use client'
 
-import { useReducer, useCallback, useRef } from 'react'
+import { useReducer, useCallback, useRef, useEffect } from 'react'
 import type {
   CanvasState,
   CanvasTool,
@@ -37,6 +37,8 @@ type Action =
   | { type: 'SET_SEAT_RADIUS'; radius: number }
   | { type: 'SET_SEAT_SHAPE'; shape: SeatShape }
   | { type: 'SET_DRAG_SEAT_START'; point: { x: number; y: number } | null }
+  | { type: 'DELETE_SEATS'; seatIds: string[] }
+  | { type: 'ASSIGN_SEATS_TIER'; seatIds: string[]; tierId: string | null }
   | { type: 'RENUMBER_SEATS'; sectionId: string; seatIds: string[]; startRow: string; startNum: number }
   | { type: 'UNDO' }
   | { type: 'REDO' }
@@ -165,6 +167,32 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
       }
     }
 
+    case 'DELETE_SEATS': {
+      const toDelete = new Set(action.seatIds)
+      return {
+        ...state,
+        sections: state.sections.map((s) => ({
+          ...s,
+          seats: s.seats.filter((seat) => !toDelete.has(seat.id)),
+        })),
+        selectedSeatId: null,
+        selectedSeatIds: [],
+      }
+    }
+
+    case 'ASSIGN_SEATS_TIER': {
+      const targets = new Set(action.seatIds)
+      return {
+        ...state,
+        sections: state.sections.map((s) => ({
+          ...s,
+          seats: s.seats.map((seat) =>
+            targets.has(seat.id) ? { ...seat, tierId: action.tierId } : seat
+          ),
+        })),
+      }
+    }
+
     case 'LOAD_CANVAS':
       return {
         ...state,
@@ -246,63 +274,51 @@ const MAX_HISTORY = 50
 export function useCanvasState() {
   const [state, dispatch] = useReducer(canvasReducer, initialState)
 
-  // History for undo/redo (managed separately from reducer to avoid circular deps)
-  const historyRef = useRef<HistoryEntry[]>([])
-  const historyIndexRef = useRef(-1)
+  // Undo/redo via past/future stacks. `stateRef` mirrors the latest committed
+  // state so undo can snapshot the CURRENT state into the future stack —
+  // without it, the most recent change would be unrecoverable.
+  const stateRef = useRef(state)
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
 
-  const pushHistory = useCallback(() => {
-    const entry: HistoryEntry = {
-      sections: JSON.parse(JSON.stringify(state.sections)),
-      backgroundShapes: JSON.parse(JSON.stringify(state.backgroundShapes)),
-    }
+  const pastRef = useRef<HistoryEntry[]>([])
+  const futureRef = useRef<HistoryEntry[]>([])
 
-    // Remove anything after current index (new branch)
-    const newHistory = historyRef.current.slice(0, historyIndexRef.current + 1)
-    newHistory.push(entry)
-
-    // Cap history
-    if (newHistory.length > MAX_HISTORY) {
-      newHistory.shift()
-    }
-
-    historyRef.current = newHistory
-    historyIndexRef.current = newHistory.length - 1
-  }, [state.sections, state.backgroundShapes])
+  const snapshot = (s: CanvasState): HistoryEntry => ({
+    sections: JSON.parse(JSON.stringify(s.sections)),
+    backgroundShapes: JSON.parse(JSON.stringify(s.backgroundShapes)),
+  })
 
   const undo = useCallback(() => {
-    if (historyIndexRef.current <= 0) return
-    historyIndexRef.current--
-    const entry = historyRef.current[historyIndexRef.current]
-    if (entry) {
-      dispatch({
-        type: 'LOAD_CANVAS',
-        sections: JSON.parse(JSON.stringify(entry.sections)),
-        backgroundShapes: JSON.parse(JSON.stringify(entry.backgroundShapes)),
-      })
-    }
+    const prev = pastRef.current.pop()
+    if (!prev) return
+    futureRef.current.push(snapshot(stateRef.current))
+    dispatch({
+      type: 'LOAD_CANVAS',
+      sections: prev.sections,
+      backgroundShapes: prev.backgroundShapes,
+    })
   }, [])
 
   const redo = useCallback(() => {
-    if (historyIndexRef.current >= historyRef.current.length - 1) return
-    historyIndexRef.current++
-    const entry = historyRef.current[historyIndexRef.current]
-    if (entry) {
-      dispatch({
-        type: 'LOAD_CANVAS',
-        sections: JSON.parse(JSON.stringify(entry.sections)),
-        backgroundShapes: JSON.parse(JSON.stringify(entry.backgroundShapes)),
-      })
-    }
+    const next = futureRef.current.pop()
+    if (!next) return
+    pastRef.current.push(snapshot(stateRef.current))
+    dispatch({
+      type: 'LOAD_CANVAS',
+      sections: next.sections,
+      backgroundShapes: next.backgroundShapes,
+    })
   }, [])
 
-  // Convenience: dispatch + push history (for undoable actions)
-  const dispatchWithHistory = useCallback(
-    (action: Action) => {
-      pushHistory()
-      dispatch(action)
-    },
-    [pushHistory]
-  )
+  // Dispatch an undoable action: snapshot the state before it, clear redo branch
+  const dispatchWithHistory = useCallback((action: Action) => {
+    pastRef.current.push(snapshot(stateRef.current))
+    if (pastRef.current.length > MAX_HISTORY) pastRef.current.shift()
+    futureRef.current = []
+    dispatch(action)
+  }, [])
 
   return {
     state,
@@ -310,7 +326,7 @@ export function useCanvasState() {
     dispatchWithHistory,
     undo,
     redo,
-    canUndo: historyIndexRef.current > 0,
-    canRedo: historyIndexRef.current < historyRef.current.length - 1,
+    canUndo: pastRef.current.length > 0,
+    canRedo: futureRef.current.length > 0,
   }
 }

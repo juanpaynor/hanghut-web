@@ -39,6 +39,8 @@ export interface SectionData {
   gridRotation?: number
   isActive: boolean
   sortOrder: number
+  tierId?: string | null                       // default price category for the whole section
+  rowTierOverrides?: Record<string, string>    // rowLabel → tierId, overrides section tier
 }
 
 // ─── Seat Types ─────────────────────────────────────────────────────────────
@@ -54,6 +56,30 @@ export interface SeatData {
   y: number
   status: SeatStatus
   customPrice?: number | null
+  tierId?: string | null   // per-seat price override; resolution: seat → row → section
+}
+
+// ─── Price Categories (ticket tiers projected into the builder) ─────────────
+
+export interface TierInfo {
+  id: string
+  name: string
+  price: number
+  color: string   // assigned from TIER_PALETTE by sort order
+}
+
+export const TIER_PALETTE = [
+  '#f59e0b', '#6366f1', '#22c55e', '#ec4899',
+  '#06b6d4', '#8b5cf6', '#f97316', '#14b8a6',
+  '#f43f5e', '#3b82f6', '#84cc16', '#d946ef',
+]
+
+/** Resolve a seat's price category: seat override → row override → section default */
+export function resolveSeatTier(
+  seat: SeatData,
+  section: SectionData
+): string | null {
+  return seat.tierId ?? section.rowTierOverrides?.[seat.rowLabel] ?? section.tierId ?? null
 }
 
 // ─── Background Shapes ──────────────────────────────────────────────────────
@@ -77,6 +103,8 @@ export interface BackgroundShape {
   rotation?: number
   imageUrl?: string
   opacity?: number
+  scale?: number     // image display scale (1 = natural size)
+  locked?: boolean   // locked images can't be dragged (for tracing floor plans)
 }
 
 // ─── Seat Appearance ────────────────────────────────────────────────────────
