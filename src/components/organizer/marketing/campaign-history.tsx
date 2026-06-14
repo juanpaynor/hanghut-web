@@ -17,12 +17,24 @@ import { format } from 'date-fns'
 interface Campaign {
     id: string
     subject: string
-    status: 'draft' | 'sending' | 'sent' | 'failed'
+    status: 'draft' | 'sending' | 'sent' | 'partial_failure' | 'failed'
     sent_at: string | null
     recipient_count: number
     sent_count: number
     failed_count: number
     created_at: string
+    // Engagement rollup from email_campaign_stats (Phase 2 — Resend webhooks).
+    delivered_count: number
+    opened_count: number
+    clicked_count: number
+    bounced_count: number
+    complained_count: number
+}
+
+// Open/click rates are measured against delivered mail (industry standard).
+function rate(numerator: number, denominator: number): string {
+    if (!denominator) return '—'
+    return `${Math.round((numerator / denominator) * 100)}%`
 }
 
 export function CampaignHistory() {
@@ -63,7 +75,7 @@ export function CampaignHistory() {
             if (!partnerId) return
 
             const { data, error } = await supabase
-                .from('email_campaigns')
+                .from('email_campaign_stats')
                 .select('*')
                 .eq('partner_id', partnerId)
                 .order('created_at', { ascending: false })
@@ -84,6 +96,8 @@ export function CampaignHistory() {
                 return 'bg-green-500'
             case 'sending':
                 return 'bg-blue-500'
+            case 'partial_failure':
+                return 'bg-amber-500'
             case 'failed':
                 return 'bg-red-500'
             default:
@@ -108,13 +122,15 @@ export function CampaignHistory() {
                             <TableHead>Status</TableHead>
                             <TableHead>Sent At</TableHead>
                             <TableHead className="text-right">Recipients</TableHead>
-                            <TableHead className="text-right">Success Rate</TableHead>
+                            <TableHead className="text-right">Delivered</TableHead>
+                            <TableHead className="text-right">Opened</TableHead>
+                            <TableHead className="text-right">Clicked</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {campaigns.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                                <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
                                     No campaigns sent yet.
                                 </TableCell>
                             </TableRow>
@@ -135,10 +151,23 @@ export function CampaignHistory() {
                                     <TableCell className="text-right">
                                         {campaign.recipient_count}
                                     </TableCell>
-                                    <TableCell className="text-right">
-                                        {campaign.sent_count > 0
-                                            ? `${Math.round((campaign.sent_count / (campaign.sent_count + campaign.failed_count)) * 100)}%`
-                                            : '-'}
+                                    <TableCell className="text-right tabular-nums">
+                                        {campaign.delivered_count}
+                                        <span className="text-muted-foreground ml-1 text-xs">
+                                            ({rate(campaign.delivered_count, campaign.sent_count)})
+                                        </span>
+                                    </TableCell>
+                                    <TableCell className="text-right tabular-nums">
+                                        {campaign.opened_count}
+                                        <span className="text-muted-foreground ml-1 text-xs">
+                                            ({rate(campaign.opened_count, campaign.delivered_count)})
+                                        </span>
+                                    </TableCell>
+                                    <TableCell className="text-right tabular-nums">
+                                        {campaign.clicked_count}
+                                        <span className="text-muted-foreground ml-1 text-xs">
+                                            ({rate(campaign.clicked_count, campaign.delivered_count)})
+                                        </span>
                                     </TableCell>
                                 </TableRow>
                             ))

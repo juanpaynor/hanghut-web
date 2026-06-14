@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { initiateSubscriptionCheckout, cancelSubscription } from '@/lib/subscriptions/actions'
+import { PayrexCheckoutModal } from '@/components/storefront/payrex-checkout-modal'
 import type { SubscriptionStatus } from '@/lib/subscriptions/access'
 import type { PerkItem } from '@/lib/subscriptions/actions'
 
@@ -118,6 +119,10 @@ export function TierDetailPage({ partner, tier, subscriptionStatus, fontClass, t
     const [isPending, startTransition] = useTransition()
     const [isLoading, setIsLoading] = useState(false)
     const [cancelled, setCancelled] = useState(false)
+    const [checkoutModal, setCheckoutModal] = useState<{
+        clientSecret: string
+        publicKey: string
+    } | null>(null)
 
     const effectiveStatus = cancelled
         ? { ...subscriptionStatus, status: 'cancelled' as const }
@@ -135,10 +140,10 @@ export function TierDetailPage({ partner, tier, subscriptionStatus, fontClass, t
         startTransition(async () => {
             const result = await initiateSubscriptionCheckout(tier.id)
             setIsLoading(false)
-            if (result.error) {
+            if ('error' in result && result.error) {
                 toast({ title: 'Error', description: result.error, variant: 'destructive' })
-            } else if (result.checkoutUrl) {
-                window.location.href = result.checkoutUrl
+            } else if ('client_secret' in result && result.client_secret) {
+                setCheckoutModal({ clientSecret: result.client_secret, publicKey: result.public_key })
             }
         })
     }
@@ -158,6 +163,7 @@ export function TierDetailPage({ partner, tier, subscriptionStatus, fontClass, t
     }
 
     return (
+        <>
         <div className={`min-h-screen bg-background${fontClass ? ` ${fontClass}` : ''}`} style={themeStyle}>
             {/* Hero */}
             <div className="relative h-64 sm:h-80 w-full overflow-hidden bg-gradient-to-br from-primary/30 via-primary/10 to-background">
@@ -343,5 +349,18 @@ export function TierDetailPage({ partner, tier, subscriptionStatus, fontClass, t
                 </div>
             </div>
         </div>
+
+        {checkoutModal && (
+            <PayrexCheckoutModal
+                open={!!checkoutModal}
+                onClose={() => setCheckoutModal(null)}
+                clientSecret={checkoutModal.clientSecret}
+                publicKey={checkoutModal.publicKey}
+                tierName={tier.name}
+                priceMonthly={tier.price_monthly}
+                partnerSlug={partner.slug}
+            />
+        )}
+        </>
     )
 }

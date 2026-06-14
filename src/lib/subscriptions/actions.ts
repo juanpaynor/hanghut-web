@@ -3,7 +3,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-import { payrex } from './payrex'
 import { calculatePlatformFee } from './fees'
 import { getPartnerMonthlyRevenue } from './access'
 
@@ -11,75 +10,35 @@ import { getPartnerMonthlyRevenue } from './access'
 // CHECKOUT
 // ─────────────────────────────────────────────
 
+/**
+ * Delegates to the create-subscription-checkout edge function which holds
+ * PAYREX_SECRET and PAYREX_API. Returns {client_secret, public_key} for
+ * Payrex.js — no PayRex keys needed in Vercel.
+ */
 export async function initiateSubscriptionCheckout(tierId: string) {
     const supabase = await createClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { error: 'Not authenticated' }
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return { error: 'Not authenticated' }
 
-    // Fetch tier + partner
-    const { data: tier } = await supabase
-        .from('subscription_tiers')
-        .select('id, name, price_monthly, is_active, partner_id, partners(business_name, kyc_status, verified)')
-        .eq('id', tierId)
-        .single()
-
-    if (!tier) return { error: 'Tier not found' }
-    if (!tier.is_active) return { error: 'This tier is no longer available' }
-
-    const partner = tier.partners as any
-    if (!partner?.verified || partner?.kyc_status !== 'verified') {
-        return { error: 'This organizer is not yet verified' }
-    }
-
-    // Block if fan already has an active sub to this partner
-    const { data: existing } = await supabase
-        .from('fan_subscriptions')
-        .select('id, status')
-        .eq('fan_id', user.id)
-        .eq('partner_id', tier.partner_id)
-        .maybeSingle()
-
-    if (existing && (existing.status === 'active' || existing.status === 'grace_period')) {
-        return { error: 'You already have an active subscription to this organizer' }
-    }
-
-    // Fee calculation
-    const monthlyRevenue = await getPartnerMonthlyRevenue(tier.partner_id)
-    const platformFee = calculatePlatformFee(tier.price_monthly, monthlyRevenue)
-
-    // Create Payrex checkout (mock auto-approves)
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:9002'
-    const result = await payrex.createCheckout({
-        amount: tier.price_monthly,
-        description: `${partner.business_name} — ${tier.name} (monthly)`,
-        successUrl: `${baseUrl}/subscriptions/success`,
-        failureUrl: `${baseUrl}/${tier.partner_id}`,
-        metadata: {
-            tier_id: tierId,
-            partner_id: tier.partner_id,
-            fan_id: user.id,
-            platform_fee: String(platformFee),
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const res = await fetch(`${supabaseUrl}/functions/v1/create-subscription-checkout`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
         },
+        body: JSON.stringify({ tier_id: tierId }),
     })
 
-    // Mock: since Payrex auto-approves, provision immediately
-    if (result.status === 'paid') {
-        await provisionSubscription({
-            fanId: user.id,
-            tierId,
-            partnerId: tier.partner_id,
-            amount: tier.price_monthly,
-            platformFee,
-            payrexRef: result.payrex_ref,
-            existingSubId: existing?.id,
-        })
+    const data = await res.json()
+    if (!res.ok) return { error: data.error ?? 'Checkout failed' }
 
-        revalidatePath(`/${tier.partner_id}`)
-        return { success: true, checkoutUrl: result.checkout_url }
+    return {
+        success: true as const,
+        client_secret: data.client_secret as string,
+        public_key: data.public_key as string,
     }
-
-    return { success: true, checkoutUrl: result.checkout_url }
 }
 
 // ─────────────────────────────────────────────

@@ -1,5 +1,6 @@
 'use server'
 
+import { createHmac, timingSafeEqual } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -8,6 +9,39 @@ interface UnsubscribeResult {
     message: string
     organizer?: string
     email?: string
+}
+
+/**
+ * HMAC key for signed attendee unsubscribe links. Event attendees are not in
+ * `partner_subscribers` (so they have no `unsubscribe_token`), so their
+ * unsubscribe link is a signature over `email|partner_id` instead.
+ *
+ * Falls back to the service-role key so this works with zero new secrets; set
+ * a dedicated UNSUBSCRIBE_SECRET (in both Vercel and Supabase function secrets)
+ * to decouple it. The SAME value must be used by the send-promotional-email
+ * edge function that generates the links.
+ */
+function unsubscribeSecret(): string {
+    return process.env.UNSUBSCRIBE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+}
+
+function signUnsubscribe(email: string, partnerId: string): string {
+    return createHmac('sha256', unsubscribeSecret())
+        .update(`${email.toLowerCase()}|${partnerId}`)
+        .digest('hex')
+}
+
+/**
+ * Constant-time check of an attendee unsubscribe signature.
+ */
+function verifyUnsubscribeSig(email: string, partnerId: string, sig: string): boolean {
+    const expected = signUnsubscribe(email, partnerId)
+    if (sig.length !== expected.length) return false
+    try {
+        return timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))
+    } catch {
+        return false
+    }
 }
 
 export async function processUnsubscribe(token: string): Promise<UnsubscribeResult> {
@@ -83,6 +117,63 @@ export async function processUnsubscribe(token: string): Promise<UnsubscribeResu
         message: "Successfully unsubscribed.",
         organizer: subscription.partner?.business_name || "Organizer",
         email: subscription.email
+    }
+}
+
+/**
+ * Unsubscribe for an event attendee who is NOT on the partner's subscriber
+ * list (so they have no token). The link carries email + partner_id + an HMAC
+ * signature; we verify the signature, then record the address in
+ * email_suppressions so future sends from this partner skip it.
+ */
+export async function processAttendeeUnsubscribe(
+    email: string,
+    partnerId: string,
+    sig: string
+): Promise<UnsubscribeResult> {
+    if (!email || !partnerId || !sig || !verifyUnsubscribeSig(email, partnerId, sig)) {
+        return { success: false, message: "Invalid or expired unsubscribe link." }
+    }
+
+    const supabase = createAdminClient()
+
+    // Look up partner name for the confirmation message (best-effort).
+    const { data: partner } = await supabase
+        .from('partners')
+        .select('business_name')
+        .eq('id', partnerId)
+        .maybeSingle()
+
+    // Suppress for this partner. Idempotent on (partner_id, lower(email)).
+    const { error } = await supabase
+        .from('email_suppressions')
+        .upsert(
+            {
+                partner_id: partnerId,
+                email: email.toLowerCase(),
+                reason: 'unsubscribe',
+                source: 'attendee_unsub',
+            },
+            { onConflict: 'partner_id,email', ignoreDuplicates: true }
+        )
+
+    if (error) {
+        console.error('Attendee unsubscribe failed:', error)
+        return { success: false, message: "System error. Please contact support." }
+    }
+
+    // Also flip any matching subscriber row inactive, in case they're on both.
+    await supabase
+        .from('partner_subscribers')
+        .update({ is_active: false, unsubscribed_at: new Date().toISOString() })
+        .eq('partner_id', partnerId)
+        .ilike('email', email)
+
+    return {
+        success: true,
+        message: "Successfully unsubscribed.",
+        organizer: partner?.business_name || "Organizer",
+        email,
     }
 }
 

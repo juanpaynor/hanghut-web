@@ -11,6 +11,7 @@ import {
     Package, Megaphone, Zap, Download, Link2, Gift, Star, MessageCircle,
 } from 'lucide-react'
 import { YourPerks } from '@/components/storefront/your-perks'
+import { PayrexCheckoutModal } from '@/components/storefront/payrex-checkout-modal'
 import { format } from 'date-fns'
 import { initiateSubscriptionCheckout, cancelSubscription } from '@/lib/subscriptions/actions'
 import type { SubscriptionStatus } from '@/lib/subscriptions/access'
@@ -80,6 +81,12 @@ export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subs
     const [isPending, startTransition] = useTransition()
     const [loadingTierId, setLoadingTierId] = useState<string | null>(null)
     const [cancelled, setCancelled] = useState(false)
+    const [checkoutModal, setCheckoutModal] = useState<{
+        clientSecret: string
+        publicKey: string
+        tierName: string
+        priceMonthly: number
+    } | null>(null)
 
     const effectiveStatus = cancelled
         ? { ...subscriptionStatus, status: 'cancelled' as const, isActive: true }
@@ -90,14 +97,20 @@ export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subs
             window.location.href = `/account/login?next=${encodeURIComponent(`/${partner.slug}/membership`)}`
             return
         }
+        const tier = tiers.find(t => t.id === tierId)
         setLoadingTierId(tierId)
         startTransition(async () => {
             const result = await initiateSubscriptionCheckout(tierId)
             setLoadingTierId(null)
-            if (result.error) {
+            if ('error' in result && result.error) {
                 toast({ title: 'Error', description: result.error, variant: 'destructive' })
-            } else if (result.checkoutUrl) {
-                window.location.href = result.checkoutUrl
+            } else if ('client_secret' in result && result.client_secret) {
+                setCheckoutModal({
+                    clientSecret: result.client_secret,
+                    publicKey: result.public_key,
+                    tierName: tier?.name ?? '',
+                    priceMonthly: tier?.price_monthly ?? 0,
+                })
             }
         })
     }
@@ -116,6 +129,7 @@ export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subs
     }
 
     return (
+        <>
         <div className={`min-h-screen bg-background${fontClass ? ` ${fontClass}` : ''}`} style={themeStyle}>
             {/* Cover + Header */}
             <div className="relative h-52 sm:h-72 w-full overflow-hidden bg-gradient-to-br from-primary/30 via-primary/10 to-background">
@@ -393,5 +407,18 @@ export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subs
                 )}
             </div>
         </div>
+
+        {checkoutModal && (
+            <PayrexCheckoutModal
+                open={!!checkoutModal}
+                onClose={() => setCheckoutModal(null)}
+                clientSecret={checkoutModal.clientSecret}
+                publicKey={checkoutModal.publicKey}
+                tierName={checkoutModal.tierName}
+                priceMonthly={checkoutModal.priceMonthly}
+                partnerSlug={partner.slug}
+            />
+        )}
+        </>
     )
 }

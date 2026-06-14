@@ -75,6 +75,23 @@ export default async function VerificationPage() {
                 </Card>
             )}
 
+            {status === 'submitted' && (
+                <Card className="bg-indigo-50 border-indigo-200">
+                    <CardHeader className="flex flex-row items-center gap-4 space-y-0">
+                        <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center">
+                            <Clock className="h-6 w-6 text-indigo-600" />
+                        </div>
+                        <div>
+                            <CardTitle className="text-indigo-800">Verifying with payment provider</CardTitle>
+                            <CardDescription className="text-indigo-700">
+                                Your documents were submitted to our payment provider for verification.
+                                GCash &amp; card payments unlock once approved — usually 1–3 business days.
+                            </CardDescription>
+                        </div>
+                    </CardHeader>
+                </Card>
+            )}
+
             {status === 'rejected' && (
                 <Card className="bg-red-50 border-red-200 mb-6">
                     <CardHeader className="flex flex-row items-center gap-4 space-y-0">
@@ -91,8 +108,9 @@ export default async function VerificationPage() {
                 </Card>
             )}
 
-            {/* Submission Form */}
-            {(status === 'not_started' || status === 'rejected' || status === 'submitted') && (
+            {/* Submission Form — hidden while awaiting admin review ('pending_review')
+                or payment-provider verification ('submitted') */}
+            {(status === 'not_started' || status === 'rejected') && (
                 <Card>
                     <CardHeader>
                         <CardTitle>Submit Verification</CardTitle>

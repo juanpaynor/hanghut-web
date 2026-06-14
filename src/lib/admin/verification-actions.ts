@@ -44,15 +44,29 @@ export async function reviewKYC(
     if (!adminUser?.is_admin) return { error: 'Forbidden' }
 
     // 2. Perform Update
+    //
+    // Platform approval (verified / status) is SEPARATE from payment-KYC (kyc_status):
+    //  - Approve grants platform access (verified=true, status=approved) but must NOT
+    //    pre-set kyc_status='verified' — that is Xendit's call. We leave kyc_status as
+    //    the partner left it ('pending_review') so submit-xendit-kyc can actually run
+    //    (it bails if kyc_status is already 'submitted'/'verified'). That edge function
+    //    sets kyc_status='submitted'; the xendit-webhook then flips it to verified/rejected.
+    //  - Reject marks the documents rejected locally, before they ever reach Xendit.
     const updates: any = {
-        kyc_status: action === 'approve' ? 'verified' : 'rejected',
-        verified: action === 'approve', // Sync with legacy boolean
+        verified: action === 'approve', // platform access gate (NOT payment KYC)
         approved_by: action === 'approve' ? user.id : null,
         approved_at: action === 'approve' ? new Date().toISOString() : null,
-        kyc_rejection_reason: action === 'reject' ? reason : null,
-        status: action === 'approve' ? 'approved' : 'pending', // Optionally activate partner status
-        custom_percentage: action === 'approve' ? (feePercentage ?? 15) : null,
-        pass_fees_to_customer: action === 'approve' ? (passFeesToCustomer ?? true) : null
+        status: action === 'approve' ? 'approved' : 'pending',
+        custom_percentage: action === 'approve' ? (feePercentage ?? 4) : null,
+        pass_fees_to_customer: action === 'approve' ? (passFeesToCustomer ?? true) : null,
+    }
+
+    if (action === 'reject') {
+        updates.kyc_status = 'rejected'
+        updates.kyc_rejection_reason = reason
+    } else {
+        // Leave kyc_status untouched (stays 'pending_review') so submit-xendit-kyc runs.
+        updates.kyc_rejection_reason = null
     }
 
     const { error } = await supabase
@@ -62,7 +76,10 @@ export async function reviewKYC(
 
     if (error) return { error: error.message }
 
-    // 3. If approved, trigger XenPlatform sub-account creation + KYC
+    // 3. If approved, ensure a Xendit sub-account exists, then submit KYC to Xendit.
+    //    create-xendit-subaccount is idempotent; submit-xendit-kyc sets kyc_status to
+    //    'submitted' and the xendit-webhook finalizes it to verified/rejected.
+    let warning: string | null = null
     if (action === 'approve') {
         try {
             const { error: subAccountError } = await supabase.functions.invoke(
@@ -70,25 +87,27 @@ export async function reviewKYC(
                 { body: { partner_id: partnerId } }
             )
 
-            if (!subAccountError) {
-                // Sub-account created, now submit KYC docs
-                try {
-                    await supabase.functions.invoke(
-                        'submit-xendit-kyc',
-                        { body: { partner_id: partnerId } }
-                    )
-                    console.log('[XenPlatform] KYC submitted for partner:', partnerId)
-                } catch (kycErr) {
-                    console.warn('[XenPlatform] KYC submission failed for partner:', partnerId, kycErr)
-                }
-            } else {
+            if (subAccountError) {
                 console.warn('[XenPlatform] Sub-account creation failed for partner:', partnerId, subAccountError)
+                warning = 'Partner approved, but creating their Xendit sub-account failed. Retry from the partner dashboard.'
+            } else {
+                const { error: kycError } = await supabase.functions.invoke(
+                    'submit-xendit-kyc',
+                    { body: { partner_id: partnerId } }
+                )
+                if (kycError) {
+                    console.warn('[XenPlatform] KYC submission failed for partner:', partnerId, kycError)
+                    warning = 'Partner approved, but KYC was not submitted to Xendit (often missing documents). GCash/card stay locked until KYC is completed and resubmitted.'
+                } else {
+                    console.log('[XenPlatform] KYC submitted to Xendit for partner:', partnerId)
+                }
             }
         } catch (xenditErr) {
-            console.warn('[XenPlatform] Sub-account creation error for partner:', partnerId, xenditErr)
+            console.warn('[XenPlatform] Xendit onboarding error for partner:', partnerId, xenditErr)
+            warning = 'Partner approved, but Xendit onboarding hit an error. Retry from the partner dashboard.'
         }
     }
 
     revalidatePath('/admin/verifications')
-    return { success: true }
+    return { success: true, warning }
 }

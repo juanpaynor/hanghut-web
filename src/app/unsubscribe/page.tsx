@@ -1,4 +1,4 @@
-import { processUnsubscribe } from "@/lib/marketing/actions"
+import { processUnsubscribe, processAttendeeUnsubscribe } from "@/lib/marketing/actions"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
@@ -6,14 +6,19 @@ import { MailX, CheckCircle, AlertCircle } from "lucide-react"
 
 interface VerifyUnsubscribePageProps {
     searchParams: Promise<{
+        // Subscriber path: opaque token from partner_subscribers.
         token?: string
+        // Attendee path: signed link (email + partner_id + HMAC signature).
+        e?: string
+        p?: string
+        sig?: string
     }>
 }
 
 export default async function UnsubscribePage({ searchParams }: VerifyUnsubscribePageProps) {
-    const { token } = await searchParams
+    const { token, e, p, sig } = await searchParams
 
-    if (!token) {
+    if (!token && !(e && p && sig)) {
         return (
             <div className="flex min-h-screen items-center justify-center p-4 bg-muted/20">
                 <Card className="w-full max-w-md">
@@ -36,7 +41,9 @@ export default async function UnsubscribePage({ searchParams }: VerifyUnsubscrib
         )
     }
 
-    const result = await processUnsubscribe(token)
+    const result = token
+        ? await processUnsubscribe(token)
+        : await processAttendeeUnsubscribe(e!, p!, sig!)
 
     return (
         <div className="flex min-h-screen items-center justify-center p-4 bg-muted/20">

@@ -20,39 +20,55 @@ import { FileText, CheckCircle, ExternalLink, Loader2 } from 'lucide-react'
 interface PartnerKYC {
     id: string
     business_name: string
+    business_type: string | null
     representative_name: string
     contact_number: string
-    id_document_url: string
+    id_document_url: string | null
     business_document_url: string | null
+    bir_2303_url: string | null
+    articles_of_incorporation_url: string | null
+    secretary_certificate_url: string | null
+    latest_gis_url: string | null
     digital_signature_text: string
     terms_accepted_ip: string
     terms_accepted_at: string
 }
 
+// KYC document fields in display order
+const KYC_DOC_FIELDS: { key: keyof PartnerKYC; label: string }[] = [
+    { key: 'id_document_url', label: 'Government ID' },
+    { key: 'business_document_url', label: 'Business Registration (DTI/SEC)' },
+    { key: 'bir_2303_url', label: 'BIR 2303' },
+    { key: 'articles_of_incorporation_url', label: 'Articles of Incorporation' },
+    { key: 'secretary_certificate_url', label: "Secretary's Certificate" },
+    { key: 'latest_gis_url', label: 'Latest GIS' },
+]
+
 export function ReviewDialog({ partner }: { partner: PartnerKYC }) {
     const [open, setOpen] = useState(false)
     const [loading, setLoading] = useState(false)
-    const [docs, setDocs] = useState<{ id?: string, biz?: string }>({})
+    const [docs, setDocs] = useState<Record<string, string>>({})
     const [viewingDocs, setViewingDocs] = useState(false)
     const [rejectReason, setRejectReason] = useState('')
-    const [feePercentage, setFeePercentage] = useState(15)
+    const [feePercentage, setFeePercentage] = useState(4)
     const [passFeesToCustomer, setPassFeesToCustomer] = useState(true)
     const [actionState, setActionState] = useState<'idle' | 'rejecting'>('idle')
 
-    // Load signed URLs only when dialog opens
+    // Load signed URLs only when dialog opens (all uploaded KYC docs)
     const loadDocs = async () => {
         if (viewingDocs) return
         setViewingDocs(true)
-        try {
-            const idUrl = await getDocumentUrl(partner.id_document_url)
-            let bizUrl = undefined
-            if (partner.business_document_url) {
-                bizUrl = await getDocumentUrl(partner.business_document_url)
+        const signed: Record<string, string> = {}
+        for (const { key } of KYC_DOC_FIELDS) {
+            const path = partner[key] as string | null
+            if (!path) continue
+            try {
+                signed[key] = await getDocumentUrl(path)
+            } catch (e) {
+                console.error(`Failed to sign URL for ${key}`, e)
             }
-            setDocs({ id: idUrl, biz: bizUrl })
-        } catch (e) {
-            console.error('Failed to sign URLs', e)
         }
+        setDocs(signed)
     }
 
     const handleAction = async (action: 'approve' | 'reject') => {
@@ -68,6 +84,10 @@ export function ReviewDialog({ partner }: { partner: PartnerKYC }) {
         if (result?.error) {
             alert(`Error: ${result.error}`)
             return // Don't close dialog on error
+        }
+
+        if (result?.warning) {
+            alert(result.warning)
         }
 
         setOpen(false)
@@ -114,33 +134,24 @@ export function ReviewDialog({ partner }: { partner: PartnerKYC }) {
 
                     {/* Documents */}
                     <div className="space-y-3 border-b pb-4">
-                        <Label>Documents</Label>
+                        <div className="flex items-center justify-between">
+                            <Label>Documents</Label>
+                            {partner.business_type && (
+                                <span className="text-xs text-muted-foreground capitalize">
+                                    {partner.business_type.replace(/_/g, ' ')}
+                                </span>
+                            )}
+                        </div>
                         <div className="grid grid-cols-2 gap-4">
-                            <div className="border rounded p-3 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <FileText className="h-4 w-4 text-blue-500" />
-                                    <span className="text-sm font-medium">ID Document</span>
-                                </div>
-                                {docs.id ? (
-                                    <Button variant="ghost" size="sm" asChild>
-                                        <a href={docs.id} target="_blank" rel="noopener noreferrer">
-                                            View <ExternalLink className="ml-1 h-3 w-3" />
-                                        </a>
-                                    </Button>
-                                ) : (
-                                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                                )}
-                            </div>
-
-                            {partner.business_document_url && (
-                                <div className="border rounded p-3 flex items-center justify-between">
+                            {KYC_DOC_FIELDS.filter(({ key }) => partner[key]).map(({ key, label }) => (
+                                <div key={key} className="border rounded p-3 flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <FileText className="h-4 w-4 text-orange-500" />
-                                        <span className="text-sm font-medium">Business Doc</span>
+                                        <FileText className="h-4 w-4 text-blue-500" />
+                                        <span className="text-sm font-medium">{label}</span>
                                     </div>
-                                    {docs.biz ? (
+                                    {docs[key] ? (
                                         <Button variant="ghost" size="sm" asChild>
-                                            <a href={docs.biz} target="_blank" rel="noopener noreferrer">
+                                            <a href={docs[key]} target="_blank" rel="noopener noreferrer">
                                                 View <ExternalLink className="ml-1 h-3 w-3" />
                                             </a>
                                         </Button>
@@ -148,6 +159,9 @@ export function ReviewDialog({ partner }: { partner: PartnerKYC }) {
                                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                     )}
                                 </div>
+                            ))}
+                            {KYC_DOC_FIELDS.every(({ key }) => !partner[key]) && (
+                                <p className="text-sm text-muted-foreground col-span-2">No documents uploaded.</p>
                             )}
                         </div>
                     </div>
@@ -165,7 +179,7 @@ export function ReviewDialog({ partner }: { partner: PartnerKYC }) {
                                     onChange={(e) => setFeePercentage(Number(e.target.value))}
                                     className="bg-white max-w-[120px]"
                                 />
-                                <span className="text-sm text-muted-foreground">Default: 15%</span>
+                                <span className="text-sm text-muted-foreground">Default: 4%</span>
                             </div>
                         </div>
 

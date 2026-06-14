@@ -5,7 +5,10 @@ import { randomBytes } from 'crypto'
 
 export const dynamic = 'force-dynamic'
 
-const VALID_EVENTS = ['ticket.purchased', 'ticket.refunded', 'ticket.checked_in', 'event.updated']
+const VALID_EVENTS = [
+    'ticket.purchased', 'ticket.refunded', 'ticket.checked_in', 'event.updated',
+    'subscription.created', 'subscription.renewed', 'subscription.cancelled',
+]
 
 /**
  * GET /api/v1/webhooks

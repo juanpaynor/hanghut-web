@@ -33,7 +33,7 @@ export default async function AdminVerificationsPage() {
     // Fetch Pending Verifications
     const { data: partners, error } = await supabase
         .from('partners')
-        .select('id, business_name, representative_name, contact_number, kyc_status, terms_accepted_at, id_document_url, business_document_url, digital_signature_text, terms_accepted_ip')
+        .select('id, business_name, business_type, representative_name, contact_number, kyc_status, terms_accepted_at, id_document_url, business_document_url, bir_2303_url, articles_of_incorporation_url, secretary_certificate_url, latest_gis_url, digital_signature_text, terms_accepted_ip')
         .eq('kyc_status', 'pending_review')
         .order('terms_accepted_at', { ascending: false })
 
