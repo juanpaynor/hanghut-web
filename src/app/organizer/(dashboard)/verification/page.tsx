@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, CheckCircle, Clock, ShieldCheck } from 'lucide-react'
+import { AlertCircle, CheckCircle, Clock, ShieldCheck, CreditCard, Wallet, Lock } from 'lucide-react'
 import { KYCVerificationForm } from './kyc-form'
 
 export default async function VerificationPage() {
@@ -15,7 +15,7 @@ export default async function VerificationPage() {
     const { data: partner } = await supabase
         .from('partners')
         .select(`
-            id, kyc_status, kyc_rejection_reason, business_name, business_type,
+            id, kyc_status, kyc_rejection_reason, business_name, business_type, xendit_cards_gcash_live,
             representative_name, contact_number, nationality, place_of_birth, work_email,
             street_line1, street_line2, city, province_state, postal_code,
             tax_id, registration_number,
@@ -156,6 +156,78 @@ export default async function VerificationPage() {
                     </CardHeader>
                 </Card>
             )}
+
+            {/* Payment methods — what's accepted now vs. what needs verification */}
+            {(() => {
+                const cardsLive = partner.xendit_cards_gcash_live === true
+                // State of the Cards + GCash capability:
+                //   live      → active
+                //   verified  → KYC passed, Xendit is still activating the capability
+                //   otherwise → needs a completed & passed KYC first
+                const gated: 'live' | 'activating' | 'needs_kyc' =
+                    cardsLive ? 'live' : status === 'verified' ? 'activating' : 'needs_kyc'
+
+                const baseChannels = ['Maya', 'GrabPay', 'Bank Direct Debit (BPI, UnionBank, RCBC)']
+
+                return (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-lg">Payment Methods</CardTitle>
+                            <CardDescription>What your customers can use to pay you.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {/* Always available */}
+                            <div className="flex items-start gap-3 rounded-lg border bg-green-50/50 border-green-200 p-3">
+                                <CheckCircle className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="text-sm font-medium text-green-900">Active now</p>
+                                    <p className="text-xs text-green-700/90">{baseChannels.join(' · ')}</p>
+                                </div>
+                            </div>
+
+                            {/* Cards + GCash — capability-gated */}
+                            <div className={
+                                gated === 'live'
+                                    ? 'flex items-start gap-3 rounded-lg border bg-green-50/50 border-green-200 p-3'
+                                    : gated === 'activating'
+                                    ? 'flex items-start gap-3 rounded-lg border bg-blue-50/60 border-blue-200 p-3'
+                                    : 'flex items-start gap-3 rounded-lg border bg-amber-50/60 border-amber-200 p-3'
+                            }>
+                                {gated === 'live'
+                                    ? <CheckCircle className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+                                    : gated === 'activating'
+                                    ? <Clock className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                                    : <Lock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />}
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <CreditCard className="h-4 w-4 text-muted-foreground" />
+                                        <Wallet className="h-4 w-4 text-muted-foreground" />
+                                        <p className="text-sm font-medium">Cards &amp; GCash</p>
+                                    </div>
+                                    {gated === 'live' && (
+                                        <p className="text-xs text-green-700/90 mt-0.5">
+                                            Active — customers can pay with credit/debit cards and GCash.
+                                        </p>
+                                    )}
+                                    {gated === 'activating' && (
+                                        <p className="text-xs text-blue-700/90 mt-0.5">
+                                            Your verification passed. Xendit is enabling Cards &amp; GCash for your account —
+                                            this can take up to a few business days. We&apos;ll switch them on automatically once approved.
+                                        </p>
+                                    )}
+                                    {gated === 'needs_kyc' && (
+                                        <p className="text-xs text-amber-700/90 mt-0.5">
+                                            Cards &amp; GCash require additional verification by our payment provider (Xendit).
+                                            Complete your verification below — including your TIN and authorized person / owner IDs —
+                                            and we&apos;ll request activation for you automatically once you&apos;re verified.
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )
+            })()}
 
             {/* Submission Form — hidden while awaiting admin review ('pending_review')
                 or payment-provider verification ('submitted') */}
