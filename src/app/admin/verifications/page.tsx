@@ -33,12 +33,36 @@ export default async function AdminVerificationsPage() {
     // Fetch Pending Verifications
     const { data: partners, error } = await supabase
         .from('partners')
-        .select('id, business_name, business_type, representative_name, contact_number, kyc_status, terms_accepted_at, id_document_url, business_document_url, bir_2303_url, articles_of_incorporation_url, secretary_certificate_url, latest_gis_url, digital_signature_text, terms_accepted_ip')
+        .select(`id, business_name, business_type, representative_name, contact_number, kyc_status, terms_accepted_at,
+            id_document_url, business_document_url, bir_2303_url, articles_of_incorporation_url, secretary_certificate_url, latest_gis_url,
+            digital_signature_text, terms_accepted_ip,
+            business_industry_subcategory, business_establishment_date, business_intents, business_source_of_funds,
+            business_average_monthly_basket_size, money_out_transaction_frequency,
+            authorized_person_first_name, authorized_person_last_name, authorized_person_gender,
+            authorized_person_date_of_birth, authorized_person_nationality, authorized_person_email, authorized_person_role,
+            contact_person_first_name, contact_person_last_name, contact_person_email`)
         .eq('kyc_status', 'pending_review')
         .order('terms_accepted_at', { ascending: false })
 
     if (error) {
         return <div className="p-8 text-red-500">Failed to load verifications: {error.message}</div>
+    }
+
+    // Pull normalized KYC docs + stakeholders for the pending partners and group by partner.
+    const partnerIds = (partners ?? []).map(p => p.id)
+    const docsByPartner: Record<string, any[]> = {}
+    const stakeholdersByPartner: Record<string, any[]> = {}
+    if (partnerIds.length) {
+        const { data: allDocs } = await supabase
+            .from('partner_kyc_documents')
+            .select('partner_id, owner_kind, owner_id, doc_type, storage_path')
+            .in('partner_id', partnerIds)
+        for (const d of allDocs ?? []) (docsByPartner[d.partner_id] ||= []).push(d)
+        const { data: allStakeholders } = await supabase
+            .from('partner_stakeholders')
+            .select('id, partner_id, roles, first_name, last_name, nationality, date_of_birth, is_authorized_person, identification')
+            .in('partner_id', partnerIds)
+        for (const s of allStakeholders ?? []) (stakeholdersByPartner[s.partner_id] ||= []).push(s)
     }
 
     return (
@@ -88,7 +112,11 @@ export default async function AdminVerificationsPage() {
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        <ReviewDialog partner={partner} />
+                                        <ReviewDialog
+                                            partner={partner}
+                                            documents={docsByPartner[partner.id] || []}
+                                            stakeholders={stakeholdersByPartner[partner.id] || []}
+                                        />
                                     </TableCell>
                                 </TableRow>
                             ))

@@ -187,6 +187,10 @@ export async function registerPartner(formData: FormData) {
             contact_number: phoneNumber || null,
             nationality: nationality || null,
             place_of_birth: placeOfBirth || null,
+            // Captured at registration but previously discarded — now persisted so the
+            // KYC form can prefill the authorized person's identity for account_verification.
+            authorized_person_date_of_birth: birthdate || null,
+            authorized_person_gender: sex || null,
             street_line1: streetLine1 || null,
             street_line2: streetLine2 || null,
             city: city || null,
@@ -200,7 +204,9 @@ export async function registerPartner(formData: FormData) {
             articles_of_incorporation_url: articlesUrl,
             secretary_certificate_url: secretaryCertUrl,
             latest_gis_url: gisUrl,
-            kyc_status: (idDocumentUrl || businessDocumentUrl || bir2303Url) ? 'submitted' : 'not_started',
+            // 'submitted' is reserved for "sent to Xendit" (set by submit-xendit-kyc).
+            // Self-registered docs only start the funnel — admin approval moves it forward.
+            kyc_status: 'not_started',
         })
 
     if (partnerError) {

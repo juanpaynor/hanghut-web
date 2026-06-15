@@ -3,34 +3,33 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
+import {
+    requiresStakeholders,
+    isSinglePerson,
+    type StructuredAddress,
+} from './kyc-constants'
 
 /**
- * Helper to upload a KYC document to Supabase Storage
+ * Upload a KYC document to the private kyc-documents bucket (system of record).
+ * Returns the bucket-relative storage path.
  */
 async function uploadKYCDocument(
     adminSupabase: any,
     userId: string,
     file: File,
-    folder: string
+    docType: string
 ): Promise<string | null> {
     if (!file || file.size === 0) return null
-    if (file.size > 10 * 1024 * 1024) throw new Error(`${folder} file too large (max 10MB)`)
+    if (file.size > 10 * 1024 * 1024) throw new Error(`${docType} file too large (max 10MB)`)
 
     const ext = file.name.split('.').pop() || 'file'
-    const fileName = `${userId}/${folder}-${Date.now()}.${ext}`
+    const fileName = `${userId}/${docType.toLowerCase()}-${Date.now()}.${ext}`
 
     const { data, error } = await adminSupabase.storage
         .from('kyc-documents')
-        .upload(fileName, file, {
-            upsert: true,
-            contentType: file.type
-        })
+        .upload(fileName, file, { upsert: true, contentType: file.type })
 
-    if (error) {
-        console.error(`Failed to upload ${folder}:`, error)
-        throw new Error(`Failed to upload ${folder}: ${error.message}`)
-    }
-
+    if (error) throw new Error(`Failed to upload ${docType}: ${error.message}`)
     return data.path
 }
 
@@ -40,23 +39,69 @@ export type KYCFormState = {
     success?: boolean
 }
 
+// Shape the form serializes into the `profile` / `stakeholders` JSON fields.
+type PersonProfile = {
+    first_name?: string
+    last_name?: string
+    gender?: string
+    date_of_birth?: string
+    role?: string
+    nationality?: string
+    email?: string
+    mobile_country_code?: string
+    mobile_number?: string
+    address?: StructuredAddress
+    id_type?: string
+    id_number?: string
+}
+type ContactProfile = {
+    first_name?: string
+    last_name?: string
+    email?: string
+    mobile_country_code?: string
+    mobile_number?: string
+}
+type BusinessProfile = {
+    industry_subcategory?: string
+    establishment_date?: string
+    intents?: string[]
+    source_of_funds?: string[]
+    average_monthly_basket_size?: string
+    money_out_frequency?: string
+    phone_country_code?: string
+    phone_number?: string
+    legal_entity_address?: StructuredAddress | null
+    business_address?: StructuredAddress | null
+}
+type StakeholderInput = {
+    roles: string[]
+    first_name: string
+    last_name: string
+    nationality?: string
+    date_of_birth?: string
+    is_authorized_person?: boolean
+    address?: StructuredAddress
+    id_type?: string
+    id_number?: string
+}
+
+function parseJSON<T>(raw: FormDataEntryValue | null, fallback: T): T {
+    if (typeof raw !== 'string' || !raw) return fallback
+    try { return JSON.parse(raw) as T } catch { return fallback }
+}
+
 export async function submitKYCVerification(
     prevState: KYCFormState | undefined,
     formData: FormData
 ): Promise<KYCFormState> {
     const supabase = await createClient()
 
-    // 1. Auth Check
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-        return { message: 'Unauthorized session.' }
-    }
+    if (!user) return { message: 'Unauthorized session.' }
 
-    // 2. Get existing partner record
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     if (!serviceRoleKey || !supabaseUrl) return { message: 'Server Config Error' }
-
     const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey)
 
     const { data: partner } = await adminSupabase
@@ -64,117 +109,171 @@ export async function submitKYCVerification(
         .select('id, business_type')
         .eq('user_id', user.id)
         .single()
+    if (!partner) return { message: 'Partner profile not found.' }
 
-    if (!partner) {
-        return { message: 'Partner profile not found.' }
-    }
+    // ── Parse submission ─────────────────────────────────────────────────────
+    const entityType = (formData.get('entityType') as string) || partner.business_type || ''
+    const authorized = parseJSON<PersonProfile>(formData.get('authorizedPerson'), {})
+    const contact = parseJSON<ContactProfile>(formData.get('contactPerson'), {})
+    const business = parseJSON<BusinessProfile>(formData.get('business'), {})
+    const stakeholders = parseJSON<StakeholderInput[]>(formData.get('stakeholders'), [])
+    // reuse: map of "<scope>:<doc_type>[:<stakeholderIndex>]" -> existing storage path
+    const reuse = parseJSON<Record<string, string>>(formData.get('reuse'), {})
 
-    // 3. Extract form fields
-    const representativeName = formData.get('representativeName') as string
-    const phoneNumber = formData.get('phoneNumber') as string
-    const birthdate = formData.get('birthdate') as string
-    const sex = formData.get('sex') as string
-    const nationality = formData.get('nationality') as string
-    const placeOfBirth = formData.get('placeOfBirth') as string
-    const businessType = formData.get('businessType') as string
-
-    // Address
-    const streetLine1 = formData.get('streetLine1') as string | null
-    const streetLine2 = formData.get('streetLine2') as string | null
-    const city = formData.get('city') as string | null
-    const provinceState = formData.get('provinceState') as string | null
-    const postalCode = formData.get('postalCode') as string | null
-
-    // Tax/Registration
-    const taxId = formData.get('taxId') as string | null
-    const registrationNumber = formData.get('registrationNumber') as string | null
-
-    // 4. Validate required fields
+    // ── Validate per entity type ─────────────────────────────────────────────
     const errors: Record<string, string[]> = {}
-    if (!representativeName?.trim()) errors.representativeName = ['Representative name is required']
-    if (!phoneNumber?.trim()) errors.phoneNumber = ['Phone number is required']
-    if (!birthdate) errors.birthdate = ['Date of birth is required']
-    if (!sex) errors.sex = ['Sex is required']
-    if (!nationality?.trim()) errors.nationality = ['Nationality is required']
-    if (!placeOfBirth?.trim()) errors.placeOfBirth = ['Place of birth is required']
-    if (!businessType) errors.businessType = ['Business type is required']
+    if (!entityType) errors.entityType = ['Business type is required']
+    if (!authorized.first_name?.trim() || !authorized.last_name?.trim())
+        errors.authorizedPerson = ['Authorized person full name is required']
+    if (!authorized.date_of_birth) errors.authorizedDob = ['Authorized person date of birth is required']
+    if (!business.intents?.length) errors.intents = ['Select at least one business intent']
+    if (!business.source_of_funds?.length) errors.sourceOfFunds = ['Select at least one source of funds']
+    if (!business.money_out_frequency) errors.moneyOut = ['Money-out frequency is required']
 
-    if (Object.keys(errors).length > 0) {
-        return { errors, message: 'Please check your inputs.' }
+    if (requiresStakeholders(entityType)) {
+        const roles = new Set(stakeholders.flatMap(s => s.roles || []))
+        if (!stakeholders.length) errors.stakeholders = ['At least one stakeholder is required']
+        if (!roles.has('BOARD_DIRECTOR')) errors.stakeholderRoles = ['A BOARD_DIRECTOR stakeholder is required']
+        if (!roles.has('BUSINESS_OWNER')) errors.stakeholderOwner = ['A BUSINESS_OWNER stakeholder is required']
     }
 
-    // 5. Upload documents
-    const idDocumentFile = formData.get('idDocument') as File | null
-    const businessDocumentFile = formData.get('businessDocument') as File | null
-    const bir2303File = formData.get('bir2303') as File | null
-    const articlesFile = formData.get('articlesOfIncorporation') as File | null
-    const secretaryCertFile = formData.get('secretaryCertificate') as File | null
-    const gisFile = formData.get('latestGIS') as File | null
+    if (Object.keys(errors).length > 0) return { errors, message: 'Please complete the required fields.' }
 
-    let idDocumentUrl: string | null = null
-    let businessDocumentUrl: string | null = null
-    let bir2303Url: string | null = null
-    let articlesUrl: string | null = null
-    let secretaryCertUrl: string | null = null
-    let gisUrl: string | null = null
-
-    try {
-        if (idDocumentFile && idDocumentFile.size > 0) {
-            idDocumentUrl = await uploadKYCDocument(adminSupabase, user.id, idDocumentFile, 'id-document')
-        }
-        if (businessDocumentFile && businessDocumentFile.size > 0) {
-            businessDocumentUrl = await uploadKYCDocument(adminSupabase, user.id, businessDocumentFile, 'business-document')
-        }
-        if (bir2303File && bir2303File.size > 0) {
-            bir2303Url = await uploadKYCDocument(adminSupabase, user.id, bir2303File, 'bir-2303')
-        }
-        if (articlesFile && articlesFile.size > 0) {
-            articlesUrl = await uploadKYCDocument(adminSupabase, user.id, articlesFile, 'articles-of-incorporation')
-        }
-        if (secretaryCertFile && secretaryCertFile.size > 0) {
-            secretaryCertUrl = await uploadKYCDocument(adminSupabase, user.id, secretaryCertFile, 'secretary-certificate')
-        }
-        if (gisFile && gisFile.size > 0) {
-            gisUrl = await uploadKYCDocument(adminSupabase, user.id, gisFile, 'latest-gis')
-        }
-    } catch (error: any) {
-        return { message: error.message || 'File upload failed.' }
-    }
-
-    // 6. Build update object (only include non-null uploads to avoid overwriting existing docs)
+    // ── Persist business + person profile on partners ────────────────────────
+    const authFullName = [authorized.first_name, authorized.last_name].filter(Boolean).join(' ').trim()
     const updateData: Record<string, any> = {
-        representative_name: representativeName,
-        contact_number: phoneNumber,
-        business_type: businessType,
-        nationality,
-        place_of_birth: placeOfBirth,
-        street_line1: streetLine1 || null,
-        street_line2: streetLine2 || null,
-        city: city || null,
-        province_state: provinceState || null,
-        postal_code: postalCode || null,
-        tax_id: taxId || null,
-        registration_number: registrationNumber || null,
+        business_type: entityType,
+        representative_name: authFullName || undefined, // keep legacy column in sync for admin list
+        business_industry_subcategory: business.industry_subcategory || null,
+        business_establishment_date: business.establishment_date || null,
+        business_intents: business.intents || null,
+        business_source_of_funds: business.source_of_funds || null,
+        business_average_monthly_basket_size: business.average_monthly_basket_size || null,
+        money_out_transaction_frequency: business.money_out_frequency || null,
+        business_phone_country_code: business.phone_country_code || null,
+        business_phone_number: business.phone_number || null,
+        legal_entity_address: business.legal_entity_address || null,
+        authorized_person_first_name: authorized.first_name || null,
+        authorized_person_last_name: authorized.last_name || null,
+        authorized_person_gender: authorized.gender || null,
+        authorized_person_date_of_birth: authorized.date_of_birth || null,
+        authorized_person_role: authorized.role || null,
+        authorized_person_nationality: authorized.nationality || null,
+        authorized_person_email: authorized.email || null,
+        authorized_person_mobile_country_code: authorized.mobile_country_code || null,
+        authorized_person_mobile_number: authorized.mobile_number || null,
+        authorized_person_address: authorized.address || null,
+        authorized_person_identification: (authorized.id_type || authorized.id_number)
+            ? { type: authorized.id_type || null, number: authorized.id_number || null }
+            : null,
         kyc_status: 'pending_review',
         kyc_rejection_reason: null,
     }
 
-    // Only overwrite document URLs if new files were uploaded
-    if (idDocumentUrl) updateData.id_document_url = idDocumentUrl
-    if (businessDocumentUrl) updateData.business_document_url = businessDocumentUrl
-    if (bir2303Url) updateData.bir_2303_url = bir2303Url
-    if (articlesUrl) updateData.articles_of_incorporation_url = articlesUrl
-    if (secretaryCertUrl) updateData.secretary_certificate_url = secretaryCertUrl
-    if (gisUrl) updateData.latest_gis_url = gisUrl
+    // Single-person entities: authorized person doubles as the contact person.
+    if (isSinglePerson(entityType)) {
+        updateData.contact_person_first_name = authorized.first_name || null
+        updateData.contact_person_last_name = authorized.last_name || null
+        updateData.contact_person_email = authorized.email || null
+        updateData.contact_person_mobile_country_code = authorized.mobile_country_code || null
+        updateData.contact_person_mobile_number = authorized.mobile_number || null
+    } else {
+        updateData.contact_person_first_name = contact.first_name || null
+        updateData.contact_person_last_name = contact.last_name || null
+        updateData.contact_person_email = contact.email || null
+        updateData.contact_person_mobile_country_code = contact.mobile_country_code || null
+        updateData.contact_person_mobile_number = contact.mobile_number || null
+    }
 
-    // 7. DB Update
+    // Optional business address overwrite (registration already captured one)
+    const ba = business.business_address
+    if (ba && (ba.street_line1 || ba.city)) {
+        updateData.street_line1 = ba.street_line1 || null
+        updateData.street_line2 = ba.street_line2 || null
+        updateData.city = ba.city || null
+        updateData.province_state = ba.province_state || null
+        updateData.postal_code = ba.postal_code || null
+    }
+
     const { error: dbError } = await adminSupabase
         .from('partners')
         .update(updateData)
-        .eq('user_id', user.id)
+        .eq('id', partner.id)
+    if (dbError) return { message: 'Database update failed: ' + dbError.message }
 
-    if (dbError) {
-        return { message: 'Database Update Failed: ' + dbError.message }
+    // ── Reset normalized children for an idempotent (re)submission ───────────
+    await adminSupabase.from('partner_stakeholders').delete().eq('partner_id', partner.id)
+    await adminSupabase.from('partner_kyc_documents').delete().eq('partner_id', partner.id)
+
+    // Insert stakeholders (corp/partnership), preserving order to map their docs.
+    const stakeholderIds: string[] = []
+    if (requiresStakeholders(entityType) && stakeholders.length) {
+        const { data: inserted, error: shErr } = await adminSupabase
+            .from('partner_stakeholders')
+            .insert(stakeholders.map(s => ({
+                partner_id: partner.id,
+                roles: s.roles || [],
+                first_name: s.first_name,
+                last_name: s.last_name,
+                nationality: s.nationality || null,
+                date_of_birth: s.date_of_birth || null,
+                is_authorized_person: !!s.is_authorized_person,
+                address: s.address || null,
+                identification: (s.id_type || s.id_number)
+                    ? { type: s.id_type || null, number: s.id_number || null }
+                    : null,
+            })))
+            .select('id')
+        if (shErr) return { message: 'Failed to save stakeholders: ' + shErr.message }
+        for (const row of inserted ?? []) stakeholderIds.push(row.id)
+    }
+
+    // ── Documents: upload new files + carry forward reused paths ──────────────
+    const docRows: { partner_id: string; owner_kind: string; owner_id: string | null; doc_type: string; storage_path: string }[] = []
+
+    const addDoc = (ownerKind: string, ownerId: string | null, docType: string, path: string) => {
+        docRows.push({ partner_id: partner.id, owner_kind: ownerKind, owner_id: ownerId, doc_type: docType, storage_path: path })
+    }
+
+    try {
+        // New file uploads. Form keys: "<scope>:<docType>[:<stakeholderIndex>]"
+        for (const [key, value] of formData.entries()) {
+            if (!key.startsWith('file:')) continue
+            const file = value as File
+            if (!file || typeof file === 'string' || file.size === 0) continue
+            const [, scope, docType, idxRaw] = key.split(':') // file:business:PH_BIR_2303 | file:authorized:ID_FRONT | file:stakeholder:ID_FRONT:0
+            const path = await uploadKYCDocument(adminSupabase, user.id, file, docType)
+            if (!path) continue
+            if (scope === 'stakeholder') {
+                const idx = Number(idxRaw)
+                addDoc('stakeholder', stakeholderIds[idx] ?? null, docType, path)
+            } else if (scope === 'authorized') {
+                addDoc('authorized_person', null, docType, path)
+            } else {
+                addDoc('business', null, docType, path)
+            }
+        }
+
+        // Reused docs (already in the bucket from registration / prior submission).
+        for (const [slot, path] of Object.entries(reuse)) {
+            if (!path) continue
+            const [scope, docType, idxRaw] = slot.split(':')
+            if (scope === 'stakeholder') {
+                const idx = Number(idxRaw)
+                addDoc('stakeholder', stakeholderIds[idx] ?? null, docType, path)
+            } else if (scope === 'authorized') {
+                addDoc('authorized_person', null, docType, path)
+            } else {
+                addDoc('business', null, docType, path)
+            }
+        }
+    } catch (e: any) {
+        return { message: e.message || 'File upload failed.' }
+    }
+
+    if (docRows.length) {
+        const { error: docErr } = await adminSupabase.from('partner_kyc_documents').insert(docRows)
+        if (docErr) return { message: 'Failed to save documents: ' + docErr.message }
     }
 
     revalidatePath('/organizer/verification')

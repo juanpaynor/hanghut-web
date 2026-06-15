@@ -15,10 +15,15 @@ export default async function VerificationPage() {
     const { data: partner } = await supabase
         .from('partners')
         .select(`
-            kyc_status, kyc_rejection_reason, business_name, business_type,
-            representative_name, contact_number, nationality, place_of_birth,
+            id, kyc_status, kyc_rejection_reason, business_name, business_type,
+            representative_name, contact_number, nationality, place_of_birth, work_email,
             street_line1, street_line2, city, province_state, postal_code,
             tax_id, registration_number,
+            business_industry_subcategory, business_establishment_date,
+            business_intents, business_source_of_funds, business_average_monthly_basket_size,
+            money_out_transaction_frequency, business_phone_country_code, business_phone_number,
+            authorized_person_first_name, authorized_person_last_name, authorized_person_gender,
+            authorized_person_date_of_birth, authorized_person_nationality, authorized_person_email,
             id_document_url, business_document_url, bir_2303_url,
             articles_of_incorporation_url, secretary_certificate_url, latest_gis_url
         `)
@@ -30,6 +35,34 @@ export default async function VerificationPage() {
     }
 
     const status = partner.kyc_status || 'not_started'
+
+    // Build the existing-docs map (slot -> storage path) the form uses to offer
+    // "previously uploaded" reuse. Prefer normalized rows; fall back to legacy columns.
+    const existingDocs: Record<string, string> = {}
+    const { data: docRows } = await supabase
+        .from('partner_kyc_documents')
+        .select('owner_kind, doc_type, storage_path')
+        .eq('partner_id', partner.id)
+        .eq('owner_kind', 'business')
+    for (const d of docRows ?? []) existingDocs[`business:${d.doc_type}`] = d.storage_path
+    const { data: authDocRows } = await supabase
+        .from('partner_kyc_documents')
+        .select('doc_type, storage_path')
+        .eq('partner_id', partner.id)
+        .eq('owner_kind', 'authorized_person')
+    for (const d of authDocRows ?? []) existingDocs[`authorized:${d.doc_type}`] = d.storage_path
+    // Legacy fallbacks (registration-era columns) keyed to current entity's slots.
+    const regDocType = partner.business_type === 'sole_proprietorship'
+        ? 'PH_DTI_CERTIFICATE_REGISTRATION' : 'PH_SEC_CERTIFICATE_REGISTRATION'
+    const legacy: [string, string | null][] = [
+        ['authorized:ID_FRONT', partner.id_document_url],
+        [`business:${regDocType}`, partner.business_document_url],
+        ['business:PH_BIR_2303', partner.bir_2303_url],
+        ['business:PH_ARTICLES_OF_INCORPORATION', partner.articles_of_incorporation_url],
+        ['business:PH_NOTARIZED_SECRETARY_CERTIFICATE', partner.secretary_certificate_url],
+        ['business:PH_GIS', partner.latest_gis_url],
+    ]
+    for (const [slot, path] of legacy) if (path && !existingDocs[slot]) existingDocs[slot] = path
 
     return (
         <div className="space-y-6">
@@ -92,6 +125,22 @@ export default async function VerificationPage() {
                 </Card>
             )}
 
+            {status === 'resubmission_required' && (
+                <Card className="bg-amber-50 border-amber-200 mb-6">
+                    <CardHeader className="flex flex-row items-center gap-4 space-y-0">
+                        <div className="h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center">
+                            <AlertCircle className="h-6 w-6 text-amber-600" />
+                        </div>
+                        <div>
+                            <CardTitle className="text-amber-800">Additional Information Needed</CardTitle>
+                            <CardDescription className="text-amber-700">
+                                Our payment provider needs more from your submission. {partner.kyc_rejection_reason || 'Please review and resubmit.'}
+                            </CardDescription>
+                        </div>
+                    </CardHeader>
+                </Card>
+            )}
+
             {status === 'rejected' && (
                 <Card className="bg-red-50 border-red-200 mb-6">
                     <CardHeader className="flex flex-row items-center gap-4 space-y-0">
@@ -110,7 +159,7 @@ export default async function VerificationPage() {
 
             {/* Submission Form — hidden while awaiting admin review ('pending_review')
                 or payment-provider verification ('submitted') */}
-            {(status === 'not_started' || status === 'rejected') && (
+            {(status === 'not_started' || status === 'rejected' || status === 'resubmission_required') && (
                 <Card>
                     <CardHeader>
                         <CardTitle>Submit Verification</CardTitle>
@@ -119,27 +168,29 @@ export default async function VerificationPage() {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <KYCVerificationForm 
-                            userEmail={user.email}
+                        <KYCVerificationForm
                             existingData={{
                                 business_type: partner.business_type,
+                                business_name: partner.business_name,
                                 representative_name: partner.representative_name,
                                 contact_number: partner.contact_number,
                                 nationality: partner.nationality,
-                                place_of_birth: partner.place_of_birth,
-                                street_line1: partner.street_line1,
-                                street_line2: partner.street_line2,
-                                city: partner.city,
-                                province_state: partner.province_state,
-                                postal_code: partner.postal_code,
-                                tax_id: partner.tax_id,
-                                registration_number: partner.registration_number,
-                                id_document_url: partner.id_document_url,
-                                business_document_url: partner.business_document_url,
-                                bir_2303_url: partner.bir_2303_url,
-                                articles_of_incorporation_url: partner.articles_of_incorporation_url,
-                                secretary_certificate_url: partner.secretary_certificate_url,
-                                latest_gis_url: partner.latest_gis_url,
+                                work_email: partner.work_email,
+                                business_industry_subcategory: partner.business_industry_subcategory,
+                                business_establishment_date: partner.business_establishment_date,
+                                business_intents: partner.business_intents,
+                                business_source_of_funds: partner.business_source_of_funds,
+                                business_average_monthly_basket_size: partner.business_average_monthly_basket_size,
+                                money_out_transaction_frequency: partner.money_out_transaction_frequency,
+                                business_phone_country_code: partner.business_phone_country_code,
+                                business_phone_number: partner.business_phone_number,
+                                authorized_person_first_name: partner.authorized_person_first_name,
+                                authorized_person_last_name: partner.authorized_person_last_name,
+                                authorized_person_gender: partner.authorized_person_gender,
+                                authorized_person_date_of_birth: partner.authorized_person_date_of_birth,
+                                authorized_person_nationality: partner.authorized_person_nationality,
+                                authorized_person_email: partner.authorized_person_email,
+                                existing_docs: existingDocs,
                             }}
                         />
                     </CardContent>
