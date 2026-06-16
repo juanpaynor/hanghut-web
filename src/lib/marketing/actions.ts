@@ -256,3 +256,94 @@ export async function subscribeGuestToNewsletter(partnerId: string, email: strin
         return { success: false, message: 'System error' }
     }
 }
+
+// ─────────────────────────────────────────────────────────────
+// DRAFTS (Phase 6)
+// A draft is an email_campaigns row with status='draft' (never enqueued).
+// On send, send-promotional-email is passed draft_campaign_id and reuses the row.
+// ─────────────────────────────────────────────────────────────
+
+async function resolveMarketingPartnerId(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string | null> {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+    const { data: owner } = await supabase
+        .from('partners').select('id').eq('user_id', user.id).maybeSingle()
+    if (owner) return owner.id
+    const { data: tm } = await supabase
+        .from('partner_team_members').select('partner_id').eq('user_id', user.id).maybeSingle()
+    return tm?.partner_id ?? null
+}
+
+export interface DraftInput {
+    id?: string
+    subject: string
+    html_content: string
+    segment?: string | null
+    event_id?: string | null
+}
+
+export async function saveDraft(input: DraftInput) {
+    const supabase = await createClient()
+    const partnerId = await resolveMarketingPartnerId(supabase)
+    if (!partnerId) return { error: 'Partner account not found' }
+    if (!input.subject?.trim() && !input.html_content?.trim()) {
+        return { error: 'Nothing to save yet.' }
+    }
+
+    const row = {
+        partner_id: partnerId,
+        subject: input.subject || '(no subject)',
+        html_content: input.html_content || '',
+        segment: input.segment || 'all_subscribers',
+        event_id: input.event_id || null,
+        status: 'draft' as const,
+        updated_at: new Date().toISOString(),
+    }
+
+    if (input.id) {
+        const { error } = await supabase
+            .from('email_campaigns').update(row)
+            .eq('id', input.id).eq('partner_id', partnerId).eq('status', 'draft')
+        if (error) return { error: error.message }
+        return { success: true as const, id: input.id }
+    }
+
+    const { data, error } = await supabase
+        .from('email_campaigns').insert(row).select('id').single()
+    if (error || !data) return { error: error?.message || 'Failed to save draft' }
+    return { success: true as const, id: data.id }
+}
+
+export async function getDrafts() {
+    const supabase = await createClient()
+    const partnerId = await resolveMarketingPartnerId(supabase)
+    if (!partnerId) return []
+    const { data } = await supabase
+        .from('email_campaigns')
+        .select('id, subject, segment, event_id, updated_at')
+        .eq('partner_id', partnerId).eq('status', 'draft')
+        .order('updated_at', { ascending: false })
+    return data ?? []
+}
+
+export async function getDraft(id: string) {
+    const supabase = await createClient()
+    const partnerId = await resolveMarketingPartnerId(supabase)
+    if (!partnerId) return null
+    const { data } = await supabase
+        .from('email_campaigns')
+        .select('id, subject, html_content, segment, event_id')
+        .eq('id', id).eq('partner_id', partnerId).eq('status', 'draft').maybeSingle()
+    return data
+}
+
+export async function deleteDraft(id: string) {
+    const supabase = await createClient()
+    const partnerId = await resolveMarketingPartnerId(supabase)
+    if (!partnerId) return { error: 'Partner account not found' }
+    const { error } = await supabase
+        .from('email_campaigns').delete()
+        .eq('id', id).eq('partner_id', partnerId).eq('status', 'draft')
+    if (error) return { error: error.message }
+    return { success: true as const }
+}

@@ -176,20 +176,32 @@ function AddressFields({ value, onChange, label }: { value: StructuredAddress; o
 }
 
 // ─── Doc-slot config ─────────────────────────────────────────────────────────
+// Per Xendit's official PH document requirements per entity type.
+// SERVICE_AGREEMENT is required for ALL entities; partnership differs from
+// corporation (Articles of Partnership + Notarized Partner's Certificate, no GIS).
+const SERVICE_AGREEMENT_SLOT = { type: 'SERVICE_AGREEMENT', label: 'Service Agreement', hint: 'Signed HangHut service agreement' }
 function businessDocSlots(entity: string): { type: string; label: string; hint: string }[] {
     if (entity === 'sole_proprietorship') return [
-        { type: 'PH_DTI_CERTIFICATE_REGISTRATION', label: 'DTI Certificate of Registration', hint: 'DTI business name registration' },
+        { type: 'PH_DTI_CERTIFICATE_REGISTRATION', label: 'DTI Registration', hint: 'DTI business name registration' },
         { type: 'PH_BIR_2303', label: 'BIR Form 2303', hint: 'BIR Certificate of Registration' },
+        SERVICE_AGREEMENT_SLOT,
     ]
-    if (entity === 'corporation' || entity === 'partnership') return [
+    if (entity === 'corporation') return [
         { type: 'PH_SEC_CERTIFICATE_REGISTRATION', label: 'SEC Certificate of Registration', hint: 'SEC registration certificate' },
         { type: 'PH_BIR_2303', label: 'BIR Form 2303', hint: 'BIR Certificate of Registration' },
         { type: 'PH_ARTICLES_OF_INCORPORATION', label: 'Articles of Incorporation', hint: 'Notarized copy' },
         { type: 'PH_NOTARIZED_SECRETARY_CERTIFICATE', label: "Notarized Secretary's Certificate", hint: 'Board resolution authorizing the representative' },
         { type: 'PH_GIS', label: 'Latest GIS', hint: 'Most recent General Information Sheet filed with SEC' },
-        { type: 'SERVICE_AGREEMENT', label: 'Service Agreement', hint: 'Signed service agreement' },
+        SERVICE_AGREEMENT_SLOT,
     ]
-    return [] // individual: person ID only
+    if (entity === 'partnership') return [
+        { type: 'PH_SEC_CERTIFICATE_REGISTRATION', label: 'SEC Certificate of Registration', hint: 'SEC registration certificate' },
+        { type: 'PH_BIR_2303', label: 'BIR Form 2303', hint: 'BIR Certificate of Registration' },
+        { type: 'PH_ARTICLES_OF_PARTNERSHIP', label: 'Articles of Partnership', hint: 'Notarized Articles of Partnership' },
+        { type: 'PH_NOTARIZED_PARTNER_CERTIFICATE', label: "Notarized Partner's Certificate", hint: 'Notarized certificate authorizing the representative' },
+        SERVICE_AGREEMENT_SLOT,
+    ]
+    return [SERVICE_AGREEMENT_SLOT] // individual: service agreement + person ID/selfie
 }
 const AUTH_DOC_SLOTS = [
     { type: 'ID_FRONT', label: 'Government ID — Front', hint: 'Front of a valid government ID' },

@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SubscribersTable } from '@/components/organizer/marketing/subscribers-table'
 import { CampaignComposer } from '@/components/organizer/marketing/campaign-composer'
 import { CampaignHistory } from '@/components/organizer/marketing/campaign-history'
+import { AutomationsManager } from '@/components/organizer/marketing/automations-manager'
 
 export default function MarketingPage() {
     return (
@@ -15,6 +16,7 @@ export default function MarketingPage() {
                 <TabsList>
                     <TabsTrigger value="subscribers">Subscribers</TabsTrigger>
                     <TabsTrigger value="campaigns">Create Campaign</TabsTrigger>
+                    <TabsTrigger value="automations">Automations</TabsTrigger>
                     <TabsTrigger value="history">Sent History</TabsTrigger>
                 </TabsList>
                 <TabsContent value="subscribers" className="space-y-4">
@@ -22,6 +24,9 @@ export default function MarketingPage() {
                 </TabsContent>
                 <TabsContent value="campaigns" className="space-y-4">
                     <CampaignComposer />
+                </TabsContent>
+                <TabsContent value="automations" className="space-y-4">
+                    <AutomationsManager />
                 </TabsContent>
                 <TabsContent value="history" className="space-y-4">
                     <CampaignHistory />

@@ -9,11 +9,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Send, Eye, Edit, Code, Users, Calendar, ChevronDown } from 'lucide-react'
+import { Loader2, Send, Eye, Edit, Code, Users, Calendar, ChevronDown, FileText, Save, Trash2 } from 'lucide-react'
 import { RichTextEditor } from './rich-text-editor'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
-import { getAudienceCount, getEventAttendeeEmails } from '@/lib/marketing/actions'
+import { getAudienceCount, getEventAttendeeEmails, saveDraft, getDrafts, getDraft, deleteDraft } from '@/lib/marketing/actions'
 
 interface EventOption {
     id: string
@@ -38,13 +38,70 @@ export function CampaignComposer() {
     const [audienceCount, setAudienceCount] = useState<number | null>(null)
     const [loadingCount, setLoadingCount] = useState(false)
 
+    // Drafts (Phase 6)
+    const [draftId, setDraftId] = useState<string | null>(null)
+    const [drafts, setDrafts] = useState<{ id: string; subject: string; segment: string | null; updated_at: string }[]>([])
+    const [savingDraft, setSavingDraft] = useState(false)
+
     const { toast } = useToast()
     const supabase = createClient()
 
-    // Load partner's events on mount
+    // Load partner's events + drafts on mount
     useEffect(() => {
         loadEvents()
+        refreshDrafts()
     }, [])
+
+    async function refreshDrafts() {
+        try { setDrafts(await getDrafts() as any) } catch { /* non-fatal */ }
+    }
+
+    async function handleSaveDraft() {
+        if (!subject && !content) {
+            toast({ title: 'Nothing to save', description: 'Add a subject or content first.', variant: 'destructive' })
+            return
+        }
+        setSavingDraft(true)
+        const res = await saveDraft({
+            id: draftId ?? undefined,
+            subject,
+            html_content: content,
+            segment: audienceType,
+            event_id: audienceType === 'event_attendees' ? (selectedEventId || null) : null,
+        })
+        setSavingDraft(false)
+        if (res.error) {
+            toast({ title: 'Could not save draft', description: res.error, variant: 'destructive' })
+            return
+        }
+        setDraftId(res.id!)
+        refreshDrafts()
+        toast({ title: 'Draft saved' })
+    }
+
+    async function handleResumeDraft(id: string) {
+        const d = await getDraft(id)
+        if (!d) { toast({ title: 'Draft not found', variant: 'destructive' }); refreshDrafts(); return }
+        setDraftId(d.id)
+        setSubject(d.subject === '(no subject)' ? '' : d.subject)
+        setContent(d.html_content || '')
+        if (d.segment === 'event_attendees') {
+            setAudienceType('event_attendees')
+            setSelectedEventId(d.event_id || '')
+        } else {
+            setAudienceType('all_subscribers')
+            setSelectedEventId('')
+        }
+        setEditorMode('visual')
+        toast({ title: 'Draft loaded', description: 'Edit and send, or keep saving.' })
+    }
+
+    async function handleDeleteDraft(id: string) {
+        const res = await deleteDraft(id)
+        if (res.error) { toast({ title: 'Could not delete', description: res.error, variant: 'destructive' }); return }
+        if (draftId === id) setDraftId(null)
+        refreshDrafts()
+    }
 
     // Update audience count when selection changes
     useEffect(() => {
@@ -178,6 +235,9 @@ export function CampaignComposer() {
                 sender_name: partner.business_name
             }
 
+            // If sending from a saved draft, reuse that row (no orphan draft left behind)
+            if (draftId) body.draft_campaign_id = draftId
+
             if (audienceType === 'event_attendees' && selectedEventId) {
                 // All buyers regardless of newsletter opt-in
                 const emails = await getEventAttendeeEmails(selectedEventId)
@@ -208,6 +268,8 @@ export function CampaignComposer() {
             setEditorMode('visual')
             setAudienceType('all_subscribers')
             setSelectedEventId('')
+            setDraftId(null)
+            refreshDrafts()
 
         } catch (error: any) {
             console.error('Campaign Error:', error)
@@ -233,6 +295,29 @@ export function CampaignComposer() {
             </CardHeader>
             <CardContent>
                 <div className="space-y-6">
+                    {/* Drafts */}
+                    {drafts.length > 0 && (
+                        <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                            <div className="flex items-center gap-2 text-sm font-medium">
+                                <FileText className="h-4 w-4 text-muted-foreground" /> Drafts
+                            </div>
+                            <div className="space-y-1.5">
+                                {drafts.map(d => (
+                                    <div key={d.id} className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm ${draftId === d.id ? 'bg-primary/10' : 'hover:bg-muted'}`}>
+                                        <span className="truncate flex-1">
+                                            {d.subject || '(no subject)'}
+                                            <span className="text-xs text-muted-foreground ml-2">{format(new Date(d.updated_at), 'MMM d, h:mm a')}</span>
+                                        </span>
+                                        <Button variant="ghost" size="sm" onClick={() => handleResumeDraft(d.id)}>Resume</Button>
+                                        <Button variant="ghost" size="sm" onClick={() => handleDeleteDraft(d.id)} className="text-muted-foreground hover:text-destructive">
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Audience Selector */}
                     <div className="space-y-3">
                         <Label className="text-base font-semibold">Audience</Label>
@@ -417,7 +502,16 @@ export function CampaignComposer() {
                     </Tabs>
                 </div>
             </CardContent>
-            <CardFooter className="justify-end pt-2 pb-6 px-6">
+            <CardFooter className="justify-between gap-3 pt-2 pb-6 px-6 flex-col sm:flex-row">
+                <Button
+                    variant="outline"
+                    onClick={handleSaveDraft}
+                    disabled={savingDraft || sending || (!subject && !content)}
+                    className="w-full sm:w-auto"
+                >
+                    {savingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    {draftId ? 'Update draft' : 'Save as draft'}
+                </Button>
                 <Button
                     onClick={handleSend}
                     disabled={sending || !subject || !content || (audienceType === 'event_attendees' && !selectedEventId)}
