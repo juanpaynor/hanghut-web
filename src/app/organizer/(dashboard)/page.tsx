@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import { getDashboardStats } from '@/lib/organizer/dashboard-actions'
 import { SalesDashboardClient } from '@/components/organizer/sales-dashboard'
+import { OnboardingChecklist } from '@/components/organizer/onboarding-checklist'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getAuthUser, getPartner } from '@/lib/auth/cached'
 
@@ -72,6 +73,9 @@ export default async function OrganizerDashboard() {
                     </Link>
                 </div>
             </div>
+
+            {/* Onboarding checklist — hides itself once setup is complete */}
+            <OnboardingChecklist partnerId={partner.id} kycStatus={partner.kyc_status} />
 
             {/* Sales Dashboard — streams in via Suspense */}
             <Suspense fallback={<DashboardSkeleton />}>
