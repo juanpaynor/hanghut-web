@@ -23,7 +23,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const { data: events } = await supabase
         .from('events')
         .select('id, updated_at')
-        .eq('status', 'active');
+        .eq('status', 'active')
+        .neq('invite_only', true);
 
     const eventRoutes = (events || []).map((event) => ({
         url: `${baseUrl}/events/${event.id}`,

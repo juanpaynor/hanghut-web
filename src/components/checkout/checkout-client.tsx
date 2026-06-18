@@ -64,8 +64,10 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     const isEmbed = searchParams.get('embed') === 'true'
     const effectiveUser = isEmbed ? null : user
 
-    // Registration state
-    const requireApproval = event.require_approval === true
+    // Registration state.
+    // Invite-only events ride the same registration/approval path: submit_event_request
+    // returns 'approved' for invited emails (pre-cleared) and 'pending' for request-to-join.
+    const requireApproval = event.require_approval === true || event.invite_only === true
     const hasQuestions = registrationQuestions.length > 0
     const [regAnswers, setRegAnswers] = useState<Record<string, any>>({})
     const [registrationPending, setRegistrationPending] = useState(false)

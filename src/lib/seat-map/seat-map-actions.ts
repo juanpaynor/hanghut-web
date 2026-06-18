@@ -267,7 +267,13 @@ export async function saveEventSeatMap(
       y: seat.y,
       custom_price: seat.customPrice || null,
       tier_id: seat.tierId || null,
-      status: existingStatus.get(seat.id) ?? 'available',
+      // DB 'booked'/'held' always win (protect sold/in-flight seats); otherwise
+      // honor the editor's status so 'disabled' (blocked) ↔ 'available' persists.
+      status: (() => {
+        const prev = existingStatus.get(seat.id)
+        if (prev === 'booked' || prev === 'held') return prev
+        return seat.status === 'disabled' ? 'disabled' : 'available'
+      })(),
     }))
   )
 

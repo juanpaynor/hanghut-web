@@ -5,10 +5,76 @@ import type {
   CanvasState,
   CanvasTool,
   SectionData,
+  SeatData,
+  SeatStatus,
   BackgroundShape,
   HistoryEntry,
   SeatShape,
 } from './types'
+
+// ─── Geometry helpers ─────────────────────────────────────────────────────────
+
+/** Bounding box of a section from its polygon points (falls back to seats). */
+function sectionBounds(section: SectionData) {
+  const xs: number[] = []
+  const ys: number[] = []
+  for (let i = 0; i < section.polygonPoints.length; i += 2) {
+    xs.push(section.polygonPoints[i]); ys.push(section.polygonPoints[i + 1])
+  }
+  for (const s of section.seats) { xs.push(s.x); ys.push(s.y) }
+  if (xs.length === 0) return { minX: 0, maxX: 0, minY: 0, maxY: 0, cx: 0, cy: 0, w: 0, h: 0 }
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys)
+  return { minX, maxX, minY, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, w: maxX - minX, h: maxY - minY }
+}
+
+/**
+ * Clone a section with fresh UUIDs for the section and EVERY seat (canvas id = DB
+ * id, so reused ids would collide on save). Offsets a plain duplicate to the
+ * lower-right; for a mirror, reflects geometry across the section's vertical axis
+ * and drops the copy to the right, then renumbers each row left→right so it reads
+ * naturally.
+ */
+function cloneSectionWithNewIds(section: SectionData, opts: { mirror: boolean }): SectionData {
+  const b = sectionBounds(section)
+  const shift = b.w + 40
+  const reflectX = (x: number) => opts.mirror ? (2 * b.cx - x) + shift : x + 40
+  const offY = (y: number) => opts.mirror ? y : y + 40
+
+  const polygonPoints = section.polygonPoints.map((v, i) => (i % 2 === 0 ? reflectX(v) : offY(v)))
+
+  let seats: SeatData[] = section.seats.map((s) => ({
+    ...s,
+    id: crypto.randomUUID(),
+    x: reflectX(s.x),
+    y: offY(s.y),
+  }))
+
+  // Mirror: renumber each row left→right so seat 1 starts on the left again.
+  if (opts.mirror) {
+    const byRow = new Map<string, SeatData[]>()
+    for (const s of seats) { const a = byRow.get(s.rowLabel) ?? []; a.push(s); byRow.set(s.rowLabel, a) }
+    for (const rowSeats of byRow.values()) {
+      rowSeats.sort((a, b) => a.x - b.x)
+      rowSeats.forEach((s, i) => { s.seatNumber = i + 1; s.label = `${s.rowLabel}${i + 1}` })
+    }
+  }
+
+  let arcConfig = section.arcConfig
+  if (arcConfig) {
+    arcConfig = opts.mirror
+      ? { ...arcConfig, cx: (2 * b.cx - arcConfig.cx) + shift, startAngle: 180 - arcConfig.endAngle, endAngle: 180 - arcConfig.startAngle }
+      : { ...arcConfig, cx: arcConfig.cx + 40, cy: arcConfig.cy + 40 }
+  }
+
+  return {
+    ...section,
+    id: crypto.randomUUID(),
+    label: `${section.label} copy`,
+    polygonPoints,
+    seats,
+    arcConfig,
+  }
+}
 
 // ─── Actions ────────────────────────────────────────────────────────────────
 
@@ -40,6 +106,10 @@ type Action =
   | { type: 'DELETE_SEATS'; seatIds: string[] }
   | { type: 'ASSIGN_SEATS_TIER'; seatIds: string[]; tierId: string | null }
   | { type: 'RENUMBER_SEATS'; sectionId: string; seatIds: string[]; startRow: string; startNum: number }
+  | { type: 'MOVE_SEAT'; sectionId: string; seatId: string; x: number; y: number }
+  | { type: 'SET_SEAT_STATUS'; seatIds: string[]; status: SeatStatus }
+  | { type: 'SCALE_SEATS'; seatIds: string[]; factor: number }
+  | { type: 'DUPLICATE_SECTION'; id: string; mirror?: boolean }
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'CLEAR_ALL' }
@@ -244,6 +314,53 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
           }
         }),
       }
+    }
+
+    case 'MOVE_SEAT':
+      return {
+        ...state,
+        sections: state.sections.map((s) =>
+          s.id === action.sectionId
+            ? { ...s, seats: s.seats.map((seat) => seat.id === action.seatId ? { ...seat, x: action.x, y: action.y } : seat) }
+            : s
+        ),
+      }
+
+    case 'SET_SEAT_STATUS': {
+      const targets = new Set(action.seatIds)
+      return {
+        ...state,
+        sections: state.sections.map((s) => ({
+          ...s,
+          seats: s.seats.map((seat) => targets.has(seat.id) ? { ...seat, status: action.status } : seat),
+        })),
+      }
+    }
+
+    case 'SCALE_SEATS': {
+      // Spread/compress selected seats around their centroid (preserves nudges).
+      const targets = new Set(action.seatIds)
+      const pts = state.sections.flatMap((s) => s.seats.filter((seat) => targets.has(seat.id)))
+      if (pts.length < 2) return state
+      const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length
+      const cy = pts.reduce((a, p) => a + p.y, 0) / pts.length
+      return {
+        ...state,
+        sections: state.sections.map((s) => ({
+          ...s,
+          seats: s.seats.map((seat) => targets.has(seat.id)
+            ? { ...seat, x: cx + (seat.x - cx) * action.factor, y: cy + (seat.y - cy) * action.factor }
+            : seat),
+        })),
+      }
+    }
+
+    case 'DUPLICATE_SECTION': {
+      const src = state.sections.find((s) => s.id === action.id)
+      if (!src) return state
+      const maxSort = state.sections.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), 0)
+      const clone = { ...cloneSectionWithNewIds(src, { mirror: !!action.mirror }), sortOrder: maxSort + 1 }
+      return { ...state, sections: [...state.sections, clone], selectedIds: [clone.id], selectedSeatId: null, selectedSeatIds: [] }
     }
 
     case 'CLEAR_ALL':

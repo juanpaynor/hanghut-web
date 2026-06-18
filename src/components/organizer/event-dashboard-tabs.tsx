@@ -10,7 +10,8 @@ import { CheckInStats } from '@/components/organizer/check-in-stats'
 import { EventDashboardOverview } from '@/components/organizer/event-dashboard-overview'
 import { StorefrontCustomizationForm } from '@/components/organizer/storefront-customization-form'
 import { SeatMapTab } from '@/components/organizer/seat-map-tab'
-import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair, ExternalLink, ClipboardList, UserCheck } from 'lucide-react'
+import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair, ExternalLink, ClipboardList, UserCheck, Mail } from 'lucide-react'
+import { EventInvitesManager } from '@/components/organizer/event-invites-manager'
 import { Attendee } from '@/lib/organizer/attendee-actions'
 import { PromoCode } from '@/lib/organizer/promo-actions'
 import { RegistrationQuestionsManager, RegistrationQuestion } from '@/components/organizer/registration-questions-manager'
@@ -59,9 +60,17 @@ export function EventDashboardTabs({
 }: EventDashboardTabsProps) {
     const [activeTab, setActiveTab] = useState('overview')
 
+    // Base 6 tabs + optional Registrations / Seat Map / Invites. Literal class
+    // strings keep Tailwind's JIT happy (no dynamic grid-cols-${n}).
+    const tabCount = 6
+        + (event.require_approval ? 1 : 0)
+        + (event.seating_type === 'assigned_seating' ? 1 : 0)
+        + (event.invite_only ? 1 : 0)
+    const gridColsClass = ({ 6: 'grid-cols-6', 7: 'grid-cols-7', 8: 'grid-cols-8', 9: 'grid-cols-9' } as Record<number, string>)[tabCount] || 'grid-cols-6'
+
     return (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className={`grid w-full max-w-5xl bg-muted/50 p-1 ${event.seating_type === 'assigned_seating' ? (event.require_approval ? 'grid-cols-8' : 'grid-cols-7') : (event.require_approval ? 'grid-cols-7' : 'grid-cols-6')}`}>
+            <TabsList className={`grid w-full max-w-5xl bg-muted/50 p-1 ${gridColsClass}`}>
                 <TabsTrigger value="overview" className="flex items-center gap-2">
                     <LayoutDashboard className="h-4 w-4" />
                     Overview
@@ -95,6 +104,12 @@ export function EventDashboardTabs({
                                 {initialRegistrations.filter(r => r.status === 'pending').length}
                             </span>
                         )}
+                    </TabsTrigger>
+                )}
+                {event.invite_only && (
+                    <TabsTrigger value="invites" className="flex items-center gap-2">
+                        <Mail className="h-4 w-4" />
+                        Invites
                     </TabsTrigger>
                 )}
                 {event.seating_type === 'assigned_seating' && (
@@ -191,6 +206,12 @@ export function EventDashboardTabs({
                         eventId={eventId}
                         initialRegistrations={initialRegistrations}
                     />
+                </TabsContent>
+            )}
+
+            {event.invite_only && (
+                <TabsContent value="invites" className="mt-6 animate-in fade-in-50 duration-300">
+                    <EventInvitesManager eventId={eventId} />
                 </TabsContent>
             )}
 

@@ -51,6 +51,19 @@ export async function POST(request: Request) {
         return apiError('Event is not currently active', 400)
     }
 
+    // Reserved-seating events can't be checked out via this quantity-based API —
+    // there's no seat-selection mechanism here, and a quantity-only intent would
+    // oversell against seat-mapped capacity. These must go through the web seat picker.
+    const { data: seatMapRow } = await supabase
+        .from('event_seat_maps')
+        .select('id')
+        .eq('event_id', event_id)
+        .maybeSingle()
+
+    if (seatMapRow) {
+        return apiError('This event uses reserved seating and cannot be booked via the API. Direct buyers to the event page to select seats.', 400)
+    }
+
     // Resolve tier
     let tierToUse: any = null
     if (tier_id) {

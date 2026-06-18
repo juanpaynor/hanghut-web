@@ -45,6 +45,7 @@ interface EventFormData {
     external_ticket_url: string
     external_provider_name: string
     require_approval: boolean
+    invite_only: boolean
     hide_venue_until_registered: boolean
     approval_email_subject: string
     approval_email_body: string
@@ -111,6 +112,7 @@ export function EventForm({
         external_ticket_url: initialData?.external_ticket_url || '',
         external_provider_name: initialData?.external_provider_name || '',
         require_approval: initialData?.require_approval || false,
+        invite_only: initialData?.invite_only || false,
         hide_venue_until_registered: initialData?.hide_venue_until_registered || false,
         approval_email_subject: initialData?.approval_email_subject || '',
         approval_email_body: initialData?.approval_email_body || '',
@@ -296,6 +298,7 @@ export function EventForm({
             formDataToSend.append('external_ticket_url', formData.external_ticket_url || '')
             formDataToSend.append('external_provider_name', formData.external_provider_name || '')
             formDataToSend.append('require_approval', formData.require_approval ? 'true' : 'false')
+            formDataToSend.append('invite_only', formData.invite_only ? 'true' : 'false')
             formDataToSend.append('hide_venue_until_registered', formData.hide_venue_until_registered ? 'true' : 'false')
             formDataToSend.append('approval_email_subject', formData.approval_email_subject || '')
             formDataToSend.append('approval_email_body', formData.approval_email_body || '')
@@ -819,6 +822,29 @@ export function EventForm({
                         Control how attendees register for your event.
                     </p>
                     <div className="space-y-4">
+                        {/* Private / invite-only */}
+                        <div className="flex items-center justify-between p-4 border rounded-lg">
+                            <div>
+                                <h3 className="font-semibold">Private (invite-only)</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Hide this event from discovery. Only people you invite by email can
+                                    register; others can request to join. Manage your guest list from the
+                                    event&apos;s Invites tab after saving.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => handleInputChange('invite_only', !formData.invite_only)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                                    formData.invite_only ? 'bg-primary' : 'bg-muted-foreground/30'
+                                }`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                    formData.invite_only ? 'translate-x-6' : 'translate-x-1'
+                                }`} />
+                            </button>
+                        </div>
+
                         <div className="flex items-center justify-between p-4 border rounded-lg">
                             <div>
                                 <h3 className="font-semibold">Require Approval</h3>

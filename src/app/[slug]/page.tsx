@@ -48,6 +48,7 @@ const getPartnerAndEvents = cache(async (slug: string) => {
             .eq('organizer_id', partner.id)
             .eq('status', 'active')
             .neq('is_subscriber_only', true)
+            .neq('invite_only', true)
             .gte('start_datetime', now)
             .order('start_datetime', { ascending: true })
     ]
@@ -60,6 +61,7 @@ const getPartnerAndEvents = cache(async (slug: string) => {
                 .eq('organizer_id', partner.id)
                 .eq('status', 'active')
                 .neq('is_subscriber_only', true)
+                .neq('invite_only', true)
                 .lt('start_datetime', now)
                 .order('start_datetime', { ascending: false })
                 .limit(12)

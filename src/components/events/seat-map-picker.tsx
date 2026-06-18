@@ -89,6 +89,7 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
     const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([])
     const [view, setView] = useState({ scale: 1, x: 0, y: 0 })
     const [navigating, setNavigating] = useState(false)
+    const [hoveredSeat, setHoveredSeat] = useState<{ seat: MapSeat; screenX: number; screenY: number } | null>(null)
 
     // ─── Data loading + periodic availability refresh ────────────────────
     const loadMap = useCallback(async () => {
@@ -371,10 +372,75 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
                                 onTap={() => handleSeatTap(seat)}
                                 hitStrokeWidth={10}
                                 perfectDrawEnabled={false}
+                                onMouseEnter={(e) => {
+                                    const stage = e.target.getStage()
+                                    const pos = stage?.getPointerPosition()
+                                    if (pos) setHoveredSeat({ seat, screenX: pos.x, screenY: pos.y })
+                                    const container = stage?.container()
+                                    if (container) container.style.cursor = seat.status === 'available' ? 'pointer' : 'not-allowed'
+                                }}
+                                onMouseMove={(e) => {
+                                    const stage = e.target.getStage()
+                                    const pos = stage?.getPointerPosition()
+                                    if (pos) setHoveredSeat(prev => prev ? { ...prev, screenX: pos.x, screenY: pos.y } : null)
+                                }}
+                                onMouseLeave={(e) => {
+                                    setHoveredSeat(null)
+                                    const container = e.target.getStage()?.container()
+                                    if (container) container.style.cursor = 'default'
+                                }}
                             />
                         ))}
                     </Layer>
                 </Stage>
+
+                {/* Seat hover tooltip */}
+                {hoveredSeat && activeSectionData && (() => {
+                    const { seat, screenX, screenY } = hoveredSeat
+                    const tier = seat.tier_id
+                        ? tierById.get(seat.tier_id)
+                        : activeSectionData.tier_id
+                        ? tierById.get(activeSectionData.tier_id)
+                        : null
+                    // Keep card within stage bounds
+                    const cardW = 240
+                    const cardH = 80
+                    const left = Math.min(screenX + 12, stageSize.width - cardW - 8)
+                    const top = screenY - cardH - 12 < 8 ? screenY + 12 : screenY - cardH - 12
+                    return (
+                        <div
+                            className="absolute z-50 pointer-events-none select-none"
+                            style={{ left, top, width: cardW }}
+                        >
+                            <div className="bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
+                                {/* Header bar — section color */}
+                                <div
+                                    className="px-3 py-1.5 text-white text-[11px] font-bold uppercase tracking-wide"
+                                    style={{ backgroundColor: tier ? tierColors.get(tier.id) : activeSectionData.color }}
+                                >
+                                    {activeSectionData.label}
+                                </div>
+                                {/* Details grid */}
+                                <div className="grid grid-cols-3 divide-x divide-gray-100 px-0">
+                                    <div className="px-3 py-2 text-center">
+                                        <div className="text-[10px] text-gray-400 uppercase tracking-wide">Row</div>
+                                        <div className="text-sm font-bold text-gray-900">{seat.row}</div>
+                                    </div>
+                                    <div className="px-3 py-2 text-center">
+                                        <div className="text-[10px] text-gray-400 uppercase tracking-wide">Seat</div>
+                                        <div className="text-sm font-bold text-gray-900">{seat.seat}</div>
+                                    </div>
+                                    <div className="px-3 py-2 text-center">
+                                        <div className="text-[10px] text-gray-400 uppercase tracking-wide">Price</div>
+                                        <div className="text-sm font-bold text-gray-900">
+                                            {tier ? `₱${Number(tier.price).toLocaleString()}` : '—'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                })()}
 
                 {/* Controls overlay */}
                 <div className="absolute top-3 right-3 flex flex-col gap-1.5">

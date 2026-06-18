@@ -28,6 +28,8 @@ const SeatDot = memo(function SeatDot({
   radius,
   shape,
   tierColor,
+  draggable,
+  onDragEnd,
 }: {
   x: number
   y: number
@@ -38,8 +40,19 @@ const SeatDot = memo(function SeatDot({
   radius: number
   shape: SeatShape
   tierColor?: string
+  draggable?: boolean
+  onDragEnd?: (cx: number, cy: number) => void
 }) {
   const r = isSelected ? radius + 2 : radius
+  // Report the new CENTER after a drag (square renders from its top-left corner).
+  const handleDragEnd = onDragEnd
+    ? (e: Konva.KonvaEventObject<DragEvent>) => {
+        const node = e.target
+        const cx = shape === 'square' ? node.x() + r : node.x()
+        const cy = shape === 'square' ? node.y() + r : node.y()
+        onDragEnd(cx, cy)
+      }
+    : undefined
   // Available seats show their price-category color; sold/held/disabled keep status colors
   const baseFill = status === 'available' && tierColor
     ? tierColor
@@ -47,6 +60,8 @@ const SeatDot = memo(function SeatDot({
   const fill = isSelected ? '#818cf8' : isMultiSelected ? '#f59e0b' : baseFill
   const stroke = isSelected ? '#ffffff' : isMultiSelected ? '#fbbf24' : status === 'available' ? (tierColor ?? '#16a34a') : undefined
   const strokeW = isSelected || isMultiSelected ? 2.5 : 1
+
+  const listenProp = !!(onClick || draggable)
 
   if (shape === 'square') {
     return (
@@ -60,10 +75,12 @@ const SeatDot = memo(function SeatDot({
         stroke={stroke}
         strokeWidth={strokeW}
         perfectDrawEnabled={false}
-        listening={!!onClick}
+        listening={listenProp}
         onClick={onClick}
         onTap={onClick}
         hitStrokeWidth={8}
+        draggable={draggable}
+        onDragEnd={handleDragEnd}
       />
     )
   }
@@ -82,10 +99,12 @@ const SeatDot = memo(function SeatDot({
         stroke={stroke}
         strokeWidth={strokeW}
         perfectDrawEnabled={false}
-        listening={!!onClick}
+        listening={listenProp}
         onClick={onClick}
         onTap={onClick}
         hitStrokeWidth={8}
+        draggable={draggable}
+        onDragEnd={handleDragEnd}
       />
     )
   }
@@ -100,10 +119,12 @@ const SeatDot = memo(function SeatDot({
       stroke={stroke}
       strokeWidth={strokeW}
       perfectDrawEnabled={false}
-      listening={!!onClick}
+      listening={listenProp}
       onClick={onClick}
       onTap={onClick}
       hitStrokeWidth={8}
+      draggable={draggable}
+      onDragEnd={handleDragEnd}
     />
   )
 })
@@ -118,9 +139,11 @@ const SectionGroup = memo(function SectionGroup({
   selectedSeatId,
   selectedSeatIds,
   onSeatClick,
+  onSeatDragEnd,
   seatRadius,
   seatShape,
   tierColorMap,
+  seatsDraggable,
 }: {
   section: SectionData
   isSelected: boolean
@@ -130,9 +153,11 @@ const SectionGroup = memo(function SectionGroup({
   selectedSeatId: string | null
   selectedSeatIds: string[]
   onSeatClick?: (seatId: string) => void
+  onSeatDragEnd?: (seatId: string, cx: number, cy: number) => void
   seatRadius: number
   seatShape: SeatShape
   tierColorMap?: Map<string, string>
+  seatsDraggable?: boolean
 }) {
   const center = useMemo(
     () => getSectionCenter(section.polygonPoints),
@@ -184,6 +209,8 @@ const SectionGroup = memo(function SectionGroup({
             radius={seatRadius}
             shape={seatShape}
             tierColor={resolvedTier ? tierColorMap?.get(resolvedTier) : undefined}
+            draggable={seatsDraggable}
+            onDragEnd={onSeatDragEnd ? (cx, cy) => onSeatDragEnd(seat.id, cx, cy) : undefined}
           />
         )
       })}
@@ -721,6 +748,14 @@ export function CanvasBuilder({
     [readOnly, state.tool, dispatch]
   )
 
+  const handleSeatDragEnd = useCallback(
+    (sectionId: string, seatId: string, cx: number, cy: number) => {
+      if (readOnly || state.tool !== 'select') return
+      dispatchWithHistory({ type: 'MOVE_SEAT', sectionId, seatId, x: cx, y: cy })
+    },
+    [readOnly, state.tool, dispatchWithHistory]
+  )
+
   const handleSectionDragEnd = useCallback(
     (sectionId: string, e: Konva.KonvaEventObject<DragEvent>) => {
       if (readOnly || state.tool !== 'select') return
@@ -993,6 +1028,8 @@ export function CanvasBuilder({
                 selectedSeatId={state.selectedSeatId}
                 selectedSeatIds={state.selectedSeatIds}
                 onSeatClick={state.tool === 'select' ? handleSeatClick : undefined}
+                onSeatDragEnd={state.tool === 'select' ? (seatId, cx, cy) => handleSeatDragEnd(section.id, seatId, cx, cy) : undefined}
+                seatsDraggable={!readOnly && state.tool === 'select'}
                 seatRadius={state.seatRadius}
                 seatShape={state.seatShape}
                 tierColorMap={tierColorMap}
@@ -1179,6 +1216,15 @@ export function CanvasBuilder({
           onDeleteSelectedSeats={() => {
             dispatchWithHistory({ type: 'DELETE_SEATS', seatIds: state.selectedSeatIds })
           }}
+          onSetSeatStatus={(seatIds, status) => {
+            dispatchWithHistory({ type: 'SET_SEAT_STATUS', seatIds, status })
+          }}
+          onScaleSeats={(seatIds, factor) => {
+            dispatchWithHistory({ type: 'SCALE_SEATS', seatIds, factor })
+          }}
+          onDuplicateSection={(id, mirror) => {
+            dispatchWithHistory({ type: 'DUPLICATE_SECTION', id, mirror })
+          }}
           seatRadius={state.seatRadius}
           seatShape={state.seatShape}
           onSetSeatRadius={(r) => dispatch({ type: 'SET_SEAT_RADIUS', radius: r })}
@@ -1347,6 +1393,7 @@ const BackgroundImage = memo(function BackgroundImage({
       draggable={draggable}
       onDragEnd={handleDragEnd}
       perfectDrawEnabled={false}
+      listening={draggable}
     />
   )
 })

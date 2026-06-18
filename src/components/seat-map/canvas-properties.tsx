@@ -5,6 +5,7 @@ import type { SectionData, CanvasTool, SectionType, SeatData, BackgroundShape, S
 import { SECTION_TYPE_COLORS, resolveSeatTier } from './types'
 import { fillStraightSeats, fillArcSeats } from './algorithms/fill-seats'
 import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, XCircle, Circle, Square, Diamond, Lock, Unlock, Banknote } from 'lucide-react'
+import { CapacitySummary } from './capacity-summary'
 
 interface CanvasPropertiesProps {
   selectedSection: SectionData | null
@@ -28,6 +29,9 @@ interface CanvasPropertiesProps {
   onSelectSeat: (seatId: string | null) => void
   onRenumberSeats: (seatIds: string[], rowLabel: string, startNumber: number) => void
   onDeleteSelectedSeats: () => void
+  onSetSeatStatus?: (seatIds: string[], status: 'available' | 'disabled') => void
+  onScaleSeats?: (seatIds: string[], factor: number) => void
+  onDuplicateSection?: (id: string, mirror?: boolean) => void
   seatRadius: number
   seatShape: SeatShape
   onSetSeatRadius: (r: number) => void
@@ -99,6 +103,9 @@ export function CanvasProperties({
   onSelectSeat,
   onRenumberSeats,
   onDeleteSelectedSeats,
+  onSetSeatStatus,
+  onScaleSeats,
+  onDuplicateSection,
   seatRadius,
   seatShape,
   onSetSeatRadius,
@@ -109,6 +116,10 @@ export function CanvasProperties({
   const [gridRotation, setGridRotation] = useState(0)
   const [labelScheme, setLabelScheme] = useState<'alpha' | 'numeric'>('alpha')
   const [aisleInput, setAisleInput] = useState('')  // comma-separated: e.g. "5,15" = aisle after seat 5 and 15
+  const [numberingDir, setNumberingDir] = useState<'ltr' | 'rtl'>('ltr')
+  const [numberingStyle, setNumberingStyle] = useState<'sequential' | 'odd_even'>('sequential')
+  const [seatGap, setSeatGap] = useState(4)
+  const [rowGap, setRowGap] = useState(6)
 
   // Sync state when selecting a different section
   useEffect(() => {
@@ -116,6 +127,10 @@ export function CanvasProperties({
       setFillRows(selectedSection.rowCount || 10)
       setFillCols(selectedSection.seatsPerRow || 20)
       setGridRotation(selectedSection.gridRotation || 0)
+      setNumberingDir(selectedSection.numberingDirection ?? 'ltr')
+      setNumberingStyle(selectedSection.numberingStyle ?? 'sequential')
+      setSeatGap(selectedSection.seatGap ?? 4)
+      setRowGap(selectedSection.rowGap ?? 6)
     }
   }, [selectedSection?.id])
 
@@ -123,12 +138,14 @@ export function CanvasProperties({
   const handleFillSeats = useCallback(() => {
     if (!selectedSection) return
 
+    const numConfig = { numberingDirection: numberingDir, numberingStyle, seatGap, rowGap, seatSize: seatRadius }
     let seatPositions
     if (selectedSection.seatOrientation === 'arc' && selectedSection.arcConfig) {
       seatPositions = fillArcSeats(selectedSection.arcConfig, {
         rowCount: fillRows,
         seatsPerRow: fillCols,
         labelScheme,
+        ...numConfig,
       })
     } else {
       // Parse aisle positions
@@ -143,6 +160,7 @@ export function CanvasProperties({
         labelScheme,
         gridRotation,
         aisleAfterSeats: aisleAfterSeats.length > 0 ? aisleAfterSeats : undefined,
+        ...numConfig,
       })
     }
 
@@ -162,8 +180,12 @@ export function CanvasProperties({
       rowCount: fillRows,
       seatsPerRow: fillCols,
       gridRotation,
+      numberingDirection: numberingDir,
+      numberingStyle,
+      seatGap,
+      rowGap,
     })
-  }, [selectedSection, fillRows, fillCols, labelScheme, gridRotation, onUpdateSection])
+  }, [selectedSection, fillRows, fillCols, labelScheme, gridRotation, numberingDir, numberingStyle, seatGap, rowGap, onUpdateSection])
 
   // Find the selected seat object
   const selectedSeat = selectedSection?.seats.find((s) => s.id === selectedSeatId) ?? null
@@ -240,6 +262,25 @@ export function CanvasProperties({
                 onChange={(tierId) => onAssignSeatsTier([selectedSeat.id], tierId)}
               />
             </div>
+          )}
+
+          {/* Block / enable seat */}
+          {onSetSeatStatus && (
+            <button
+              onClick={() =>
+                onSetSeatStatus(
+                  [selectedSeat.id],
+                  selectedSeat.status === 'disabled' ? 'available' : 'disabled'
+                )
+              }
+              className={`w-full flex items-center justify-center gap-2 text-sm font-medium py-2.5 rounded-lg transition-all border ${
+                selectedSeat.status === 'disabled'
+                  ? 'bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border-emerald-600/30'
+                  : 'bg-slate-700/40 hover:bg-slate-700 text-slate-300 border-slate-600/40'
+              }`}
+            >
+              {selectedSeat.status === 'disabled' ? '✓ Enable Seat' : '⊘ Block Seat'}
+            </button>
           )}
 
           <button
@@ -327,6 +368,52 @@ export function CanvasProperties({
               Apply Renumber (L→R)
             </button>
           </div>
+
+          {/* Block / Enable selection */}
+          {onSetSeatStatus && (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                Status
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onSetSeatStatus(selectedSeatIds, 'available')}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-sm font-medium py-2 rounded-lg transition-all border border-emerald-600/30"
+                >
+                  ✓ Enable
+                </button>
+                <button
+                  onClick={() => onSetSeatStatus(selectedSeatIds, 'disabled')}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-slate-700/40 hover:bg-slate-700 text-slate-300 text-sm font-medium py-2 rounded-lg transition-all border border-slate-600/40"
+                >
+                  ⊘ Block
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Spread / Compress selection */}
+          {onScaleSeats && (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                Spacing
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onScaleSeats(selectedSeatIds, 0.9)}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-slate-700/40 hover:bg-slate-700 text-slate-300 text-sm font-medium py-2 rounded-lg transition-all border border-slate-600/40"
+                >
+                  − Compress
+                </button>
+                <button
+                  onClick={() => onScaleSeats(selectedSeatIds, 1.1)}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-slate-700/40 hover:bg-slate-700 text-slate-300 text-sm font-medium py-2 rounded-lg transition-all border border-slate-600/40"
+                >
+                  + Spread
+                </button>
+              </div>
+            </div>
+          )}
 
           <button
             onClick={onDeleteSelectedSeats}
@@ -551,6 +638,37 @@ export function CanvasProperties({
                   </div>
                 </div>
                 
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] text-slate-500 flex justify-between mb-1">
+                      <span>Seat Gap</span>
+                      <span className="text-slate-400">{seatGap}px</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="40"
+                      value={seatGap}
+                      onChange={(e) => setSeatGap(parseInt(e.target.value))}
+                      className="w-full accent-indigo-500 cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-500 flex justify-between mb-1">
+                      <span>Row Gap</span>
+                      <span className="text-slate-400">{rowGap}px</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="40"
+                      value={rowGap}
+                      onChange={(e) => setRowGap(parseInt(e.target.value))}
+                      className="w-full accent-indigo-500 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
                 <div className="mt-3">
                   <label className="text-[11px] text-slate-500 flex justify-between mb-1">
                     <span>Grid Rotation</span>
@@ -596,6 +714,62 @@ export function CanvasProperties({
 
                 <div className="mt-3">
                   <label className="text-[11px] text-slate-500 mb-1 block">
+                    Seat Numbering Direction
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setNumberingDir('ltr')}
+                      className={`flex-1 text-xs py-2 rounded-lg border transition-all ${
+                        numberingDir === 'ltr'
+                          ? 'bg-indigo-600 border-indigo-500 text-white'
+                          : 'bg-slate-800 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      1→ L to R
+                    </button>
+                    <button
+                      onClick={() => setNumberingDir('rtl')}
+                      className={`flex-1 text-xs py-2 rounded-lg border transition-all ${
+                        numberingDir === 'rtl'
+                          ? 'bg-indigo-600 border-indigo-500 text-white'
+                          : 'bg-slate-800 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      ←1 R to L
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <label className="text-[11px] text-slate-500 mb-1 block">
+                    Numbering Style
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setNumberingStyle('sequential')}
+                      className={`flex-1 text-xs py-2 rounded-lg border transition-all ${
+                        numberingStyle === 'sequential'
+                          ? 'bg-indigo-600 border-indigo-500 text-white'
+                          : 'bg-slate-800 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      1, 2, 3…
+                    </button>
+                    <button
+                      onClick={() => setNumberingStyle('odd_even')}
+                      className={`flex-1 text-xs py-2 rounded-lg border transition-all ${
+                        numberingStyle === 'odd_even'
+                          ? 'bg-indigo-600 border-indigo-500 text-white'
+                          : 'bg-slate-800 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      1,3 / 2,4…
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <label className="text-[11px] text-slate-500 mb-1 block">
                     Aisles After Seat #
                   </label>
                   <input
@@ -630,6 +804,29 @@ export function CanvasProperties({
             )}
           </div>
 
+          {/* Duplicate / Mirror Section */}
+          {onDuplicateSection && (
+            <div className="border-t border-slate-800 pt-4 space-y-2">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                Duplicate
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onDuplicateSection(selectedSection.id, false)}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 text-sm font-medium py-2 rounded-lg transition-all border border-indigo-600/30"
+                >
+                  ⧉ Duplicate
+                </button>
+                <button
+                  onClick={() => onDuplicateSection(selectedSection.id, true)}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 text-sm font-medium py-2 rounded-lg transition-all border border-purple-600/30"
+                >
+                  ↔ Mirror
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Delete Section */}
           <div className="border-t border-slate-800 pt-4">
             <button
@@ -644,29 +841,14 @@ export function CanvasProperties({
       ) : (
         /* ─── No Selection View ──────────────────────────────────────── */
         <div className="p-4 space-y-4">
-          {/* Price Legend */}
-          {tiers.length > 0 && (
+          {/* Capacity + Pricing Summary */}
+          {sections.length > 0 && (
             <div>
               <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3 block flex items-center gap-1.5">
                 <Banknote className="w-3.5 h-3.5" />
-                Price Categories
+                Capacity &amp; Revenue
               </label>
-              <div className="space-y-1.5">
-                {tiers.map((tier) => {
-                  const seatCount = sections.reduce(
-                    (sum, s) => sum + s.seats.filter((seat) => resolveSeatTier(seat, s) === tier.id).length,
-                    0
-                  )
-                  return (
-                    <div key={tier.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/50">
-                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: tier.color }} />
-                      <span className="text-sm text-white truncate flex-1">{tier.name}</span>
-                      <span className="text-xs text-slate-400">₱{Number(tier.price).toLocaleString()}</span>
-                      <span className="text-[10px] text-slate-500 w-12 text-right">{seatCount} seats</span>
-                    </div>
-                  )
-                })}
-              </div>
+              <CapacitySummary sections={sections} tiers={tiers} />
             </div>
           )}
 

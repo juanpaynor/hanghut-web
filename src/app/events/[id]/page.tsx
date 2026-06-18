@@ -12,6 +12,8 @@ import { TicketSelector } from '@/components/events/ticket-selector'
 import { SeatPickerLauncher } from '@/components/events/seat-picker-launcher'
 import { EventGallery } from '@/components/events/event-gallery'
 import { RegistrationGate } from '@/components/events/registration-gate'
+import { EventInviteResponse } from '@/components/events/event-invite-response'
+import { getEventInviteByToken } from '@/lib/organizer/event-invite-actions'
 import type { QuestionForForm } from '@/components/events/registration-questions-form'
 import { cn, hexToHsl, getYouTubeEmbedUrl } from '@/lib/utils'
 
@@ -84,8 +86,15 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     }
 }
 
-export default async function PublicEventPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PublicEventPage({
+    params,
+    searchParams,
+}: {
+    params: Promise<{ id: string }>
+    searchParams: Promise<{ invite?: string }>
+}) {
     const { id } = await params
+    const { invite: inviteToken } = await searchParams
     const event = await getEvent(id)
 
     if (!event) notFound()
@@ -123,11 +132,13 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
     } | null = null
     let isActiveSubscriber = false
     let isLoggedIn = false
+    let viewerEmail: string | null = null
 
     try {
         const authClient = await createClient()
         const { data: { user } } = await authClient.auth.getUser()
         isLoggedIn = !!user
+        viewerEmail = user?.email ?? null
         if (user && event.organizer?.id) {
             const [discountRes, subRes] = await Promise.all([
                 authClient.rpc('get_subscriber_event_discount', { p_event_id: id }),
@@ -138,6 +149,45 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
         }
     } catch {
         // Non-blocking
+    }
+
+    // ── Invite-only resolution ──────────────────────────────────────────────
+    // Private events resolve the viewer's invite status from the ?invite=token
+    // link OR the logged-in user's email on the allowlist. Drives the gate below.
+    // inviteState: 'public' (not private) | 'pending' (invited, awaiting response)
+    //            | 'accepted' | 'declined' | 'uninvited'
+    let inviteState: 'public' | 'pending' | 'accepted' | 'declined' | 'uninvited' = 'public'
+    let inviteTokenForResponse: string | null = null
+    let inviteeName: string | null = null
+    if (event.invite_only) {
+        inviteState = 'uninvited'
+        try {
+            if (inviteToken) {
+                const inv = await getEventInviteByToken(inviteToken)
+                if (inv && inv.event_id === id) {
+                    inviteState = inv.status === 'accepted' ? 'accepted' : inv.status === 'declined' ? 'declined' : 'pending'
+                    inviteTokenForResponse = inviteToken
+                    inviteeName = inv.name
+                }
+            }
+            // Fall back to the logged-in email if the token didn't resolve a match
+            if (inviteState === 'uninvited' && viewerEmail) {
+                const admin = createAdminClient()
+                const { data: inv } = await admin
+                    .from('event_invites')
+                    .select('token, name, status')
+                    .eq('event_id', id)
+                    .eq('email', viewerEmail.toLowerCase())
+                    .maybeSingle()
+                if (inv) {
+                    inviteState = inv.status === 'accepted' ? 'accepted' : inv.status === 'declined' ? 'declined' : 'pending'
+                    inviteTokenForResponse = inv.token
+                    inviteeName = inv.name
+                }
+            }
+        } catch {
+            // Non-blocking — fail closed to 'uninvited' (request-to-join wall)
+        }
     }
 
     // Early access window check
@@ -532,7 +582,26 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
         )
     }
 
-    const TicketsSection = () => (
+    const TicketsSection = () => {
+        // Invite-only gate: invited-but-unresponded (or previously declined) sees
+        // Accept/Decline before any registration/ticket UI. Accepted + public fall
+        // through to the normal content below; 'uninvited' gets a request-to-join
+        // notice prepended to the same flow (backend routes them to pending).
+        if (event.invite_only && (inviteState === 'pending' || inviteState === 'declined') && inviteTokenForResponse) {
+            return (
+                <Card data-hh-card className="my-8 border-2 border-primary/10 shadow-lg overflow-hidden" id="tickets">
+                    <div className="p-6 md:p-8">
+                        <EventInviteResponse
+                            token={inviteTokenForResponse}
+                            organizerName={event.organizer?.business_name || 'the organizer'}
+                            inviteeName={inviteeName}
+                            initialStatus={inviteState === 'declined' ? 'declined' : 'invited'}
+                        />
+                    </div>
+                </Card>
+            )
+        }
+        return (
         <Card data-hh-card className="my-8 border-2 border-primary/10 shadow-lg overflow-hidden" id="tickets">
             <div className="bg-primary/5 p-6 border-b border-primary/10 flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center gap-3">
@@ -562,6 +631,18 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                 </div>
             </div>
             <div className="p-8">
+                {event.invite_only && inviteState === 'uninvited' && (
+                    <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-start gap-3">
+                        <ShieldCheck className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                        <div>
+                            <p className="text-sm font-semibold">This is a private event</p>
+                            <p className="text-sm text-muted-foreground">
+                                You&apos;re not on the guest list yet. You can request to join below —
+                                the organizer will review and approve your request.
+                            </p>
+                        </div>
+                    </div>
+                )}
                 {event.is_external ? (
                     <>
                         <a
@@ -611,6 +692,33 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                             </>
                         ) : null}
                     </div>
+                ) : hasSeatMap ? (
+                    /* Reserved-seating event: seat selection is the ONLY checkout path.
+                       Quantity-based "Get Tickets" is intentionally disabled here — it would
+                       sell against the same tier capacity without claiming a seat (oversell)
+                       and issue tickets with no seat assignment (ghost tickets). */
+                    <>
+                        {isSoldOut ? (
+                            <div className="text-center py-4 text-muted-foreground font-medium">
+                                Tickets are no longer available
+                            </div>
+                        ) : (
+                            <SeatPickerLauncher eventId={event.id} fullWidth />
+                        )}
+                        {!isLoggedIn && (
+                            <LoginNudge
+                                label="Have a HangHut account? Sign in for faster checkout"
+                                className="mt-4"
+                            />
+                        )}
+                        <p className="text-center text-xs text-muted-foreground mt-4 flex items-center justify-center gap-1">
+                            <ShieldCheck className="h-3 w-3" /> Secure checkout powered by Xendit
+                        </p>
+                        <p className="text-center text-xs text-muted-foreground mt-2 flex items-center justify-center gap-1">
+                            <Phone className="h-3 w-3" /> Need help? Contact us at{' '}
+                            <a href="tel:+639618478642" className="text-primary hover:underline font-medium">+63 961 847 8642</a>
+                        </p>
+                    </>
                 ) : (
                     <>
                         <TicketSelector
@@ -624,11 +732,6 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                             trigger={null}
                             subscriberDiscount={subscriberDiscount}
                         />
-                        {hasSeatMap && !isSoldOut && (
-                            <div className="mt-3">
-                                <SeatPickerLauncher eventId={event.id} fullWidth />
-                            </div>
-                        )}
                         {!isLoggedIn && (
                             <LoginNudge
                                 label="Have a HangHut account? Sign in for faster checkout"
@@ -646,7 +749,8 @@ export default async function PublicEventPage({ params }: { params: Promise<{ id
                 )}
             </div>
         </Card>
-    )
+        )
+    }
 
     const LocationSection = () => {
         if (!venueVisible) return null

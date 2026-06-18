@@ -33,6 +33,7 @@ export default async function EmbedStorefrontPage({
         .select('id, title, description, start_datetime, end_datetime, venue_name, cover_image_url, ticket_price, event_type, capacity, tickets_sold')
         .eq('organizer_id', partner.id)
         .eq('status', 'active')
+        .neq('invite_only', true)
         .gte('start_datetime', now)
         .order('start_datetime', { ascending: true })
         .limit(20)

@@ -41,6 +41,11 @@ export interface SectionData {
   sortOrder: number
   tierId?: string | null                       // default price category for the whole section
   rowTierOverrides?: Record<string, string>    // rowLabel → tierId, overrides section tier
+  // Layout prefs (persisted in canvas_data JSONB so re-fills stay stable)
+  seatGap?: number
+  rowGap?: number
+  numberingDirection?: 'ltr' | 'rtl'
+  numberingStyle?: 'sequential' | 'odd_even'
 }
 
 // ─── Seat Types ─────────────────────────────────────────────────────────────

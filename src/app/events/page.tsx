@@ -42,6 +42,7 @@ export default async function EventsPage() {
         `)
         .eq('status', 'active')
         .neq('is_subscriber_only', true)
+        .neq('invite_only', true)
         .gte('start_datetime', new Date().toISOString())
         .order('start_datetime', { ascending: true })
 

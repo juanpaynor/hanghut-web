@@ -40,6 +40,7 @@ export default async function CheckoutPage({
                 theme_color,
                 custom_tos,
                 require_approval,
+                invite_only,
                 organizer:partners (
                     id,
                     business_name,
@@ -76,6 +77,20 @@ export default async function CheckoutPage({
 
     if (!event) {
         redirect('/')
+    }
+
+    // Reserved-seating guard: if this event has a seat map, seat selection is the
+    // ONLY valid checkout path. A quantity-based intent (no seatIds, or a count
+    // that doesn't match qty) would sell against tier capacity without claiming a
+    // seat — oversell + ghost tickets. Bounce back to the picker.
+    const { data: seatMapRow } = await supabase
+        .from('event_seat_maps')
+        .select('id')
+        .eq('event_id', eventId)
+        .maybeSingle()
+
+    if (seatMapRow && selectedSeatIds.length !== qty) {
+        redirect(`/events/${eventId}?error=select_seats`)
     }
 
     // Resolve custom TOS: event-level overrides organizer-level

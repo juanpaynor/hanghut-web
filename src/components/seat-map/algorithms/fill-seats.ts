@@ -24,6 +24,28 @@ export interface FillConfig {
   aisleAfterSeats?: number[]  // seat numbers after which to insert an aisle gap
   aisleWidth?: number    // width of aisle gap in px (default 20)
   autoFit?: boolean      // if true, ignore rowCount/seatsPerRow and fit as many as possible
+  numberingDirection?: 'ltr' | 'rtl'               // seat number direction (default ltr)
+  numberingStyle?: 'sequential' | 'odd_even'       // sequential=1,2,3 / odd_even=continental 1,3,5.../2,4,6...
+}
+
+/**
+ * Assign a seat number for a given position in a row.
+ * colIndex: 0-based position in the row.
+ * totalInRow: total seats placed in that row.
+ */
+export function getSeatNumber(
+  colIndex: number,
+  totalInRow: number,
+  direction: 'ltr' | 'rtl' = 'ltr',
+  style: 'sequential' | 'odd_even' = 'sequential'
+): number {
+  const idx = direction === 'rtl' ? totalInRow - 1 - colIndex : colIndex
+  if (style === 'odd_even') {
+    const half = Math.ceil(totalInRow / 2)
+    if (idx < half) return idx * 2 + 1       // left side: 1, 3, 5…
+    return (idx - half) * 2 + 2              // right side: 2, 4, 6…
+  }
+  return idx + 1
 }
 
 const DEFAULT_SEAT_SIZE = 8
@@ -85,6 +107,8 @@ export function fillStraightSeats(
   const effectiveCols = config.autoFit ? fitCols : Math.min(config.seatsPerRow, fitCols)
 
   const seats: SeatPosition[] = []
+  const direction = config.numberingDirection ?? 'ltr'
+  const style = config.numberingStyle ?? 'sequential'
 
   for (let row = 0; row < effectiveRows; row++) {
     const rowLabel = getRowLabel(row, config.labelScheme, config.startLabel)
@@ -92,34 +116,35 @@ export function fillStraightSeats(
 
     if (localY > bounds.maxY - padY) break
 
-    let seatNum = 0
+    // Collect valid seat positions first, then apply numbering scheme
+    const rowPoints: { worldX: number; worldY: number }[] = []
     let aisleOffset = 0
     for (let col = 0; col < effectiveCols; col++) {
-      // Add aisle gap after specified seat numbers
-      if (aisleSet.has(col)) {
-        aisleOffset += aisleWidth
-      }
+      if (aisleSet.has(col)) aisleOffset += aisleWidth
 
       const localX = bounds.minX + padX + col * cellWidth + seatSize + aisleOffset
-
       if (localX > bounds.maxX - padX) break
 
-      // Rotate point back to canvas space to check polygon intersection
       const dx = localX - cx
       const dy = localY - cy
       const worldX = cx + dx * Math.cos(rotationRad) - dy * Math.sin(rotationRad)
       const worldY = cy + dx * Math.sin(rotationRad) + dy * Math.cos(rotationRad)
 
       if (pointInPolygon(worldX, worldY, polygon)) {
-        seatNum++
-        seats.push({
-          rowLabel,
-          seatNumber: seatNum,
-          label: `${rowLabel}${seatNum}`,
-          x: worldX,
-          y: worldY,
-        })
+        rowPoints.push({ worldX, worldY })
       }
+    }
+
+    for (let i = 0; i < rowPoints.length; i++) {
+      const { worldX, worldY } = rowPoints[i]
+      const seatNumber = getSeatNumber(i, rowPoints.length, direction, style)
+      seats.push({
+        rowLabel,
+        seatNumber,
+        label: `${rowLabel}${seatNumber}`,
+        x: worldX,
+        y: worldY,
+      })
     }
   }
 
@@ -176,15 +201,19 @@ export function fillArcSeats(
     // Distribute seats evenly along the arc
     const angleStep = arcSpan / (maxSeats + 1)
 
+    const direction = config.numberingDirection ?? 'ltr'
+    const style = config.numberingStyle ?? 'sequential'
+
     for (let i = 0; i < maxSeats; i++) {
       const angle = startRad + angleStep * (i + 1)
       const x = cx + radius * Math.cos(angle)
       const y = cy + radius * Math.sin(angle)
+      const seatNumber = getSeatNumber(i, maxSeats, direction, style)
 
       seats.push({
         rowLabel,
-        seatNumber: i + 1,
-        label: `${rowLabel}${i + 1}`,
+        seatNumber,
+        label: `${rowLabel}${seatNumber}`,
         x,
         y,
       })
