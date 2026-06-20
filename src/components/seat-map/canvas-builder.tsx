@@ -8,7 +8,7 @@ import {
   useMemo,
   memo,
 } from 'react'
-import { Stage, Layer, Line, Circle, Rect, Text, Group, Image as KonvaImage } from 'react-konva'
+import { Stage, Layer, Line, Circle, Ellipse, Rect, Text, Group, Image as KonvaImage } from 'react-konva'
 import type Konva from 'konva'
 import { useCanvasState } from './canvas-state'
 import { CanvasToolbar } from './canvas-toolbar'
@@ -25,6 +25,7 @@ const SeatDot = memo(function SeatDot({
   isSelected,
   isMultiSelected,
   onClick,
+  onDblClick,
   radius,
   shape,
   tierColor,
@@ -36,7 +37,8 @@ const SeatDot = memo(function SeatDot({
   status: string
   isSelected: boolean
   isMultiSelected?: boolean
-  onClick?: () => void
+  onClick?: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void
+  onDblClick?: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void
   radius: number
   shape: SeatShape
   tierColor?: string
@@ -44,9 +46,27 @@ const SeatDot = memo(function SeatDot({
   onDragEnd?: (cx: number, cy: number) => void
 }) {
   const r = isSelected ? radius + 2 : radius
+  // Stop the click from bubbling to the parent section Group — otherwise the
+  // section's onClick fires SELECT, which wipes the seat selection we just made.
+  const handleClick = onClick
+    ? (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+        e.cancelBubble = true
+        onClick(e)
+      }
+    : undefined
+  const handleDblClick = onDblClick
+    ? (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+        e.cancelBubble = true
+        onDblClick(e)
+      }
+    : undefined
   // Report the new CENTER after a drag (square renders from its top-left corner).
+  // cancelBubble is critical: without it the seat's dragEnd bubbles to the
+  // section Group, whose handler reads e.target's coords as a drag delta and
+  // shifts the ENTIRE section off-screen.
   const handleDragEnd = onDragEnd
     ? (e: Konva.KonvaEventObject<DragEvent>) => {
+        e.cancelBubble = true
         const node = e.target
         const cx = shape === 'square' ? node.x() + r : node.x()
         const cy = shape === 'square' ? node.y() + r : node.y()
@@ -61,7 +81,7 @@ const SeatDot = memo(function SeatDot({
   const stroke = isSelected ? '#ffffff' : isMultiSelected ? '#fbbf24' : status === 'available' ? (tierColor ?? '#16a34a') : undefined
   const strokeW = isSelected || isMultiSelected ? 2.5 : 1
 
-  const listenProp = !!(onClick || draggable)
+  const listenProp = !!(onClick || onDblClick || draggable)
 
   if (shape === 'square') {
     return (
@@ -76,8 +96,10 @@ const SeatDot = memo(function SeatDot({
         strokeWidth={strokeW}
         perfectDrawEnabled={false}
         listening={listenProp}
-        onClick={onClick}
-        onTap={onClick}
+        onClick={handleClick}
+        onTap={handleClick}
+        onDblClick={handleDblClick}
+        onDblTap={handleDblClick}
         hitStrokeWidth={8}
         draggable={draggable}
         onDragEnd={handleDragEnd}
@@ -100,8 +122,10 @@ const SeatDot = memo(function SeatDot({
         strokeWidth={strokeW}
         perfectDrawEnabled={false}
         listening={listenProp}
-        onClick={onClick}
-        onTap={onClick}
+        onClick={handleClick}
+        onTap={handleClick}
+        onDblClick={handleDblClick}
+        onDblTap={handleDblClick}
         hitStrokeWidth={8}
         draggable={draggable}
         onDragEnd={handleDragEnd}
@@ -139,6 +163,7 @@ const SectionGroup = memo(function SectionGroup({
   selectedSeatId,
   selectedSeatIds,
   onSeatClick,
+  onSeatDblClick,
   onSeatDragEnd,
   seatRadius,
   seatShape,
@@ -149,10 +174,11 @@ const SectionGroup = memo(function SectionGroup({
   isSelected: boolean
   draggable: boolean
   onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void
-  onClick: () => void
+  onClick: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void
   selectedSeatId: string | null
   selectedSeatIds: string[]
-  onSeatClick?: (seatId: string) => void
+  onSeatClick?: (seatId: string, e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void
+  onSeatDblClick?: (seatId: string, e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void
   onSeatDragEnd?: (seatId: string, cx: number, cy: number) => void
   seatRadius: number
   seatShape: SeatShape
@@ -170,14 +196,16 @@ const SectionGroup = memo(function SectionGroup({
       onDragEnd={onDragEnd}
       onClick={onClick}
       onTap={onClick}
+      name="section-group"
     >
-      {/* Polygon fill */}
+      {/* Polygon fill + configurable border */}
       <Line
         points={section.polygonPoints}
         closed
         fill={isSelected ? section.color + '60' : section.color + '30'}
-        stroke={isSelected ? '#ffffff' : section.color}
-        strokeWidth={isSelected ? 3 : 1.5}
+        stroke={isSelected ? '#ffffff' : (section.borderColor || section.color)}
+        strokeWidth={isSelected ? 3 : (section.borderWidth ?? 1.5)}
+        dash={!isSelected && section.borderStyle === 'dashed' ? [8, 4] : undefined}
         hitStrokeWidth={12}
         perfectDrawEnabled={false}
       />
@@ -185,7 +213,7 @@ const SectionGroup = memo(function SectionGroup({
       <Text
         x={center.x - 40}
         y={center.y - 8}
-        text={section.label}
+        text={section.locked ? `🔒 ${section.label}` : section.label}
         fill="#ffffff"
         fontSize={14}
         fontStyle="bold"
@@ -205,7 +233,8 @@ const SectionGroup = memo(function SectionGroup({
             status={seat.status}
             isSelected={seat.id === selectedSeatId}
             isMultiSelected={selectedSeatIds.includes(seat.id)}
-            onClick={onSeatClick ? () => onSeatClick(seat.id) : undefined}
+            onClick={onSeatClick ? (e) => onSeatClick(seat.id, e) : undefined}
+            onDblClick={onSeatDblClick ? (e) => onSeatDblClick(seat.id, e) : undefined}
             radius={seatRadius}
             shape={seatShape}
             tierColor={resolvedTier ? tierColorMap?.get(resolvedTier) : undefined}
@@ -409,7 +438,14 @@ export function CanvasBuilder({
             seatId: state.selectedSeatId,
           })
         } else if (state.selectedIds.length > 0) {
-          dispatchWithHistory({ type: 'DELETE_SECTION', id: state.selectedIds[0] })
+          // Selection can hold section IDs and/or decorative shape IDs
+          const shapeIds = new Set(state.backgroundShapes.map((s) => s.id))
+          const selectedShapeIds = state.selectedIds.filter((id) => shapeIds.has(id))
+          const selectedSectionIds = state.selectedIds.filter((id) => !shapeIds.has(id))
+          selectedShapeIds.forEach((id) => dispatchWithHistory({ type: 'DELETE_SHAPE', id }))
+          if (selectedSectionIds.length > 0) {
+            dispatchWithHistory({ type: 'DELETE_SECTIONS', ids: selectedSectionIds })
+          }
           dispatch({ type: 'DESELECT_ALL' })
         }
       }
@@ -425,7 +461,7 @@ export function CanvasBuilder({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [readOnly, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, undo, redo, dispatch, dispatchWithHistory])
+  }, [readOnly, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, state.backgroundShapes, undo, redo, dispatch, dispatchWithHistory])
 
   // ─── Zoom via Mouse Wheel ────────────────────────────────────────────
   const handleWheel = useCallback(
@@ -725,25 +761,47 @@ export function CanvasBuilder({
 
   // ─── Section interactions ────────────────────────────────────────────
   const handleSectionClick = useCallback(
-    (sectionId: string) => {
+    (sectionId: string, e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
       if (readOnly) return
       if (
         state.tool === 'select' ||
         state.tool === 'draw-seat'
       ) {
-        dispatch({ type: 'SELECT', ids: [sectionId] })
+        // Shift/Cmd-click toggles the section into a multi-selection (select tool only)
+        const additive = state.tool === 'select' && !!e && (
+          ('shiftKey' in e.evt && e.evt.shiftKey) ||
+          ('metaKey' in e.evt && e.evt.metaKey) ||
+          ('ctrlKey' in e.evt && e.evt.ctrlKey)
+        )
+        if (additive) {
+          dispatch({ type: 'TOGGLE_SELECT', id: sectionId })
+        } else {
+          dispatch({ type: 'SELECT', ids: [sectionId] })
+        }
       }
     },
     [readOnly, state.tool, dispatch]
   )
 
-  // ─── Seat click to select (click toggles, for multi-select) ─────────
+  // ─── Seat click to select ───────────────────────────────────────────
+  // Single click toggles the seat in/out of the selection — so clicking several
+  // seats builds a multi-selection for batch ops (Straighten, pricing, etc.).
+  // Double click isolates a single seat (see handleSeatDblClick) for per-seat
+  // editing.
   const handleSeatClick = useCallback(
-    (seatId: string) => {
-      if (readOnly) return
-      if (state.tool === 'select') {
-        dispatch({ type: 'TOGGLE_SELECT_SEAT', seatId })
-      }
+    (seatId: string, _e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+      if (readOnly || state.tool !== 'select') return
+      dispatch({ type: 'TOGGLE_SELECT_SEAT', seatId })
+    },
+    [readOnly, state.tool, dispatch]
+  )
+
+  // Double click selects only that seat, opening the single-seat panel
+  // (per-seat price override, block/enable, delete).
+  const handleSeatDblClick = useCallback(
+    (seatId: string, _e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+      if (readOnly || state.tool !== 'select') return
+      dispatch({ type: 'SELECT_SEAT', seatId })
     },
     [readOnly, state.tool, dispatch]
   )
@@ -759,6 +817,10 @@ export function CanvasBuilder({
   const handleSectionDragEnd = useCallback(
     (sectionId: string, e: Konva.KonvaEventObject<DragEvent>) => {
       if (readOnly || state.tool !== 'select') return
+      // Only handle drags of the section frame itself. A seat drag that bubbled
+      // up here would otherwise be misread as a section move (e.target is the
+      // seat, not the group) and translate the whole section into oblivion.
+      if (!e.target.hasName('section-group')) return
 
       const section = state.sections.find((s) => s.id === sectionId)
       if (!section) return
@@ -877,9 +939,55 @@ export function CanvasBuilder({
     [dispatchWithHistory, state.canvasWidth, state.canvasHeight, onUploadImageFile]
   )
 
-  // ─── Selected section ───────────────────────────────────────────────
-  const selectedSection = state.sections.find((s) =>
-    state.selectedIds.includes(s.id)
+  // ─── Selected section(s) / shape ────────────────────────────────────
+  const selectedSections = useMemo(
+    () => state.sections.filter((s) => state.selectedIds.includes(s.id)),
+    [state.sections, state.selectedIds]
+  )
+  const selectedSection = selectedSections.length === 1 ? selectedSections[0] : undefined
+  // When a single seat is selected, surface its parent section so the seat-edit
+  // panel (and per-seat price override) render — the section itself need not be
+  // in selectedIds.
+  const seatParentSection = useMemo(() => {
+    if (state.selectedSeatIds.length !== 1 || !state.selectedSeatId) return null
+    return state.sections.find((s) => s.seats.some((seat) => seat.id === state.selectedSeatId)) ?? null
+  }, [state.sections, state.selectedSeatId, state.selectedSeatIds])
+  const selectedShape = useMemo(
+    () => state.backgroundShapes.find((s) => state.selectedIds.includes(s.id) && s.type !== 'image') ?? null,
+    [state.backgroundShapes, state.selectedIds]
+  )
+
+  // ─── Add a decorative shape / zone preset at the viewport center ─────
+  const handleAddShape = useCallback(
+    (shape: Partial<BackgroundShape> & { type: BackgroundShape['type'] }) => {
+      const cx = (stageSize.width / 2 - state.panOffset.x) / state.zoom
+      const cy = (stageSize.height / 2 - state.panOffset.y) / state.zoom
+      const w = shape.width ?? 120
+      const h = shape.height ?? 70
+      // Drop centered on the viewport (rect/triangle/ellipse use top-left x/y)
+      const isCentered = shape.type === 'circle'
+      const newShape: BackgroundShape = {
+        id: crypto.randomUUID(),
+        type: shape.type,
+        x: isCentered ? cx : cx - w / 2,
+        y: isCentered ? cy : cy - h / 2,
+        width: w,
+        height: h,
+        radius: shape.radius ?? 45,
+        points: shape.points,
+        fill: shape.fill ?? '#334155',
+        stroke: shape.stroke,
+        strokeWidth: shape.strokeWidth ?? 0,
+        label: shape.label,
+        fontSize: shape.fontSize ?? 14,
+        fontColor: shape.fontColor ?? '#ffffff',
+        rotation: 0,
+      }
+      dispatchWithHistory({ type: 'ADD_SHAPE', shape: newShape })
+      dispatch({ type: 'SELECT', ids: [newShape.id] })
+      dispatch({ type: 'SET_TOOL', tool: 'select' })
+    },
+    [stageSize, state.panOffset, state.zoom, dispatchWithHistory, dispatch]
   )
 
   // ─── Tier colors ────────────────────────────────────────────────────
@@ -944,13 +1052,13 @@ export function CanvasBuilder({
       return `Row ${state.dropRow} Seat ${state.dropSeatNumber} • Click to place or drag to place a row`
     }
     if (state.selectedSeatIds.length > 1) {
-      return `${state.selectedSeatIds.length} seats selected • Renumber in properties panel • Delete to remove`
+      return `${state.selectedSeatIds.length} seats selected • Align/renumber/price in panel • Delete to remove`
     }
     if (state.tool === 'select' && state.selectedSeatId) {
-      return 'Press Delete/Backspace to remove seat • Esc to deselect'
+      return 'Seat selected • Click more seats to add • Double-click a seat to edit just it • Delete to remove'
     }
     if (state.tool === 'select' && state.selectedIds.length > 0) {
-      return 'Drag to move • Delete to remove section • Click a seat to select it'
+      return 'Drag to move • Delete to remove section • Click seats to select, double-click to edit one'
     }
     return null
   }, [state.tool, state.drawingPoints, state.isDrawing, state.selectedIds, state.selectedSeatId, state.dropRow, state.dropSeatNumber])
@@ -1010,7 +1118,13 @@ export function CanvasBuilder({
               <RenderBackgroundShape
                 key={shape.id}
                 shape={shape}
-                draggable={!readOnly && state.tool === 'select'}
+                draggable={!readOnly && state.tool === 'select' && !shape.locked}
+                isSelected={state.selectedIds.includes(shape.id)}
+                onSelect={shape.type === 'image' ? undefined : (e) => {
+                  if (readOnly || state.tool !== 'select') return
+                  e.cancelBubble = true
+                  dispatch({ type: 'SELECT', ids: [shape.id] })
+                }}
                 onDragEnd={(newX, newY) => {
                   dispatchWithHistory({ type: 'UPDATE_SHAPE', id: shape.id, updates: { x: newX, y: newY } })
                 }}
@@ -1022,12 +1136,13 @@ export function CanvasBuilder({
                 key={section.id}
                 section={section}
                 isSelected={state.selectedIds.includes(section.id)}
-                draggable={!readOnly && state.tool === 'select'}
+                draggable={!readOnly && state.tool === 'select' && !section.locked}
                 onDragEnd={(e) => handleSectionDragEnd(section.id, e)}
-                onClick={() => handleSectionClick(section.id)}
+                onClick={(e) => handleSectionClick(section.id, e)}
                 selectedSeatId={state.selectedSeatId}
                 selectedSeatIds={state.selectedSeatIds}
                 onSeatClick={state.tool === 'select' ? handleSeatClick : undefined}
+                onSeatDblClick={state.tool === 'select' ? handleSeatDblClick : undefined}
                 onSeatDragEnd={state.tool === 'select' ? (seatId, cx, cy) => handleSeatDragEnd(section.id, seatId, cx, cy) : undefined}
                 seatsDraggable={!readOnly && state.tool === 'select'}
                 seatRadius={state.seatRadius}
@@ -1170,7 +1285,9 @@ export function CanvasBuilder({
       {/* Right Properties Panel */}
       {!readOnly && (
         <CanvasProperties
-          selectedSection={selectedSection || null}
+          selectedSection={seatParentSection || selectedSection || null}
+          selectedSections={seatParentSection ? [] : selectedSections}
+          selectedShape={selectedShape}
           sections={state.sections}
           tool={state.tool}
           tiers={tiers}
@@ -1180,19 +1297,31 @@ export function CanvasBuilder({
           onUpdateSection={(id, updates) =>
             dispatchWithHistory({ type: 'UPDATE_SECTION', id, updates })
           }
+          onUpdateSections={(ids, updates) =>
+            dispatchWithHistory({ type: 'UPDATE_SECTIONS', ids, updates })
+          }
           onDeleteSection={(id) => {
             dispatchWithHistory({ type: 'DELETE_SECTION', id })
+            dispatch({ type: 'DESELECT_ALL' })
+          }}
+          onDeleteSections={(ids) => {
+            dispatchWithHistory({ type: 'DELETE_SECTIONS', ids })
             dispatch({ type: 'DESELECT_ALL' })
           }}
           onSelectSection={(id) => {
             dispatch({ type: 'SELECT', ids: [id] })
           }}
+          onAlignSeats={(seatIds, alignMode) => {
+            dispatchWithHistory({ type: 'ALIGN_SEATS', seatIds, mode: alignMode })
+          }}
+          onAddShape={handleAddShape}
           backgroundShapes={state.backgroundShapes.filter(s => s.type === 'image')}
           onUpdateShape={(id, updates) => {
             dispatchWithHistory({ type: 'UPDATE_SHAPE', id, updates })
           }}
           onDeleteShape={(id) => {
             dispatchWithHistory({ type: 'DELETE_SHAPE', id })
+            dispatch({ type: 'DESELECT_ALL' })
           }}
           dropRow={state.dropRow}
           dropSeatNumber={state.dropSeatNumber}
@@ -1270,11 +1399,15 @@ function getSectionCenter(points: number[]): { x: number; y: number } {
 const RenderBackgroundShape = memo(function RenderBackgroundShape({
   shape,
   draggable,
+  isSelected,
   onDragEnd,
+  onSelect,
 }: {
   shape: BackgroundShape
   draggable?: boolean
+  isSelected?: boolean
   onDragEnd?: (newX: number, newY: number) => void
+  onSelect?: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void
 }) {
   const handleDragEnd = useCallback(
     (e: Konva.KonvaEventObject<DragEvent>) => {
@@ -1283,36 +1416,91 @@ const RenderBackgroundShape = memo(function RenderBackgroundShape({
     [onDragEnd]
   )
 
-  if (shape.type === 'rect') {
-    return (
-      <Rect
-        x={shape.x}
-        y={shape.y}
-        width={shape.width || 100}
-        height={shape.height || 60}
-        fill={shape.fill}
-        stroke={shape.stroke}
-        strokeWidth={shape.strokeWidth || 1}
-        rotation={shape.rotation || 0}
-        draggable={draggable}
-        onDragEnd={handleDragEnd}
+  // Shared styling for decorative zone shapes (rect/circle/ellipse/triangle)
+  const stroke = isSelected ? '#ffffff' : (shape.stroke || undefined)
+  const strokeWidth = isSelected ? 2.5 : (shape.strokeWidth || 0)
+  const dash = isSelected ? [6, 4] : undefined
+  const common = {
+    draggable,
+    onDragEnd: handleDragEnd,
+    onClick: onSelect,
+    onTap: onSelect,
+    rotation: shape.rotation || 0,
+    perfectDrawEnabled: false,
+  }
+
+  // Centered label for a zone of the given box size (local coords inside a Group)
+  const zoneLabel = (boxW: number, boxH: number) =>
+    shape.label ? (
+      <Text
+        text={shape.label}
+        fill={shape.fontColor || '#ffffff'}
+        fontSize={shape.fontSize || 14}
+        fontStyle="bold"
+        width={boxW}
+        y={boxH / 2 - (shape.fontSize || 14) / 2}
+        align="center"
+        listening={false}
         perfectDrawEnabled={false}
       />
+    ) : null
+
+  if (shape.type === 'rect') {
+    const w = shape.width || 100, h = shape.height || 60
+    return (
+      <Group x={shape.x} y={shape.y} {...common}>
+        <Rect width={w} height={h} fill={shape.fill} stroke={stroke} strokeWidth={strokeWidth} dash={dash} cornerRadius={4} perfectDrawEnabled={false} />
+        {zoneLabel(w, h)}
+      </Group>
     )
   }
   if (shape.type === 'circle') {
+    const r = shape.radius || 40
     return (
-      <Circle
-        x={shape.x}
-        y={shape.y}
-        radius={shape.radius || 40}
-        fill={shape.fill}
-        stroke={shape.stroke}
-        strokeWidth={shape.strokeWidth || 1}
-        draggable={draggable}
-        onDragEnd={handleDragEnd}
-        perfectDrawEnabled={false}
-      />
+      <Group x={shape.x} y={shape.y} {...common}>
+        <Circle radius={r} fill={shape.fill} stroke={stroke} strokeWidth={strokeWidth} dash={dash} perfectDrawEnabled={false} />
+        {shape.label ? (
+          <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={r * 2} x={-r} y={-(shape.fontSize || 14) / 2} align="center" listening={false} perfectDrawEnabled={false} />
+        ) : null}
+      </Group>
+    )
+  }
+  if (shape.type === 'ellipse') {
+    const w = shape.width || 120, h = shape.height || 70
+    return (
+      <Group x={shape.x} y={shape.y} {...common}>
+        <Ellipse x={w / 2} y={h / 2} radiusX={w / 2} radiusY={h / 2} fill={shape.fill} stroke={stroke} strokeWidth={strokeWidth} dash={dash} perfectDrawEnabled={false} />
+        {zoneLabel(w, h)}
+      </Group>
+    )
+  }
+  if (shape.type === 'triangle') {
+    const w = shape.width || 100, h = shape.height || 90
+    return (
+      <Group x={shape.x} y={shape.y} {...common}>
+        <Line points={[w / 2, 0, w, h, 0, h]} closed fill={shape.fill} stroke={stroke} strokeWidth={strokeWidth} dash={dash} perfectDrawEnabled={false} />
+        {shape.label ? (
+          <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={w} y={h * 0.55} align="center" listening={false} perfectDrawEnabled={false} />
+        ) : null}
+      </Group>
+    )
+  }
+  if (shape.type === 'line') {
+    // Points are stored relative to (x,y); the Group carries the position so a
+    // drag is just an x/y update (same model as the other zone shapes).
+    const pts = shape.points && shape.points.length >= 4 ? shape.points : [0, 0, 120, 0]
+    return (
+      <Group x={shape.x} y={shape.y} {...common}>
+        <Line
+          points={pts}
+          stroke={isSelected ? '#ffffff' : (shape.stroke || shape.fill || '#94a3b8')}
+          strokeWidth={isSelected ? 4 : (shape.strokeWidth || 3)}
+          dash={isSelected ? [6, 4] : undefined}
+          hitStrokeWidth={12}
+          lineCap="round"
+          perfectDrawEnabled={false}
+        />
+      </Group>
     )
   }
   if (shape.type === 'text') {
@@ -1323,8 +1511,13 @@ const RenderBackgroundShape = memo(function RenderBackgroundShape({
         text={shape.label || 'Text'}
         fill={shape.fill}
         fontSize={shape.fontSize || 16}
+        fontStyle="bold"
         rotation={shape.rotation || 0}
+        stroke={isSelected ? '#ffffff' : undefined}
+        strokeWidth={isSelected ? 0.5 : 0}
         draggable={draggable}
+        onClick={onSelect}
+        onTap={onSelect}
         onDragEnd={handleDragEnd}
         perfectDrawEnabled={false}
       />

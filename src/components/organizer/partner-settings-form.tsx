@@ -78,6 +78,10 @@ interface PartnerSettingsFormProps {
             }
             sections?: StorefrontSection[]
             selected_template?: TemplateName | null
+            ticket?: {
+                message?: string
+                banner_url?: string
+            }
         }
     }
 }
@@ -134,6 +138,10 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             },
             sections: initialData.branding?.sections || [],
             selected_template: initialData.branding?.selected_template || null,
+            ticket: {
+                message: initialData.branding?.ticket?.message || '',
+                banner_url: initialData.branding?.ticket?.banner_url || '',
+            },
         }
     })
 
@@ -144,6 +152,10 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
     const [coverPreview, setCoverPreview] = useState<string | null>(initialData.cover_image_url || null)
     const [coverFile, setCoverFile] = useState<File | null>(null)
     const coverInputRef = useRef<HTMLInputElement>(null)
+
+    const [ticketBannerPreview, setTicketBannerPreview] = useState<string | null>(initialData.branding?.ticket?.banner_url || null)
+    const [ticketBannerFile, setTicketBannerFile] = useState<File | null>(null)
+    const ticketBannerInputRef = useRef<HTMLInputElement>(null)
 
     const handleInputChange = (field: string, value: any) => {
         setFormData(prev => ({ ...prev, [field]: value }))
@@ -158,7 +170,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
         setSuccessMessage(null)
     }
 
-    const handleBrandingChange = (category: 'colors' | 'design' | 'announcement' | 'content', field: string, value: any) => {
+    const handleBrandingChange = (category: 'colors' | 'design' | 'announcement' | 'content' | 'ticket', field: string, value: any) => {
         setFormData(prev => {
             const currentCategory = (prev.branding[category] || {}) as Record<string, any>
             return {
@@ -200,7 +212,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
         setSuccessMessage(null)
     }
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'cover') => {
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'cover' | 'banner') => {
         const file = e.target.files?.[0]
         if (!file) return
 
@@ -220,6 +232,9 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
         if (type === 'logo') {
             setLogoFile(file)
             setLogoPreview(previewUrl)
+        } else if (type === 'banner') {
+            setTicketBannerFile(file)
+            setTicketBannerPreview(previewUrl)
         } else {
             setCoverFile(file)
             setCoverPreview(previewUrl)
@@ -250,6 +265,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
 
             if (logoFile) data.append('profile_photo', logoFile)
             if (coverFile) data.append('cover_image', coverFile)
+            if (ticketBannerFile) data.append('ticket_banner', ticketBannerFile)
 
             if (initialData.profile_photo_url) data.append('profile_photo_url', initialData.profile_photo_url)
             if (initialData.cover_image_url) data.append('cover_image_url', initialData.cover_image_url)
@@ -958,6 +974,82 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                             </Card>
                         </div>
                     </div>
+
+                    {/* Ticket Appearance */}
+                    <Card className="max-w-4xl mt-8">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <ImageIcon className="h-5 w-5" /> Ticket Appearance
+                            </CardTitle>
+                            <CardDescription>
+                                Customize the hosted ticket page buyers see. Your logo and accent color
+                                (set above) are applied automatically; add a banner and a note below.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            {/* Banner */}
+                            <div className="space-y-2">
+                                <Label>Ticket banner</Label>
+                                <p className="text-xs text-muted-foreground">
+                                    Shown at the top of the ticket page. Falls back to the event cover if empty. Max 5MB.
+                                </p>
+                                <div className="flex items-center gap-4">
+                                    <div className="h-24 w-44 overflow-hidden rounded-lg border bg-muted/40 flex items-center justify-center shrink-0">
+                                        {ticketBannerPreview ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={ticketBannerPreview} alt="" className="h-full w-full object-cover" />
+                                        ) : (
+                                            <ImageIcon className="h-6 w-6 text-muted-foreground/50" />
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        <input
+                                            ref={ticketBannerInputRef}
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => handleFileChange(e, 'banner')}
+                                        />
+                                        <Button type="button" variant="outline" size="sm" onClick={() => ticketBannerInputRef.current?.click()}>
+                                            <Upload className="h-4 w-4 mr-2" /> {ticketBannerPreview ? 'Replace' : 'Upload'}
+                                        </Button>
+                                        {ticketBannerPreview && (
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-destructive hover:text-destructive"
+                                                onClick={() => {
+                                                    setTicketBannerFile(null)
+                                                    setTicketBannerPreview(null)
+                                                    handleBrandingChange('ticket', 'banner_url', '')
+                                                    if (ticketBannerInputRef.current) ticketBannerInputRef.current.value = ''
+                                                }}
+                                            >
+                                                <X className="h-4 w-4 mr-2" /> Remove
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Custom message */}
+                            <div className="space-y-2">
+                                <Label htmlFor="ticket-message">Custom message</Label>
+                                <p className="text-xs text-muted-foreground">
+                                    A note shown on every ticket — e.g. &quot;Doors at 7PM. Bring a valid ID.&quot;
+                                </p>
+                                <Textarea
+                                    id="ticket-message"
+                                    rows={3}
+                                    maxLength={280}
+                                    value={formData.branding.ticket?.message || ''}
+                                    onChange={(e) => handleBrandingChange('ticket', 'message', e.target.value)}
+                                    placeholder="Doors at 7PM. Bring a valid ID."
+                                />
+                            </div>
+                        </CardContent>
+                    </Card>
                 </TabsContent>
 
                 <TabsContent value="sections">

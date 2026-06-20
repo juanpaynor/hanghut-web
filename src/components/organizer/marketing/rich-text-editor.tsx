@@ -4,11 +4,12 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
-import { Bold, Italic, List, ListOrdered, Link as LinkIcon, Undo, Redo, Strikethrough, Image as ImageIcon } from 'lucide-react'
+import { Bold, Italic, List, ListOrdered, Link as LinkIcon, Undo, Redo, Strikethrough, Image as ImageIcon, Code2, Eye, PenLine } from 'lucide-react'
 import { Toggle } from '@/components/ui/toggle'
 import { Separator } from '@/components/ui/separator'
 import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
+import { cn } from '@/lib/utils'
 
 interface RichTextEditorProps {
     value: string
@@ -16,8 +17,12 @@ interface RichTextEditorProps {
     disabled?: boolean
 }
 
+type EditorTab = 'visual' | 'html' | 'preview'
+
 export function RichTextEditor({ value, onChange, disabled }: RichTextEditorProps) {
     const [uploading, setUploading] = useState(false)
+    const [activeTab, setActiveTab] = useState<EditorTab>('visual')
+    const [rawHtml, setRawHtml] = useState(value)
     const supabase = createClient()
 
     const editor = useEditor({
@@ -46,6 +51,19 @@ export function RichTextEditor({ value, onChange, disabled }: RichTextEditorProp
             },
         },
     })
+
+    function switchTab(tab: EditorTab) {
+        if (tab === activeTab) return
+        if (activeTab === 'visual' && editor) {
+            // sync visual → raw
+            const html = editor.getHTML()
+            setRawHtml(html)
+        } else if (tab === 'visual' && editor) {
+            // sync raw → visual
+            editor.commands.setContent(rawHtml)
+        }
+        setActiveTab(tab)
+    }
 
     if (!editor) {
         return null
@@ -111,90 +129,144 @@ export function RichTextEditor({ value, onChange, disabled }: RichTextEditorProp
         editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
     }
 
+    const tabBtn = (tab: EditorTab, icon: React.ReactNode, label: string) => (
+        <button
+            type="button"
+            onClick={() => switchTab(tab)}
+            className={cn(
+                'flex items-center gap-1 px-2.5 py-1 text-xs rounded font-medium transition-colors',
+                activeTab === tab
+                    ? 'bg-background shadow-sm text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+            )}
+        >
+            {icon}
+            {label}
+        </button>
+    )
+
     return (
         <div className="flex flex-col border rounded-md">
             <div className="flex items-center gap-1 p-1 border-b bg-muted/50">
-                <Toggle
-                    size="sm"
-                    pressed={editor.isActive('bold')}
-                    onPressedChange={() => editor.chain().focus().toggleBold().run()}
-                    disabled={disabled}
-                >
-                    <Bold className="h-4 w-4" />
-                </Toggle>
-                <Toggle
-                    size="sm"
-                    pressed={editor.isActive('italic')}
-                    onPressedChange={() => editor.chain().focus().toggleItalic().run()}
-                    disabled={disabled}
-                >
-                    <Italic className="h-4 w-4" />
-                </Toggle>
-                <Toggle
-                    size="sm"
-                    pressed={editor.isActive('strike')}
-                    onPressedChange={() => editor.chain().focus().toggleStrike().run()}
-                    disabled={disabled}
-                >
-                    <Strikethrough className="h-4 w-4" />
-                </Toggle>
+                {activeTab === 'visual' && (
+                    <>
+                        <Toggle
+                            size="sm"
+                            pressed={editor.isActive('bold')}
+                            onPressedChange={() => editor.chain().focus().toggleBold().run()}
+                            disabled={disabled}
+                        >
+                            <Bold className="h-4 w-4" />
+                        </Toggle>
+                        <Toggle
+                            size="sm"
+                            pressed={editor.isActive('italic')}
+                            onPressedChange={() => editor.chain().focus().toggleItalic().run()}
+                            disabled={disabled}
+                        >
+                            <Italic className="h-4 w-4" />
+                        </Toggle>
+                        <Toggle
+                            size="sm"
+                            pressed={editor.isActive('strike')}
+                            onPressedChange={() => editor.chain().focus().toggleStrike().run()}
+                            disabled={disabled}
+                        >
+                            <Strikethrough className="h-4 w-4" />
+                        </Toggle>
 
-                <Separator orientation="vertical" className="mx-1 h-6" />
+                        <Separator orientation="vertical" className="mx-1 h-6" />
 
-                <Toggle
-                    size="sm"
-                    pressed={editor.isActive('bulletList')}
-                    onPressedChange={() => editor.chain().focus().toggleBulletList().run()}
-                    disabled={disabled}
-                >
-                    <List className="h-4 w-4" />
-                </Toggle>
-                <Toggle
-                    size="sm"
-                    pressed={editor.isActive('orderedList')}
-                    onPressedChange={() => editor.chain().focus().toggleOrderedList().run()}
-                    disabled={disabled}
-                >
-                    <ListOrdered className="h-4 w-4" />
-                </Toggle>
+                        <Toggle
+                            size="sm"
+                            pressed={editor.isActive('bulletList')}
+                            onPressedChange={() => editor.chain().focus().toggleBulletList().run()}
+                            disabled={disabled}
+                        >
+                            <List className="h-4 w-4" />
+                        </Toggle>
+                        <Toggle
+                            size="sm"
+                            pressed={editor.isActive('orderedList')}
+                            onPressedChange={() => editor.chain().focus().toggleOrderedList().run()}
+                            disabled={disabled}
+                        >
+                            <ListOrdered className="h-4 w-4" />
+                        </Toggle>
 
-                <Separator orientation="vertical" className="mx-1 h-6" />
+                        <Separator orientation="vertical" className="mx-1 h-6" />
 
-                <Toggle
-                    size="sm"
-                    pressed={editor.isActive('link')}
-                    onPressedChange={setLink}
-                    disabled={disabled}
-                >
-                    <LinkIcon className="h-4 w-4" />
-                </Toggle>
+                        <Toggle
+                            size="sm"
+                            pressed={editor.isActive('link')}
+                            onPressedChange={setLink}
+                            disabled={disabled}
+                        >
+                            <LinkIcon className="h-4 w-4" />
+                        </Toggle>
 
-                <Toggle
-                    size="sm"
-                    onPressedChange={addImage}
-                    disabled={disabled || uploading}
-                >
-                    <ImageIcon className="h-4 w-4" />
-                </Toggle>
+                        <Toggle
+                            size="sm"
+                            onPressedChange={addImage}
+                            disabled={disabled || uploading}
+                        >
+                            <ImageIcon className="h-4 w-4" />
+                        </Toggle>
+
+                        <Separator orientation="vertical" className="mx-1 h-6" />
+
+                        <Toggle
+                            size="sm"
+                            onPressedChange={() => editor.chain().focus().undo().run()}
+                            disabled={!editor.can().undo() || disabled}
+                        >
+                            <Undo className="h-4 w-4" />
+                        </Toggle>
+                        <Toggle
+                            size="sm"
+                            onPressedChange={() => editor.chain().focus().redo().run()}
+                            disabled={!editor.can().redo() || disabled}
+                        >
+                            <Redo className="h-4 w-4" />
+                        </Toggle>
+                    </>
+                )}
 
                 <div className="flex-1" />
 
-                <Toggle
-                    size="sm"
-                    onPressedChange={() => editor.chain().focus().undo().run()}
-                    disabled={!editor.can().undo() || disabled}
-                >
-                    <Undo className="h-4 w-4" />
-                </Toggle>
-                <Toggle
-                    size="sm"
-                    onPressedChange={() => editor.chain().focus().redo().run()}
-                    disabled={!editor.can().redo() || disabled}
-                >
-                    <Redo className="h-4 w-4" />
-                </Toggle>
+                <div className="flex items-center gap-0.5 bg-muted rounded p-0.5">
+                    {tabBtn('visual', <PenLine className="h-3 w-3" />, 'Visual')}
+                    {tabBtn('html', <Code2 className="h-3 w-3" />, 'HTML')}
+                    {tabBtn('preview', <Eye className="h-3 w-3" />, 'Preview')}
+                </div>
             </div>
-            <EditorContent editor={editor} className="flex-1 p-2" />
+
+            {activeTab === 'visual' && (
+                <EditorContent editor={editor} className="flex-1 p-2" />
+            )}
+
+            {activeTab === 'html' && (
+                <textarea
+                    value={rawHtml}
+                    onChange={(e) => {
+                        setRawHtml(e.target.value)
+                        onChange(e.target.value)
+                    }}
+                    disabled={disabled}
+                    spellCheck={false}
+                    className="min-h-[300px] w-full resize-y p-3 font-mono text-xs bg-background text-foreground border-0 outline-none focus:ring-0 rounded-b-md"
+                    placeholder="Paste or type HTML here…"
+                />
+            )}
+
+            {activeTab === 'preview' && (
+                <iframe
+                    srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:sans-serif;font-size:14px;line-height:1.6;color:#111;max-width:600px;margin:24px auto;padding:0 16px}img{max-width:100%;border-radius:4px}a{color:#2563eb}</style></head><body>${rawHtml}</body></html>`}
+                    sandbox="allow-same-origin"
+                    title="Email preview"
+                    className="w-full min-h-[400px] border-0 rounded-b-md bg-white"
+                />
+            )}
         </div>
     )
 }

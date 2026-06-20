@@ -18,6 +18,8 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { createClient } from '@/lib/supabase/client'
+import { TicketQR } from '@/components/tickets/ticket-qr'
+import { Armchair } from 'lucide-react'
 import { cancelSubscription } from '@/lib/subscriptions/actions'
 import { YourPerks } from '@/components/storefront/your-perks'
 import type { PerkItem } from '@/lib/subscriptions/actions'
@@ -34,6 +36,7 @@ interface Subscription {
     partners: { id: string; business_name: string; slug: string; profile_photo_url: string | null } | null
 }
 
+interface SeatInfo { section?: string; row?: string; seat?: number; label?: string }
 interface TicketRow {
     id: string
     ticket_number: string
@@ -42,7 +45,19 @@ interface TicketRow {
     tier: string | null
     checked_in_at: string | null
     created_at: string
+    seat_info: SeatInfo | null
     events: { id: string; title: string; start_datetime: string; venue_name: string; cover_image_url: string | null } | null
+    purchase_intents: { access_token: string | null } | null
+}
+
+function seatLine(s: SeatInfo | null): string | null {
+    if (!s) return null
+    const parts: string[] = []
+    if (s.section) parts.push(s.section)
+    if (s.row) parts.push(`Row ${s.row}`)
+    if (s.seat != null) parts.push(`Seat ${s.seat}`)
+    if (parts.length === 0 && s.label) return s.label
+    return parts.length ? parts.join(' · ') : null
 }
 
 interface Claim {
@@ -311,6 +326,7 @@ function TicketCard({ ticket }: { ticket: TicketRow }) {
 
     const isPast = new Date(event.start_datetime) < new Date()
     const isCheckedIn = !!ticket.checked_in_at
+    const seat = seatLine(ticket.seat_info)
 
     return (
         <Card className={`overflow-hidden ${isPast ? 'opacity-60' : ''}`}>
@@ -344,17 +360,22 @@ function TicketCard({ ticket }: { ticket: TicketRow }) {
                                 {ticket.tier} · #{ticket.ticket_number}
                             </p>
                         )}
+                        {seat && (
+                            <p className="flex items-center gap-1.5 font-medium text-foreground">
+                                <Armchair className="h-3 w-3 shrink-0" />
+                                {seat}
+                            </p>
+                        )}
                     </div>
 
                     {!isPast && ticket.qr_code && (
                         <div className="mt-3">
                             {showQr ? (
                                 <div className="space-y-2">
-                                    <img
-                                        src={ticket.qr_code}
-                                        alt="QR Code"
-                                        className="w-32 h-32 rounded-lg border"
-                                    />
+                                    {/* qr_code is a payload string (not an image) — render it client-side */}
+                                    <div className={`w-32 ${isCheckedIn ? 'opacity-40' : ''}`}>
+                                        <TicketQR value={ticket.qr_code} size={128} />
+                                    </div>
                                     <button
                                         onClick={() => setShowQr(false)}
                                         className="text-xs text-muted-foreground hover:text-foreground"
@@ -363,10 +384,20 @@ function TicketCard({ ticket }: { ticket: TicketRow }) {
                                     </button>
                                 </div>
                             ) : (
-                                <Button size="sm" variant="outline" onClick={() => setShowQr(true)} className="gap-1.5">
-                                    <QrCode className="h-3.5 w-3.5" />
-                                    Show QR
-                                </Button>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button size="sm" variant="outline" onClick={() => setShowQr(true)} className="gap-1.5">
+                                        <QrCode className="h-3.5 w-3.5" />
+                                        Show QR
+                                    </Button>
+                                    {ticket.purchase_intents?.access_token && (
+                                        <Button asChild size="sm" variant="ghost" className="gap-1.5">
+                                            <Link href={`/t/${ticket.purchase_intents.access_token}`} target="_blank">
+                                                <Link2 className="h-3.5 w-3.5" />
+                                                Ticket page
+                                            </Link>
+                                        </Button>
+                                    )}
+                                </div>
                             )}
                         </div>
                     )}

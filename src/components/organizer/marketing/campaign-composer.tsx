@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { Loader2, Send, Eye, Edit, Code, Users, Calendar, ChevronDown, FileText, Save, Trash2 } from 'lucide-react'
 import { RichTextEditor } from './rich-text-editor'
+import { EventCombobox } from './event-combobox'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import { getAudienceCount, getEventAttendeeEmails, saveDraft, getDrafts, getDraft, deleteDraft } from '@/lib/marketing/actions'
@@ -358,44 +359,13 @@ export function CampaignComposer() {
                         {audienceType === 'event_attendees' && (
                             <div className="space-y-2 animate-in fade-in-50 duration-300">
                                 <Label htmlFor="event-select">Select Event</Label>
-                                <select
-                                    id="event-select"
+                                <EventCombobox
+                                    events={events}
                                     value={selectedEventId}
-                                    onChange={(e) => setSelectedEventId(e.target.value)}
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                                    disabled={loadingEvents}
-                                >
-                                    <option value="">
-                                        {loadingEvents ? 'Loading events…' : '— Choose an event —'}
-                                    </option>
-                                    {(() => {
-                                        const now = new Date()
-                                        const upcoming = events.filter(e => new Date(e.start_datetime) >= now)
-                                        const past = events.filter(e => new Date(e.start_datetime) < now)
-                                        return (
-                                            <>
-                                                {upcoming.length > 0 && (
-                                                    <optgroup label="Upcoming">
-                                                        {upcoming.map(e => (
-                                                            <option key={e.id} value={e.id}>
-                                                                {e.title} — {format(new Date(e.start_datetime), 'MMM d, yyyy')} ({e.tickets_sold} sold)
-                                                            </option>
-                                                        ))}
-                                                    </optgroup>
-                                                )}
-                                                {past.length > 0 && (
-                                                    <optgroup label="Past">
-                                                        {past.map(e => (
-                                                            <option key={e.id} value={e.id}>
-                                                                {e.title} — {format(new Date(e.start_datetime), 'MMM d, yyyy')} ({e.tickets_sold} sold)
-                                                            </option>
-                                                        ))}
-                                                    </optgroup>
-                                                )}
-                                            </>
-                                        )
-                                    })()}
-                                </select>
+                                    onChange={setSelectedEventId}
+                                    loading={loadingEvents}
+                                    attendeesOnly
+                                />
                             </div>
                         )}
 

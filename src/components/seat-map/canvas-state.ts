@@ -76,6 +76,56 @@ function cloneSectionWithNewIds(section: SectionData, opts: { mirror: boolean })
   }
 }
 
+/**
+ * Reposition seats onto a single clean line and space them evenly.
+ *  - 'straighten': fit to the seats' best-fit (PCA principal) axis, so an
+ *    intentionally diagonal row stays diagonal but becomes perfectly straight.
+ *  - 'flat': force the dominant axis (horizontal if wider than tall, else
+ *    vertical) so a row meant to be dead-level snaps level.
+ * In both cases the perpendicular wobble is removed and seats are distributed
+ * at equal intervals between the two extreme points, preserving their order.
+ */
+function alignSeatsToLine(
+  pts: { id: string; x: number; y: number }[],
+  mode: 'straighten' | 'flat'
+): Map<string, { x: number; y: number }> {
+  const out = new Map<string, { x: number; y: number }>()
+  const n = pts.length
+  if (n < 2) return out
+
+  const mx = pts.reduce((a, p) => a + p.x, 0) / n
+  const my = pts.reduce((a, p) => a + p.y, 0) / n
+
+  let dx: number, dy: number
+  if (mode === 'flat') {
+    const minX = Math.min(...pts.map((p) => p.x)), maxX = Math.max(...pts.map((p) => p.x))
+    const minY = Math.min(...pts.map((p) => p.y)), maxY = Math.max(...pts.map((p) => p.y))
+    if (maxX - minX >= maxY - minY) { dx = 1; dy = 0 } else { dx = 0; dy = 1 }
+  } else {
+    // PCA principal axis via covariance eigen-direction (handles vertical rows)
+    let sxx = 0, syy = 0, sxy = 0
+    for (const p of pts) {
+      const ox = p.x - mx, oy = p.y - my
+      sxx += ox * ox; syy += oy * oy; sxy += ox * oy
+    }
+    const theta = 0.5 * Math.atan2(2 * sxy, sxx - syy)
+    dx = Math.cos(theta); dy = Math.sin(theta)
+  }
+
+  // Project each point onto the axis (signed distance from centroid)
+  const proj = pts.map((p) => ({ id: p.id, t: (p.x - mx) * dx + (p.y - my) * dy }))
+  const ts = proj.map((p) => p.t)
+  const tMin = Math.min(...ts), tMax = Math.max(...ts)
+  const ordered = [...proj].sort((a, b) => a.t - b.t)
+  const span = tMax - tMin
+
+  ordered.forEach((p, i) => {
+    const t = n === 1 ? 0 : tMin + (span * i) / (n - 1)
+    out.set(p.id, { x: mx + t * dx, y: my + t * dy })
+  })
+  return out
+}
+
 // ─── Actions ────────────────────────────────────────────────────────────────
 
 type Action =
@@ -84,11 +134,14 @@ type Action =
   | { type: 'SET_PAN'; offset: { x: number; y: number } }
   | { type: 'ADD_SECTION'; section: SectionData }
   | { type: 'UPDATE_SECTION'; id: string; updates: Partial<SectionData> }
+  | { type: 'UPDATE_SECTIONS'; ids: string[]; updates: Partial<SectionData> }
   | { type: 'DELETE_SECTION'; id: string }
+  | { type: 'DELETE_SECTIONS'; ids: string[] }
   | { type: 'ADD_SHAPE'; shape: BackgroundShape }
   | { type: 'UPDATE_SHAPE'; id: string; updates: Partial<BackgroundShape> }
   | { type: 'DELETE_SHAPE'; id: string }
   | { type: 'SELECT'; ids: string[] }
+  | { type: 'TOGGLE_SELECT'; id: string }
   | { type: 'SELECT_SEAT'; seatId: string | null }
   | { type: 'SELECT_SEATS'; seatIds: string[] }
   | { type: 'TOGGLE_SELECT_SEAT'; seatId: string }
@@ -109,6 +162,7 @@ type Action =
   | { type: 'MOVE_SEAT'; sectionId: string; seatId: string; x: number; y: number }
   | { type: 'SET_SEAT_STATUS'; seatIds: string[]; status: SeatStatus }
   | { type: 'SCALE_SEATS'; seatIds: string[]; factor: number }
+  | { type: 'ALIGN_SEATS'; seatIds: string[]; mode: 'straighten' | 'flat' }
   | { type: 'DUPLICATE_SECTION'; id: string; mirror?: boolean }
   | { type: 'UNDO' }
   | { type: 'REDO' }
@@ -160,6 +214,16 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
         ),
       }
 
+    case 'UPDATE_SECTIONS': {
+      const targets = new Set(action.ids)
+      return {
+        ...state,
+        sections: state.sections.map((s) =>
+          targets.has(s.id) ? { ...s, ...action.updates } : s
+        ),
+      }
+    }
+
     case 'DELETE_SECTION':
       return {
         ...state,
@@ -167,6 +231,17 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
         selectedIds: state.selectedIds.filter((id) => id !== action.id),
         selectedSeatId: null,
       }
+
+    case 'DELETE_SECTIONS': {
+      const targets = new Set(action.ids)
+      return {
+        ...state,
+        sections: state.sections.filter((s) => !targets.has(s.id)),
+        selectedIds: state.selectedIds.filter((id) => !targets.has(id)),
+        selectedSeatId: null,
+        selectedSeatIds: [],
+      }
+    }
 
     case 'ADD_SHAPE':
       return { ...state, backgroundShapes: [...state.backgroundShapes, action.shape] }
@@ -189,18 +264,29 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
     case 'SELECT':
       return { ...state, selectedIds: action.ids, selectedSeatId: null, selectedSeatIds: [] }
 
+    case 'TOGGLE_SELECT': {
+      const exists = state.selectedIds.includes(action.id)
+      const ids = exists
+        ? state.selectedIds.filter((id) => id !== action.id)
+        : [...state.selectedIds, action.id]
+      return { ...state, selectedIds: ids, selectedSeatId: null, selectedSeatIds: [] }
+    }
+
+    // Seat selection and section selection are mutually exclusive modes —
+    // clear selectedIds so the properties panel never confuses a seat selection
+    // for a section (which would hide the multi-seat tools like Straighten).
     case 'SELECT_SEAT':
-      return { ...state, selectedSeatId: action.seatId, selectedSeatIds: action.seatId ? [action.seatId] : [] }
+      return { ...state, selectedIds: [], selectedSeatId: action.seatId, selectedSeatIds: action.seatId ? [action.seatId] : [] }
 
     case 'SELECT_SEATS':
-      return { ...state, selectedSeatIds: action.seatIds, selectedSeatId: action.seatIds[0] ?? null }
+      return { ...state, selectedIds: [], selectedSeatIds: action.seatIds, selectedSeatId: action.seatIds[0] ?? null }
 
     case 'TOGGLE_SELECT_SEAT': {
       const exists = state.selectedSeatIds.includes(action.seatId)
       const newIds = exists
         ? state.selectedSeatIds.filter(id => id !== action.seatId)
         : [...state.selectedSeatIds, action.seatId]
-      return { ...state, selectedSeatIds: newIds, selectedSeatId: newIds[newIds.length - 1] ?? null }
+      return { ...state, selectedIds: [], selectedSeatIds: newIds, selectedSeatId: newIds[newIds.length - 1] ?? null }
     }
 
     case 'DESELECT_ALL':
@@ -351,6 +437,39 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
           seats: s.seats.map((seat) => targets.has(seat.id)
             ? { ...seat, x: cx + (seat.x - cx) * action.factor, y: cy + (seat.y - cy) * action.factor }
             : seat),
+        })),
+      }
+    }
+
+    case 'ALIGN_SEATS': {
+      const targets = new Set(action.seatIds)
+      // Group selected seats by section + row so that aligning a selection that
+      // spans multiple sections (or multiple rows) straightens each row on its
+      // own line instead of collapsing every seat onto one shared line.
+      const groups = new Map<string, { id: string; x: number; y: number }[]>()
+      for (const s of state.sections) {
+        for (const seat of s.seats) {
+          if (!targets.has(seat.id)) continue
+          const key = `${s.id}::${seat.rowLabel}`
+          const arr = groups.get(key) ?? []
+          arr.push({ id: seat.id, x: seat.x, y: seat.y })
+          groups.set(key, arr)
+        }
+      }
+      const moved = new Map<string, { x: number; y: number }>()
+      for (const pts of groups.values()) {
+        if (pts.length < 2) continue
+        for (const [id, pos] of alignSeatsToLine(pts, action.mode)) moved.set(id, pos)
+      }
+      if (moved.size === 0) return state
+      return {
+        ...state,
+        sections: state.sections.map((s) => ({
+          ...s,
+          seats: s.seats.map((seat) => {
+            const pos = moved.get(seat.id)
+            return pos ? { ...seat, x: pos.x, y: pos.y } : seat
+          }),
         })),
       }
     }

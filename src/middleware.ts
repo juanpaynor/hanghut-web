@@ -61,7 +61,7 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(callbackUrl)
     }
 
-    const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan', '/embed']
+    const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan', '/embed', '/t']
 
     // 1a. Custom domain → look up partner slug and rewrite to storefront
     const isHanghutDomain = hostname === ROOT_DOMAIN || hostname.endsWith(`.${ROOT_DOMAIN}`) || hostname.endsWith('.localhost') || hostname === 'localhost'
@@ -104,7 +104,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // 3. Skip auth overhead for public-only routes
-    const publicPrefixes = ['/events', '/terms', '/privacy', '/how-it-works', '/embed', '/checkout']
+    const publicPrefixes = ['/events', '/terms', '/privacy', '/how-it-works', '/embed', '/checkout', '/t']
     if (publicPrefixes.some(p => url.pathname.startsWith(p))) {
         return NextResponse.next()
     }

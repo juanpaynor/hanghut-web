@@ -46,6 +46,11 @@ export interface SectionData {
   rowGap?: number
   numberingDirection?: 'ltr' | 'rtl'
   numberingStyle?: 'sequential' | 'odd_even'
+  // Border / outline styling (cosmetic; lives in canvas_data JSONB)
+  borderColor?: string | null   // null/undefined → falls back to section.color
+  borderWidth?: number          // 0 = no border
+  borderStyle?: 'solid' | 'dashed'
+  locked?: boolean              // locked sections can't be dragged (frame stays put; seats still editable)
 }
 
 // ─── Seat Types ─────────────────────────────────────────────────────────────
@@ -89,7 +94,7 @@ export function resolveSeatTier(
 
 // ─── Background Shapes ──────────────────────────────────────────────────────
 
-export type ShapeType = 'rect' | 'circle' | 'polygon' | 'text' | 'image'
+export type ShapeType = 'rect' | 'circle' | 'ellipse' | 'triangle' | 'line' | 'polygon' | 'text' | 'image'
 
 export interface BackgroundShape {
   id: string
@@ -105,6 +110,7 @@ export interface BackgroundShape {
   strokeWidth?: number
   label?: string
   fontSize?: number
+  fontColor?: string   // label text color (zones); defaults to white
   rotation?: number
   imageUrl?: string
   opacity?: number

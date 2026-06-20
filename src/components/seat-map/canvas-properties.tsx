@@ -4,18 +4,24 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import type { SectionData, CanvasTool, SectionType, SeatData, BackgroundShape, SeatShape, TierInfo } from './types'
 import { SECTION_TYPE_COLORS, resolveSeatTier } from './types'
 import { fillStraightSeats, fillArcSeats } from './algorithms/fill-seats'
-import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, XCircle, Circle, Square, Diamond, Lock, Unlock, Banknote } from 'lucide-react'
+import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, XCircle, Circle, Square, Diamond, Lock, Unlock, Banknote, BoxSelect, Triangle, Minus, Type, Spline, Ruler, Plus } from 'lucide-react'
 import { CapacitySummary } from './capacity-summary'
 
 interface CanvasPropertiesProps {
   selectedSection: SectionData | null
+  selectedSections?: SectionData[]
+  selectedShape?: BackgroundShape | null
   sections: SectionData[]
   tool: CanvasTool
   tiers?: TierInfo[]
   onAssignSeatsTier?: (seatIds: string[], tierId: string | null) => void
   onUpdateSection: (id: string, updates: Partial<SectionData>) => void
+  onUpdateSections?: (ids: string[], updates: Partial<SectionData>) => void
   onDeleteSection: (id: string) => void
+  onDeleteSections?: (ids: string[]) => void
   onSelectSection: (id: string) => void
+  onAlignSeats?: (seatIds: string[], mode: 'straighten' | 'flat') => void
+  onAddShape?: (shape: Partial<BackgroundShape> & { type: BackgroundShape['type'] }) => void
   backgroundShapes: BackgroundShape[]
   onUpdateShape: (id: string, updates: Partial<BackgroundShape>) => void
   onDeleteShape: (id: string) => void
@@ -81,15 +87,121 @@ function TierSelect({
   )
 }
 
+const borderColorPresets = ['#ffffff', '#0f172a', '#6366f1', '#f59e0b', '#22c55e', '#ef4444', '#94a3b8', '#0ea5e9']
+
+/** Reusable border/outline editor for sections (and decorative shapes). */
+function BorderControls({
+  color,
+  width,
+  style,
+  fillColor,
+  onChange,
+}: {
+  color?: string | null
+  width?: number
+  style?: 'solid' | 'dashed'
+  fillColor?: string
+  onChange: (updates: { borderColor?: string | null; borderWidth?: number; borderStyle?: 'solid' | 'dashed' }) => void
+}) {
+  const w = width ?? 1.5
+  return (
+    <div className="border-t border-slate-800 pt-4">
+      <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+        <BoxSelect className="w-3.5 h-3.5" />
+        Border
+      </label>
+
+      <label className="text-[11px] text-slate-500 flex justify-between mb-1">
+        <span>Thickness</span>
+        <span className="text-slate-400">{w}px</span>
+      </label>
+      <input
+        type="range"
+        min="0"
+        max="8"
+        step="0.5"
+        value={w}
+        onChange={(e) => onChange({ borderWidth: parseFloat(e.target.value) })}
+        className="w-full accent-indigo-500 cursor-pointer"
+      />
+
+      <label className="text-[11px] text-slate-500 mb-1 mt-3 block">Color</label>
+      <div className="grid grid-cols-8 gap-1.5">
+        {/* "Match fill" = null border color (falls back to section/shape color) */}
+        <button
+          onClick={() => onChange({ borderColor: null })}
+          title="Match fill color"
+          className="w-7 h-7 rounded-md border-2 flex items-center justify-center text-[8px] text-slate-300"
+          style={{ backgroundColor: fillColor || '#475569', borderColor: color == null ? '#ffffff' : 'transparent' }}
+        >
+          auto
+        </button>
+        {borderColorPresets.map((c) => (
+          <button
+            key={c}
+            onClick={() => onChange({ borderColor: c })}
+            className="w-7 h-7 rounded-md border-2 transition-all hover:scale-110"
+            style={{ backgroundColor: c, borderColor: color === c ? '#818cf8' : 'transparent' }}
+          />
+        ))}
+      </div>
+
+      <label className="text-[11px] text-slate-500 mb-1 mt-3 block">Style</label>
+      <div className="flex gap-2">
+        <button
+          onClick={() => onChange({ borderStyle: 'solid' })}
+          className={`flex-1 text-xs py-2 rounded-lg border transition-all ${
+            (style ?? 'solid') === 'solid' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'
+          }`}
+        >
+          ── Solid
+        </button>
+        <button
+          onClick={() => onChange({ borderStyle: 'dashed' })}
+          className={`flex-1 text-xs py-2 rounded-lg border transition-all ${
+            style === 'dashed' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'
+          }`}
+        >
+          ┄┄ Dashed
+        </button>
+      </div>
+    </div>
+  )
+}
+
+type PresetShape = Partial<BackgroundShape> & { type: BackgroundShape['type'] }
+
+const ZONE_PRESETS: { label: string; shape: PresetShape }[] = [
+  { label: 'Stage', shape: { type: 'rect', width: 240, height: 70, fill: '#1e293b', label: 'STAGE' } },
+  { label: 'Bar', shape: { type: 'rect', width: 140, height: 50, fill: '#422006', label: 'BAR' } },
+  { label: 'Entrance', shape: { type: 'rect', width: 120, height: 40, fill: '#14532d', label: 'ENTRANCE' } },
+  { label: 'Dance Floor', shape: { type: 'rect', width: 200, height: 140, fill: '#312e81', label: 'DANCE FLOOR' } },
+  { label: 'Round Table', shape: { type: 'circle', radius: 36, fill: '#334155', label: '' } },
+]
+
+const BASIC_SHAPES: { label: string; icon: typeof Square; shape: PresetShape }[] = [
+  { label: 'Box', icon: Square, shape: { type: 'rect', width: 120, height: 70, fill: '#334155' } },
+  { label: 'Ellipse', icon: Circle, shape: { type: 'ellipse', width: 130, height: 80, fill: '#334155' } },
+  { label: 'Triangle', icon: Triangle, shape: { type: 'triangle', width: 110, height: 95, fill: '#334155' } },
+  { label: 'Line', icon: Minus, shape: { type: 'line', points: [0, 0, 140, 0], stroke: '#94a3b8', strokeWidth: 3, fill: '#94a3b8' } },
+  { label: 'Text', icon: Type, shape: { type: 'text', label: 'Label', fill: '#ffffff', fontSize: 18 } },
+]
+
 export function CanvasProperties({
   selectedSection,
+  selectedSections = [],
+  selectedShape = null,
   sections,
   tool,
   tiers = [],
   onAssignSeatsTier,
   onUpdateSection,
+  onUpdateSections,
   onDeleteSection,
+  onDeleteSections,
   onSelectSection,
+  onAlignSeats,
+  onAddShape,
   backgroundShapes,
   onUpdateShape,
   onDeleteShape,
@@ -216,7 +328,7 @@ export function CanvasProperties({
       </div>
 
       {/* ─── Selected Seat View ─────────────────────────────────────── */}
-      {selectedSection && selectedSeat ? (
+      {selectedSeatIds.length <= 1 && selectedSection && selectedSeat ? (
         <div className="p-4 space-y-4">
           <div className="bg-indigo-900/20 border border-indigo-500/30 p-3 rounded-lg">
             <p className="text-sm text-white font-medium mb-1">
@@ -249,7 +361,7 @@ export function CanvasProperties({
           </div>
 
           {/* Per-seat price override */}
-          {tiers.length > 0 && onAssignSeatsTier && (
+          {tiers.length > 0 && onAssignSeatsTier ? (
             <div>
               <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
                 <Banknote className="w-3.5 h-3.5" />
@@ -261,6 +373,19 @@ export function CanvasProperties({
                 inheritLabel="Inherit from row / section"
                 onChange={(tierId) => onAssignSeatsTier([selectedSeat.id], tierId)}
               />
+              <p className="text-[10px] text-slate-600 mt-1.5">
+                Pick a category to price just this seat. &quot;Inherit&quot; uses the row, then section price.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                <Banknote className="w-3.5 h-3.5" />
+                Seat Price
+              </label>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                No price categories yet. Create ticket tiers in the Tickets tab, then you can assign one to this seat.
+              </p>
             </div>
           )}
 
@@ -415,6 +540,35 @@ export function CanvasProperties({
             </div>
           )}
 
+          {/* Straighten hand-placed seats */}
+          {onAlignSeats && (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Ruler className="w-3.5 h-3.5" />
+                Align
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onAlignSeats(selectedSeatIds, 'straighten')}
+                  title="Fit to best-fit line + even spacing (keeps a diagonal if intended)"
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-sky-600/20 hover:bg-sky-600/40 text-sky-300 text-sm font-medium py-2 rounded-lg transition-all border border-sky-600/30"
+                >
+                  <Spline className="w-3.5 h-3.5" /> Straighten
+                </button>
+                <button
+                  onClick={() => onAlignSeats(selectedSeatIds, 'flat')}
+                  title="Snap perfectly horizontal or vertical + even spacing"
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-sky-600/20 hover:bg-sky-600/40 text-sky-300 text-sm font-medium py-2 rounded-lg transition-all border border-sky-600/30"
+                >
+                  <Minus className="w-3.5 h-3.5" /> Snap Flat
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-600">
+                Straighten = best-fit line • Snap Flat = dead horizontal/vertical
+              </p>
+            </div>
+          )}
+
           <button
             onClick={onDeleteSelectedSeats}
             className="w-full flex items-center justify-center gap-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 text-sm font-medium py-2.5 rounded-lg transition-all border border-red-600/30"
@@ -423,9 +577,188 @@ export function CanvasProperties({
             Delete {selectedSeatIds.length} Seats
           </button>
         </div>
+      ) : selectedShape ? (
+        /* ─── Selected Shape / Zone View ─────────────────────────────── */
+        <div className="p-4 space-y-5">
+          <div className="bg-indigo-900/20 border border-indigo-500/30 p-3 rounded-lg">
+            <p className="text-sm text-white font-medium mb-1 capitalize">{selectedShape.type} element</p>
+            <p className="text-[11px] text-slate-400">Decorative zone — not bookable</p>
+          </div>
+
+          {/* Label */}
+          {selectedShape.type !== 'line' && (
+            <div>
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                <Tag className="w-3.5 h-3.5" />
+                {selectedShape.type === 'text' ? 'Text' : 'Label'}
+              </label>
+              <input
+                type="text"
+                value={selectedShape.label ?? ''}
+                placeholder={selectedShape.type === 'text' ? 'Your text' : 'e.g. STAGE (optional)'}
+                onChange={(e) => onUpdateShape(selectedShape.id, { label: e.target.value })}
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          )}
+
+          {/* Fill / color */}
+          <div>
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+              <Palette className="w-3.5 h-3.5" />
+              {selectedShape.type === 'text' || selectedShape.type === 'line' ? 'Color' : 'Fill'}
+            </label>
+            <div className="grid grid-cols-6 gap-1.5">
+              {colorPresets.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => onUpdateShape(selectedShape.id, selectedShape.type === 'line' ? { stroke: color, fill: color } : { fill: color })}
+                  className="w-8 h-8 rounded-lg border-2 transition-all hover:scale-110"
+                  style={{ backgroundColor: color, borderColor: (selectedShape.type === 'line' ? selectedShape.stroke : selectedShape.fill) === color ? '#ffffff' : 'transparent' }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Size */}
+          {selectedShape.type === 'circle' ? (
+            <div>
+              <label className="text-[11px] text-slate-500 flex justify-between mb-1"><span>Radius</span><span className="text-slate-400">{selectedShape.radius ?? 40}px</span></label>
+              <input type="range" min="10" max="300" value={selectedShape.radius ?? 40} onChange={(e) => onUpdateShape(selectedShape.id, { radius: parseInt(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
+            </div>
+          ) : (selectedShape.type === 'rect' || selectedShape.type === 'ellipse' || selectedShape.type === 'triangle') ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] text-slate-500 flex justify-between mb-1"><span>Width</span><span className="text-slate-400">{selectedShape.width ?? 120}</span></label>
+                <input type="range" min="20" max="600" value={selectedShape.width ?? 120} onChange={(e) => onUpdateShape(selectedShape.id, { width: parseInt(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-500 flex justify-between mb-1"><span>Height</span><span className="text-slate-400">{selectedShape.height ?? 70}</span></label>
+                <input type="range" min="20" max="600" value={selectedShape.height ?? 70} onChange={(e) => onUpdateShape(selectedShape.id, { height: parseInt(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
+              </div>
+            </div>
+          ) : null}
+
+          {/* Font size (text + labeled zones) */}
+          {(selectedShape.type === 'text' || (selectedShape.label && selectedShape.type !== 'line')) && (
+            <div>
+              <label className="text-[11px] text-slate-500 flex justify-between mb-1"><span>Font size</span><span className="text-slate-400">{selectedShape.fontSize ?? 14}px</span></label>
+              <input type="range" min="8" max="48" value={selectedShape.fontSize ?? 14} onChange={(e) => onUpdateShape(selectedShape.id, { fontSize: parseInt(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
+            </div>
+          )}
+
+          {/* Rotation (not for line) */}
+          {selectedShape.type !== 'line' && (
+            <div>
+              <label className="text-[11px] text-slate-500 flex justify-between mb-1"><span>Rotation</span><span className="text-slate-400">{selectedShape.rotation ?? 0}°</span></label>
+              <input type="range" min="-180" max="180" value={selectedShape.rotation ?? 0} onChange={(e) => onUpdateShape(selectedShape.id, { rotation: parseInt(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
+            </div>
+          )}
+
+          {/* Border / outline for filled zones */}
+          {(selectedShape.type === 'rect' || selectedShape.type === 'circle' || selectedShape.type === 'ellipse' || selectedShape.type === 'triangle') && (
+            <div className="border-t border-slate-800 pt-4">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2"><BoxSelect className="w-3.5 h-3.5" />Outline</label>
+              <label className="text-[11px] text-slate-500 flex justify-between mb-1"><span>Thickness</span><span className="text-slate-400">{selectedShape.strokeWidth ?? 0}px</span></label>
+              <input type="range" min="0" max="8" value={selectedShape.strokeWidth ?? 0} onChange={(e) => onUpdateShape(selectedShape.id, { strokeWidth: parseInt(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
+              <div className="grid grid-cols-8 gap-1.5 mt-2">
+                {borderColorPresets.map((c) => (
+                  <button key={c} onClick={() => onUpdateShape(selectedShape.id, { stroke: c })} className="w-7 h-7 rounded-md border-2 transition-all hover:scale-110" style={{ backgroundColor: c, borderColor: selectedShape.stroke === c ? '#818cf8' : 'transparent' }} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Delete */}
+          <div className="border-t border-slate-800 pt-4">
+            <button onClick={() => onDeleteShape(selectedShape.id)} className="w-full flex items-center justify-center gap-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 text-sm font-medium py-2.5 rounded-lg transition-all border border-red-600/30">
+              <Trash2 className="w-4 h-4" /> Delete Element
+            </button>
+          </div>
+        </div>
+      ) : selectedSections.length > 1 ? (
+        /* ─── Multi-Section Selection View ───────────────────────────── */
+        (() => {
+          const ids = selectedSections.map((s) => s.id)
+          const first = selectedSections[0]
+          return (
+            <div className="p-4 space-y-5">
+              <div className="bg-indigo-900/20 border border-indigo-500/30 p-3 rounded-lg">
+                <p className="text-sm text-white font-medium mb-1">{selectedSections.length} Sections Selected</p>
+                <p className="text-[11px] text-slate-400">Batch-edit type, color, price &amp; border</p>
+              </div>
+
+              {/* Section Type */}
+              <div>
+                <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2"><Layers className="w-3.5 h-3.5" />Section Type</label>
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    const v = e.target.value as SectionType
+                    if (v) onUpdateSections?.(ids, { sectionType: v, color: SECTION_TYPE_COLORS[v] })
+                  }}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">— Set type for all —</option>
+                  {sectionTypes.map((t) => (<option key={t.value} value={t.value}>{t.label}</option>))}
+                </select>
+              </div>
+
+              {/* Color */}
+              <div>
+                <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2"><Palette className="w-3.5 h-3.5" />Color</label>
+                <div className="grid grid-cols-6 gap-1.5">
+                  {colorPresets.map((color) => (
+                    <button key={color} onClick={() => onUpdateSections?.(ids, { color })} className="w-8 h-8 rounded-lg border-2 border-transparent transition-all hover:scale-110" style={{ backgroundColor: color }} />
+                  ))}
+                </div>
+              </div>
+
+              {/* Pricing tier for all */}
+              {tiers.length > 0 && (
+                <div className="border-t border-slate-800 pt-4">
+                  <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2"><Banknote className="w-3.5 h-3.5" />Price Category</label>
+                  <TierSelect tiers={tiers} value={null} inheritLabel="— Set price for all —" onChange={(tierId) => onUpdateSections?.(ids, { tierId })} />
+                  <p className="text-[10px] text-slate-600 mt-1">Applies to all {selectedSections.length} sections (clears row/seat overrides on save sync).</p>
+                </div>
+              )}
+
+              {/* Border for all */}
+              <BorderControls
+                color={first.borderColor}
+                width={first.borderWidth}
+                style={first.borderStyle}
+                fillColor={first.color}
+                onChange={(updates) => onUpdateSections?.(ids, updates)}
+              />
+
+              {/* Delete all */}
+              <div className="border-t border-slate-800 pt-4">
+                <button onClick={() => onDeleteSections?.(ids)} className="w-full flex items-center justify-center gap-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 text-sm font-medium py-2.5 rounded-lg transition-all border border-red-600/30">
+                  <Trash2 className="w-4 h-4" /> Delete {selectedSections.length} Sections
+                </button>
+              </div>
+            </div>
+          )
+        })()
       ) : selectedSection ? (
         /* ─── Selected Section View ──────────────────────────────────── */
         <div className="p-4 space-y-5">
+          {/* Lock position — stops the whole section frame from dragging while
+              you reposition seats inside it */}
+          <button
+            onClick={() => onUpdateSection(selectedSection.id, { locked: !selectedSection.locked })}
+            className={`w-full flex items-center justify-center gap-2 text-sm font-medium py-2.5 rounded-lg transition-all border ${
+              selectedSection.locked
+                ? 'bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 border-amber-600/30'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+            }`}
+            title={selectedSection.locked ? 'Section frame is locked — click to unlock' : 'Lock the section frame so it stops moving while you edit seats'}
+          >
+            {selectedSection.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+            {selectedSection.locked ? 'Position Locked' : 'Lock Position'}
+          </button>
+
           {/* Section Name */}
           <div>
             <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
@@ -491,6 +824,15 @@ export function CanvasProperties({
               ))}
             </div>
           </div>
+
+          {/* ─── Border ─────────────────────────────────────────────── */}
+          <BorderControls
+            color={selectedSection.borderColor}
+            width={selectedSection.borderWidth}
+            style={selectedSection.borderStyle}
+            fillColor={selectedSection.color}
+            onChange={(updates) => onUpdateSection(selectedSection.id, updates)}
+          />
 
           {/* ─── Pricing ────────────────────────────────────────────── */}
           <div className="border-t border-slate-800 pt-4">
@@ -884,11 +1226,53 @@ export function CanvasProperties({
                     <span className="text-[10px] text-slate-500">
                       {section.seats.length} seats
                     </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onUpdateSection(section.id, { locked: !section.locked }) }}
+                      className={`shrink-0 transition-colors ${section.locked ? 'text-amber-400 hover:text-amber-300' : 'text-slate-500 hover:text-slate-300'}`}
+                      title={section.locked ? 'Unlock position' : 'Lock position'}
+                    >
+                      {section.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                    </button>
                   </div>
                 ))}
               </div>
             )}
           </div>
+
+          {/* Decor & Zones (stages, bars, tables, shapes) */}
+          {onAddShape && (
+            <div className="border-t border-slate-800 pt-4">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 block flex items-center gap-1.5">
+                <Plus className="w-3.5 h-3.5" />
+                Add Zone
+              </label>
+              <div className="grid grid-cols-2 gap-1.5 mb-3">
+                {ZONE_PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    onClick={() => onAddShape(p.shape)}
+                    className="text-xs py-2 px-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:border-indigo-500 hover:text-white transition-all"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <label className="text-[11px] text-slate-500 mb-1.5 block">Basic shapes</label>
+              <div className="grid grid-cols-5 gap-1.5">
+                {BASIC_SHAPES.map(({ label, icon: Icon, shape }) => (
+                  <button
+                    key={label}
+                    onClick={() => onAddShape(shape)}
+                    title={label}
+                    className="flex flex-col items-center gap-1 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-400 hover:border-indigo-500 hover:text-white transition-all"
+                  >
+                    <Icon className="w-4 h-4" />
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-600 mt-2">Drops at center • click to select &amp; edit • drag to move</p>
+            </div>
+          )}
 
           {/* Background Images */}
           {backgroundShapes.length > 0 && (

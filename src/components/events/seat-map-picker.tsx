@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Stage, Layer, Line, Circle, Text, Rect } from 'react-konva'
+import { Stage, Layer, Line, Circle, Text, Rect, Ellipse, Group } from 'react-konva'
 import type Konva from 'konva'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -55,12 +55,34 @@ interface MapSection {
     seats: MapSeat[]
 }
 
+interface MapBackgroundShape {
+    id: string
+    type: 'rect' | 'circle' | 'ellipse' | 'triangle' | 'line' | 'polygon' | 'text' | 'image'
+    x: number
+    y: number
+    width?: number
+    height?: number
+    radius?: number
+    points?: number[]
+    fill?: string
+    stroke?: string
+    strokeWidth?: number
+    label?: string
+    fontSize?: number
+    fontColor?: string
+    rotation?: number
+    imageUrl?: string
+    opacity?: number
+    scale?: number
+}
+
 interface SeatMapData {
     event_id: string
     canvas_width: number
     canvas_height: number
     tiers: MapTier[]
     sections: MapSection[]
+    background_shapes: MapBackgroundShape[]
 }
 
 interface SeatMapPickerProps {
@@ -84,7 +106,7 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
 
     const [mapData, setMapData] = useState<SeatMapData | null>(null)
     const [loading, setLoading] = useState(true)
-    const [stageSize, setStageSize] = useState({ width: 800, height: 520 })
+    const [stageSize, setStageSize] = useState({ width: 100, height: 480 })
     const [activeSection, setActiveSection] = useState<string | null>(null)
     const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([])
     const [view, setView] = useState({ scale: 1, x: 0, y: 0 })
@@ -135,7 +157,12 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
     }, [eventId])
 
     // ─── Responsive stage ────────────────────────────────────────────────
+    // Depends on mapData: while loading, the component early-returns a spinner
+    // and the container ref is null, so this must re-run once the real map
+    // container mounts — otherwise stageSize keeps its tiny initial value and
+    // the canvas renders as a small box in the corner.
     useEffect(() => {
+        if (!containerRef.current) return
         const update = () => {
             if (containerRef.current) {
                 const rect = containerRef.current.getBoundingClientRect()
@@ -144,9 +171,9 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
         }
         update()
         const ro = new ResizeObserver(update)
-        if (containerRef.current) ro.observe(containerRef.current)
+        ro.observe(containerRef.current)
         return () => ro.disconnect()
-    }, [])
+    }, [mapData])
 
     // ─── Derived data ────────────────────────────────────────────────────
     const tierColors = useMemo(() => {
@@ -171,18 +198,40 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
     const selectedTier = selectedTierId ? tierById.get(selectedTierId) : null
     const totalPrice = selectedTier ? Number(selectedTier.price) * selectedSeats.length : 0
 
-    // Fit-to-content view for the overview
+    // Fit-to-content view for the overview. Fits the bounding box of the actual
+    // sections (not the full canvas) — sections rarely fill the canvas, so fitting
+    // canvas_width/height would render them as a tiny cluster in one corner.
     const fitOverview = useCallback(() => {
-        if (!mapData) return
+        if (!mapData || mapData.sections.length === 0) return
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+        const extend = (x: number, y: number) => {
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y)
+        }
+        for (const sec of mapData.sections) {
+            const pts = sec.polygon_points
+            for (let i = 0; i < pts.length; i += 2) extend(pts[i], pts[i + 1])
+        }
+        // Include decor zones (stage, entrance, bars…) so they stay in frame.
+        // Images are intentionally excluded — they're organizer tracing aids.
+        for (const shape of mapData.background_shapes ?? []) {
+            if (shape.type === 'image') continue
+            const b = shapeBounds(shape)
+            extend(b.minX, b.minY); extend(b.maxX, b.maxY)
+        }
+        if (!isFinite(minX)) return
         const pad = 40
+        const contentW = maxX - minX
+        const contentH = maxY - minY
         const scale = Math.min(
-            stageSize.width / (mapData.canvas_width + pad * 2),
-            stageSize.height / (mapData.canvas_height + pad * 2),
+            stageSize.width / (contentW + pad * 2),
+            stageSize.height / (contentH + pad * 2),
+            3, // don't over-zoom a small layout
         )
         setView({
             scale,
-            x: (stageSize.width - mapData.canvas_width * scale) / 2,
-            y: (stageSize.height - mapData.canvas_height * scale) / 2,
+            x: (stageSize.width - contentW * scale) / 2 - minX * scale,
+            y: (stageSize.height - contentH * scale) / 2 - minY * scale,
         })
         setActiveSection(null)
     }, [mapData, stageSize])
@@ -304,7 +353,7 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
         : null
 
     return (
-        <div className="space-y-3">
+        <div className="space-y-3 min-w-0">
             {/* Price legend */}
             <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                 {mapData.tiers.map(tier => (
@@ -323,7 +372,7 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
             {/* Map canvas */}
             <div
                 ref={containerRef}
-                className="relative h-[420px] sm:h-[480px] rounded-2xl border bg-white dark:bg-slate-100 overflow-hidden touch-none"
+                className="relative w-full h-[420px] sm:h-[480px] rounded-2xl border bg-white dark:bg-slate-100 overflow-hidden touch-none"
             >
                 <Stage
                     ref={stageRef}
@@ -338,6 +387,12 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
                     onDragEnd={(e) => setView(v => ({ ...v, x: e.target.x(), y: e.target.y() }))}
                 >
                     <Layer>
+                        {/* Decor zones (stage, entrance, bars…) — behind sections.
+                            Images are skipped: they're organizer-only tracing aids. */}
+                        {mapData.background_shapes?.filter(s => s.type !== 'image').map(shape => (
+                            <BuyerBackgroundShape key={shape.id} shape={shape} />
+                        ))}
+
                         {/* Section polygons */}
                         {mapData.sections.map(section => {
                             const isActive = section.id === activeSection
@@ -580,6 +635,106 @@ function SectionShape({
             )}
         </>
     )
+}
+
+// ─── Background decor (read-only mirror of the builder's shapes) ─────────────
+
+/** Axis-aligned bounds of a background shape, used for fit-to-content. */
+function shapeBounds(shape: MapBackgroundShape): { minX: number; minY: number; maxX: number; maxY: number } {
+    const sc = shape.scale ?? 1
+    switch (shape.type) {
+        case 'circle': {
+            const r = shape.radius ?? 40
+            return { minX: shape.x - r, minY: shape.y - r, maxX: shape.x + r, maxY: shape.y + r }
+        }
+        case 'line': {
+            const pts = shape.points && shape.points.length >= 4 ? shape.points : [0, 0, 120, 0]
+            let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity
+            for (let i = 0; i < pts.length; i += 2) {
+                mnx = Math.min(mnx, pts[i]); mxx = Math.max(mxx, pts[i])
+                mny = Math.min(mny, pts[i + 1]); mxy = Math.max(mxy, pts[i + 1])
+            }
+            return { minX: shape.x + mnx, minY: shape.y + mny, maxX: shape.x + mxx, maxY: shape.y + mxy }
+        }
+        case 'image': {
+            const w = (shape.width ?? 0) * sc, h = (shape.height ?? 0) * sc
+            return { minX: shape.x, minY: shape.y, maxX: shape.x + w, maxY: shape.y + h }
+        }
+        case 'text': {
+            const fs = shape.fontSize ?? 16
+            return { minX: shape.x, minY: shape.y, maxX: shape.x + (shape.label?.length ?? 4) * fs * 0.6, maxY: shape.y + fs }
+        }
+        default: { // rect, ellipse, triangle, polygon
+            const w = shape.width ?? 100, h = shape.height ?? 60
+            return { minX: shape.x, minY: shape.y, maxX: shape.x + w, maxY: shape.y + h }
+        }
+    }
+}
+
+/** Non-interactive render of a decorative zone (stage, entrance, bar, table, label…).
+ *  Images are not rendered on the buyer side — they're organizer tracing aids. */
+function BuyerBackgroundShape({ shape }: { shape: MapBackgroundShape }) {
+    if (shape.type === 'image') return null
+
+    const common = { rotation: shape.rotation || 0, listening: false as const, perfectDrawEnabled: false }
+    const fill = shape.fill || '#e2e8f0'
+    const stroke = shape.stroke || undefined
+    const strokeWidth = shape.strokeWidth || 0
+    const centeredLabel = (boxW: number, boxH: number) =>
+        shape.label ? (
+            <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={boxW} y={boxH / 2 - (shape.fontSize || 14) / 2} align="center" listening={false} perfectDrawEnabled={false} />
+        ) : null
+
+    if (shape.type === 'rect' || shape.type === 'polygon') {
+        const w = shape.width || 100, h = shape.height || 60
+        return (
+            <Group x={shape.x} y={shape.y} {...common}>
+                <Rect width={w} height={h} fill={fill} stroke={stroke} strokeWidth={strokeWidth} cornerRadius={4} listening={false} perfectDrawEnabled={false} />
+                {centeredLabel(w, h)}
+            </Group>
+        )
+    }
+    if (shape.type === 'circle') {
+        const r = shape.radius || 40
+        return (
+            <Group x={shape.x} y={shape.y} {...common}>
+                <Circle radius={r} fill={fill} stroke={stroke} strokeWidth={strokeWidth} listening={false} perfectDrawEnabled={false} />
+                {shape.label ? <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={r * 2} x={-r} y={-(shape.fontSize || 14) / 2} align="center" listening={false} perfectDrawEnabled={false} /> : null}
+            </Group>
+        )
+    }
+    if (shape.type === 'ellipse') {
+        const w = shape.width || 120, h = shape.height || 70
+        return (
+            <Group x={shape.x} y={shape.y} {...common}>
+                <Ellipse x={w / 2} y={h / 2} radiusX={w / 2} radiusY={h / 2} fill={fill} stroke={stroke} strokeWidth={strokeWidth} listening={false} perfectDrawEnabled={false} />
+                {centeredLabel(w, h)}
+            </Group>
+        )
+    }
+    if (shape.type === 'triangle') {
+        const w = shape.width || 100, h = shape.height || 90
+        return (
+            <Group x={shape.x} y={shape.y} {...common}>
+                <Line points={[w / 2, 0, w, h, 0, h]} closed fill={fill} stroke={stroke} strokeWidth={strokeWidth} listening={false} perfectDrawEnabled={false} />
+                {shape.label ? <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={w} y={h * 0.55} align="center" listening={false} perfectDrawEnabled={false} /> : null}
+            </Group>
+        )
+    }
+    if (shape.type === 'line') {
+        const pts = shape.points && shape.points.length >= 4 ? shape.points : [0, 0, 120, 0]
+        return (
+            <Group x={shape.x} y={shape.y} {...common}>
+                <Line points={pts} stroke={shape.stroke || shape.fill || '#94a3b8'} strokeWidth={shape.strokeWidth || 3} lineCap="round" listening={false} perfectDrawEnabled={false} />
+            </Group>
+        )
+    }
+    if (shape.type === 'text') {
+        return (
+            <Text x={shape.x} y={shape.y} text={shape.label || 'Text'} fill={shape.fill || '#1e293b'} fontSize={shape.fontSize || 16} fontStyle="bold" rotation={shape.rotation || 0} listening={false} perfectDrawEnabled={false} />
+        )
+    }
+    return null
 }
 
 function sectionCenter(points: number[]): { x: number; y: number } {

@@ -50,6 +50,10 @@ const profileSchema = z.object({
         })).optional(),
         selected_template: z.string().nullable().optional(),
         video_position: z.string().optional(),
+        ticket: z.object({
+            message: z.string().nullable().optional(),
+            banner_url: z.string().nullable().optional(),
+        }).optional(),
     }).optional(),
     social_links: z.object({
         facebook: z.string().optional(),
@@ -181,13 +185,39 @@ export async function updatePartnerProfile(
         }
     }
 
+    // Handle Ticket Banner (custom header image for the hosted ticket page)
+    let ticketBannerUrl: string | null = (data.branding as any)?.ticket?.banner_url ?? null
+    const ticketBannerFile = formData.get('ticket_banner') as File
+    if (ticketBannerFile && ticketBannerFile.size > 0) {
+        const fileName = `${partner.id}/ticket-banner-${Date.now()}-${ticketBannerFile.name}`
+        const { data: uploadData, error: uploadError } = await adminSupabase.storage
+            .from('partner-assets')
+            .upload(fileName, ticketBannerFile, { upsert: true, contentType: ticketBannerFile.type })
+        if (!uploadError && uploadData) {
+            const { data: { publicUrl } } = adminSupabase.storage
+                .from('partner-assets')
+                .getPublicUrl(uploadData.path)
+            ticketBannerUrl = publicUrl
+        }
+    }
+
+    // Fold the resolved banner URL back into branding.ticket (message is already
+    // in data.branding from the form JSON).
+    const mergedBranding = {
+        ...(data.branding as any),
+        ticket: {
+            ...((data.branding as any)?.ticket || {}),
+            banner_url: ticketBannerUrl,
+        },
+    }
+
     // Prepare update payload
     const updates: any = {
         business_name: data.business_name,
         description: data.description,
         slug: data.slug || null,
         social_links: data.social_links,
-        branding: data.branding,
+        branding: mergedBranding,
         profile_photo_url: profilePhotoUrl,
         cover_image_url: coverImageUrl,
         custom_tos: data.custom_tos || null,

@@ -45,14 +45,18 @@ export function SeatPickerLauncher({ eventId, fullWidth = false }: SeatPickerLau
             </Button>
 
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
+                <DialogContent className="max-w-4xl w-[95vw] max-h-[92vh] overflow-y-auto overflow-x-hidden">
                     <DialogHeader>
                         <DialogTitle>Choose Your Seats</DialogTitle>
                         <DialogDescription>
                             Tap a section, then tap seats to select them. Prices are shown per category.
                         </DialogDescription>
                     </DialogHeader>
-                    {open && <SeatMapPicker eventId={eventId} />}
+                    {open && (
+                        <div className="min-w-0">
+                            <SeatMapPicker eventId={eventId} />
+                        </div>
+                    )}
                 </DialogContent>
             </Dialog>
         </>

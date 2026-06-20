@@ -277,6 +277,22 @@ export async function saveEventSeatMap(
     }))
   )
 
+  // Guard the (section_id, row_label, seat_number) unique constraint. Hand-placed,
+  // straightened, or duplicated seats can collide on number within a row; bump any
+  // duplicate to the next free number in its section+row so the save never fails.
+  const seenPerSection = new Map<string, Set<string>>()
+  for (const rec of seatRecords) {
+    let seen = seenPerSection.get(rec.section_id)
+    if (!seen) { seen = new Set(); seenPerSection.set(rec.section_id, seen) }
+    let num = rec.seat_number
+    while (seen.has(`${rec.row_label}#${num}`)) num++
+    if (num !== rec.seat_number) {
+      rec.seat_number = num
+      rec.label = `${rec.row_label}${num}`
+    }
+    seen.add(`${rec.row_label}#${num}`)
+  }
+
   if (seatRecords.length > 0) {
     const { error: seatError } = await supabase
       .from('seats')
