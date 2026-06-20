@@ -3,11 +3,17 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+export interface SeatInfo { section?: string; row?: string; seat?: number; label?: string }
+
 export interface Attendee {
     id: string
     status: string
     created_at: string
     user_id: string | null
+    ticket_number: string | null
+    seat_info: SeatInfo | null
+    checked_in_at: string | null
+    registration_id: string | null
     guest_info: {
         name: string
         email: string
@@ -34,7 +40,8 @@ export async function getEventAttendees(
     eventId: string,
     page: number = 1,
     limit: number = 20,
-    search: string = ''
+    search: string = '',
+    statusFilter: string = 'all'
 ) {
     const supabase = await createClient()
 
@@ -46,6 +53,10 @@ export async function getEventAttendees(
             status,
             created_at,
             user_id,
+            ticket_number,
+            seat_info,
+            checked_in_at,
+            registration_id,
             guest_name,
             guest_email,
             purchase_intent_id,
@@ -75,6 +86,15 @@ export async function getEventAttendees(
         .neq('status', 'available') // Filter out pre-minted inventory
         .neq('status', 'reserved') // Filter out abandoned/incomplete checkouts
 
+    // Status filter (tabs): valid = issued, checked_in = scanned, refunded = voided
+    if (statusFilter === 'valid') {
+        query = query.eq('status', 'valid')
+    } else if (statusFilter === 'checked_in') {
+        query = query.eq('status', 'used')
+    } else if (statusFilter === 'refunded') {
+        query = query.eq('status', 'refunded')
+    }
+
     // Search Filter
     if (search) {
         // ... (Keep existing search logic)
@@ -100,6 +120,10 @@ export async function getEventAttendees(
         status: t.status,
         created_at: t.purchase_intent?.paid_at || t.created_at,
         user_id: t.user_id,
+        ticket_number: t.ticket_number || null,
+        seat_info: t.seat_info || null,
+        checked_in_at: t.checked_in_at || null,
+        registration_id: t.registration_id || null,
         payment_id: t.purchase_intent?.xendit_invoice_id || null,
         purchase_intent_id: t.purchase_intent_id,
         payment_status: t.purchase_intent?.status || null,
@@ -123,6 +147,53 @@ export async function getEventAttendees(
     }))
 
     return { attendees, total: count || 0 }
+}
+
+/** Top-of-page attendee stats (independent of the current filter/page). */
+export async function getAttendeeStats(eventId: string) {
+    const supabase = await createClient()
+    const [attendeeRes, checkedInRes, paidRes] = await Promise.all([
+        supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('event_id', eventId).in('status', ['valid', 'used']),
+        supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('event_id', eventId).eq('status', 'used'),
+        supabase.from('purchase_intents').select('total_amount').eq('event_id', eventId).eq('status', 'completed'),
+    ])
+    const revenue = (paidRes.data || []).reduce((s: number, p: any) => s + Number(p.total_amount || 0), 0)
+    return {
+        attendees: attendeeRes.count || 0,
+        checkedIn: checkedInRes.count || 0,
+        revenue,
+    }
+}
+
+export interface RegistrationAnswerView { label: string; answer: string }
+
+/** Loads an attendee's registration question answers on demand (View answers). */
+export async function getRegistrationAnswers(registrationId: string): Promise<RegistrationAnswerView[]> {
+    const supabase = await createClient()
+    const { data } = await supabase
+        .from('registration_answers')
+        .select('answer, question:registration_questions(label, display_order)')
+        .eq('registration_id', registrationId)
+
+    const pretty = (raw: string | null): string => {
+        if (!raw) return '—'
+        const s = String(raw).trim()
+        if (s.startsWith('[')) {
+            try { const arr = JSON.parse(s); if (Array.isArray(arr)) return arr.join(', ') } catch { /* keep raw */ }
+        }
+        if (s === 'true') return 'Yes'
+        if (s === 'false') return 'No'
+        return s
+    }
+
+    return (data || [])
+        .map((a: any) => ({
+            label: a.question?.label ?? 'Question',
+            answer: pretty(a.answer),
+            order: a.question?.display_order ?? 0,
+        }))
+        .sort((a, b) => a.order - b.order)
+        .map(({ label, answer }) => ({ label, answer }))
 }
 
 export async function refundTicket(ticketId: string, eventId: string, reason: string = 'Requested by organizer') {

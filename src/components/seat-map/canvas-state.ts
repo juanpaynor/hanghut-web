@@ -126,6 +126,19 @@ function alignSeatsToLine(
   return out
 }
 
+/** Next row label: numeric rows increment as numbers, alpha rows as A→B…Z→AA. */
+function incrementRowLabel(label: string): string {
+  if (/^\d+$/.test(label)) return String(Number(label) + 1)
+  const arr = (label || 'A').toUpperCase().split('')
+  let i = arr.length - 1
+  let carry = true
+  while (i >= 0 && carry) {
+    if (arr[i] === 'Z') { arr[i] = 'A'; i-- } else { arr[i] = String.fromCharCode(arr[i].charCodeAt(0) + 1); carry = false }
+  }
+  if (carry) arr.unshift('A')
+  return arr.join('')
+}
+
 // ─── Actions ────────────────────────────────────────────────────────────────
 
 type Action =
@@ -157,9 +170,11 @@ type Action =
   | { type: 'SET_SEAT_SHAPE'; shape: SeatShape }
   | { type: 'SET_DRAG_SEAT_START'; point: { x: number; y: number } | null }
   | { type: 'DELETE_SEATS'; seatIds: string[] }
+  | { type: 'ADD_SEATS'; seats: { sectionId: string; seat: SeatData }[] }
   | { type: 'ASSIGN_SEATS_TIER'; seatIds: string[]; tierId: string | null }
-  | { type: 'RENUMBER_SEATS'; sectionId: string; seatIds: string[]; startRow: string; startNum: number }
+  | { type: 'RENUMBER_SEATS'; sectionId: string; seatIds: string[]; startRow: string; startNum: number; mode?: 'row' | 'grid' }
   | { type: 'MOVE_SEAT'; sectionId: string; seatId: string; x: number; y: number }
+  | { type: 'MOVE_SEATS'; seatIds: string[]; dx: number; dy: number }
   | { type: 'SET_SEAT_STATUS'; seatIds: string[]; status: SeatStatus }
   | { type: 'SCALE_SEATS'; seatIds: string[]; factor: number }
   | { type: 'ALIGN_SEATS'; seatIds: string[]; mode: 'straighten' | 'flat' }
@@ -336,6 +351,26 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
       }
     }
 
+    case 'ADD_SEATS': {
+      // Paste: append seats to their target sections and select the new ones.
+      const bySection = new Map<string, SeatData[]>()
+      for (const { sectionId, seat } of action.seats) {
+        const arr = bySection.get(sectionId) ?? []
+        arr.push(seat)
+        bySection.set(sectionId, arr)
+      }
+      const newIds = action.seats.map((a) => a.seat.id)
+      return {
+        ...state,
+        sections: state.sections.map((s) =>
+          bySection.has(s.id) ? { ...s, seats: [...s.seats, ...bySection.get(s.id)!] } : s
+        ),
+        selectedIds: [],
+        selectedSeatIds: newIds,
+        selectedSeatId: newIds[newIds.length - 1] ?? null,
+      }
+    }
+
     case 'ASSIGN_SEATS_TIER': {
       const targets = new Set(action.seatIds)
       return {
@@ -370,27 +405,55 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
       return { ...state, dragSeatStart: action.point }
 
     case 'RENUMBER_SEATS': {
-      // Renumber specific seats in a section — sorts by x position (left-to-right)
+      // 'row'  → all selected seats become one row, numbered left→right.
+      // 'grid' → detect rows by vertical position; each row gets the next row
+      //          label (A, B, C…) top→bottom, numbered left→right within the row.
+      const mode = action.mode ?? 'row'
+      const rowThreshold = state.seatRadius * 2.5
       return {
         ...state,
         sections: state.sections.map(s => {
           if (s.id !== action.sectionId) return s
           const targetSet = new Set(action.seatIds)
-          // Get target seats sorted by x position
-          const targetSeats = s.seats
-            .filter(seat => targetSet.has(seat.id))
-            .sort((a, b) => a.x - b.x || a.y - b.y)
-          // Assign new labels
-          let num = action.startNum
           const updates = new Map<string, { rowLabel: string; seatNumber: number; label: string }>()
-          for (const seat of targetSeats) {
-            updates.set(seat.id, {
-              rowLabel: action.startRow,
-              seatNumber: num,
-              label: `${action.startRow}${num}`,
-            })
-            num++
+
+          if (mode === 'grid') {
+            const sorted = s.seats.filter(seat => targetSet.has(seat.id)).sort((a, b) => a.y - b.y)
+            // Cluster into rows by vertical proximity (running average)
+            const rows: SeatData[][] = []
+            let cur: SeatData[] = []
+            let curAvgY = 0
+            for (const seat of sorted) {
+              if (cur.length === 0 || Math.abs(seat.y - curAvgY) <= rowThreshold) {
+                cur.push(seat)
+                curAvgY = cur.reduce((sum, x) => sum + x.y, 0) / cur.length
+              } else {
+                rows.push(cur); cur = [seat]; curAvgY = seat.y
+              }
+            }
+            if (cur.length) rows.push(cur)
+
+            let rowLabel = action.startRow
+            for (const row of rows) {
+              row.sort((a, b) => a.x - b.x)
+              let num = action.startNum
+              for (const seat of row) {
+                updates.set(seat.id, { rowLabel, seatNumber: num, label: `${rowLabel}${num}` })
+                num++
+              }
+              rowLabel = incrementRowLabel(rowLabel)
+            }
+          } else {
+            const targetSeats = s.seats
+              .filter(seat => targetSet.has(seat.id))
+              .sort((a, b) => a.x - b.x || a.y - b.y)
+            let num = action.startNum
+            for (const seat of targetSeats) {
+              updates.set(seat.id, { rowLabel: action.startRow, seatNumber: num, label: `${action.startRow}${num}` })
+              num++
+            }
           }
+
           return {
             ...s,
             seats: s.seats.map(seat => {
@@ -411,6 +474,20 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
             : s
         ),
       }
+
+    case 'MOVE_SEATS': {
+      // Group drag: offset every selected seat by the same delta.
+      const targets = new Set(action.seatIds)
+      return {
+        ...state,
+        sections: state.sections.map((s) => ({
+          ...s,
+          seats: s.seats.map((seat) =>
+            targets.has(seat.id) ? { ...seat, x: seat.x + action.dx, y: seat.y + action.dy } : seat
+          ),
+        })),
+      }
+    }
 
     case 'SET_SEAT_STATUS': {
       const targets = new Set(action.seatIds)

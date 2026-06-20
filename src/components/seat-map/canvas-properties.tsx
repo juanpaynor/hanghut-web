@@ -15,6 +15,7 @@ interface CanvasPropertiesProps {
   tool: CanvasTool
   tiers?: TierInfo[]
   onAssignSeatsTier?: (seatIds: string[], tierId: string | null) => void
+  onSelectRow?: () => void
   onUpdateSection: (id: string, updates: Partial<SectionData>) => void
   onUpdateSections?: (ids: string[], updates: Partial<SectionData>) => void
   onDeleteSection: (id: string) => void
@@ -33,7 +34,7 @@ interface CanvasPropertiesProps {
   selectedSeatIds: string[]
   onDeleteSeat: (sectionId: string, seatId: string) => void
   onSelectSeat: (seatId: string | null) => void
-  onRenumberSeats: (seatIds: string[], rowLabel: string, startNumber: number) => void
+  onRenumberSeats: (seatIds: string[], rowLabel: string, startNumber: number, mode?: 'row' | 'grid') => void
   onDeleteSelectedSeats: () => void
   onSetSeatStatus?: (seatIds: string[], status: 'available' | 'disabled') => void
   onScaleSeats?: (seatIds: string[], factor: number) => void
@@ -195,6 +196,7 @@ export function CanvasProperties({
   tool,
   tiers = [],
   onAssignSeatsTier,
+  onSelectRow,
   onUpdateSection,
   onUpdateSections,
   onDeleteSection,
@@ -303,6 +305,7 @@ export function CanvasProperties({
   const selectedSeat = selectedSection?.seats.find((s) => s.id === selectedSeatId) ?? null
   const [renumberRow, setRenumberRow] = useState('A')
   const [renumberStart, setRenumberStart] = useState(1)
+  const [renumberMode, setRenumberMode] = useState<'row' | 'grid'>('row')
   const [multiTierId, setMultiTierId] = useState<string | null>(null)
 
   const tierById = useMemo(() => new Map(tiers.map((t) => [t.id, t])), [tiers])
@@ -408,6 +411,15 @@ export function CanvasProperties({
             </button>
           )}
 
+          {onSelectRow && (
+            <button
+              onClick={onSelectRow}
+              className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium py-2 rounded-lg transition-all border border-slate-700"
+            >
+              ⤢ Select whole row ({selectedSeat.rowLabel})
+            </button>
+          )}
+
           <button
             onClick={() => {
               onDeleteSeat(selectedSection.id, selectedSeat.id)
@@ -459,14 +471,45 @@ export function CanvasProperties({
             </div>
           )}
 
+          {/* Expand selection to the whole row(s) before renumbering */}
+          {onSelectRow && (
+            <button
+              onClick={onSelectRow}
+              className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium py-2 rounded-lg transition-all border border-slate-700"
+            >
+              ⤢ Select whole row
+            </button>
+          )}
+
           {/* Renumber controls */}
           <div className="space-y-3">
             <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Renumber Row
+              Renumber
             </label>
+
+            {/* Mode: single row vs grid (auto-detect rows) */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRenumberMode('row')}
+                className={`flex-1 text-xs py-2 rounded-lg border transition-all ${
+                  renumberMode === 'row' ? 'bg-amber-600 border-amber-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'
+                }`}
+              >
+                Single row
+              </button>
+              <button
+                onClick={() => setRenumberMode('grid')}
+                className={`flex-1 text-xs py-2 rounded-lg border transition-all ${
+                  renumberMode === 'grid' ? 'bg-amber-600 border-amber-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'
+                }`}
+              >
+                Grid (rows)
+              </button>
+            </div>
+
             <div className="flex gap-2">
               <div className="flex-1">
-                <label className="text-[10px] text-slate-500 mb-1 block">Row</label>
+                <label className="text-[10px] text-slate-500 mb-1 block">{renumberMode === 'grid' ? 'Start row' : 'Row'}</label>
                 <input
                   type="text"
                   value={renumberRow}
@@ -487,11 +530,16 @@ export function CanvasProperties({
               </div>
             </div>
             <button
-              onClick={() => onRenumberSeats(selectedSeatIds, renumberRow, renumberStart)}
+              onClick={() => onRenumberSeats(selectedSeatIds, renumberRow, renumberStart, renumberMode)}
               className="w-full flex items-center justify-center gap-2 bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 text-sm font-medium py-2.5 rounded-lg transition-all border border-amber-600/30"
             >
               Apply Renumber (L→R)
             </button>
+            <p className="text-[10px] text-slate-600">
+              {renumberMode === 'grid'
+                ? 'Detects rows top→bottom (A, B, C…), numbers each left→right.'
+                : 'All selected seats become one row, numbered left→right.'}
+            </p>
           </div>
 
           {/* Block / Enable selection */}

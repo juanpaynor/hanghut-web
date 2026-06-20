@@ -19,6 +19,7 @@ import { pointInPolygon, flatToVertices } from './algorithms/point-in-polygon'
 
 // ─── Memoized seat dot ─────────────────────────────────────────────────────
 const SeatDot = memo(function SeatDot({
+  nodeId,
   x,
   y,
   status,
@@ -30,8 +31,11 @@ const SeatDot = memo(function SeatDot({
   shape,
   tierColor,
   draggable,
+  onDragStart,
+  onDragMove,
   onDragEnd,
 }: {
+  nodeId: string
   x: number
   y: number
   status: string
@@ -43,6 +47,8 @@ const SeatDot = memo(function SeatDot({
   shape: SeatShape
   tierColor?: string
   draggable?: boolean
+  onDragStart?: (node: Konva.Node) => void
+  onDragMove?: (node: Konva.Node) => void
   onDragEnd?: (cx: number, cy: number) => void
 }) {
   const r = isSelected ? radius + 2 : radius
@@ -64,6 +70,12 @@ const SeatDot = memo(function SeatDot({
   // cancelBubble is critical: without it the seat's dragEnd bubbles to the
   // section Group, whose handler reads e.target's coords as a drag delta and
   // shifts the ENTIRE section off-screen.
+  const handleDragStart = onDragStart
+    ? (e: Konva.KonvaEventObject<DragEvent>) => { e.cancelBubble = true; onDragStart(e.target) }
+    : undefined
+  const handleDragMove = onDragMove
+    ? (e: Konva.KonvaEventObject<DragEvent>) => { e.cancelBubble = true; onDragMove(e.target) }
+    : undefined
   const handleDragEnd = onDragEnd
     ? (e: Konva.KonvaEventObject<DragEvent>) => {
         e.cancelBubble = true
@@ -101,7 +113,11 @@ const SeatDot = memo(function SeatDot({
         onDblClick={handleDblClick}
         onDblTap={handleDblClick}
         hitStrokeWidth={8}
+        name="seat"
+        id={nodeId}
         draggable={draggable}
+        onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
       />
     )
@@ -127,7 +143,11 @@ const SeatDot = memo(function SeatDot({
         onDblClick={handleDblClick}
         onDblTap={handleDblClick}
         hitStrokeWidth={8}
+        name="seat"
+        id={nodeId}
         draggable={draggable}
+        onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
       />
     )
@@ -144,10 +164,16 @@ const SeatDot = memo(function SeatDot({
       strokeWidth={strokeW}
       perfectDrawEnabled={false}
       listening={listenProp}
-      onClick={onClick}
-      onTap={onClick}
+      onClick={handleClick}
+      onTap={handleClick}
+      onDblClick={handleDblClick}
+      onDblTap={handleDblClick}
       hitStrokeWidth={8}
+      name="seat"
+      id={nodeId}
       draggable={draggable}
+      onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
     />
   )
@@ -164,6 +190,8 @@ const SectionGroup = memo(function SectionGroup({
   selectedSeatIds,
   onSeatClick,
   onSeatDblClick,
+  onSeatDragStart,
+  onSeatDragMove,
   onSeatDragEnd,
   seatRadius,
   seatShape,
@@ -179,6 +207,8 @@ const SectionGroup = memo(function SectionGroup({
   selectedSeatIds: string[]
   onSeatClick?: (seatId: string, e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void
   onSeatDblClick?: (seatId: string, e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void
+  onSeatDragStart?: (seatId: string, node: Konva.Node) => void
+  onSeatDragMove?: (seatId: string, node: Konva.Node) => void
   onSeatDragEnd?: (seatId: string, cx: number, cy: number) => void
   seatRadius: number
   seatShape: SeatShape
@@ -202,7 +232,9 @@ const SectionGroup = memo(function SectionGroup({
       <Line
         points={section.polygonPoints}
         closed
-        fill={isSelected ? section.color + '60' : section.color + '30'}
+        // Keep the body visible even when the border is 0 — otherwise a faint
+        // fill + no outline makes the section look like it vanished in the editor.
+        fill={isSelected ? section.color + '66' : section.color + '40'}
         stroke={isSelected ? '#ffffff' : (section.borderColor || section.color)}
         strokeWidth={isSelected ? 3 : (section.borderWidth ?? 1.5)}
         dash={!isSelected && section.borderStyle === 'dashed' ? [8, 4] : undefined}
@@ -228,6 +260,7 @@ const SectionGroup = memo(function SectionGroup({
         return (
           <SeatDot
             key={seat.id}
+            nodeId={seat.id}
             x={seat.x}
             y={seat.y}
             status={seat.status}
@@ -239,6 +272,8 @@ const SectionGroup = memo(function SectionGroup({
             shape={seatShape}
             tierColor={resolvedTier ? tierColorMap?.get(resolvedTier) : undefined}
             draggable={seatsDraggable}
+            onDragStart={onSeatDragStart ? (node) => onSeatDragStart(seat.id, node) : undefined}
+            onDragMove={onSeatDragMove ? (node) => onSeatDragMove(seat.id, node) : undefined}
             onDragEnd={onSeatDragEnd ? (cx, cy) => onSeatDragEnd(seat.id, cx, cy) : undefined}
           />
         )
@@ -341,6 +376,12 @@ export function CanvasBuilder({
   const [stageSize, setStageSize] = useState({ width: 1400, height: 900 })
   const containerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Clipboard for copy/paste of seats (Cmd/Ctrl + C / V)
+  const seatClipboardRef = useRef<{ sectionId: string; seat: SeatData }[]>([])
+  // Live group-drag: the dragged seat's start + the other selected seats' nodes
+  const dragGroupRef = useRef<{ startX: number; startY: number; others: { node: Konva.Node; x: number; y: number }[] } | null>(null)
+  // Middle-mouse panning (works regardless of the active tool)
+  const middlePanRef = useRef<{ startX: number; startY: number; offX: number; offY: number } | null>(null)
 
   // Track mouse position for live drawing preview
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
@@ -404,6 +445,26 @@ export function CanvasBuilder({
           e.preventDefault()
           handleExport()
         }
+        // Copy selected seats
+        if (e.key === 'c' && state.selectedSeatIds.length > 0) {
+          e.preventDefault()
+          const items: { sectionId: string; seat: SeatData }[] = []
+          for (const s of state.sections) {
+            for (const seat of s.seats) {
+              if (state.selectedSeatIds.includes(seat.id)) items.push({ sectionId: s.id, seat })
+            }
+          }
+          seatClipboardRef.current = items
+        }
+        // Paste copied seats (new ids, offset so they don't overlap)
+        if (e.key === 'v' && seatClipboardRef.current.length > 0) {
+          e.preventDefault()
+          const pasted = seatClipboardRef.current.map(({ sectionId, seat }) => ({
+            sectionId,
+            seat: { ...seat, id: crypto.randomUUID(), x: seat.x + 18, y: seat.y + 18 },
+          }))
+          dispatchWithHistory({ type: 'ADD_SEATS', seats: pasted })
+        }
         return
       }
 
@@ -461,7 +522,7 @@ export function CanvasBuilder({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [readOnly, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, state.backgroundShapes, undo, redo, dispatch, dispatchWithHistory])
+  }, [readOnly, state.sections, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, state.backgroundShapes, undo, redo, dispatch, dispatchWithHistory])
 
   // ─── Zoom via Mouse Wheel ────────────────────────────────────────────
   const handleWheel = useCallback(
@@ -533,10 +594,16 @@ export function CanvasBuilder({
       if (!stage) return
       const pointer = stage.getPointerPosition()
       if (!pointer) return
+      // Middle-mouse panning — move the canvas by the screen-space delta.
+      if (middlePanRef.current) {
+        const m = middlePanRef.current
+        dispatch({ type: 'SET_PAN', offset: { x: m.offX + (pointer.x - m.startX), y: m.offY + (pointer.y - m.startY) } })
+        return
+      }
       const canvasPos = screenToCanvas(pointer)
       setMousePos(canvasPos)
     },
-    [screenToCanvas]
+    [screenToCanvas, dispatch]
   )
 
   // ─── Mouse Down (start rectangle drag) ──────────────────────────────
@@ -547,6 +614,15 @@ export function CanvasBuilder({
       if (!stage) return
       const pointer = stage.getPointerPosition()
       if (!pointer) return
+
+      // Middle mouse button → pan from anywhere, regardless of the active tool.
+      if (e.evt.button === 1) {
+        e.evt.preventDefault()
+        middlePanRef.current = { startX: pointer.x, startY: pointer.y, offX: state.panOffset.x, offY: state.panOffset.y }
+        const c = stage.container(); if (c) c.style.cursor = 'grabbing'
+        return
+      }
+
       const { x, y } = screenToCanvas(pointer)
 
       // Only start rect drag on stage background
@@ -571,7 +647,7 @@ export function CanvasBuilder({
         stage.draggable(true)
       }
     },
-    [readOnly, state.tool, dispatch, screenToCanvas]
+    [readOnly, state.tool, state.panOffset, dispatch, screenToCanvas]
   )
 
   // ─── Mouse Up (finish rectangle drag) ───────────────────────────────
@@ -580,6 +656,13 @@ export function CanvasBuilder({
       if (readOnly) return
       const stage = stageRef.current
       if (!stage) return
+
+      // Finish middle-mouse pan
+      if (middlePanRef.current) {
+        middlePanRef.current = null
+        const c = stage.container(); if (c) c.style.cursor = ''
+        return
+      }
 
       // Pan mode: end drag
       if (state.tool === 'pan') {
@@ -709,6 +792,8 @@ export function CanvasBuilder({
   const handleStageClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
       if (readOnly) return
+      // Ignore middle-button clicks — those are panning, not selection.
+      if ('button' in e.evt && (e.evt as MouseEvent).button === 1) return
       const stage = stageRef.current
       if (!stage) return
       const pointer = stage.getPointerPosition()
@@ -763,6 +848,10 @@ export function CanvasBuilder({
   const handleSectionClick = useCallback(
     (sectionId: string, e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
       if (readOnly) return
+      // Ignore clicks/double-clicks that originated on a seat — those select the
+      // seat, not the section/zone. (Seats handle their own clicks; this guards
+      // against event bubbling and the draw-seat tool where seats don't.)
+      if (e && (e.target as Konva.Node)?.hasName?.('seat')) return
       if (
         state.tool === 'select' ||
         state.tool === 'draw-seat'
@@ -806,12 +895,80 @@ export function CanvasBuilder({
     [readOnly, state.tool, dispatch]
   )
 
+  // Expand the current seat selection to the FULL row(s) it belongs to
+  // (all seats sharing the same section + rowLabel) — for batch renumber/edit.
+  const handleSelectRow = useCallback(() => {
+    const sel = state.selectedSeatIds.length
+      ? state.selectedSeatIds
+      : state.selectedSeatId ? [state.selectedSeatId] : []
+    if (sel.length === 0) return
+    const selSet = new Set(sel)
+    const rowKeys = new Set<string>()
+    for (const s of state.sections) {
+      for (const seat of s.seats) {
+        if (selSet.has(seat.id)) rowKeys.add(`${s.id}::${seat.rowLabel}`)
+      }
+    }
+    const ids: string[] = []
+    for (const s of state.sections) {
+      for (const seat of s.seats) {
+        if (rowKeys.has(`${s.id}::${seat.rowLabel}`)) ids.push(seat.id)
+      }
+    }
+    dispatch({ type: 'SELECT_SEATS', seatIds: ids })
+  }, [state.sections, state.selectedSeatIds, state.selectedSeatId, dispatch])
+
+  // When a multi-selected seat starts dragging, snapshot the other selected
+  // seats' Konva nodes so we can move them live (see handleSeatDragMove).
+  const handleSeatDragStart = useCallback(
+    (seatId: string, node: Konva.Node) => {
+      if (!(state.selectedSeatIds.length > 1 && state.selectedSeatIds.includes(seatId))) {
+        dragGroupRef.current = null
+        return
+      }
+      const stage = stageRef.current
+      if (!stage) return
+      const others: { node: Konva.Node; x: number; y: number }[] = []
+      for (const id of state.selectedSeatIds) {
+        if (id === seatId) continue
+        const n = stage.findOne<Konva.Node>('#' + id)
+        if (n) others.push({ node: n, x: n.x(), y: n.y() })
+      }
+      dragGroupRef.current = { startX: node.x(), startY: node.y(), others }
+    },
+    [state.selectedSeatIds]
+  )
+
+  // Move the other selected seats imperatively as the dragged seat moves.
+  const handleSeatDragMove = useCallback((_seatId: string, node: Konva.Node) => {
+    const g = dragGroupRef.current
+    if (!g) return
+    const dx = node.x() - g.startX
+    const dy = node.y() - g.startY
+    for (const o of g.others) o.node.position({ x: o.x + dx, y: o.y + dy })
+    node.getLayer()?.batchDraw()
+  }, [])
+
   const handleSeatDragEnd = useCallback(
     (sectionId: string, seatId: string, cx: number, cy: number) => {
       if (readOnly || state.tool !== 'select') return
+      dragGroupRef.current = null
+      // Group drag: if the dragged seat is part of a multi-selection, move the
+      // whole selection by the same delta.
+      if (state.selectedSeatIds.length > 1 && state.selectedSeatIds.includes(seatId)) {
+        let dragged: SeatData | undefined
+        for (const s of state.sections) {
+          const found = s.seats.find((seat) => seat.id === seatId)
+          if (found) { dragged = found; break }
+        }
+        if (dragged) {
+          dispatchWithHistory({ type: 'MOVE_SEATS', seatIds: state.selectedSeatIds, dx: cx - dragged.x, dy: cy - dragged.y })
+          return
+        }
+      }
       dispatchWithHistory({ type: 'MOVE_SEAT', sectionId, seatId, x: cx, y: cy })
     },
-    [readOnly, state.tool, dispatchWithHistory]
+    [readOnly, state.tool, state.selectedSeatIds, state.sections, dispatchWithHistory]
   )
 
   const handleSectionDragEnd = useCallback(
@@ -1052,7 +1209,7 @@ export function CanvasBuilder({
       return `Row ${state.dropRow} Seat ${state.dropSeatNumber} • Click to place or drag to place a row`
     }
     if (state.selectedSeatIds.length > 1) {
-      return `${state.selectedSeatIds.length} seats selected • Align/renumber/price in panel • Delete to remove`
+      return `${state.selectedSeatIds.length} seats selected • Align/renumber/price in panel • ⌘C/⌘V copy/paste • Delete to remove`
     }
     if (state.tool === 'select' && state.selectedSeatId) {
       return 'Seat selected • Click more seats to add • Double-click a seat to edit just it • Delete to remove'
@@ -1143,6 +1300,8 @@ export function CanvasBuilder({
                 selectedSeatIds={state.selectedSeatIds}
                 onSeatClick={state.tool === 'select' ? handleSeatClick : undefined}
                 onSeatDblClick={state.tool === 'select' ? handleSeatDblClick : undefined}
+                onSeatDragStart={state.tool === 'select' ? handleSeatDragStart : undefined}
+                onSeatDragMove={state.tool === 'select' ? handleSeatDragMove : undefined}
                 onSeatDragEnd={state.tool === 'select' ? (seatId, cx, cy) => handleSeatDragEnd(section.id, seatId, cx, cy) : undefined}
                 seatsDraggable={!readOnly && state.tool === 'select'}
                 seatRadius={state.seatRadius}
@@ -1294,6 +1453,7 @@ export function CanvasBuilder({
           onAssignSeatsTier={(seatIds, tierId) => {
             dispatchWithHistory({ type: 'ASSIGN_SEATS_TIER', seatIds, tierId })
           }}
+          onSelectRow={handleSelectRow}
           onUpdateSection={(id, updates) =>
             dispatchWithHistory({ type: 'UPDATE_SECTION', id, updates })
           }
@@ -1335,12 +1495,12 @@ export function CanvasBuilder({
           onSelectSeat={(seatId) => {
             dispatch({ type: 'SELECT_SEAT', seatId })
           }}
-          onRenumberSeats={(seatIds, rowLabel, startNumber) => {
+          onRenumberSeats={(seatIds, rowLabel, startNumber, mode) => {
             // Find which section contains the majority of the selected seats
             const sectionId = state.sections.find(s =>
               s.seats.some(seat => seatIds.includes(seat.id))
             )?.id ?? ''
-            dispatchWithHistory({ type: 'RENUMBER_SEATS', sectionId, seatIds, startRow: rowLabel, startNum: startNumber })
+            dispatchWithHistory({ type: 'RENUMBER_SEATS', sectionId, seatIds, startRow: rowLabel, startNum: startNumber, mode })
           }}
           onDeleteSelectedSeats={() => {
             dispatchWithHistory({ type: 'DELETE_SEATS', seatIds: state.selectedSeatIds })

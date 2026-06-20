@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Attendee, getEventAttendees, refundTicket, markIntentAsRefunded } from '@/lib/organizer/attendee-actions'
+import { useState, useEffect, useRef } from 'react'
+import { Attendee, getEventAttendees, refundTicket, markIntentAsRefunded, getAttendeeStats, getRegistrationAnswers, type RegistrationAnswerView } from '@/lib/organizer/attendee-actions'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/hooks/use-debounce'
 import {
@@ -24,7 +25,8 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet } from 'lucide-react'
+import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { format } from 'date-fns'
@@ -60,6 +62,67 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
     const [search, setSearch] = useState('')
     const debouncedSearch = useDebounce(search, 500)
     const totalPages = Math.ceil(total / 20)
+
+    // Status filter tab
+    const [statusFilter, setStatusFilter] = useState<'all' | 'valid' | 'checked_in' | 'refunded'>('all')
+
+    // Top-of-page stats (filter-independent)
+    const [stats, setStats] = useState<{ attendees: number; checkedIn: number; revenue: number } | null>(null)
+
+    // Registration answers dialog
+    const [answersOpen, setAnswersOpen] = useState(false)
+    const [answersLoading, setAnswersLoading] = useState(false)
+    const [answers, setAnswers] = useState<RegistrationAnswerView[]>([])
+    const [answersName, setAnswersName] = useState('')
+
+    // Re-fetch when page / search / status filter changes. (Previously there was
+    // no effect at all — search & pagination only worked via the Refresh button.)
+    const didMount = useRef(false)
+    useEffect(() => {
+        // Skip the first run: initialAttendees already cover page 1 / no filter.
+        if (!didMount.current) { didMount.current = true; return }
+        let cancelled = false
+        ;(async () => {
+            setLoading(true)
+            try {
+                const result = await getEventAttendees(eventId, page, 20, debouncedSearch, statusFilter)
+                if (!cancelled) { setAttendees(result.attendees); setTotal(result.total) }
+            } catch {
+                if (!cancelled) toast({ title: 'Error', description: 'Failed to load attendees', variant: 'destructive' })
+            } finally {
+                if (!cancelled) setLoading(false)
+            }
+        })()
+        return () => { cancelled = true }
+    }, [eventId, page, debouncedSearch, statusFilter, toast])
+
+    // Load stats once
+    useEffect(() => {
+        getAttendeeStats(eventId).then(setStats).catch(() => {})
+    }, [eventId])
+
+    async function openAnswers(attendee: Attendee, name: string) {
+        if (!attendee.registration_id) return
+        setAnswersName(name)
+        setAnswers([])
+        setAnswersOpen(true)
+        setAnswersLoading(true)
+        try {
+            setAnswers(await getRegistrationAnswers(attendee.registration_id))
+        } finally {
+            setAnswersLoading(false)
+        }
+    }
+
+    const seatLine = (s: Attendee['seat_info']): string | null => {
+        if (!s) return null
+        const parts: string[] = []
+        if (s.section) parts.push(s.section)
+        if (s.row) parts.push(`Row ${s.row}`)
+        if (s.seat != null) parts.push(`Seat ${s.seat}`)
+        if (parts.length === 0 && s.label) return s.label
+        return parts.length ? parts.join(' · ') : null
+    }
 
     // Refund State
     const [isRefunding, setIsRefunding] = useState(false)
@@ -256,15 +319,17 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
     const selectedAttendeesData = attendees.filter(a => selectedAttendees.has(a.id))
 
     const downloadCSV = () => {
-        const headers = ['Ticket ID', 'Name', 'Email', 'Tier', 'Price', 'Status', 'Check-in Time']
+        const headers = ['Ticket #', 'Name', 'Email', 'Tier', 'Price', 'Seat', 'Status', 'Purchased', 'Check-in Time']
         const rows = attendees.map(a => [
-            a.id,
+            a.ticket_number || a.id,
             a.user?.display_name || a.guest_info?.name || 'Guest',
             a.user?.email || a.guest_info?.email || '-',
             a.tier?.name || 'General',
             a.tier?.price?.toString() || '0',
+            seatLine(a.seat_info) || '-',
             a.status,
-            a.created_at ? new Date(a.created_at).toLocaleString() : '-'
+            a.created_at ? new Date(a.created_at).toLocaleString() : '-',
+            a.checked_in_at ? new Date(a.checked_in_at).toLocaleString() : '-'
         ])
 
         const csvContent = [
@@ -312,13 +377,55 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
 
     return (
         <div className="space-y-4">
+            {/* Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="rounded-xl border bg-card p-4">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Attendees</p>
+                    <p className="text-2xl font-bold mt-1">{stats?.attendees ?? '—'}</p>
+                </div>
+                <div className="rounded-xl border bg-card p-4">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5" /> Checked in</p>
+                    <p className="text-2xl font-bold mt-1">
+                        {stats ? `${stats.checkedIn} / ${stats.attendees}` : '—'}
+                    </p>
+                </div>
+                <div className="rounded-xl border bg-card p-4 col-span-2 sm:col-span-1">
+                    <p className="text-xs text-muted-foreground">Gross sales</p>
+                    <p className="text-2xl font-bold mt-1">{stats ? `₱${stats.revenue.toLocaleString()}` : '—'}</p>
+                </div>
+            </div>
+
+            {/* Status filter tabs */}
+            <div className="flex flex-wrap gap-2">
+                {([
+                    { key: 'all', label: 'All' },
+                    { key: 'valid', label: 'Valid' },
+                    { key: 'checked_in', label: 'Checked in' },
+                    { key: 'refunded', label: 'Refunded' },
+                ] as const).map((t) => (
+                    <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => { setStatusFilter(t.key); setPage(1) }}
+                        className={cn(
+                            'rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors',
+                            statusFilter === t.key
+                                ? 'border-primary bg-primary text-primary-foreground'
+                                : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground'
+                        )}
+                    >
+                        {t.label}
+                    </button>
+                ))}
+            </div>
+
             <div className="flex items-center justify-between">
                 <div className="relative w-72">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                         placeholder="Search ticket #, guest name/email..."
                         value={search}
-                        onChange={(e) => setSearch(e.target.value)}
+                        onChange={(e) => { setSearch(e.target.value); setPage(1) }}
                         className="pl-8"
                     />
                 </div>
@@ -408,21 +515,23 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                             <TableHead>Attendee</TableHead>
                             <TableHead>Dates</TableHead>
                             <TableHead>Ticket Type</TableHead>
+                            <TableHead>Seat</TableHead>
                             <TableHead>Payment</TableHead>
                             <TableHead>Status</TableHead>
+                            <TableHead>Check-in</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {loading ? (
                             <TableRow>
-                                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground animate-pulse">
+                                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground animate-pulse">
                                     Loading attendees...
                                 </TableCell>
                             </TableRow>
                         ) : attendees.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={7} className="h-24 text-center">
+                                <TableCell colSpan={9} className="h-24 text-center">
                                     No attendees found.
                                 </TableCell>
                             </TableRow>
@@ -444,6 +553,9 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                                             <div className="flex flex-col">
                                                 <span className="font-medium">{name}</span>
                                                 <span className="text-xs text-muted-foreground">{email}</span>
+                                                {attendee.ticket_number && (
+                                                    <span className="text-[10px] font-mono text-muted-foreground">{attendee.ticket_number}</span>
+                                                )}
                                                 {isGuest && <Badge variant="outline" className="w-fit mt-1 text-[10px]">Guest Checkout</Badge>}
                                             </div>
                                         </TableCell>
@@ -455,6 +567,11 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                                             <div className="text-xs text-muted-foreground mt-1">
                                                 ₱{attendee.tier?.price?.toLocaleString() ?? '0'}
                                             </div>
+                                        </TableCell>
+                                        <TableCell className="text-sm">
+                                            {seatLine(attendee.seat_info)
+                                                ? <span className="flex items-center gap-1"><Armchair className="h-3.5 w-3.5 text-muted-foreground" />{seatLine(attendee.seat_info)}</span>
+                                                : <span className="text-muted-foreground">—</span>}
                                         </TableCell>
                                         <TableCell>
                                             <div className="flex flex-col gap-1">
@@ -476,6 +593,16 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                                                 </div>
                                             ) : null}
                                         </TableCell>
+                                        <TableCell className="text-sm">
+                                            {attendee.checked_in_at ? (
+                                                <span className="flex items-center gap-1 text-green-600">
+                                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                                    {format(new Date(attendee.checked_in_at), 'MMM d, h:mm a')}
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground">Not yet</span>
+                                            )}
+                                        </TableCell>
                                         <TableCell className="text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
@@ -494,6 +621,12 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                                                     >
                                                         Copy Ticket ID
                                                     </DropdownMenuItem>
+                                                    {attendee.registration_id && (
+                                                        <DropdownMenuItem onClick={() => openAnswers(attendee, name)}>
+                                                            <ClipboardList className="w-4 h-4 mr-2" />
+                                                            View answers
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     <DropdownMenuSeparator />
                                                     {['valid', 'paid', 'checked_in'].includes(attendee.status) && (
                                                         <DropdownMenuItem
@@ -612,6 +745,31 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* Registration answers */}
+            <Dialog open={answersOpen} onOpenChange={setAnswersOpen}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Registration answers{answersName ? ` — ${answersName}` : ''}</DialogTitle>
+                    </DialogHeader>
+                    {answersLoading ? (
+                        <div className="flex items-center justify-center py-10 text-muted-foreground">
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                        </div>
+                    ) : answers.length === 0 ? (
+                        <p className="py-6 text-center text-sm text-muted-foreground">No answers recorded.</p>
+                    ) : (
+                        <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                            {answers.map((a, i) => (
+                                <div key={i}>
+                                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{a.label}</p>
+                                    <p className="mt-0.5 text-sm whitespace-pre-wrap">{a.answer}</p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

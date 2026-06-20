@@ -298,7 +298,7 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                     )}
                 </div>
 
-                <div className="h-[700px]">
+                <div className="h-[calc(100vh-140px)] min-h-[700px]">
                     <CanvasBuilder
                         initialData={canvasData}
                         onSave={handleSave}

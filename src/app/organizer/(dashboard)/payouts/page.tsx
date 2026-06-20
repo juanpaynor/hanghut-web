@@ -34,7 +34,9 @@ async function getPayoutStats(partnerId: string) {
             .from('experience_transactions')
             .select('host_payout')
             .eq('partner_id', partnerId)
-            .eq('status', 'completed'),
+            // App-team contract: count completed AND refunded — refund rows carry a
+            // negative host_payout so they net the earnings down.
+            .in('status', ['completed', 'refunded']),
     ])
 
     const totalEarnings =
@@ -214,7 +216,8 @@ async function getPeriodEarnings(partnerId: string, from?: string, to?: string) 
             .from('experience_transactions')
             .select('host_payout')
             .eq('partner_id', partnerId)
-            .eq('status', 'completed')
+            // completed + refunded (refunds net down) — matches app-team contract
+            .in('status', ['completed', 'refunded'])
             .gte('created_at', from)
             .lte('created_at', `${to}T23:59:59`),
     ])
