@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import { Calendar, MapPin, Share2, ShieldCheck, Ticket, Phone, ExternalLink } from 'lucide-react'
 import type { Metadata } from 'next'
-import { TicketSelector } from '@/components/events/ticket-selector'
 import { SeatPickerLauncher } from '@/components/events/seat-picker-launcher'
 import { EventGallery } from '@/components/events/event-gallery'
 import { RegistrationGate } from '@/components/events/registration-gate'
@@ -721,16 +720,21 @@ export default async function PublicEventPage({
                     </>
                 ) : (
                     <>
-                        <TicketSelector
+                        <RegistrationGate
                             eventId={event.id}
+                            eventTitle={event.title}
                             ticketPrice={event.ticket_price}
                             minTickets={event.min_tickets_per_purchase}
                             maxTickets={event.max_tickets_per_purchase}
                             isSoldOut={isSoldOut}
                             tiers={event.ticket_tiers}
                             fullWidth
-                            trigger={null}
                             subscriberDiscount={subscriberDiscount}
+                            questions={(event.registration_questions || []) as QuestionForForm[]}
+                            requireApproval={event.require_approval}
+                            inviteOnly={event.invite_only}
+                            themeColor={event.theme_color}
+                            dark={isDarkBg}
                         />
                         {!isLoggedIn && (
                             <LoginNudge

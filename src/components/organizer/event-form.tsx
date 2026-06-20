@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { RichTextEditor } from '@/components/organizer/marketing/rich-text-editor'
 import { Card } from '@/components/ui/card'
 import {
     Select,
@@ -24,6 +25,7 @@ import { SubscriberDiscountsSection, type SubscriptionTierBasic, type ExistingDi
 interface EventFormData {
     title: string
     description: string
+    description_html: string
     event_type: string
     venue_name: string
     address: string
@@ -91,6 +93,9 @@ export function EventForm({
     const [formData, setFormData] = useState<EventFormData>({
         title: initialData?.title || '',
         description: initialData?.description || '',
+        // Prefer stored rich HTML; fall back to existing plain text so legacy
+        // events keep their description when edited.
+        description_html: initialData?.description_html || initialData?.description || '',
         event_type: initialData?.event_type || 'concert',
         venue_name: initialData?.venue_name || '',
         address: initialData?.address || '',
@@ -278,7 +283,16 @@ export function EventForm({
 
             // Add all text fields
             formDataToSend.append('title', formData.title)
-            formDataToSend.append('description', formData.description)
+            // Rich body goes to description_html; a stripped plain-text version
+            // feeds SEO meta, share text, and event cards.
+            const plainDescription = formData.description_html
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/&nbsp;/g, ' ')
+                .replace(/&amp;/g, '&')
+                .replace(/\s+/g, ' ')
+                .trim()
+            formDataToSend.append('description', plainDescription.slice(0, 5000))
+            formDataToSend.append('description_html', formData.description_html)
             formDataToSend.append('event_type', formData.event_type)
             formDataToSend.append('venue_name', formData.venue_name)
             formDataToSend.append('address', formData.address)
@@ -453,17 +467,13 @@ export function EventForm({
 
                         <div>
                             <Label htmlFor="description">Description</Label>
-                            <Textarea
-                                id="description"
-                                value={formData.description}
-                                onChange={(e) => handleInputChange('description', e.target.value)}
-                                placeholder="Tell attendees what to expect..."
-                                rows={4}
-                                maxLength={2000}
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                                {formData.description.length}/2000 characters
+                            <p className="text-xs text-muted-foreground mb-2">
+                                Format with rich text, paste HTML, or preview. This is shown on your event page.
                             </p>
+                            <RichTextEditor
+                                value={formData.description_html}
+                                onChange={(html) => handleInputChange('description_html', html)}
+                            />
                         </div>
 
                         <div>

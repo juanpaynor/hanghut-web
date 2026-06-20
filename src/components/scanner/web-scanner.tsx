@@ -14,6 +14,19 @@ export interface WebScannerProps {
     events: { id: string, title: string, start_datetime: string | null }[] // Fixed column
 }
 
+// Formats a ticket's seat for the scanner. Handles both the RPC shape (`seat`)
+// and the legacy raw-row shape (`seat_info`); GA tickets have neither.
+function formatSeat(ticket: any): string | null {
+    const s = ticket?.seat ?? ticket?.seat_info
+    if (!s) return null
+    const parts: string[] = []
+    if (s.section) parts.push(s.section)
+    if (s.row) parts.push(`Row ${s.row}`)
+    if (s.seat != null) parts.push(`Seat ${s.seat}`)
+    if (parts.length === 0 && s.label) return s.label
+    return parts.length ? parts.join(' · ') : null
+}
+
 export function WebScanner({ events }: WebScannerProps) {
     // Auto-select the most recent event (first one likely if sorted by start date desc)
     // Actually typically upcoming events are sorted asc, past desc. 
@@ -297,11 +310,17 @@ export function WebScanner({ events }: WebScannerProps) {
                                 <h2 className="text-2xl font-bold text-green-700">VALID TICKET</h2>
                                 {lastResult.ticket && (
                                     <>
-                                        <p className="text-green-800/80 font-medium mt-1">{lastResult.ticket.ticket_tiers?.name}</p>
+                                        <p className="text-green-800/80 font-medium mt-1">{lastResult.ticket.tier_name || lastResult.ticket.ticket_tiers?.name}</p>
                                         <div className="bg-white/60 p-3 rounded-lg text-sm mt-3 backdrop-blur-sm">
                                             <p className="text-muted-foreground uppercase text-xs tracking-wider mb-1">Guest</p>
                                             <p className="font-semibold text-xl text-slate-900">{lastResult.ticket.guestName}</p>
                                         </div>
+                                        {formatSeat(lastResult.ticket) && (
+                                            <div className="bg-white/80 p-3 rounded-lg mt-3 border border-green-600/20">
+                                                <p className="text-muted-foreground uppercase text-xs tracking-wider mb-1">Seat</p>
+                                                <p className="font-bold text-2xl text-slate-900">{formatSeat(lastResult.ticket)}</p>
+                                            </div>
+                                        )}
                                     </>
                                 )}
                             </div>
@@ -315,6 +334,9 @@ export function WebScanner({ events }: WebScannerProps) {
                                 <h2 className="text-2xl font-bold text-red-700">{lastResult.message}</h2>
                                 {lastResult.details && (
                                     <p className="text-red-900 font-medium mt-2 bg-red-200/50 py-1 px-2 rounded">{lastResult.details}</p>
+                                )}
+                                {formatSeat(lastResult.ticket) && (
+                                    <p className="text-red-900 font-semibold mt-2">Seat: {formatSeat(lastResult.ticket)}</p>
                                 )}
                             </div>
                         </div>

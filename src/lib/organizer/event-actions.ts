@@ -106,6 +106,7 @@ export async function createEvent(formData: FormData) {
             organizer_id: partner.id,
             title: formData.get('title') as string,
             description: formData.get('description') as string || null,
+            description_html: (formData.get('description_html') as string) || null,
             event_type: formData.get('event_type') as string,
             venue_name: formData.get('venue_name') as string,
             address: formData.get('address') as string,
@@ -276,6 +277,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
         const updateData = {
             title: formData.get('title') as string,
             description: formData.get('description') as string || null,
+            description_html: (formData.get('description_html') as string) || null,
             event_type: formData.get('event_type') as string,
             venue_name: formData.get('venue_name') as string,
             address: formData.get('address') as string,

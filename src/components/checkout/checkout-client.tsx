@@ -493,8 +493,9 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                     </CardContent>
                 </Card>
 
-                {/* Registration Questions */}
-                {(requireApproval || hasQuestions) && (
+                {/* Registration Questions — hidden when the buyer already answered
+                    them in the pre-checkout Register step (approvedRegistrationId set) */}
+                {(requireApproval || hasQuestions) && !approvedRegistrationId && (
                     <Card className="border-border/50 shadow-sm">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-primary">
