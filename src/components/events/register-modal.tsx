@@ -16,8 +16,9 @@ interface RegisterModalProps {
     event: { id: string; title: string; require_approval?: boolean; invite_only?: boolean }
     questions: QuestionForForm[]
     isLoggedIn: boolean
-    /** Fired when registration is approved/auto-approved — proceed to tickets. */
-    onApproved: (registrationId: string) => void
+    /** Fired when registration is approved/auto-approved — proceed to tickets.
+     *  Guest info is passed so a free auto-claim can attribute the ticket. */
+    onApproved: (registrationId: string, guest?: { name: string; email: string }) => void
     /** Fired when the request goes to pending (approval/invite-only events). */
     onPending?: () => void
     /** Event's accent color (hex) — themes the modal's primary/accent. */
@@ -127,7 +128,8 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
             } else {
                 setPhase('approved')
                 // brief success beat before handing off to the ticket selector
-                setTimeout(() => onApproved(regId), 1100)
+                const guest = isLoggedIn ? undefined : { name: name.trim(), email: email.trim() }
+                setTimeout(() => onApproved(regId, guest), 1100)
             }
         } catch {
             setError('Something went wrong. Please try again.')

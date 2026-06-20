@@ -254,6 +254,7 @@ export async function approveRegistration(
                 guest_name,
                 user_id,
                 event:events (
+                    id,
                     title,
                     start_datetime,
                     venue_name,
@@ -271,7 +272,9 @@ export async function approveRegistration(
                 ? (await adminClient.from('users').select('email').eq('id', regForEmail.user_id).single()).data?.email
                 : null)
 
-        if (recipientEmail && event?.approval_email_body) {
+        // Always email approved registrants (not just when a custom body is set) —
+        // it carries the link they need to come back and get their tickets.
+        if (recipientEmail) {
             const recipientName = regForEmail?.guest_name || 'there'
             const eventDate = event.start_datetime
                 ? new Date(event.start_datetime).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -286,11 +289,16 @@ export async function approveRegistration(
                     .replace(/{{organizer_name}}/g, event.partners?.business_name || '')
 
             const subject = resolveTags(event.approval_email_subject || `Your registration for ${event.title} has been approved!`)
-            const rawBody = resolveTags(event.approval_email_body)
+            const defaultBody = `Hi ${recipientName},\n\nGood news — your registration for ${event.title} has been approved! Tap the button below to get your tickets.`
+            const rawBody = resolveTags(event.approval_email_body || defaultBody)
             // Wrap plain text in minimal HTML if it doesn't look like HTML
-            const htmlBody = rawBody.trimStart().startsWith('<')
+            const bodyHtml = rawBody.trimStart().startsWith('<')
                 ? rawBody
                 : `<div style="font-family:sans-serif;line-height:1.6;white-space:pre-wrap">${rawBody}</div>`
+
+            // Append the all-important return link so the approved user can check out.
+            const eventUrl = `https://${process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'}/events/${event.id}`
+            const htmlBody = `${bodyHtml}<div style="text-align:center;margin:28px 0"><a href="${eventUrl}" style="display:inline-block;background:#6366f1;color:#fff;text-decoration:none;font-weight:600;padding:14px 32px;border-radius:8px;font-family:sans-serif">Get your tickets</a></div>`
 
             await fetch(`${SUPABASE_FUNCTIONS_URL}/send-registration-email`, {
                 method: 'POST',

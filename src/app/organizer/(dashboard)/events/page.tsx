@@ -7,21 +7,58 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Plus, Calendar, Users, Ticket } from 'lucide-react'
 import { format } from 'date-fns'
+import { EventsControls } from '@/components/organizer/events-controls'
 
 export const dynamic = 'force-dynamic'
 
-async function getOrganizerEvents(partnerId: string, page: number = 1) {
+interface EventFilters {
+    status: string
+    sort: string
+    q: string
+}
+
+async function getOrganizerEvents(partnerId: string, page: number, filters: EventFilters) {
     const supabase = await createClient()
     const ITEMS_PER_PAGE = 20
     const from = (page - 1) * ITEMS_PER_PAGE
     const to = from + ITEMS_PER_PAGE - 1
+    const nowIso = new Date().toISOString()
 
-    const { data: events, count } = await supabase
+    let query = supabase
         .from('events')
         .select('id, title, capacity, tickets_sold, start_datetime, cover_image_url, status, ticket_price, event_type', { count: 'exact' })
         .eq('organizer_id', partnerId)
-        .order('start_datetime', { ascending: false })
-        .range(from, to)
+
+    // Status / time filter
+    switch (filters.status) {
+        case 'upcoming':
+            query = query.eq('status', 'active').gte('start_datetime', nowIso)
+            break
+        case 'past':
+            query = query.eq('status', 'active').lt('start_datetime', nowIso)
+            break
+        case 'draft':
+            query = query.eq('status', 'draft')
+            break
+        case 'cancelled':
+            query = query.eq('status', 'cancelled')
+            break
+        // 'all' → no status filter
+    }
+
+    // Search
+    if (filters.q) {
+        query = query.ilike('title', `%${filters.q}%`)
+    }
+
+    // Sort
+    if (filters.sort === 'created') {
+        query = query.order('created_at', { ascending: false })
+    } else {
+        query = query.order('start_datetime', { ascending: filters.sort === 'date_asc' })
+    }
+
+    const { data: events, count } = await query.range(from, to)
 
     // Batch ticket counts (single RPC instead of N+1)
     const eventIds = events?.map(e => e.id) || []
@@ -45,12 +82,18 @@ async function getOrganizerEvents(partnerId: string, page: number = 1) {
 }
 
 type Props = {
-    searchParams: Promise<{ page?: string }>
+    searchParams: Promise<{ page?: string; status?: string; sort?: string; q?: string }>
 }
 
 export default async function OrganizerEventsPage(props: Props) {
     const searchParams = await props.searchParams
     const page = parseInt(searchParams.page || '1')
+
+    const status = searchParams.status || 'all'
+    // Smart default sort: upcoming shows soonest-first, everything else latest-first.
+    const sort = searchParams.sort || (status === 'upcoming' ? 'date_asc' : 'date_desc')
+    const q = searchParams.q || ''
+    const filters = { status, sort, q }
 
     // Cached — layout already resolved these
     const { user } = await getAuthUser()
@@ -59,8 +102,18 @@ export default async function OrganizerEventsPage(props: Props) {
     const partnerId = await getPartnerId(user.id)
     if (!partnerId) return null
 
-    const { events, total } = await getOrganizerEvents(partnerId, page)
+    const { events, total } = await getOrganizerEvents(partnerId, page, filters)
     const totalPages = Math.ceil(total / 20)
+
+    // Preserve filters across pagination links
+    const pageHref = (p: number) => {
+        const sp = new URLSearchParams()
+        if (status !== 'all') sp.set('status', status)
+        if (searchParams.sort) sp.set('sort', sort)
+        if (q) sp.set('q', q)
+        sp.set('page', String(p))
+        return `/organizer/events?${sp.toString()}`
+    }
 
     const getDisplayStatus = (event: any) => {
         if (event.status === 'active' && new Date(event.start_datetime) < new Date()) {
@@ -96,21 +149,37 @@ export default async function OrganizerEventsPage(props: Props) {
                 </Link>
             </div>
 
+            {(events.length > 0 || status !== 'all' || q) && (
+                <EventsControls status={status} sort={sort} q={q} />
+            )}
+
             {events.length === 0 ? (
-                <Card className="p-12">
-                    <div className="text-center space-y-4">
-                        <Calendar className="h-20 w-20 mx-auto text-muted-foreground" />
-                        <div>
-                            <h3 className="text-xl font-bold mb-2">No events yet</h3>
-                            <p className="text-muted-foreground mb-6">
-                                Start by creating your first ticketed event
+                status !== 'all' || q ? (
+                    <Card className="p-12">
+                        <div className="text-center space-y-2">
+                            <Calendar className="h-14 w-14 mx-auto text-muted-foreground/50" />
+                            <h3 className="text-lg font-semibold">No events match</h3>
+                            <p className="text-muted-foreground text-sm">
+                                Try a different filter or search term.
                             </p>
-                            <Link href="/organizer/events/create">
-                                <Button size="lg">Create Your First Event</Button>
-                            </Link>
                         </div>
-                    </div>
-                </Card>
+                    </Card>
+                ) : (
+                    <Card className="p-12">
+                        <div className="text-center space-y-4">
+                            <Calendar className="h-20 w-20 mx-auto text-muted-foreground" />
+                            <div>
+                                <h3 className="text-xl font-bold mb-2">No events yet</h3>
+                                <p className="text-muted-foreground mb-6">
+                                    Start by creating your first ticketed event
+                                </p>
+                                <Link href="/organizer/events/create">
+                                    <Button size="lg">Create Your First Event</Button>
+                                </Link>
+                            </div>
+                        </div>
+                    </Card>
+                )
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {events.map((event: any) => (
@@ -176,7 +245,7 @@ export default async function OrganizerEventsPage(props: Props) {
             {totalPages > 1 && (
                 <div className="flex items-center justify-center gap-2 mt-8">
                     <Link
-                        href={`/organizer/events?page=${page - 1}`}
+                        href={pageHref(page - 1)}
                         className={page === 1 ? 'pointer-events-none opacity-50' : ''}
                     >
                         <Button variant="outline" size="sm" disabled={page === 1}>
@@ -187,7 +256,7 @@ export default async function OrganizerEventsPage(props: Props) {
                         Page {page} of {totalPages}
                     </span>
                     <Link
-                        href={`/organizer/events?page=${page + 1}`}
+                        href={pageHref(page + 1)}
                         className={page === totalPages ? 'pointer-events-none opacity-50' : ''}
                     >
                         <Button variant="outline" size="sm" disabled={page === totalPages}>

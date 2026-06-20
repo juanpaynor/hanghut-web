@@ -26,7 +26,7 @@ interface Transaction {
     created_at: string
     event: { title: string } | null
     purchase_intent?: { payment_method: string | null } | null
-    _type?: 'ticket' | 'topup'
+    _type?: 'ticket' | 'topup' | 'experience'
 }
 
 interface TransactionsHistoryProps {
@@ -250,6 +250,11 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                                                 <span className={`font-medium text-sm ${isTopUp ? 'text-purple-700' : 'text-foreground'}`}>
                                                     {isTopUp ? 'Wallet Top-Up' : (transaction.event?.title || 'Unknown Event')}
                                                 </span>
+                                                {transaction._type === 'experience' && (
+                                                    <Badge variant="outline" className="ml-2 text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                                                        Experience
+                                                    </Badge>
+                                                )}
                                             </TableCell>
 
                                             {/* Channel + Payment Method */}

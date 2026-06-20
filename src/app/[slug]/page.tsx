@@ -28,7 +28,7 @@ const getPartnerAndEvents = cache(async (slug: string) => {
     const supabase = await createClient()
     const { data: partner, error } = await supabase
         .from('partners')
-        .select('id, business_name, slug, description, profile_photo_url, cover_image_url, social_links, branding, verified, show_membership_tab')
+        .select('id, business_name, slug, description, profile_photo_url, cover_image_url, social_links, branding, verified, show_membership_tab, subscriptions_enabled')
         .eq('slug', slug)
         .single()
 
@@ -113,7 +113,15 @@ const getPartnerAndEvents = cache(async (slug: string) => {
             .limit(10),
     ])
 
-    return { partner, upcoming, past: enrichedPast, tiers: tiersRes.data || [], posts: postsRes.data || [] }
+    // Subscriptions are feature-gated per partner — hide membership content when off.
+    const subsOn = (partner as any).subscriptions_enabled === true
+    return {
+        partner,
+        upcoming,
+        past: enrichedPast,
+        tiers: subsOn ? (tiersRes.data || []) : [],
+        posts: subsOn ? (postsRes.data || []) : [],
+    }
 })
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -175,8 +183,11 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
     // Animation Helpers
     const animate = (delay: string = '') => enableAnimations ? `animate-in fade-in slide-in-from-bottom-4 duration-700 ${delay} fill-mode-both` : ''
 
-    // Storefront mode resolution: honor branding override, else auto-detect from content
-    const primaryModeOverride = branding.design?.primary_mode as string | undefined
+    // Storefront mode resolution: honor branding override, else auto-detect from content.
+    // When subscriptions are gated off, ignore a 'membership' override so the page
+    // doesn't show an empty membership storefront.
+    const subsEnabled = (partner as any).subscriptions_enabled === true
+    const primaryModeOverride = subsEnabled ? (branding.design?.primary_mode as string | undefined) : undefined
     const hasUpcoming = upcoming.length > 0
     const hasTiers = tiers.length > 0
     const resolvedMode: 'events' | 'membership' | 'hybrid' | 'profile' =

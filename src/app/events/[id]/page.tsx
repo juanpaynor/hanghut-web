@@ -132,12 +132,45 @@ export default async function PublicEventPage({
     let isActiveSubscriber = false
     let isLoggedIn = false
     let viewerEmail: string | null = null
+    let approvedRegistrationId: string | null = null
+    let viewerHasTicket = false
+    let viewerTicketToken: string | null = null
 
     try {
         const authClient = await createClient()
         const { data: { user } } = await authClient.auth.getUser()
         isLoggedIn = !!user
         viewerEmail = user?.email ?? null
+        if (user) {
+            const admin = createAdminClient()
+            // Returning approved users skip the question step and go straight to tickets.
+            if (event.require_approval || event.invite_only) {
+                const { data: reg } = await admin
+                    .from('event_registrations')
+                    .select('id')
+                    .eq('event_id', id)
+                    .eq('user_id', user.id)
+                    .in('status', ['approved', 'auto_approved'])
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle()
+                approvedRegistrationId = reg?.id ?? null
+            }
+            // Already holds a ticket → show "You're going" instead of re-prompting checkout.
+            const { data: tk } = await admin
+                .from('tickets')
+                .select('id, purchase_intents(access_token)')
+                .eq('event_id', id)
+                .eq('user_id', user.id)
+                .in('status', ['valid', 'confirmed', 'approved'])
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+            if (tk) {
+                viewerHasTicket = true
+                viewerTicketToken = (tk.purchase_intents as any)?.access_token ?? null
+            }
+        }
         if (user && event.organizer?.id) {
             const [discountRes, subRes] = await Promise.all([
                 authClient.rpc('get_subscriber_event_discount', { p_event_id: id }),
@@ -735,6 +768,9 @@ export default async function PublicEventPage({
                             inviteOnly={event.invite_only}
                             themeColor={event.theme_color}
                             dark={isDarkBg}
+                            initialApprovedRegistrationId={approvedRegistrationId}
+                            hasTicket={viewerHasTicket}
+                            ticketToken={viewerTicketToken}
                         />
                         {!isLoggedIn && (
                             <LoginNudge

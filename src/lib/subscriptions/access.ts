@@ -15,6 +15,21 @@ export interface SubscriptionStatus {
 }
 
 /**
+ * Whether the subscription/membership feature is enabled for a partner.
+ * New partners default OFF while recurring billing is being finalized; admins
+ * flip this on per org. Gate organizer UI + server actions on this.
+ */
+export async function isSubscriptionsEnabled(partnerId: string): Promise<boolean> {
+    const supabase = await createClient()
+    const { data } = await supabase
+        .from('partners')
+        .select('subscriptions_enabled')
+        .eq('id', partnerId)
+        .single()
+    return data?.subscriptions_enabled === true
+}
+
+/**
  * Returns the current user's subscription status for a given partner.
  * Uses the is_active_subscriber RPC as the canonical access check,
  * then fetches full details for UI display.

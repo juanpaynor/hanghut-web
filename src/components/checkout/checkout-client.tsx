@@ -52,9 +52,11 @@ interface CheckoutClientProps {
     registrationQuestions?: RegistrationQuestion[]
     subscriberDiscount?: SubscriberDiscount | null
     selectedSeatIds?: string[]
+    /** Server-resolved approved registration for this buyer (returning approved users). */
+    approvedRegistrationId?: string | null
 }
 
-export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName, registrationQuestions = [], subscriberDiscount = null, selectedSeatIds = [] }: CheckoutClientProps) {
+export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName, registrationQuestions = [], subscriberDiscount = null, selectedSeatIds = [], approvedRegistrationId: serverApprovedRegistrationId = null }: CheckoutClientProps) {
     const router = useRouter()
     const searchParams = useSearchParams()
     const { toast } = useToast()
@@ -72,8 +74,10 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     const [regAnswers, setRegAnswers] = useState<Record<string, any>>({})
     const [registrationPending, setRegistrationPending] = useState(false)
     const [approvedRegistrationId, setApprovedRegistrationId] = useState<string | null>(
-        // If user is returning post-approval, they may have it in sessionStorage
-        typeof window !== 'undefined' ? sessionStorage.getItem(`approved_reg_${event.id}`) : null
+        // Server-resolved approval wins (returning user/new device); otherwise fall
+        // back to the in-session value stashed during the pre-checkout Register step.
+        serverApprovedRegistrationId
+        ?? (typeof window !== 'undefined' ? sessionStorage.getItem(`approved_reg_${event.id}`) : null)
     )
 
     // Promo Code State

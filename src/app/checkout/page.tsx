@@ -152,6 +152,23 @@ export default async function CheckoutPage({
         redirect(`/events/${eventId}?error=sold_out`)
     }
 
+    // If the buyer already has an approved registration for this event, surface it
+    // so checkout skips re-registration (which would error "already registered")
+    // and the question step. Covers returning approved users (new session/device).
+    let approvedRegistrationId: string | null = null
+    if (user && (event.require_approval || event.invite_only)) {
+        const { data: reg } = await adminClient
+            .from('event_registrations')
+            .select('id')
+            .eq('event_id', eventId)
+            .eq('user_id', user.id)
+            .in('status', ['approved', 'auto_approved'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        approvedRegistrationId = reg?.id ?? null
+    }
+
     return (
         <div className="min-h-screen bg-muted/30">
             <header className="bg-background border-b sticky top-0 z-10">
@@ -176,6 +193,7 @@ export default async function CheckoutPage({
                     registrationQuestions={(event.registration_questions || []).sort((a: any, b: any) => a.display_order - b.display_order)}
                     subscriberDiscount={subscriberDiscount}
                     selectedSeatIds={selectedSeatIds}
+                    approvedRegistrationId={approvedRegistrationId}
                 />
             </main>
         </div>

@@ -289,3 +289,21 @@ export async function setAutoApprovePayouts(partnerId: string, autoApprove: bool
 
     return { success: true }
 }
+
+// Feature-gate the subscription/membership product per partner while recurring
+// billing is finalized. New partners default OFF; admins flip this on per org.
+export async function setSubscriptionsEnabled(partnerId: string, enabled: boolean) {
+    const supabase = await createClient()
+
+    const { error } = await supabase
+        .from('partners')
+        .update({ subscriptions_enabled: enabled })
+        .eq('id', partnerId)
+
+    if (error) {
+        console.error('Error setting subscriptions_enabled:', error)
+        throw new Error('Failed to update subscriptions access')
+    }
+
+    return { success: true }
+}

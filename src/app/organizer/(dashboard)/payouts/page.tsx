@@ -22,14 +22,24 @@ export const dynamic = 'force-dynamic'
 async function getPayoutStats(partnerId: string) {
     const supabase = await createClient()
 
-    // Get all completed transactions (Lifetime for Balance)
-    const { data: transactions } = await supabase
-        .from('transactions')
-        .select('organizer_payout')
-        .eq('partner_id', partnerId)
-        .eq('status', 'completed')
+    // Get all completed earnings (Lifetime for Balance) — event tickets AND
+    // experience bookings (separate ledger, partner's host_payout).
+    const [{ data: transactions }, { data: expTransactions }] = await Promise.all([
+        supabase
+            .from('transactions')
+            .select('organizer_payout')
+            .eq('partner_id', partnerId)
+            .eq('status', 'completed'),
+        supabase
+            .from('experience_transactions')
+            .select('host_payout')
+            .eq('partner_id', partnerId)
+            .eq('status', 'completed'),
+    ])
 
-    const totalEarnings = transactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0
+    const totalEarnings =
+        (transactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0) +
+        (expTransactions?.reduce((sum, t) => sum + Number(t.host_payout), 0) || 0)
 
     // Get all payouts (Lifetime for Balance)
     const { data: payouts } = await supabase
@@ -147,19 +157,72 @@ async function getWalletTopUps(partnerId: string) {
     }))
 }
 
+// Experience bookings live in a separate ledger (experience_transactions) keyed
+// by the host's partner_id + host_payout. Normalize them into the same shape so
+// they appear in the unified transactions list alongside ticket sales.
+async function getExperienceTransactions(partnerId: string, from?: string, to?: string, search?: string) {
+    const supabase = await createClient()
+
+    let query = supabase
+        .from('experience_transactions')
+        .select('id, gross_amount, platform_fee, host_payout, status, created_at, payout_id, experience:tables!table_id(title)')
+        .eq('partner_id', partnerId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+    if (from) query = query.gte('created_at', from)
+    if (to) query = query.lte('created_at', `${to}T23:59:59`)
+
+    const { data } = await query
+
+    let rows = (data || []).map((t: any) => ({
+        id: t.id,
+        gross_amount: t.gross_amount,
+        organizer_payout: t.host_payout,
+        platform_fee: t.platform_fee,
+        payment_processing_fee: 0,
+        fixed_fee: null,
+        status: t.status,
+        created_at: t.created_at,
+        payout_id: t.payout_id,
+        event: { title: t.experience?.title || 'Experience' },
+        purchase_intent: { payment_method: null },
+        _type: 'experience' as const,
+    }))
+
+    if (search) {
+        const s = search.toLowerCase()
+        rows = rows.filter((r) => r.event.title.toLowerCase().includes(s))
+    }
+
+    return rows
+}
+
 // Helper to get Period Earnings
 async function getPeriodEarnings(partnerId: string, from?: string, to?: string) {
     if (!from || !to) return null
     const supabase = await createClient()
-    const { data: transactions } = await supabase
-        .from('transactions')
-        .select('organizer_payout')
-        .eq('partner_id', partnerId)
-        .eq('status', 'completed')
-        .gte('created_at', from)
-        .lte('created_at', `${to}T23:59:59`)
+    const [{ data: transactions }, { data: expTransactions }] = await Promise.all([
+        supabase
+            .from('transactions')
+            .select('organizer_payout')
+            .eq('partner_id', partnerId)
+            .eq('status', 'completed')
+            .gte('created_at', from)
+            .lte('created_at', `${to}T23:59:59`),
+        supabase
+            .from('experience_transactions')
+            .select('host_payout')
+            .eq('partner_id', partnerId)
+            .eq('status', 'completed')
+            .gte('created_at', from)
+            .lte('created_at', `${to}T23:59:59`),
+    ])
 
-    return transactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0
+    return (
+        (transactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0) +
+        (expTransactions?.reduce((sum, t) => sum + Number(t.host_payout), 0) || 0)
+    )
 }
 
 interface PageProps {
@@ -188,7 +251,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
     if (!partnerId) return null
 
     // Parallel fetching
-    const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings, walletInfo, topups] = await Promise.all([
+    const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings, walletInfo, topups, experienceTxns] = await Promise.all([
         getPayoutStats(partnerId),
         getPayoutHistory(partnerId, from, to, payoutPage, 5),
         getBankAccounts(partnerId),
@@ -196,14 +259,18 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
         from && to ? getPeriodEarnings(partnerId, from, to) : Promise.resolve(null),
         getWalletInfo(partnerId),
         getWalletTopUps(partnerId),
+        getExperienceTransactions(partnerId, from, to, search),
     ])
 
     const { payouts, count: payoutCount } = payoutsResult
     const { transactions: ticketTransactions, count: transactionCount } = transactionsResult
 
-    // Merge ticket transactions + wallet top-ups, sorted by date
-    const transactions = [...ticketTransactions.map((t: any) => ({ ...t, _type: 'ticket' })), ...topups]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    // Merge ticket sales + experience bookings + wallet top-ups, sorted by date
+    const transactions = [
+        ...ticketTransactions.map((t: any) => ({ ...t, _type: 'ticket' })),
+        ...experienceTxns,
+        ...topups,
+    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
     return (
         <div className="space-y-8">

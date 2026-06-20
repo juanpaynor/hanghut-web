@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { TicketSelector } from '@/components/events/ticket-selector'
 import { RegisterModal } from '@/components/events/register-modal'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
-import { ClipboardList, Clock } from 'lucide-react'
+import { ClipboardList, Clock, CheckCircle2, Loader2, Ticket } from 'lucide-react'
 import type { QuestionForForm } from '@/components/events/registration-questions-form'
 
 interface RegistrationGateProps {
@@ -23,14 +24,21 @@ interface RegistrationGateProps {
     inviteOnly?: boolean
     themeColor?: string | null
     dark?: boolean
+    /** Buyer already has an approved registration → skip questions, go to tickets. */
+    initialApprovedRegistrationId?: string | null
+    /** Buyer already holds a valid ticket → show "You're going". */
+    hasTicket?: boolean
+    /** Token for the buyer's hosted ticket page (when known). */
+    ticketToken?: string | null
 }
 
 /**
- * Pre-checkout registration gate. Events with registration questions answer them
- * in a dedicated modal FIRST; the resulting (auto-)approved registration_id is
- * stashed so checkout skips its own question step. Approval/invite events that go
- * pending stop here with a friendly notice. Events with no questions fall straight
- * through to the normal TicketSelector.
+ * Pre-checkout registration gate.
+ *  - No questions → normal TicketSelector.
+ *  - Has questions → answer them in the Register modal first.
+ *  - Free events → answering questions issues the ticket in one step (auto-claim).
+ *  - Paid events → after registration, pick tickets → checkout.
+ *  - Already has a ticket → "You're going" (no duplicate checkout).
  */
 export function RegistrationGate({
     eventId,
@@ -47,15 +55,62 @@ export function RegistrationGate({
     inviteOnly,
     themeColor,
     dark,
+    initialApprovedRegistrationId,
+    hasTicket,
+    ticketToken,
 }: RegistrationGateProps) {
+    const activeTiers = (tiers || []).filter((t: any) => t.is_active !== false)
+    const isFree = activeTiers.length > 0
+        ? activeTiers.every((t: any) => Number(t.price) === 0)
+        : Number(ticketPrice) === 0
+    const freeTierId: string | null = activeTiers[0]?.id ?? null
+
     const [modalOpen, setModalOpen] = useState(false)
-    const [registered, setRegistered] = useState(false)
+    const [regId, setRegId] = useState<string | null>(initialApprovedRegistrationId ?? null)
+    const [guest, setGuest] = useState<{ name: string; email: string } | null>(null)
     const [pending, setPending] = useState(false)
+    const [claimed, setClaimed] = useState(false)
+    const [claimFailed, setClaimFailed] = useState(false)
     const [isLoggedIn, setIsLoggedIn] = useState(false)
+    const claimStartedRef = useRef(false)
+
+    const registered = !!regId
 
     useEffect(() => {
         createClient().auth.getUser().then(({ data }) => setIsLoggedIn(!!data.user))
     }, [])
+
+    // Mirror a server-resolved approval into sessionStorage so checkout agrees.
+    useEffect(() => {
+        if (initialApprovedRegistrationId && typeof window !== 'undefined') {
+            sessionStorage.setItem(`approved_reg_${eventId}`, initialApprovedRegistrationId)
+        }
+    }, [initialApprovedRegistrationId, eventId])
+
+    // Free events: once registered/approved, claim the ticket in one step
+    // (skip the redundant "Get Tickets" → checkout dance for $0 RSVPs).
+    useEffect(() => {
+        if (!registered || !isFree || hasTicket || claimed || claimFailed) return
+        if (claimStartedRef.current) return
+        claimStartedRef.current = true
+        ;(async () => {
+            try {
+                const { data, error } = await createClient().functions.invoke('create-purchase-intent', {
+                    body: {
+                        event_id: eventId,
+                        quantity: 1,
+                        tier_id: freeTierId,
+                        registration_id: regId,
+                        guest_details: guest ?? undefined,
+                    },
+                })
+                if (!error && (data as any)?.success) setClaimed(true)
+                else setClaimFailed(true)
+            } catch {
+                setClaimFailed(true)
+            }
+        })()
+    }, [registered, isFree, hasTicket, claimed, claimFailed, eventId, freeTierId, regId, guest])
 
     const selector = (autoOpen: boolean) => (
         <TicketSelector
@@ -72,13 +127,23 @@ export function RegistrationGate({
         />
     )
 
-    // No registration questions → unchanged ticket flow.
-    if (questions.length === 0) return selector(false)
+    // ── Already going (has a ticket, or just claimed a free one) ──────────────
+    if (hasTicket || claimed) {
+        return (
+            <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-5 text-center">
+                <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-green-500" />
+                <p className="font-semibold">You&apos;re going!</p>
+                <p className="mt-1 text-sm text-muted-foreground">Your ticket is confirmed.</p>
+                <Button asChild className="mt-3 gap-1.5">
+                    <Link href={ticketToken ? `/t/${ticketToken}` : '/account'}>
+                        <Ticket className="h-4 w-4" /> View ticket
+                    </Link>
+                </Button>
+            </div>
+        )
+    }
 
-    // Registered + approved → pick tickets (checkout reads approved_reg_{id}).
-    if (registered) return selector(true)
-
-    // Approval/invite request awaiting organizer review.
+    // ── Approval/invite request awaiting organizer review ─────────────────────
     if (pending) {
         return (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-5 text-center">
@@ -91,6 +156,25 @@ export function RegistrationGate({
         )
     }
 
+    // ── Registered ────────────────────────────────────────────────────────────
+    if (registered) {
+        // Free + claiming/claimed handled above; show a spinner while it issues.
+        if (isFree && !claimFailed) {
+            return (
+                <div className="rounded-xl border p-6 text-center">
+                    <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground">Getting your ticket…</p>
+                </div>
+            )
+        }
+        // Paid (or free claim failed → let them retry via checkout).
+        return selector(true)
+    }
+
+    // ── No registration questions → normal ticket flow ───────────────────────
+    if (questions.length === 0) return selector(false)
+
+    // ── Not registered yet → Register CTA + modal ────────────────────────────
     const cta = isSoldOut ? 'Sold Out' : requireApproval || inviteOnly ? 'Request to Register' : 'Register'
 
     return (
@@ -113,10 +197,11 @@ export function RegistrationGate({
                 isLoggedIn={isLoggedIn}
                 themeColor={themeColor}
                 dark={dark}
-                onApproved={(regId) => {
-                    if (typeof window !== 'undefined') sessionStorage.setItem(`approved_reg_${eventId}`, regId)
+                onApproved={(rid, g) => {
+                    if (typeof window !== 'undefined') sessionStorage.setItem(`approved_reg_${eventId}`, rid)
                     setModalOpen(false)
-                    setRegistered(true)
+                    setGuest(g ?? null)
+                    setRegId(rid)
                 }}
                 onPending={() => setPending(true)}
             />

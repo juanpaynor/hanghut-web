@@ -90,9 +90,10 @@ interface Props {
     partnerSlug: string | null
     storefrontUrl?: string | null
     capabilities?: string[]
+    subscriptionsEnabled?: boolean
 }
 
-export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, storefrontUrl, capabilities = ['organizer'] }: Props) {
+export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, storefrontUrl, capabilities = ['organizer'], subscriptionsEnabled = false }: Props) {
     const pathname = usePathname()
     const router = useRouter()
     const supabase = createClient()
@@ -125,7 +126,9 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, 
                     const visibleItems = group.items.filter(item =>
                         canSee(item.section) &&
                         (isVerified || item.section === 'verification') &&
-                        (!item.capability || capabilities.includes(item.capability))
+                        (!item.capability || capabilities.includes(item.capability)) &&
+                        // Subscriptions are feature-gated per partner while recurring is finalized
+                        (item.section !== 'subscriptions' || subscriptionsEnabled)
                     )
                     if (visibleItems.length === 0) return null
 

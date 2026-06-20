@@ -23,7 +23,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
 import { CheckCircle, XCircle, Ban, DollarSign, ExternalLink, Phone, MapPin, FileText } from 'lucide-react'
-import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities } from '@/lib/admin/partner-actions'
+import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities, setSubscriptionsEnabled } from '@/lib/admin/partner-actions'
 import { useRouter } from 'next/navigation'
 
 interface Partner {
@@ -91,6 +91,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
     const [customPercentage, setCustomPercentage] = useState(partner.custom_percentage?.toString() || '4')
     const [adminNotes, setAdminNotes] = useState('')
     const [autoApprovePayouts, setAutoApprovePayoutsState] = useState(partner.auto_approve_payouts || false)
+    const [subscriptionsEnabled, setSubscriptionsEnabledState] = useState<boolean>((partner as any).subscriptions_enabled ?? false)
 
     const handleApprove = async () => {
         setIsLoading(true)
@@ -592,6 +593,43 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                     disabled={isLoading || partner.status !== 'approved'}
                                 />
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Feature Access */}
+                    <div className="space-y-4 border-t border-slate-700 pt-6">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                            <FileText className="h-5 w-5" />
+                            Feature Access
+                        </h3>
+                        <div className="flex items-center justify-between border border-slate-700 rounded-md p-4 bg-slate-800/50">
+                            <div className="space-y-1">
+                                <Label htmlFor="subscriptions-enabled" className="text-white font-medium">
+                                    Subscriptions / Memberships
+                                </Label>
+                                <p className="text-xs text-slate-400 max-w-md">
+                                    Gated off for new partners while recurring billing is finalized. Turn on to give this org early access to membership tiers and subscriber posts.
+                                </p>
+                            </div>
+                            <Switch
+                                id="subscriptions-enabled"
+                                checked={subscriptionsEnabled}
+                                onCheckedChange={async (checked) => {
+                                    setIsLoading(true)
+                                    setSubscriptionsEnabledState(checked)
+                                    try {
+                                        await setSubscriptionsEnabled(partner.id, checked)
+                                        router.refresh()
+                                    } catch (error) {
+                                        console.error('Error updating subscriptions access:', error)
+                                        alert('Failed to update subscriptions access')
+                                        setSubscriptionsEnabledState(!checked)
+                                    } finally {
+                                        setIsLoading(false)
+                                    }
+                                }}
+                                disabled={isLoading}
+                            />
                         </div>
                     </div>
 

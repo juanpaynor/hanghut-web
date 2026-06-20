@@ -66,7 +66,7 @@ export default async function OrganizerLayout({
     const supabase = await createClient()
     const { data: partnerFull } = await supabase
         .from('partners')
-        .select('custom_domain, custom_domain_verified')
+        .select('custom_domain, custom_domain_verified, subscriptions_enabled')
         .eq('id', partner.id)
         .single()
     const storefrontUrl = partnerFull?.custom_domain && partnerFull?.custom_domain_verified
@@ -85,6 +85,7 @@ export default async function OrganizerLayout({
                 partnerSlug={partner.slug ?? null}
                 storefrontUrl={storefrontUrl}
                 capabilities={capabilities}
+                subscriptionsEnabled={partnerFull?.subscriptions_enabled === true}
             />
 
             {/* Main content — offset by sidebar width on md+ */}

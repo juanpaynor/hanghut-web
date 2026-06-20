@@ -212,11 +212,14 @@ export async function createSubscriptionTier(data: {
 
     const { data: partner } = await supabase
         .from('partners')
-        .select('id, kyc_status, verified')
+        .select('id, kyc_status, verified, subscriptions_enabled')
         .eq('user_id', user.id)
         .single()
 
     if (!partner) return { error: 'Partner account not found' }
+    if (!partner.subscriptions_enabled) {
+        return { error: 'Subscriptions are not enabled for your account yet.' }
+    }
     if (!partner.verified || partner.kyc_status !== 'verified') {
         return { error: 'Your account must be KYC-verified to create subscription tiers' }
     }
@@ -349,11 +352,14 @@ export async function createSubscriptionPost(data: {
 
     const { data: partner } = await supabase
         .from('partners')
-        .select('id')
+        .select('id, subscriptions_enabled')
         .eq('user_id', user.id)
         .single()
 
     if (!partner) return { error: 'Partner account not found' }
+    if (!partner.subscriptions_enabled) {
+        return { error: 'Subscriptions are not enabled for your account yet.' }
+    }
 
     const { data: post, error } = await supabase
         .from('subscription_posts')
