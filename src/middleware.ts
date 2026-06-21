@@ -94,8 +94,9 @@ export async function middleware(request: NextRequest) {
 
     // 2. Admin subdomain → rewrite to /admin path (with auth)
     if (hostname === `admin.${ROOT_DOMAIN}`) {
-        // /login and /verify are top-level pages, not under /admin — pass through directly
-        if (url.pathname === '/login' || url.pathname === '/verify') {
+        // If requesting /login on admin subdomain, let it pass through
+        // to the login page (not rewritten to /admin/login)
+        if (url.pathname === '/login') {
             return await updateSession(request)
         }
         url.pathname = `/admin${url.pathname}`
