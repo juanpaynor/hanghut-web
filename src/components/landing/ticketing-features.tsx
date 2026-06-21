@@ -17,6 +17,7 @@ import {
     ShieldCheck,
     Ticket,
     QrCode,
+    LayoutGrid,
 } from "lucide-react";
 
 const faqs = [
@@ -64,11 +65,12 @@ export function TicketingFeatures() {
                 {/* 1. Pricing Table */}
                 <div className="max-w-5xl mx-auto">
                     <div className="text-center mb-16 space-y-4">
+                        <p className="text-sm font-bold uppercase tracking-[0.2em] text-primary">Pricing</p>
                         <h2 className="text-4xl md:text-5xl font-headline font-bold">
-                            Simple, Honest Pricing
+                            One fee. Everything included.
                         </h2>
                         <p className="text-xl text-muted-foreground font-light max-w-2xl mx-auto">
-                            No surprises. No tiers. Just one low fee — and everything else is free.
+                            No monthly subscriptions. No setup fees. You only pay when you make money.
                         </p>
                     </div>
 
@@ -110,7 +112,7 @@ export function TicketingFeatures() {
                                 "Free email marketing",
                                 "Free promo codes",
                                 "Free event analytics",
-                                "Free ticket tiers",
+                                "Free seat map builder",
                                 "Free attendee management",
                             ].map((item) => (
                                 <div key={item} className="flex items-center gap-2 text-sm font-medium">
@@ -144,6 +146,7 @@ export function TicketingFeatures() {
                                     { feature: "QR Check-in App", others: "Paid add-on", us: "Free" },
                                     { feature: "Promo Codes", others: "Paid tier", us: "Free" },
                                     { feature: "Multiple Ticket Tiers", others: "Paid tier", us: "Free" },
+                                    { feature: "Seat Map Builder", others: "Not available / Paid", us: "Free" },
                                     { feature: "Social App Discovery", others: "Not available", us: "Free" },
                                 ].map((row) => (
                                     <tr key={row.feature} className="hover:bg-muted/30 transition-colors">
@@ -312,15 +315,27 @@ export function TicketingFeatures() {
                     <div className="order-1 lg:order-2 space-y-6">
                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-100 text-indigo-600 font-bold text-xs uppercase tracking-wider">
                             <MessageCircle className="h-3 w-3" />
-                            Deep Engagement
+                            Everything You Need
                         </div>
                         <h2 className="text-4xl md:text-5xl font-headline font-bold">
-                            Interact With Your Audience
+                            More Than Just Ticketing
                         </h2>
                         <p className="text-xl text-muted-foreground font-light leading-relaxed">
-                            Don&apos;t just sell tickets — build a community. Direct messaging, announcements, and post-event feedback are built right in.
+                            Build a real community around your events. Message attendees, send announcements, collect feedback, and design your venue layout — all in one place.
                         </p>
                         <ul className="space-y-4 pt-4">
+                            <li className="flex items-center gap-3 text-lg">
+                                <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
+                                    <LayoutGrid className="h-5 w-5" />
+                                </div>
+                                <span>Visual Seat Map Builder</span>
+                            </li>
+                            <li className="flex items-center gap-3 text-lg">
+                                <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
+                                    <Megaphone className="h-5 w-5" />
+                                </div>
+                                <span>Push Notifications &amp; Announcements</span>
+                            </li>
                             <li className="flex items-center gap-3 text-lg">
                                 <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
                                     <MessageCircle className="h-5 w-5" />
@@ -329,21 +344,15 @@ export function TicketingFeatures() {
                             </li>
                             <li className="flex items-center gap-3 text-lg">
                                 <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
-                                    <Megaphone className="h-5 w-5" />
+                                    <QrCode className="h-5 w-5" />
                                 </div>
-                                <span>Send Push Notifications</span>
+                                <span>Free QR Check-in App</span>
                             </li>
                             <li className="flex items-center gap-3 text-lg">
                                 <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
                                     <Heart className="h-5 w-5" />
                                 </div>
                                 <span>Collect Feedback &amp; Reviews</span>
-                            </li>
-                            <li className="flex items-center gap-3 text-lg">
-                                <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
-                                    <QrCode className="h-5 w-5" />
-                                </div>
-                                <span>Free QR Check-in App</span>
                             </li>
                         </ul>
                     </div>

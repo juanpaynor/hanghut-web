@@ -7,8 +7,8 @@ import Link from "next/link";
 import { ArrowRight, Sparkles } from "lucide-react";
 
 export const metadata = {
-    title: "Ticketing System - HangHut",
-    description: "Sell tickets, manage attendees, and get paid instantly. HangHut's ticketing system promotes your events to thousands of users for free.",
+    title: "Become a Partner - HangHut",
+    description: "Sell tickets, grow your audience, and get paid instantly. HangHut promotes your events to thousands of users for free — zero monthly fees.",
 };
 
 export default function TicketingPage() {
@@ -28,34 +28,35 @@ export default function TicketingPage() {
                         {/* Badge */}
                         <div className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-green-100 text-green-700 font-bold text-sm uppercase tracking-wider border-2 border-green-200 shadow-lg">
                             <Sparkles className="h-4 w-4" />
-                            100% Free Event Promotion
+                            No Monthly Fees. No Lock-in.
                         </div>
 
                         <h1 className="text-5xl md:text-7xl lg:text-8xl font-headline font-bold tracking-tighter">
-                            Ticketing System
+                            Become a Partner
                         </h1>
 
                         <p className="text-xl md:text-2xl text-muted-foreground font-light max-w-3xl mx-auto leading-relaxed">
-                            We automatically share your events with <span className="font-bold text-foreground">thousands of users</span> on our social app—
-                            <span className="text-primary font-bold"> completely free</span>. No ads, no extra costs, just pure organic reach.
+                            Sell tickets, fill your venue, and grow your audience — with a platform that
+                            <span className="font-bold text-foreground"> actively promotes your events</span> to thousands of real people
+                            <span className="text-primary font-bold"> for free</span>.
                         </p>
 
                         {/* Key Benefits */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto pt-8">
                             <div className="p-6 rounded-2xl bg-white/50 backdrop-blur-sm border border-border/50 hover:shadow-lg transition-shadow">
                                 <div className="text-4xl mb-3">📱</div>
-                                <h3 className="font-bold text-lg mb-2">Social App Discovery</h3>
-                                <p className="text-sm text-muted-foreground">Your events appear on our map and feed automatically</p>
+                                <h3 className="font-bold text-lg mb-2">Built-in Audience</h3>
+                                <p className="text-sm text-muted-foreground">Your events land on our social app feed and map the moment you go live</p>
                             </div>
                             <div className="p-6 rounded-2xl bg-white/50 backdrop-blur-sm border border-border/50 hover:shadow-lg transition-shadow">
                                 <div className="text-4xl mb-3">🎯</div>
-                                <h3 className="font-bold text-lg mb-2">Zero Marketing Costs</h3>
-                                <p className="text-sm text-muted-foreground">No paid ads needed—we promote you organically</p>
+                                <h3 className="font-bold text-lg mb-2">Only Pay When You Earn</h3>
+                                <p className="text-sm text-muted-foreground">4% per ticket sold. Zero monthly fees, zero setup costs, zero risk</p>
                             </div>
                             <div className="p-6 rounded-2xl bg-white/50 backdrop-blur-sm border border-border/50 hover:shadow-lg transition-shadow">
                                 <div className="text-4xl mb-3">⚡</div>
-                                <h3 className="font-bold text-lg mb-2">Instant Visibility</h3>
-                                <p className="text-sm text-muted-foreground">Go live and reach thousands within minutes</p>
+                                <h3 className="font-bold text-lg mb-2">Up and Running Today</h3>
+                                <p className="text-sm text-muted-foreground">Create your event, set your price, and start selling in under 10 minutes</p>
                             </div>
                         </div>
                     </div>
@@ -78,14 +79,14 @@ export default function TicketingPage() {
 
                     <div className="container relative z-10 mx-auto px-4 text-center space-y-8">
                         <div className="inline-block px-6 py-2 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-sm font-bold uppercase tracking-wider mb-4">
-                            ✨ Free Organic Promotion Included
+                            ✨ Your Audience Is Already Here
                         </div>
 
                         <h2 className="text-4xl md:text-6xl font-headline font-bold tracking-tight">
-                            Ready to Get Started?
+                            Ready to Partner Up?
                         </h2>
                         <p className="text-xl md:text-2xl opacity-90 max-w-2xl mx-auto">
-                            Join hundreds of event organizers reaching thousands of people—without spending a peso on ads.
+                            Join the growing community of event organizers, venues, and brands reaching thousands of people — without spending a peso on ads.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                             <Link href="/organizer/register">
