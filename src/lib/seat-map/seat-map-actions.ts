@@ -203,6 +203,23 @@ export async function saveEventSeatMap(
 ) {
   const supabase = await createClient()
 
+  // De-collide seat labels per (section, row) BEFORE anything is persisted, so
+  // the editor's canvas_data and the seats table (buyer + scanner) always agree
+  // AND the (section,row,seat_number) unique constraint can never trip. Mutates
+  // canvasData in place so the canvas_data JSONB and the seat rows match exactly.
+  for (const section of canvasData.sections) {
+    const used = new Set<string>()
+    for (const seat of section.seats) {
+      let num = seat.seatNumber
+      while (used.has(`${seat.rowLabel}#${num}`)) num++
+      if (num !== seat.seatNumber) {
+        seat.seatNumber = num
+        seat.label = `${seat.rowLabel}${num}`
+      }
+      used.add(`${seat.rowLabel}#${num}`)
+    }
+  }
+
   // Upsert event_seat_maps
   const { data: seatMap, error: mapError } = await supabase
     .from('event_seat_maps')
@@ -336,10 +353,22 @@ export async function saveEventSeatMap(
       if (tierId) tierCounts.set(tierId, (tierCounts.get(tierId) ?? 0) + 1)
     }
   }
-  for (const [tierId, count] of tierCounts) {
+  // Every tier the map *references* (section default, row override, or per-seat)
+  // must be synced — including ones whose seats were just deleted/reassigned, so
+  // their quantity_total resets to 0 instead of advertising phantom capacity.
+  // Tiers never referenced by the map (pure GA tiers) are left untouched.
+  const referencedTierIds = new Set<string>(tierCounts.keys())
+  for (const section of canvasData.sections) {
+    if (section.tierId) referencedTierIds.add(section.tierId)
+    for (const t of Object.values(section.rowTierOverrides ?? {})) {
+      if (t) referencedTierIds.add(t)
+    }
+  }
+
+  for (const tierId of referencedTierIds) {
     await supabase
       .from('ticket_tiers')
-      .update({ quantity_total: count })
+      .update({ quantity_total: tierCounts.get(tierId) ?? 0 })
       .eq('id', tierId)
       .eq('event_id', eventId)
   }
