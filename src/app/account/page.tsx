@@ -27,7 +27,7 @@ export default async function AccountPage() {
         .eq('fan_id', user.id)
         .order('created_at', { ascending: false })
 
-    // My Tickets — valid/confirmed, join event details
+    // My Tickets — valid/used/approved, join event details
     const { data: tickets } = await supabase
         .from('tickets')
         .select(`
@@ -36,7 +36,7 @@ export default async function AccountPage() {
             purchase_intents ( access_token )
         `)
         .eq('user_id', user.id)
-        .in('status', ['valid', 'confirmed', 'approved'])
+        .in('status', ['valid', 'used', 'approved'])
         .order('created_at', { ascending: false })
         .limit(50)
 

@@ -145,7 +145,7 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
 
     return (
         <Dialog open={open} onOpenChange={(o) => { if (!o) { /* reset on close */ setStep(0); setPhase('form') } onOpenChange(o) }}>
-            <DialogContent className={cn('max-w-xl overflow-hidden p-0 gap-0 flex flex-col max-h-[90vh]', dark && 'dark bg-background text-foreground')} style={brandVars}>
+            <DialogContent className={cn('w-[calc(100%-1.5rem)] sm:w-full max-w-xl overflow-hidden p-0 gap-0 flex flex-col max-h-[88vh] rounded-xl', dark && 'dark bg-background text-foreground')} style={brandVars}>
                 <DialogTitle className="sr-only">Register for {event.title}</DialogTitle>
 
                 {/* Progress bar */}
@@ -160,7 +160,7 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                     </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto px-7 pt-6 pb-4 min-h-[280px]">
+                <div className="flex-1 overflow-y-auto px-5 sm:px-7 pt-6 pb-4 min-h-[220px] sm:min-h-[280px]">
                     {/* Header */}
                     <div className="mb-5">
                         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -184,7 +184,7 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                                 >
                                     {current === 'identity' ? (
                                         <div className="space-y-4">
-                                            <h3 className="text-xl font-bold tracking-tight">First, who&apos;s registering?</h3>
+                                            <h3 className="text-lg sm:text-xl font-bold tracking-tight">First, who&apos;s registering?</h3>
                                             <div className="space-y-2">
                                                 <label className="text-sm font-medium">Full name</label>
                                                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Juan dela Cruz" autoFocus />
@@ -250,7 +250,7 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
 
                 {/* Footer — pinned below the scrollable questions */}
                 {phase === 'form' && (
-                    <div className="shrink-0 border-t px-7 py-4 space-y-3 bg-background">
+                    <div className="shrink-0 border-t px-5 sm:px-7 py-4 space-y-3 bg-background">
                         {error && <p className="text-sm text-destructive">{error}</p>}
                         <div className="flex items-center justify-between">
                             <Button
@@ -278,10 +278,19 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
 function QuestionStep({ q, value, onChange }: { q: QuestionForForm; value: string | string[] | undefined; onChange: (v: string | string[]) => void }) {
     const str = typeof value === 'string' ? value : ''
     const arr = Array.isArray(value) ? value : []
+    // Long labels (consent/policy text) shouldn't render as a giant hero
+    // heading — on mobile that fills the entire screen. Once the label gets
+    // long, drop to a readable, scrollable paragraph style instead.
+    const longLabel = q.label.length > 90
 
     return (
         <div className="space-y-4">
-            <h3 className="text-xl font-bold tracking-tight">
+            <h3 className={cn(
+                'tracking-tight',
+                longLabel
+                    ? 'text-sm sm:text-base font-medium leading-relaxed text-foreground'
+                    : 'text-lg sm:text-xl font-bold'
+            )}>
                 {q.label}
                 {q.is_required && <span className="ml-1 text-destructive">*</span>}
             </h3>

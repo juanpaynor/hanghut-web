@@ -110,7 +110,7 @@ export default async function PublicEventPage({
                     .select('id')
                     .eq('event_id', id)
                     .eq('user_id', user.id)
-                    .in('status', ['confirmed', 'approved'])
+                    .in('status', ['valid', 'used', 'approved'])
                     .limit(1)
                     .maybeSingle()
                 if (ticket) venueVisible = true
@@ -162,7 +162,7 @@ export default async function PublicEventPage({
                 .select('id, purchase_intents(access_token)')
                 .eq('event_id', id)
                 .eq('user_id', user.id)
-                .in('status', ['valid', 'confirmed', 'approved'])
+                .in('status', ['valid', 'used', 'approved'])
                 .order('created_at', { ascending: false })
                 .limit(1)
                 .maybeSingle()
