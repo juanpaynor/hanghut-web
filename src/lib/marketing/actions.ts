@@ -347,3 +347,109 @@ export async function deleteDraft(id: string) {
     if (error) return { error: error.message }
     return { success: true as const }
 }
+
+// ─────────────────────────────────────────────────────────────
+// SCHEDULED CAMPAIGNS
+// A scheduled campaign is an email_campaigns row with status='scheduled' and a
+// future scheduled_for. The process-scheduled-campaigns edge fn (pg_cron, every
+// minute) claims due rows and hands them to send-promotional-email. For the
+// event-attendees audience the recipient list is snapshotted here at schedule
+// time; all_subscribers is resolved fresh at send time by the edge fn.
+// ─────────────────────────────────────────────────────────────
+
+export interface ScheduleInput {
+    id?: string // reuse an existing draft / scheduled row
+    subject: string
+    html_content: string
+    segment: 'all_subscribers' | 'event_attendees'
+    event_id?: string | null
+    scheduled_for: string // ISO timestamp
+}
+
+export async function scheduleCampaign(input: ScheduleInput) {
+    const supabase = await createClient()
+    const partnerId = await resolveMarketingPartnerId(supabase)
+    if (!partnerId) return { error: 'Partner account not found' }
+
+    if (!input.subject?.trim() || !input.html_content?.trim()) {
+        return { error: 'A subject and content are required to schedule.' }
+    }
+
+    const when = new Date(input.scheduled_for)
+    if (isNaN(when.getTime()) || when.getTime() < Date.now() + 60_000) {
+        return { error: 'Pick a send time at least a minute in the future.' }
+    }
+
+    const { data: partner } = await supabase
+        .from('partners').select('business_name').eq('id', partnerId).maybeSingle()
+    const sender_name = partner?.business_name || 'Updates'
+
+    const payload: Record<string, unknown> = {
+        sender_name,
+        segment: input.segment,
+        event_id: input.event_id ?? null,
+    }
+    let recipientCount = 0
+
+    if (input.segment === 'event_attendees') {
+        if (!input.event_id) return { error: 'Select an event for the attendee audience.' }
+        const emails = await getEventAttendeeEmails(input.event_id)
+        if (emails.length === 0) return { error: 'No attendee emails found for this event.' }
+        payload.target_emails = emails
+        recipientCount = emails.length
+    }
+
+    const row = {
+        partner_id: partnerId,
+        subject: input.subject,
+        html_content: input.html_content,
+        segment: input.segment,
+        event_id: input.segment === 'event_attendees' ? (input.event_id ?? null) : null,
+        status: 'scheduled' as const,
+        scheduled_for: when.toISOString(),
+        scheduled_payload: payload,
+        recipient_count: recipientCount,
+        updated_at: new Date().toISOString(),
+    }
+
+    if (input.id) {
+        const { error } = await supabase
+            .from('email_campaigns').update(row)
+            .eq('id', input.id).eq('partner_id', partnerId)
+            .in('status', ['draft', 'scheduled', 'scheduled_failed'])
+        if (error) return { error: error.message }
+        return { success: true as const, id: input.id }
+    }
+
+    const { data, error } = await supabase
+        .from('email_campaigns').insert(row).select('id').single()
+    if (error || !data) return { error: error?.message || 'Failed to schedule campaign' }
+    return { success: true as const, id: data.id }
+}
+
+export async function getScheduledCampaigns() {
+    const supabase = await createClient()
+    const partnerId = await resolveMarketingPartnerId(supabase)
+    if (!partnerId) return []
+    const { data } = await supabase
+        .from('email_campaigns')
+        .select('id, subject, segment, event_id, scheduled_for, status, recipient_count')
+        .eq('partner_id', partnerId)
+        .in('status', ['scheduled', 'scheduled_failed'])
+        .order('scheduled_for', { ascending: true })
+    return data ?? []
+}
+
+export async function cancelScheduledCampaign(id: string) {
+    const supabase = await createClient()
+    const partnerId = await resolveMarketingPartnerId(supabase)
+    if (!partnerId) return { error: 'Partner account not found' }
+    // Only cancellable while still pending — once the cron claims it ('dispatching')
+    // or it has sent, it can't be pulled back.
+    const { error } = await supabase
+        .from('email_campaigns').delete()
+        .eq('id', id).eq('partner_id', partnerId)
+        .in('status', ['scheduled', 'scheduled_failed'])
+    if (error) return { error: error.message }
+    return { success: true as const }
+}

@@ -36,8 +36,7 @@ export function SeatPickerLauncher({ eventId, fullWidth = false }: SeatPickerLau
         <>
             <Button
                 size="lg"
-                variant="outline"
-                className={fullWidth ? 'w-full' : 'w-full md:w-auto'}
+                className={`${fullWidth ? 'w-full' : 'w-full md:w-auto'} bg-primary text-primary-foreground hover:bg-primary/90 font-semibold`}
                 onClick={() => setOpen(true)}
             >
                 <Armchair className="h-5 w-5 mr-2" />

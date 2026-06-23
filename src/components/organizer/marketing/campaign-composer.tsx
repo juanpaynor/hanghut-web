@@ -9,12 +9,18 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Send, Eye, Edit, Code, Users, Calendar, ChevronDown, FileText, Save, Trash2 } from 'lucide-react'
+import { Loader2, Send, Eye, Edit, Code, Users, Calendar, ChevronDown, FileText, Save, Trash2, CalendarClock, Clock, X } from 'lucide-react'
 import { RichTextEditor } from './rich-text-editor'
 import { EventCombobox } from './event-combobox'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
-import { getAudienceCount, getEventAttendeeEmails, saveDraft, getDrafts, getDraft, deleteDraft } from '@/lib/marketing/actions'
+import { getAudienceCount, getEventAttendeeEmails, saveDraft, getDrafts, getDraft, deleteDraft, scheduleCampaign, getScheduledCampaigns, cancelScheduledCampaign } from '@/lib/marketing/actions'
+
+/** datetime-local value (yyyy-MM-ddTHH:mm) in the user's local timezone. */
+function toLocalInputValue(d: Date): string {
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    return local.toISOString().slice(0, 16)
+}
 
 interface EventOption {
     id: string
@@ -44,17 +50,69 @@ export function CampaignComposer() {
     const [drafts, setDrafts] = useState<{ id: string; subject: string; segment: string | null; updated_at: string }[]>([])
     const [savingDraft, setSavingDraft] = useState(false)
 
+    // Scheduling
+    const [scheduleMode, setScheduleMode] = useState(false)
+    const [scheduledFor, setScheduledFor] = useState('')
+    const [scheduling, setScheduling] = useState(false)
+    const [scheduled, setScheduled] = useState<{ id: string; subject: string; segment: string | null; event_id: string | null; scheduled_for: string; status: string; recipient_count: number | null }[]>([])
+
     const { toast } = useToast()
     const supabase = createClient()
 
-    // Load partner's events + drafts on mount
+    // Load partner's events + drafts + scheduled on mount
     useEffect(() => {
         loadEvents()
         refreshDrafts()
+        refreshScheduled()
     }, [])
 
     async function refreshDrafts() {
         try { setDrafts(await getDrafts() as any) } catch { /* non-fatal */ }
+    }
+
+    async function refreshScheduled() {
+        try { setScheduled(await getScheduledCampaigns() as any) } catch { /* non-fatal */ }
+    }
+
+    async function handleSchedule() {
+        if (!subject || !content) {
+            toast({ title: 'Missing fields', description: 'Please provide a subject and email content.', variant: 'destructive' })
+            return
+        }
+        if (audienceType === 'event_attendees' && !selectedEventId) {
+            toast({ title: 'Select an event', description: 'Please select which event to target.', variant: 'destructive' })
+            return
+        }
+        if (!scheduledFor) {
+            toast({ title: 'Pick a time', description: 'Choose when this campaign should send.', variant: 'destructive' })
+            return
+        }
+        setScheduling(true)
+        const res = await scheduleCampaign({
+            id: draftId ?? undefined,
+            subject,
+            html_content: content,
+            segment: audienceType,
+            event_id: audienceType === 'event_attendees' ? selectedEventId : null,
+            scheduled_for: new Date(scheduledFor).toISOString(),
+        })
+        setScheduling(false)
+        if (res.error) {
+            toast({ title: 'Could not schedule', description: res.error, variant: 'destructive' })
+            return
+        }
+        toast({ title: 'Campaign scheduled', description: `Will send ${format(new Date(scheduledFor), 'MMM d, h:mm a')}.` })
+        setSubject(''); setContent(''); setEditorMode('visual')
+        setAudienceType('all_subscribers'); setSelectedEventId('')
+        setDraftId(null); setScheduleMode(false); setScheduledFor('')
+        refreshScheduled(); refreshDrafts()
+    }
+
+    async function handleCancelScheduled(id: string) {
+        const res = await cancelScheduledCampaign(id)
+        if (res.error) { toast({ title: 'Could not cancel', description: res.error, variant: 'destructive' }); return }
+        refreshScheduled()
+        toast({ title: 'Scheduled campaign cancelled' })
     }
 
     async function handleSaveDraft() {
@@ -319,6 +377,34 @@ export function CampaignComposer() {
                         </div>
                     )}
 
+                    {/* Scheduled campaigns */}
+                    {scheduled.length > 0 && (
+                        <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                            <div className="flex items-center gap-2 text-sm font-medium">
+                                <CalendarClock className="h-4 w-4 text-muted-foreground" /> Scheduled
+                            </div>
+                            <div className="space-y-1.5">
+                                {scheduled.map(s => (
+                                    <div key={s.id} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
+                                        <span className="truncate flex-1">
+                                            {s.subject || '(no subject)'}
+                                            <span className="text-xs text-muted-foreground ml-2 inline-flex items-center gap-1">
+                                                <Clock className="h-3 w-3" />
+                                                {format(new Date(s.scheduled_for), 'MMM d, h:mm a')}
+                                            </span>
+                                            {s.status === 'scheduled_failed' && (
+                                                <Badge variant="destructive" className="ml-2 text-[10px] py-0">Failed</Badge>
+                                            )}
+                                        </span>
+                                        <Button variant="ghost" size="sm" onClick={() => handleCancelScheduled(s.id)} className="text-muted-foreground hover:text-destructive">
+                                            <X className="h-3.5 w-3.5 mr-1" /> Cancel
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Audience Selector */}
                     <div className="space-y-3">
                         <Label className="text-base font-semibold">Audience</Label>
@@ -472,39 +558,98 @@ export function CampaignComposer() {
                     </Tabs>
                 </div>
             </CardContent>
-            <CardFooter className="justify-between gap-3 pt-2 pb-6 px-6 flex-col sm:flex-row">
-                <Button
-                    variant="outline"
-                    onClick={handleSaveDraft}
-                    disabled={savingDraft || sending || (!subject && !content)}
-                    className="w-full sm:w-auto"
-                >
-                    {savingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    {draftId ? 'Update draft' : 'Save as draft'}
-                </Button>
-                <Button
-                    onClick={handleSend}
-                    disabled={sending || !subject || !content || (audienceType === 'event_attendees' && !selectedEventId)}
-                    size="lg"
-                    className="w-full sm:w-auto"
-                >
-                    {sending ? (
-                        <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Sending...
-                        </>
-                    ) : (
-                        <>
-                            <Send className="mr-2 h-4 w-4" />
-                            Send Campaign
-                            {audienceCount !== null && (
-                                <Badge variant="secondary" className="ml-2 text-xs">
-                                    {audienceCount}
-                                </Badge>
+            <CardFooter className="flex-col gap-4 pt-2 pb-6 px-6">
+                {/* Send later toggle + time picker */}
+                <div className="w-full rounded-lg border bg-muted/20 p-3 space-y-3">
+                    <label className="flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            checked={scheduleMode}
+                            onChange={(e) => {
+                                setScheduleMode(e.target.checked)
+                                if (e.target.checked && !scheduledFor) {
+                                    setScheduledFor(toLocalInputValue(new Date(Date.now() + 60 * 60 * 1000)))
+                                }
+                            }}
+                            className="h-4 w-4 rounded border-input accent-primary"
+                        />
+                        <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                        Send later
+                    </label>
+                    {scheduleMode && (
+                        <div className="space-y-2 animate-in fade-in-50 duration-200">
+                            <Input
+                                type="datetime-local"
+                                value={scheduledFor}
+                                min={toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000))}
+                                onChange={(e) => setScheduledFor(e.target.value)}
+                                className="w-full sm:w-auto"
+                            />
+                            {audienceType === 'event_attendees' && (
+                                <p className="text-xs text-muted-foreground">
+                                    Note: attendee recipients are locked in at schedule time — buyers who purchase after won&apos;t be included.
+                                </p>
                             )}
-                        </>
+                        </div>
                     )}
-                </Button>
+                </div>
+
+                <div className="w-full justify-between gap-3 flex flex-col sm:flex-row">
+                    <Button
+                        variant="outline"
+                        onClick={handleSaveDraft}
+                        disabled={savingDraft || sending || scheduling || (!subject && !content)}
+                        className="w-full sm:w-auto"
+                    >
+                        {savingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                        {draftId ? 'Update draft' : 'Save as draft'}
+                    </Button>
+
+                    {scheduleMode ? (
+                        <Button
+                            onClick={handleSchedule}
+                            disabled={scheduling || !subject || !content || !scheduledFor || (audienceType === 'event_attendees' && !selectedEventId)}
+                            size="lg"
+                            className="w-full sm:w-auto"
+                        >
+                            {scheduling ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Scheduling...
+                                </>
+                            ) : (
+                                <>
+                                    <CalendarClock className="mr-2 h-4 w-4" />
+                                    Schedule Campaign
+                                </>
+                            )}
+                        </Button>
+                    ) : (
+                        <Button
+                            onClick={handleSend}
+                            disabled={sending || !subject || !content || (audienceType === 'event_attendees' && !selectedEventId)}
+                            size="lg"
+                            className="w-full sm:w-auto"
+                        >
+                            {sending ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Sending...
+                                </>
+                            ) : (
+                                <>
+                                    <Send className="mr-2 h-4 w-4" />
+                                    Send Campaign
+                                    {audienceCount !== null && (
+                                        <Badge variant="secondary" className="ml-2 text-xs">
+                                            {audienceCount}
+                                        </Badge>
+                                    )}
+                                </>
+                            )}
+                        </Button>
+                    )}
+                </div>
             </CardFooter>
         </Card>
     )
