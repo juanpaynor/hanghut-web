@@ -730,7 +730,7 @@ export function EventForm({
                                             </div>
 
                                             <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">
-                                                <span>You'll receive:</span>
+                                                <span>You'll receive:*</span>
                                                 <span>₱{(
                                                     ticketPrice -
                                                     (ticketPrice * commissionRate)
@@ -744,11 +744,24 @@ export function EventForm({
                                                 <span className="font-medium">-₱{platformFee.toFixed(2)}</span>
                                             </div>
                                             <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">
-                                                <span>You'll receive:</span>
+                                                <span>You'll receive:*</span>
                                                 <span>₱{organizerPayout.toFixed(2)} per ticket</span>
                                             </div>
                                         </>
                                     )}
+                                </div>
+                                <div className="mt-3 text-xs text-muted-foreground leading-relaxed border-t border-border pt-2 space-y-1">
+                                    <p>
+                                        <span className="font-medium text-foreground">*</span> Before payment processing fees. Each
+                                        transaction also incurs Xendit&apos;s processing fee (deducted at settlement), which varies by how
+                                        the customer pays:
+                                    </p>
+                                    <ul className="list-disc pl-4 space-y-0.5">
+                                        <li>E-wallets — GCash 2.3%, GrabPay &amp; ShopeePay 2.0%, Maya 1.8%</li>
+                                        <li>QRPh — 1.4% (or ₱15)</li>
+                                        <li>Cards — 3.2% + ₱10 (local), 4.2% + ₱10 (international in PHP), 4% + USD 1 (charged in USD)</li>
+                                    </ul>
+                                    <p>So your actual net per ticket will be slightly lower than shown.</p>
                                 </div>
                             </Card>
                         )}

@@ -9,7 +9,8 @@ import { useLoginRateLimit } from '@/hooks/use-login-rate-limit'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
-import { Briefcase, Mail, Lock, ArrowRight } from 'lucide-react'
+import { Briefcase, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react'
+import { useLoading } from '@/providers/loading-provider'
 import {
     Dialog,
     DialogContent,
@@ -31,6 +32,7 @@ export default function OrganizerLoginPage() {
     const [forgotPasswordError, setForgotPasswordError] = useState('')
     const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
     const { isLocked, remainingTime, recordAttempt, resetAttempts } = useLoginRateLimit(5, 60000)
+    const { showLoading, hideLoading } = useLoading()
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -42,6 +44,9 @@ export default function OrganizerLoginPage() {
         }
 
         setLoading(true)
+        // Full-screen branded overlay — stays up through the redirect to the
+        // dashboard (the provider auto-hides it once /organizer renders).
+        showLoading('Signing you in…')
 
         const supabase = createClient()
 
@@ -55,6 +60,7 @@ export default function OrganizerLoginPage() {
             recordAttempt()
             setError('Invalid email or password.') // Generic message
             setLoading(false)
+            hideLoading()
             return
         }
 
@@ -76,6 +82,7 @@ export default function OrganizerLoginPage() {
                 setError(`Your partner application is ${partner.status}. Please wait for approval.`)
                 await supabase.auth.signOut()
                 setLoading(false)
+                hideLoading()
                 return
             }
         } else {
@@ -90,6 +97,7 @@ export default function OrganizerLoginPage() {
                 setError('No partner account found. If you applied as an experience host via the app, please wait for approval. Otherwise, register a partner account or ask your team admin to invite you.')
                 await supabase.auth.signOut()
                 setLoading(false)
+                hideLoading()
                 return
             }
         }
@@ -262,7 +270,10 @@ export default function OrganizerLoginPage() {
                                 disabled={loading}
                             >
                                 {loading ? (
-                                    'Signing in...'
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Signing in...
+                                    </>
                                 ) : (
                                     <>
                                         Sign In

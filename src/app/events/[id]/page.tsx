@@ -74,12 +74,44 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
     if (!event) return { title: 'Event Not Found' }
 
+    const organizer = (event as any).organizer
+    const orgName = organizer?.business_name || 'HangHut'
+    const orgIcon = organizer?.profile_photo_url || undefined
+
+    // Plain-text, truncated description for meta tags (strip any HTML/markup).
+    const plain = (event.description || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+    const description = plain
+        ? plain.slice(0, 157) + (plain.length > 157 ? '…' : '')
+        : `Get tickets for ${event.title} on HangHut.`
+
+    const url = `/events/${id}`
+    const ogImages = event.cover_image_url
+        ? [{ url: event.cover_image_url, width: 1200, height: 630, alt: event.title }]
+        : []
+
+    // Unlisted (hidden) and private (subscriber-only / invite-only) events must
+    // never be indexed by search engines.
+    const isPrivate = event.status === 'hidden' || event.is_subscriber_only === true || event.invite_only === true
+
     return {
-        title: `${event.title} - HangHut Events`,
-        description: event.description || `Join ${event.title}`,
+        title: event.title,
+        description,
+        alternates: { canonical: url },
+        ...(isPrivate ? { robots: { index: false, follow: false } } : {}),
+        // Use the organizer's logo as the browser-tab favicon for their event page.
+        ...(orgIcon ? { icons: { icon: orgIcon, shortcut: orgIcon, apple: orgIcon } } : {}),
         openGraph: {
-            title: event.title,
-            description: event.description || `Join ${event.title}`,
+            type: 'website',
+            url,
+            siteName: 'HangHut',
+            title: `${event.title} · ${orgName}`,
+            description,
+            images: ogImages,
+        },
+        twitter: {
+            card: 'summary_large_image',
+            title: `${event.title} · ${orgName}`,
+            description,
             images: event.cover_image_url ? [event.cover_image_url] : [],
         },
     }
@@ -1045,6 +1077,63 @@ export default async function PublicEventPage({
             className="min-h-screen bg-background pb-20 relative"
             style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}
         >
+            {/* SEO: Event structured data for rich search results (skipped for private/unlisted) */}
+            {!(event.status === 'hidden' || event.is_subscriber_only || event.invite_only) && (
+                <script
+                    type="application/ld+json"
+                    dangerouslySetInnerHTML={{
+                        __html: JSON.stringify({
+                            '@context': 'https://schema.org',
+                            '@type': 'Event',
+                            name: event.title,
+                            startDate: event.start_datetime,
+                            ...(event.end_datetime ? { endDate: event.end_datetime } : {}),
+                            eventStatus: 'https://schema.org/EventScheduled',
+                            eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+                            ...(event.cover_image_url ? { image: [event.cover_image_url] } : {}),
+                            description:
+                                (event.description || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) ||
+                                `Get tickets for ${event.title} on HangHut.`,
+                            ...(event.venue_name || event.address
+                                ? {
+                                      location: {
+                                          '@type': 'Place',
+                                          name: event.venue_name || event.address,
+                                          address: {
+                                              '@type': 'PostalAddress',
+                                              ...(event.address ? { streetAddress: event.address } : {}),
+                                              ...(event.city ? { addressLocality: event.city } : {}),
+                                              addressCountry: 'PH',
+                                          },
+                                      },
+                                  }
+                                : {}),
+                            ...(event.organizer?.business_name
+                                ? {
+                                      organizer: {
+                                          '@type': 'Organization',
+                                          name: event.organizer.business_name,
+                                          ...(event.organizer.slug ? { url: `https://${event.organizer.slug}.hanghut.com` } : {}),
+                                      },
+                                  }
+                                : {}),
+                            offers: {
+                                '@type': 'Offer',
+                                url: `https://hanghut.com/events/${event.id}`,
+                                price: (() => {
+                                    const tiers = (event.ticket_tiers || []).filter((t: any) => t.is_active !== false)
+                                    const prices = tiers.length
+                                        ? tiers.map((t: any) => Number(t.price) || 0)
+                                        : [Number(event.ticket_price) || 0]
+                                    return Math.min(...prices)
+                                })(),
+                                priceCurrency: 'PHP',
+                                availability: 'https://schema.org/InStock',
+                            },
+                        }),
+                    }}
+                />
+            )}
             {/* Google Fonts */}
             {googleFontUrls.map(url => (
                 <link key={url} rel="stylesheet" href={url} />

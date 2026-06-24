@@ -5,9 +5,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { requestPayout } from '@/lib/organizer/payout-actions'
+import { requestPayout, sendPayoutOtp } from '@/lib/organizer/payout-actions'
+import { PAYOUT_OTP_THRESHOLD } from '@/lib/organizer/payout-constants'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Building2 } from 'lucide-react'
+import { Loader2, Building2, ShieldCheck, ArrowLeft } from 'lucide-react'
 
 interface RequestPayoutCardProps {
     balance: number
@@ -35,29 +36,104 @@ export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet =
     const { toast } = useToast()
     const [amount, setAmount] = useState('')
     const [isLoading, setIsLoading] = useState(false)
+    // OTP step state
+    const [step, setStep] = useState<'amount' | 'otp'>('amount')
+    const [code, setCode] = useState('')
+    const [maskedEmail, setMaskedEmail] = useState('')
 
-    async function handleRequest() {
-        if (!amount) return
+    function validAmount(): number | null {
         const val = parseInt(amount)
         if (isNaN(val) || val <= 0) {
             toast({ title: 'Invalid Amount', description: 'Please enter a valid amount.', variant: 'destructive' })
-            return
+            return null
         }
         if (val > balance) {
             toast({ title: 'Insufficient Balance', description: `You can only request up to ₱${balance.toLocaleString()}`, variant: 'destructive' })
+            return null
+        }
+        return val
+    }
+
+    // Step 1 → small payouts submit directly; large ones email a code first.
+    async function handleContinue() {
+        const val = validAmount()
+        if (val === null) return
+
+        if (val <= PAYOUT_OTP_THRESHOLD) {
+            // Below threshold — no OTP required, submit directly.
+            setIsLoading(true)
+            try {
+                const res = await requestPayout(partnerId, val, '')
+                if (res.success) {
+                    toast({ title: 'Success', description: res.message })
+                    setAmount('')
+                } else {
+                    toast({ title: 'Error', description: res.message, variant: 'destructive' })
+                }
+            } catch {
+                toast({ title: 'Request Failed', description: 'Something went wrong.', variant: 'destructive' })
+            } finally {
+                setIsLoading(false)
+            }
             return
         }
 
+        // Above threshold — email a verification code bound to this amount.
         setIsLoading(true)
         try {
-            const res = await requestPayout(partnerId, val)
+            const res = await sendPayoutOtp(val)
             if (res.success) {
-                toast({ title: 'Success', description: res.message })
-                setAmount('')
+                setMaskedEmail(res.maskedEmail || '')
+                setStep('otp')
+                setCode('')
+                toast({ title: 'Code sent', description: `We emailed a 6-digit code to ${res.maskedEmail}.` })
             } else {
                 toast({ title: 'Error', description: res.message, variant: 'destructive' })
             }
-        } catch (error) {
+        } catch {
+            toast({ title: 'Request Failed', description: 'Something went wrong.', variant: 'destructive' })
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    async function handleResend() {
+        const val = validAmount()
+        if (val === null) return
+        setIsLoading(true)
+        try {
+            const res = await sendPayoutOtp(val)
+            if (res.success) {
+                setMaskedEmail(res.maskedEmail || '')
+                toast({ title: 'Code resent', description: `We emailed a new code to ${res.maskedEmail}.` })
+            } else {
+                toast({ title: 'Error', description: res.message, variant: 'destructive' })
+            }
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    // Step 2 → confirm the payout with the emailed code.
+    async function handleConfirm() {
+        const val = validAmount()
+        if (val === null) return
+        if (code.trim().length !== 6) {
+            toast({ title: 'Enter the code', description: 'Enter the 6-digit code from your email.', variant: 'destructive' })
+            return
+        }
+        setIsLoading(true)
+        try {
+            const res = await requestPayout(partnerId, val, code.trim())
+            if (res.success) {
+                toast({ title: 'Success', description: res.message })
+                setAmount('')
+                setCode('')
+                setStep('amount')
+            } else {
+                toast({ title: 'Error', description: res.message, variant: 'destructive' })
+            }
+        } catch {
             toast({ title: 'Request Failed', description: 'Something went wrong.', variant: 'destructive' })
         } finally {
             setIsLoading(false)
@@ -89,6 +165,61 @@ export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet =
         )
     }
 
+    if (step === 'otp') {
+        return (
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center gap-2">
+                        <ShieldCheck className="h-5 w-5 text-primary" />
+                        <CardTitle>Verify it&apos;s you</CardTitle>
+                    </div>
+                    <CardDescription>
+                        Enter the 6-digit code we emailed to <span className="font-medium">{maskedEmail}</span> to confirm your
+                        payout of <span className="font-semibold">₱{Number(amount).toLocaleString()}</span>.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="otp">Verification code</Label>
+                        <Input
+                            id="otp"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            maxLength={6}
+                            placeholder="000000"
+                            className="text-center text-2xl font-bold tracking-[0.4em]"
+                            value={code}
+                            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            autoFocus
+                        />
+                        <button
+                            type="button"
+                            onClick={handleResend}
+                            disabled={isLoading}
+                            className="text-xs text-primary hover:underline disabled:opacity-50"
+                        >
+                            Didn&apos;t get it? Resend code
+                        </button>
+                    </div>
+                </CardContent>
+                <CardFooter className="flex-col gap-2">
+                    <Button className="w-full" onClick={handleConfirm} disabled={isLoading || code.length !== 6}>
+                        {isLoading ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" />Confirming...</>) : 'Confirm Payout'}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => { setStep('amount'); setCode('') }}
+                        disabled={isLoading}
+                    >
+                        <ArrowLeft className="mr-1.5 h-4 w-4" /> Back
+                    </Button>
+                </CardFooter>
+            </Card>
+        )
+    }
+
     return (
         <Card>
             <CardHeader>
@@ -97,7 +228,7 @@ export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet =
                     Enter amount to withdraw.
                     <br />
                     <span className="text-xs text-muted-foreground">
-                        Amounts under ₱50,000 may be processed immediately.
+                        Payouts over ₱{PAYOUT_OTP_THRESHOLD.toLocaleString()} require email verification. Amounts under ₱50,000 may be processed immediately.
                     </span>
                 </CardDescription>
             </CardHeader>
@@ -140,16 +271,16 @@ export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet =
             <CardFooter>
                 <Button
                     className="w-full"
-                    onClick={handleRequest}
+                    onClick={handleContinue}
                     disabled={isLoading || !amount || Number(amount) <= 0 || Number(amount) > balance}
                 >
                     {isLoading ? (
                         <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Processing...
+                            {Number(amount) > PAYOUT_OTP_THRESHOLD ? 'Sending code...' : 'Processing...'}
                         </>
                     ) : (
-                        'Submit Request'
+                        Number(amount) > PAYOUT_OTP_THRESHOLD ? 'Continue' : 'Submit Request'
                     )}
                 </Button>
             </CardFooter>

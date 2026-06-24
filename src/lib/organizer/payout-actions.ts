@@ -5,8 +5,84 @@ import { revalidatePath } from 'next/cache'
 import { executeXenditPayout } from '@/lib/payment/xendit-payouts'
 import { BankCode } from '@/lib/constants/banks'
 import { getAuthUser } from '@/lib/auth/cached'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { PAYOUT_OTP_THRESHOLD } from './payout-constants'
 
-export async function requestPayout(partnerId: string, amount: number) {
+function otpAdminClient() {
+    return createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    )
+}
+
+async function hashOtp(code: string): Promise<string> {
+    const salt = process.env.OTP_SALT || 'hanghut-otp-salt'
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code + salt))
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+function maskEmail(email: string): string {
+    const [local, domain] = email.split('@')
+    if (!domain) return email
+    if (local.length <= 2) return `${local[0]}***@${domain}`
+    return `${local[0]}${local[1]}***@${domain}`
+}
+
+/**
+ * Step 1 of a payout: email the organizer a 6-digit code bound to this amount.
+ * Confirm via requestPayout(partnerId, amount, code) within 5 minutes.
+ * Reuses the generic send-otp-code edge function (same as admin login MFA).
+ */
+export async function sendPayoutOtp(amount: number) {
+    if (!amount || amount <= 0) return { success: false, message: 'Invalid payout amount' }
+
+    const { user } = await getAuthUser()
+    if (!user) return { success: false, message: 'Unauthorized' }
+
+    const admin = otpAdminClient()
+
+    const { data: userData } = await admin.from('users').select('email').eq('id', user.id).single()
+    const email = userData?.email || user.email
+    if (!email) return { success: false, message: 'No email on file for verification' }
+
+    // Rate limit: max 3 codes / 15 min per user.
+    const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+    const { count } = await admin
+        .from('payout_otp_codes')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gte('created_at', fifteenMinAgo)
+    if (count && count >= 3) {
+        return { success: false, message: 'Too many codes requested. Please wait 15 minutes.' }
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString()
+    const codeHash = await hashOtp(code)
+
+    // Invalidate any prior unused codes for this user.
+    await admin.from('payout_otp_codes').update({ used: true }).eq('user_id', user.id).eq('used', false)
+
+    const { error: insertError } = await admin.from('payout_otp_codes').insert({
+        user_id: user.id,
+        code_hash: codeHash,
+        amount,
+        expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    })
+    if (insertError) {
+        console.error('[Payout OTP] insert failed:', insertError)
+        return { success: false, message: 'Failed to generate verification code' }
+    }
+
+    const { error: sendError } = await admin.functions.invoke('send-otp-code', { body: { email, code, purpose: 'payout' } })
+    if (sendError) {
+        console.error('[Payout OTP] send failed:', sendError)
+        return { success: false, message: 'Failed to send verification email' }
+    }
+
+    return { success: true, maskedEmail: maskEmail(email) }
+}
+
+export async function requestPayout(partnerId: string, amount: number, otpCode: string) {
     if (amount <= 0) {
         return { success: false, message: 'Invalid payout amount' }
     }
@@ -17,6 +93,32 @@ export async function requestPayout(partnerId: string, amount: number) {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) {
         return { success: false, message: 'Unauthorized: No active session' }
+    }
+
+    // 1b. Payouts above the threshold require an email OTP (bound to this exact
+    // amount) before any funds move. Smaller payouts skip verification.
+    if (amount > PAYOUT_OTP_THRESHOLD) {
+        if (!otpCode || otpCode.trim().length === 0) {
+            return { success: false, message: 'Verification code required' }
+        }
+        const otpAdmin = otpAdminClient()
+        const codeHash = await hashOtp(otpCode.trim())
+        const { data: otpRow } = await otpAdmin
+            .from('payout_otp_codes')
+            .select('id, amount')
+            .eq('user_id', session.user.id)
+            .eq('code_hash', codeHash)
+            .eq('used', false)
+            .gte('expires_at', new Date().toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+        if (!otpRow || Number(otpRow.amount) !== Number(amount)) {
+            return { success: false, message: 'Invalid or expired verification code. Please request a new one.' }
+        }
+        // Single-use: consume the code immediately.
+        await otpAdmin.from('payout_otp_codes').update({ used: true }).eq('id', otpRow.id)
     }
 
     // 2. Get Primary Bank Account ID
