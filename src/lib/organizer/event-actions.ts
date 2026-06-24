@@ -4,6 +4,27 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 
+/**
+ * Resolve the partner whose events the current user may manage. Real owners
+ * (partners.user_id) AND team members with role owner/manager qualify — team
+ * members used to be bounced because resolution only checked partners.user_id.
+ * Returns { id } so existing `partner.id` usages keep working, or null.
+ */
+async function resolveManagerPartner(
+    supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<{ id: string } | null> {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+    const { data: owned } = await supabase
+        .from('partners').select('id').eq('user_id', user.id).maybeSingle()
+    if (owned) return { id: owned.id }
+    const { data: tm } = await supabase
+        .from('partner_team_members')
+        .select('partner_id, role').eq('user_id', user.id).maybeSingle()
+    if (tm && (tm.role === 'owner' || tm.role === 'manager')) return { id: tm.partner_id }
+    return null
+}
+
 export async function createEvent(formData: FormData) {
     const supabase = await createClient()
 
@@ -14,11 +35,7 @@ export async function createEvent(formData: FormData) {
     }
 
     // Get partner record
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
+    const partner = await resolveManagerPartner(supabase)
 
     if (!partner) {
         return { error: 'Partner account not found' }
@@ -190,11 +207,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
 
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
+    const partner = await resolveManagerPartner(supabase)
 
     if (!partner) return { error: 'Partner account not found' }
 
@@ -338,11 +351,7 @@ export async function updateEventStorefront(eventId: string, data: {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
 
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
+    const partner = await resolveManagerPartner(supabase)
 
     if (!partner) return { error: 'Partner account not found' }
 
@@ -401,11 +410,7 @@ export async function uploadEventBgImage(eventId: string, formData: FormData) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
 
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
+    const partner = await resolveManagerPartner(supabase)
     if (!partner) return { error: 'Partner account not found' }
 
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
