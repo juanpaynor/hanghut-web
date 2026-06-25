@@ -6,10 +6,14 @@ export async function GET(request: Request) {
     const code = searchParams.get('code')
     const next = searchParams.get('next') ?? '/admin'
     const error_description = searchParams.get('error_description')
-    
+
+    // Route auth errors back to the login page that matches the flow: partner
+    // flows (next under /organizer) → /organizer/login; everything else → /login.
+    const loginPath = next.startsWith('/organizer') ? '/organizer/login' : '/login'
+
     // Auth error from Supabase
     if (error_description) {
-        return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error_description)}`)
+        return NextResponse.redirect(`${origin}${loginPath}?error=${encodeURIComponent(error_description)}`)
     }
 
     if (code) {
@@ -41,10 +45,10 @@ export async function GET(request: Request) {
             if (next === '/reset-password') {
                 return NextResponse.redirect(`${origin}/reset-password?error=link_expired&message=${encodeURIComponent(error.message)}`)
             }
-            return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`)
+            return NextResponse.redirect(`${origin}${loginPath}?error=${encodeURIComponent(error.message)}`)
         }
     }
 
     // Default error
-    return NextResponse.redirect(`${origin}/login?error=auth_callback_error`)
+    return NextResponse.redirect(`${origin}${loginPath}?error=auth_callback_error`)
 }

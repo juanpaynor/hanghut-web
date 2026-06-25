@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,8 +11,10 @@ import {
     Building, Mail, Lock, ArrowRight, CheckCircle, Briefcase, Eye, EyeOff, User, Phone, ShieldCheck,
 } from 'lucide-react'
 import Link from 'next/link'
-import { registerPartner } from '@/lib/organizer/auth-actions'
+import { registerPartner, completePartnerApplication } from '@/lib/organizer/auth-actions'
 import { ENTITY_TYPES } from '@/lib/organizer/kyc-constants'
+import { createClient } from '@/lib/supabase/client'
+import { OAuthButtons } from '@/components/auth/oauth-buttons'
 
 export default function OrganizerRegisterPage() {
     const router = useRouter()
@@ -30,29 +32,62 @@ export default function OrganizerRegisterPage() {
     const [password, setPassword] = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
 
-    const isValid = businessName.trim() && businessType && representativeName.trim() &&
-        phoneNumber.trim() && email.trim() && password.length >= 6 && password === confirmPassword
+    // OAuth "finish application" mode: the user already authenticated with
+    // Google/Apple and just needs to provide business details (no email/password).
+    const [oauthMode, setOauthMode] = useState(false)
+    const [oauthEmail, setOauthEmail] = useState('')
+
+    useEffect(() => {
+        const supabase = createClient()
+        supabase.auth.getUser().then(async ({ data: { user } }) => {
+            if (!user) return
+            const { data: partner } = await supabase
+                .from('partners').select('id').eq('user_id', user.id).maybeSingle()
+            if (partner) { router.push('/organizer'); return } // already a partner
+            setOauthMode(true)
+            setOauthEmail(user.email ?? '')
+            const name = (user.user_metadata?.full_name || user.user_metadata?.name || '') as string
+            if (name) setRepresentativeName(name)
+        })
+    }, [router])
+
+    const isValid = oauthMode
+        ? Boolean(businessName.trim() && businessType && representativeName.trim() && phoneNumber.trim())
+        : Boolean(businessName.trim() && businessType && representativeName.trim() &&
+            phoneNumber.trim() && email.trim() && password.length >= 6 && password === confirmPassword)
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault()
         setError('')
-        if (password !== confirmPassword) { setError('Passwords do not match'); return }
-        if (password.length < 6) { setError('Password must be at least 6 characters'); return }
 
-        setLoading(true)
         const formData = new FormData()
         formData.append('businessName', businessName)
         formData.append('businessType', businessType)
         formData.append('representativeName', representativeName)
         formData.append('phoneNumber', `${countryCode}${phoneNumber}`)
-        formData.append('email', email)
-        formData.append('password', password)
 
-        const result = await registerPartner(formData)
+        setLoading(true)
+
+        let result: { error?: string; success?: boolean }
+        if (oauthMode) {
+            result = await completePartnerApplication(formData)
+        } else {
+            if (password !== confirmPassword) { setError('Passwords do not match'); setLoading(false); return }
+            if (password.length < 6) { setError('Password must be at least 6 characters'); setLoading(false); return }
+            formData.append('email', email)
+            formData.append('password', password)
+            result = await registerPartner(formData)
+        }
+
         if (result.error) {
             setError(result.error)
             setLoading(false)
         } else {
+            // New partners can't enter the dashboard until approved (same as the
+            // password flow) — sign the OAuth session out so they hit the gate.
+            if (oauthMode) {
+                await createClient().auth.signOut()
+            }
             setSuccess(true)
             setLoading(false)
             setTimeout(() => router.push('/organizer/login'), 3500)
@@ -67,10 +102,13 @@ export default function OrganizerRegisterPage() {
                         <CheckCircle className="h-10 w-10 text-green-500" />
                     </div>
                     <div className="space-y-2 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
-                        <h2 className="text-2xl font-bold">Account created 🎉</h2>
+                        <h2 className="text-2xl font-bold">{oauthMode ? 'Application submitted 🎉' : 'Account created 🎉'}</h2>
                         <p className="text-muted-foreground">
-                            Next up: <strong className="text-foreground">get verified</strong> from your dashboard to start
-                            accepting GCash &amp; card payments.
+                            {oauthMode ? (
+                                <>Your partner application is <strong className="text-foreground">pending approval</strong>. We&apos;ll email you once it&apos;s approved.</>
+                            ) : (
+                                <>Next up: <strong className="text-foreground">get verified</strong> from your dashboard to start accepting GCash &amp; card payments.</>
+                            )}
                         </p>
                     </div>
                     <Button asChild size="lg" className="w-full animate-in fade-in duration-500 delay-500">
@@ -98,11 +136,26 @@ export default function OrganizerRegisterPage() {
                 <Card className="p-8 shadow-xl">
                     <form onSubmit={handleSubmit} className="space-y-5">
                         <div>
-                            <h2 className="text-xl font-bold">Create your account</h2>
+                            <h2 className="text-xl font-bold">{oauthMode ? 'Finish your partner application' : 'Create your account'}</h2>
                             <p className="text-sm text-muted-foreground mt-1">
-                                Takes a minute. You&apos;ll verify your business later from your dashboard.
+                                {oauthMode ? (
+                                    <>Signed in as <strong className="text-foreground">{oauthEmail}</strong>. Just a few business details and you&apos;re set.</>
+                                ) : (
+                                    <>Takes a minute. You&apos;ll verify your business later from your dashboard.</>
+                                )}
                             </p>
                         </div>
+
+                        {!oauthMode && (
+                            <>
+                                <OAuthButtons disabled={loading} />
+                                <div className="relative flex items-center">
+                                    <div className="flex-grow border-t border-border" />
+                                    <span className="mx-3 text-xs uppercase tracking-wide text-muted-foreground">or sign up with email</span>
+                                    <div className="flex-grow border-t border-border" />
+                                </div>
+                            </>
+                        )}
 
                         <div className="space-y-2">
                             <Label htmlFor="businessName">Business / Organization Name</Label>
@@ -154,13 +207,14 @@ export default function OrganizerRegisterPage() {
                             </div>
                         </div>
 
+                        {!oauthMode && (
                         <div className="border-t pt-4 space-y-4">
                             <div className="space-y-2">
                                 <Label htmlFor="email">Work Email</Label>
                                 <div className="relative">
                                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                     <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="events@company.com" className="pl-10" required />
+                                        placeholder="events@company.com" className="pl-10" required={!oauthMode} />
                                 </div>
                             </div>
 
@@ -170,7 +224,7 @@ export default function OrganizerRegisterPage() {
                                     <div className="relative">
                                         <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                         <Input id="password" type={showPassword ? 'text' : 'password'} value={password}
-                                            onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="pl-10 pr-10" required />
+                                            onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="pl-10 pr-10" required={!oauthMode} />
                                         <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                                             onClick={() => setShowPassword(!showPassword)}>
                                             {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -182,7 +236,7 @@ export default function OrganizerRegisterPage() {
                                     <div className="relative">
                                         <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                         <Input id="confirmPassword" type={showPassword ? 'text' : 'password'} value={confirmPassword}
-                                            onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" className="pl-10" required />
+                                            onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" className="pl-10" required={!oauthMode} />
                                     </div>
                                     {confirmPassword && password !== confirmPassword && (
                                         <p className="text-xs text-destructive">Passwords don&apos;t match</p>
@@ -190,6 +244,7 @@ export default function OrganizerRegisterPage() {
                                 </div>
                             </div>
                         </div>
+                        )}
 
                         {error && (
                             <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl">
@@ -198,7 +253,9 @@ export default function OrganizerRegisterPage() {
                         )}
 
                         <Button type="submit" disabled={loading || !isValid} className="w-full" size="lg">
-                            {loading ? 'Creating account…' : (<>Create account <ArrowRight className="ml-2 h-4 w-4" /></>)}
+                            {loading
+                                ? (oauthMode ? 'Submitting…' : 'Creating account…')
+                                : (<>{oauthMode ? 'Submit application' : 'Create account'} <ArrowRight className="ml-2 h-4 w-4" /></>)}
                         </Button>
 
                         <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 rounded-lg p-3">

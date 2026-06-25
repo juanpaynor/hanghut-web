@@ -106,3 +106,72 @@ export async function registerPartner(formData: FormData) {
 
     return { success: true }
 }
+
+/**
+ * completePartnerApplication — partner application for an ALREADY-authenticated
+ * user (i.e. someone who just signed in with Google/Apple and has no partner
+ * record yet). Unlike registerPartner there is no signUp here: the auth user
+ * already exists, so we only collect the business details Google/Apple can't
+ * provide and insert the partners row for the current user.
+ */
+export async function completePartnerApplication(formData: FormData) {
+    const businessName = formData.get('businessName') as string
+    const businessType = formData.get('businessType') as string
+    const representativeName = formData.get('representativeName') as string
+    const phoneNumber = formData.get('phoneNumber') as string
+
+    if (!businessName || !businessType) {
+        return { error: 'Please complete all required fields.' }
+    }
+
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { error: 'You need to be signed in. Please try again.' }
+    }
+
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    if (!serviceRoleKey || !supabaseUrl) {
+        return { error: 'Server configuration error: Missing service role key' }
+    }
+    const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey)
+
+    // Idempotent: if they already applied, just succeed.
+    const { data: existing } = await adminSupabase
+        .from('partners')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+    if (existing) {
+        return { success: true }
+    }
+
+    // Ensure a public.users row exists (OAuth users may not have one yet).
+    await adminSupabase
+        .from('users')
+        .upsert({ id: user.id, email: user.email, display_name: businessName }, { onConflict: 'id' })
+
+    const { error: partnerError } = await adminSupabase
+        .from('partners')
+        .insert({
+            id: crypto.randomUUID(),
+            user_id: user.id,
+            business_name: businessName,
+            business_type: businessType,
+            status: 'pending',
+            verified: false,
+            pricing_model: 'standard',
+            work_email: user.email,
+            representative_name: representativeName || null,
+            contact_number: phoneNumber || null,
+            kyc_status: 'not_started',
+        })
+
+    if (partnerError) {
+        console.error('Partner application error:', partnerError)
+        return { error: `Failed to create partner profile: ${partnerError.message}` }
+    }
+
+    return { success: true }
+}
