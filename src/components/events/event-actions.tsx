@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ExternalLink, Share2, CalendarPlus } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { trackEventInteraction } from '@/lib/analytics/track-event'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -17,9 +18,10 @@ interface AddToCalendarButtonProps {
     endDatetime?: string | null
     location?: string | null
     description?: string | null
+    eventId?: string
 }
 
-export function AddToCalendarButton({ title, startDatetime, endDatetime, location, description }: AddToCalendarButtonProps) {
+export function AddToCalendarButton({ title, startDatetime, endDatetime, location, description, eventId }: AddToCalendarButtonProps) {
     function formatGcal(dt: string) {
         return new Date(dt).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
     }
@@ -66,11 +68,16 @@ export function AddToCalendarButton({ title, startDatetime, endDatetime, locatio
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
                 <DropdownMenuItem asChild>
-                    <a href={googleUrl} target="_blank" rel="noopener noreferrer">
+                    <a
+                        href={googleUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => eventId && trackEventInteraction(eventId, 'add_to_calendar')}
+                    >
                         Google Calendar
                     </a>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={downloadIcs}>
+                <DropdownMenuItem onClick={() => { if (eventId) trackEventInteraction(eventId, 'add_to_calendar'); downloadIcs() }}>
                     Apple / Outlook (.ics)
                 </DropdownMenuItem>
             </DropdownMenuContent>
@@ -83,16 +90,23 @@ interface MobileTicketButtonProps {
     isSoldOut: boolean
     isExternal?: boolean
     externalUrl?: string
+    eventId?: string
 }
 
-export function MobileTicketButton({ showTickets, isSoldOut, isExternal, externalUrl }: MobileTicketButtonProps) {
+export function MobileTicketButton({ showTickets, isSoldOut, isExternal, externalUrl, eventId }: MobileTicketButtonProps) {
     if (!showTickets) return null
     if (!isExternal && isSoldOut) return null
 
     if (isExternal && externalUrl) {
         return (
             <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur border-t md:hidden z-50 animate-in slide-in-from-bottom">
-                <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="block">
+                <a
+                    href={externalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block"
+                    onClick={() => eventId && trackEventInteraction(eventId, 'get_tickets')}
+                >
                     <Button className="w-full h-12 text-lg font-bold shadow-lg bg-blue-600 hover:bg-blue-700">
                         Get Tickets <ExternalLink className="h-4 w-4 ml-2" />
                     </Button>
@@ -105,7 +119,10 @@ export function MobileTicketButton({ showTickets, isSoldOut, isExternal, externa
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur border-t md:hidden z-50 animate-in slide-in-from-bottom">
             <Button
                 className="w-full h-12 text-lg font-bold shadow-lg"
-                onClick={() => document.getElementById('tickets')?.scrollIntoView({ behavior: 'smooth' })}
+                onClick={() => {
+                    if (eventId) trackEventInteraction(eventId, 'get_tickets')
+                    document.getElementById('tickets')?.scrollIntoView({ behavior: 'smooth' })
+                }}
             >
                 Get Tickets
             </Button>
@@ -117,13 +134,15 @@ interface ShareButtonProps {
     title: string
     description?: string
     url?: string
+    eventId?: string
 }
 
-export function ShareButton({ title, description }: ShareButtonProps) {
+export function ShareButton({ title, description, eventId }: ShareButtonProps) {
     const { toast } = useToast()
 
     const handleShare = async () => {
         const url = window.location.href
+        if (eventId) trackEventInteraction(eventId, 'share')
 
         if (navigator.share) {
             try {

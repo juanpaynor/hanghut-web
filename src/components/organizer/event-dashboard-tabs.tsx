@@ -10,7 +10,8 @@ import { CheckInStats } from '@/components/organizer/check-in-stats'
 import { EventDashboardOverview } from '@/components/organizer/event-dashboard-overview'
 import { StorefrontCustomizationForm } from '@/components/organizer/storefront-customization-form'
 import { SeatMapTab } from '@/components/organizer/seat-map-tab'
-import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair, ExternalLink, ClipboardList, UserCheck, Mail } from 'lucide-react'
+import { EventAnalytics } from '@/components/organizer/event-analytics'
+import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair, ExternalLink, ClipboardList, UserCheck, Mail, BarChart2 } from 'lucide-react'
 import { EventInvitesManager } from '@/components/organizer/event-invites-manager'
 import { Attendee } from '@/lib/organizer/attendee-actions'
 import { PromoCode } from '@/lib/organizer/promo-actions'
@@ -40,6 +41,9 @@ interface EventDashboardTabsProps {
     initialRegistrations: EventRegistration[]
     subscriptionTiers?: SubscriptionTierBasic[]
     existingDiscounts?: ExistingDiscount[]
+    analytics?: any
+    customers?: any
+    emailCampaigns?: any[]
 }
 
 export function EventDashboardTabs({
@@ -57,16 +61,19 @@ export function EventDashboardTabs({
     initialRegistrations,
     subscriptionTiers = [],
     existingDiscounts = [],
+    analytics = null,
+    customers = null,
+    emailCampaigns = [],
 }: EventDashboardTabsProps) {
     const [activeTab, setActiveTab] = useState('overview')
 
-    // Base 6 tabs + optional Registrations / Seat Map / Invites. Literal class
-    // strings keep Tailwind's JIT happy (no dynamic grid-cols-${n}).
-    const tabCount = 6
+    // Base 7 tabs (incl. Analytics) + optional Registrations / Seat Map / Invites.
+    // Literal class strings keep Tailwind's JIT happy (no dynamic grid-cols-${n}).
+    const tabCount = 7
         + (event.require_approval ? 1 : 0)
         + (event.seating_type === 'assigned_seating' ? 1 : 0)
         + (event.invite_only ? 1 : 0)
-    const gridColsClass = ({ 6: 'grid-cols-6', 7: 'grid-cols-7', 8: 'grid-cols-8', 9: 'grid-cols-9' } as Record<number, string>)[tabCount] || 'grid-cols-6'
+    const gridColsClass = ({ 7: 'grid-cols-7', 8: 'grid-cols-8', 9: 'grid-cols-9', 10: 'grid-cols-10' } as Record<number, string>)[tabCount] || 'grid-cols-7'
 
     return (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -74,6 +81,10 @@ export function EventDashboardTabs({
                 <TabsTrigger value="overview" className="flex items-center gap-2">
                     <LayoutDashboard className="h-4 w-4" />
                     Overview
+                </TabsTrigger>
+                <TabsTrigger value="analytics" className="flex items-center gap-2">
+                    <BarChart2 className="h-4 w-4" />
+                    Analytics
                 </TabsTrigger>
                 <TabsTrigger value="attendees" className="flex items-center gap-2">
                     <Users className="h-4 w-4" />
@@ -122,6 +133,10 @@ export function EventDashboardTabs({
 
             <TabsContent value="overview" className="mt-6 animate-in fade-in-50 duration-300">
                 <EventDashboardOverview event={event} stats={stats} />
+            </TabsContent>
+
+            <TabsContent value="analytics" className="mt-6 animate-in fade-in-50 duration-300">
+                <EventAnalytics analytics={analytics} customers={customers} emailCampaigns={emailCampaigns} />
             </TabsContent>
 
             <TabsContent value="attendees" className="mt-6 animate-in fade-in-50 duration-300 space-y-8">

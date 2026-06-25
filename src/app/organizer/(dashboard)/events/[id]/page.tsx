@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect, notFound } from 'next/navigation'
 import { EventDashboardTabs } from '@/components/organizer/event-dashboard-tabs'
 import { getAuthUser, getPartner } from '@/lib/auth/cached'
@@ -160,6 +161,19 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         return sum + price
     }, 0) || 0
 
+    // --- Analytics (page views / presses funnel, repeat customers, email) ---
+    // RPCs are SECURITY DEFINER + organizer-scoped (use the user client for auth.uid()).
+    // email_campaign_stats is read via admin scoped to this already-authorized event.
+    const [analyticsRes, customersRes] = await Promise.all([
+        supabase.rpc('get_event_analytics', { p_event_id: event.id }),
+        supabase.rpc('get_event_customer_breakdown', { p_event_id: event.id }),
+    ])
+    const { data: emailCampaigns } = await createAdminClient()
+        .from('email_campaign_stats')
+        .select('id, subject, sent_at, recipient_count, sent_count, delivered_count, opened_count, clicked_count')
+        .eq('event_id', event.id)
+        .order('sent_at', { ascending: false })
+
     return (
         <div className="p-8 pb-20">
             <div className="mb-6">
@@ -168,6 +182,9 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
             </div>
 
             <EventDashboardTabs
+                analytics={analyticsRes.data ?? null}
+                customers={customersRes.data ?? null}
+                emailCampaigns={emailCampaigns ?? []}
                 partnerId={partner.id}
                 commissionRate={commissionRate}
                 event={event}

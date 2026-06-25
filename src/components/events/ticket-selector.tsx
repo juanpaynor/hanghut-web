@@ -18,6 +18,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { fireConfetti } from '@/lib/utils/confetti'
+import { trackEventInteraction } from '@/lib/analytics/track-event'
 
 interface SubscriberDiscount {
     has_discount: boolean
@@ -103,7 +104,7 @@ export function TicketSelector({
     }
 
     return (
-        <Dialog open={isOpen} onOpenChange={(open) => { setIsOpen(open); if (!open && onClose) onClose() }}>
+        <Dialog open={isOpen} onOpenChange={(open) => { if (open && !isOpen) trackEventInteraction(eventId, 'get_tickets'); setIsOpen(open); if (!open && onClose) onClose() }}>
             <DialogTrigger asChild>
                 {trigger ? (
                     trigger

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { trackEventInteraction } from '@/lib/analytics/track-event'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -306,6 +307,8 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
 
             console.log('🔵 [CHECKOUT] Calling create-purchase-intent with payload:', requestPayload)
             if (headers) console.log('🔵 [CHECKOUT] Using explicit headers for Guest:', headers)
+
+            trackEventInteraction(event.id, 'checkout_started')
 
             const { data, error } = await supabase.functions.invoke('create-purchase-intent', {
                 body: requestPayload,

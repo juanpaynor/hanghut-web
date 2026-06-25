@@ -17,6 +17,7 @@ import type { QuestionForForm } from '@/components/events/registration-questions
 import { cn, hexToHsl, getYouTubeEmbedUrl } from '@/lib/utils'
 
 import { MobileTicketButton, ShareButton, AddToCalendarButton } from '@/components/events/event-actions'
+import { EventViewTracker } from '@/components/events/event-view-tracker'
 import { sanitize } from '@/lib/sanitize'
 import { EventPageBackground, type BgStyle } from '@/components/events/event-bg'
 import { EventCountdown } from '@/components/events/event-countdown'
@@ -551,6 +552,7 @@ export default async function PublicEventPage({
                             endDatetime={event.end_datetime}
                             location={event.venue_name ? `${event.venue_name}, ${event.address || ''} ${event.city || ''}`.trim() : event.city}
                             description={event.description}
+                            eventId={event.id}
                         />
                     </div>
                 </div>
@@ -910,7 +912,7 @@ export default async function PublicEventPage({
                             HANGHUT
                         </Link>
                     )}
-                    <ShareButton title={event.title} description={event.description} />
+                    <ShareButton title={event.title} description={event.description} eventId={event.id} />
                 </header>
 
                 {/* Full-viewport poster hero */}
@@ -984,6 +986,7 @@ export default async function PublicEventPage({
                     isSoldOut={isSoldOut}
                     isExternal={event.is_external}
                     externalUrl={externalRedirectUrl}
+                    eventId={event.id}
                 />
             </div>
         )
@@ -1014,7 +1017,7 @@ export default async function PublicEventPage({
                         ) : (
                             <Link href="/" className="font-bold text-xl">HANGHUT</Link>
                         )}
-                        <ShareButton title={event.title} description={event.description} />
+                        <ShareButton title={event.title} description={event.description} eventId={event.id} />
                     </div>
                 </header>
 
@@ -1065,6 +1068,7 @@ export default async function PublicEventPage({
                     isSoldOut={isSoldOut}
                     isExternal={event.is_external}
                     externalUrl={externalRedirectUrl}
+                    eventId={event.id}
                 />
             </div>
         )
@@ -1077,6 +1081,8 @@ export default async function PublicEventPage({
             className="min-h-screen bg-background pb-20 relative"
             style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}
         >
+            {/* Analytics: log a page view (once per session per event) */}
+            <EventViewTracker eventId={event.id} />
             {/* SEO: Event structured data for rich search results (skipped for private/unlisted) */}
             {!(event.status === 'hidden' || event.is_subscriber_only || event.invite_only) && (
                 <script
@@ -1243,7 +1249,7 @@ export default async function PublicEventPage({
                                     <TicketsSection />
 
                                     <div className="flex justify-center">
-                                        <ShareButton title={event.title} description={event.description} />
+                                        <ShareButton title={event.title} description={event.description} eventId={event.id} />
                                     </div>
                                 </div>
                             </div>
@@ -1258,6 +1264,7 @@ export default async function PublicEventPage({
                 isSoldOut={isSoldOut}
                 isExternal={event.is_external}
                 externalUrl={externalRedirectUrl}
+                eventId={event.id}
             />
         </div>
     )
