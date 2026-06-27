@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+import { TransactionDetailDialog } from './transaction-detail-dialog'
 import {
     Table,
     TableBody,
@@ -35,6 +37,8 @@ interface TransactionsHistoryProps {
 }
 
 export function TransactionsHistory({ transactions, totalCount }: TransactionsHistoryProps) {
+    const [selectedId, setSelectedId] = useState<string | null>(null)
+
     const handleExport = () => {
         if (!transactions.length) return
 
@@ -215,6 +219,7 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                             ) : (
                                 transactions.map((transaction) => {
                                     const isTopUp = transaction._type === 'topup'
+                                    const isEventTxn = !isTopUp && transaction._type !== 'experience'
                                     const statusConfig = getStatusConfig(transaction.status)
                                     const StatusIcon = statusConfig.icon
                                     const paymentMethod = transaction.purchase_intent?.payment_method
@@ -223,7 +228,11 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                                     const settlement = isTopUp ? null : getSettlementInfo(transaction.created_at, paymentMethod)
 
                                     return (
-                                        <TableRow key={transaction.id} className={`border-border/50 hover:bg-muted/20 group ${isTopUp ? 'bg-purple-500/[0.03]' : ''}`}>
+                                        <TableRow
+                                            key={transaction.id}
+                                            onClick={isEventTxn ? () => setSelectedId(transaction.id) : undefined}
+                                            className={`border-border/50 hover:bg-muted/20 group ${isTopUp ? 'bg-purple-500/[0.03]' : ''} ${isEventTxn ? 'cursor-pointer' : ''}`}
+                                        >
                                             {/* Status */}
                                             <TableCell>
                                                 {isTopUp ? (
@@ -345,6 +354,12 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                     </Table>
                 </CardContent>
             </Card>
+
+            <TransactionDetailDialog
+                transactionId={selectedId}
+                open={!!selectedId}
+                onOpenChange={(o) => { if (!o) setSelectedId(null) }}
+            />
         </div>
     )
 }

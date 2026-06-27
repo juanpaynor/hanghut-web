@@ -1,0 +1,201 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useToast } from '@/hooks/use-toast'
+import { getTransactionDetail, refundTransaction, type TransactionDetail } from '@/lib/organizer/transaction-actions'
+import { Loader2, RotateCcw, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { format } from 'date-fns'
+import { getSettlementInfo, getPaymentChannel } from '@/lib/utils/settlement'
+
+const REASONS = [
+    { value: 'Requested by customer', label: 'Requested by customer' },
+    { value: 'Duplicate', label: 'Duplicate charge' },
+    { value: 'Cancellation', label: 'Event cancelled' },
+    { value: 'Fraudulent', label: 'Fraudulent' },
+    { value: 'Others', label: 'Other reason' },
+]
+
+function Row({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) {
+    return (
+        <div className="flex items-center justify-between py-1.5 text-sm">
+            <span className="text-muted-foreground">{label}</span>
+            <span className={strong ? 'font-semibold' : 'font-medium'}>{value}</span>
+        </div>
+    )
+}
+
+export function TransactionDetailDialog({
+    transactionId,
+    open,
+    onOpenChange,
+}: {
+    transactionId: string | null
+    open: boolean
+    onOpenChange: (o: boolean) => void
+}) {
+    const router = useRouter()
+    const { toast } = useToast()
+    const [detail, setDetail] = useState<TransactionDetail | null>(null)
+    const [loading, setLoading] = useState(false)
+    const [refundMode, setRefundMode] = useState(false)
+    const [amount, setAmount] = useState('')
+    const [reason, setReason] = useState('Requested by customer')
+    const [refunding, setRefunding] = useState(false)
+
+    useEffect(() => {
+        if (!open || !transactionId) return
+        setDetail(null); setRefundMode(false); setRefunding(false)
+        setLoading(true)
+        getTransactionDetail(transactionId).then(r => {
+            if (r.detail) { setDetail(r.detail); setAmount(String(r.detail.total_amount)) }
+            else toast({ title: 'Could not load transaction', description: r.error, variant: 'destructive' })
+            setLoading(false)
+        })
+    }, [open, transactionId])
+
+    const alreadyRefunded = !!detail && (detail.intent_status === 'refunded' || !!detail.refunded_at)
+    const canRefund = !!detail && detail.status === 'completed' && detail.intent_status === 'completed' && !alreadyRefunded && !!detail.purchase_intent_id
+    const settlement = detail ? getSettlementInfo(detail.created_at, detail.payment_method) : null
+    const totalFees = detail ? detail.platform_fee + detail.payment_processing_fee + (detail.fixed_fee || 0) : 0
+
+    async function handleRefund() {
+        if (!detail) return
+        const amt = Number(amount)
+        if (isNaN(amt) || amt <= 0 || amt > detail.total_amount) {
+            toast({ title: 'Invalid amount', description: `Enter an amount between ₱1 and ₱${detail.total_amount.toLocaleString()}.`, variant: 'destructive' })
+            return
+        }
+        setRefunding(true)
+        const r = await refundTransaction(detail.id, amt, reason)
+        setRefunding(false)
+        if (r.success) {
+            toast({ title: 'Refund issued', description: `₱${amt.toLocaleString()} refunded to the customer.` })
+            onOpenChange(false)
+            router.refresh()
+        } else {
+            toast({ title: 'Refund failed', description: r.error, variant: 'destructive' })
+        }
+    }
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle>Transaction details</DialogTitle>
+                </DialogHeader>
+
+                {loading || !detail ? (
+                    <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                ) : (
+                    <div className="space-y-5">
+                        {alreadyRefunded && (
+                            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                                <RotateCcw className="h-4 w-4" />
+                                Refunded {detail.refunded_amount ? `₱${detail.refunded_amount.toLocaleString()}` : ''}{detail.refunded_at ? ` on ${format(new Date(detail.refunded_at), 'MMM d, yyyy')}` : ''}.
+                            </div>
+                        )}
+
+                        {/* Buyer + event */}
+                        <div className="rounded-lg border p-4">
+                            <p className="font-semibold">{detail.event_title}</p>
+                            <p className="text-sm text-muted-foreground">{detail.buyer_name || 'Guest'}{detail.buyer_email ? ` · ${detail.buyer_email}` : ''}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{format(new Date(detail.created_at), 'MMM d, yyyy · h:mm a')}</p>
+                        </div>
+
+                        {/* Amount breakdown */}
+                        <div className="rounded-lg border p-4">
+                            <Row label={detail.pass_fees ? 'Ticket price' : 'Amount'} value={`₱${detail.gross_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
+                            <Row label="Platform fee" value={`-₱${detail.platform_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
+                            <Row label="Processing fee" value={`-₱${detail.payment_processing_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
+                            {/* Fixed fee is only a deduction when the organizer absorbs it.
+                                When passed to the customer it's not taken from the payout. */}
+                            {!detail.pass_fees && detail.fixed_fee ? <Row label="Fixed fee" value={`-₱${detail.fixed_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} /> : null}
+                            <div className="border-t mt-1 pt-1">
+                                <Row label="Net payout" strong value={<span className="text-emerald-600">₱{detail.organizer_payout.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>} />
+                            </div>
+                            {detail.pass_fees && detail.fixed_fee ? (
+                                <p className="text-xs text-muted-foreground mt-2 border-t pt-2">
+                                    Customer also paid a ₱{detail.fixed_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })} booking fee (collected by HangHut) — total charged ₱{detail.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}.
+                                </p>
+                            ) : null}
+                        </div>
+
+                        {/* Meta */}
+                        <div className="rounded-lg border p-4">
+                            <Row label="Channel" value={getPaymentChannel(detail.payment_method)} />
+                            <Row label="Method" value={detail.payment_method?.toUpperCase() || 'UNKNOWN'} />
+                            <Row label="Quantity" value={`${detail.quantity} ticket${detail.quantity === 1 ? '' : 's'}`} />
+                            {settlement && <Row label="Settlement" value={settlement.status === 'settled' ? 'Settled' : `Pending · ETA ${format(settlement.etaDate, 'MMM d')}`} />}
+                            {detail.xendit_transaction_id && <Row label="Ref" value={<span className="font-mono text-xs">{detail.xendit_transaction_id}</span>} />}
+                        </div>
+
+                        {/* Tickets */}
+                        {detail.tickets.length > 0 && (
+                            <div className="rounded-lg border p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Tickets</p>
+                                <ul className="space-y-1.5">
+                                    {detail.tickets.map((t, i) => (
+                                        <li key={i} className="flex items-center justify-between text-sm">
+                                            <span>
+                                                {t.tier || 'Ticket'}
+                                                {t.seat_info?.label ? ` · ${t.seat_info.label}` : ''}
+                                                {t.ticket_number ? <span className="text-muted-foreground"> · {t.ticket_number}</span> : ''}
+                                            </span>
+                                            <span className={`text-xs ${t.status === 'refunded' ? 'text-slate-500' : t.status === 'used' ? 'text-emerald-600' : 'text-foreground'}`}>{t.status}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+
+                        {/* Refund action */}
+                        {canRefund && !refundMode && (
+                            <Button variant="outline" className="w-full" onClick={() => setRefundMode(true)}>
+                                <RotateCcw className="h-4 w-4 mr-2" /> Issue refund
+                            </Button>
+                        )}
+
+                        {canRefund && refundMode && (
+                            <div className="rounded-lg border border-amber-300 bg-amber-50/50 p-4 space-y-3">
+                                <div className="flex items-start gap-2 text-sm text-amber-800">
+                                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                                    <span>Refunds are paid from your Xendit wallet and can&apos;t be undone. A full refund also voids the tickets.</span>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="refund-amount">Refund amount (max ₱{detail.total_amount.toLocaleString()})</Label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₱</span>
+                                        <Input id="refund-amount" type="number" className="pl-7" value={amount}
+                                            onChange={(e) => setAmount(e.target.value)} min={1} max={detail.total_amount} />
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">{Number(amount) >= detail.total_amount ? 'Full refund — tickets will be voided.' : 'Partial refund — tickets stay valid.'}</p>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>Reason</Label>
+                                    <Select value={reason} onValueChange={setReason}>
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            {REASONS.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button variant="ghost" className="flex-1" onClick={() => setRefundMode(false)} disabled={refunding}>Cancel</Button>
+                                    <Button className="flex-1" onClick={handleRefund} disabled={refunding}>
+                                        {refunding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Refunding…</> : <><CheckCircle2 className="h-4 w-4 mr-2" />Confirm refund</>}
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </DialogContent>
+        </Dialog>
+    )
+}
