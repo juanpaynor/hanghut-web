@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { ChevronLeft, ChevronRight, X, Expand } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -80,12 +81,15 @@ export function ExperienceHeroCarousel({ images, videoUrl, title, locationName }
         >
             {/* Images */}
             {allMedia.map((src, i) => (
-                <img
+                <Image
                     key={i}
                     src={src}
                     alt={`${title} — ${i + 1}`}
+                    fill
+                    priority={i === 0}
+                    sizes="(max-width: 768px) 100vw, 80vw"
                     className={cn(
-                        'absolute inset-0 w-full h-full object-cover transition-opacity duration-700',
+                        'object-cover transition-opacity duration-700',
                         i === current ? 'opacity-100' : 'opacity-0'
                     )}
                 />

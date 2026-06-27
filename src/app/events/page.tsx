@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { createPublicClient } from '@/lib/supabase/public'
 import { EventsFilterGrid } from '@/components/events/events-filter-grid'
 import Link from 'next/link'
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
     },
 }
 
-export default async function EventsPage() {
+async function EventsList() {
     const supabase = createPublicClient()
 
     // Single query — fetch all active upcoming events, filter client-side
@@ -46,6 +47,30 @@ export default async function EventsPage() {
         .gte('start_datetime', new Date().toISOString())
         .order('start_datetime', { ascending: true })
 
+    return <EventsFilterGrid events={events || []} />
+}
+
+function EventsGridSkeleton() {
+    return (
+        <div className="container mx-auto px-4 py-8">
+            <div className="h-12 w-full max-w-md mx-auto bg-muted rounded-lg animate-pulse mb-8" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="rounded-xl border bg-card overflow-hidden">
+                        <div className="aspect-video bg-muted animate-pulse" />
+                        <div className="p-4 space-y-3">
+                            <div className="h-4 w-3/4 bg-muted rounded animate-pulse" />
+                            <div className="h-3 w-1/2 bg-muted rounded animate-pulse" />
+                            <div className="h-3 w-1/3 bg-muted rounded animate-pulse" />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
+
+export default function EventsPage() {
     return (
         <div className="min-h-screen bg-background">
             {/* Header */}
@@ -65,8 +90,10 @@ export default async function EventsPage() {
                 </div>
             </header>
 
-            {/* Client-side filtering — instant */}
-            <EventsFilterGrid events={events || []} />
+            {/* Streamed: shell paints immediately, events grid fills in */}
+            <Suspense fallback={<EventsGridSkeleton />}>
+                <EventsList />
+            </Suspense>
 
             {/* Footer */}
             <footer className="border-t bg-muted/30">

@@ -881,8 +881,7 @@ export default async function PublicEventPage({
                     />
                 ) : event.cover_image_url ? (
                     <div className="fixed inset-0 z-0">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={event.cover_image_url} alt="" className="w-full h-full object-cover" />
+                        <Image src={event.cover_image_url} alt="" fill priority sizes="100vw" className="object-cover" />
                         <div className="absolute inset-0 bg-black/65" />
                     </div>
                 ) : (

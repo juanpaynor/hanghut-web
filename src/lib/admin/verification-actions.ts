@@ -26,7 +26,8 @@ export async function reviewKYC(
     action: 'approve' | 'reject',
     reason?: string,
     feePercentage?: number,
-    passFeesToCustomer?: boolean
+    passFeesToCustomer?: boolean,
+    fixedFeePerTicket?: number
 ) {
     const supabase = await createClient()
 
@@ -58,6 +59,7 @@ export async function reviewKYC(
         approved_at: action === 'approve' ? new Date().toISOString() : null,
         status: action === 'approve' ? 'approved' : 'pending',
         custom_percentage: action === 'approve' ? (feePercentage ?? 4) : null,
+        fixed_fee_per_ticket: action === 'approve' ? (fixedFeePerTicket ?? 15) : null,
         pass_fees_to_customer: action === 'approve' ? (passFeesToCustomer ?? true) : null,
     }
 

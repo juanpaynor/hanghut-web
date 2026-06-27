@@ -87,6 +87,7 @@ export function ReviewDialog({ partner, documents = [], stakeholders = [] }: {
     const [viewingDocs, setViewingDocs] = useState(false)
     const [rejectReason, setRejectReason] = useState('')
     const [feePercentage, setFeePercentage] = useState(4)
+    const [fixedFeePerTicket, setFixedFeePerTicket] = useState(15)
     const [passFeesToCustomer, setPassFeesToCustomer] = useState(true)
     const [actionState, setActionState] = useState<'idle' | 'rejecting'>('idle')
 
@@ -128,7 +129,7 @@ export function ReviewDialog({ partner, documents = [], stakeholders = [] }: {
         }
 
         setLoading(true)
-        const result = await reviewKYC(partner.id, action, rejectReason, feePercentage, passFeesToCustomer)
+        const result = await reviewKYC(partner.id, action, rejectReason, feePercentage, passFeesToCustomer, fixedFeePerTicket)
         setLoading(false)
 
         if (result?.error) {
@@ -286,6 +287,20 @@ export function ReviewDialog({ partner, documents = [], stakeholders = [] }: {
                                     className="bg-white max-w-[120px]"
                                 />
                                 <span className="text-sm text-muted-foreground">Default: 4%</span>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Fixed Booking Fee (₱ per ticket)</Label>
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    type="number"
+                                    min="0"
+                                    value={fixedFeePerTicket}
+                                    onChange={(e) => setFixedFeePerTicket(Number(e.target.value))}
+                                    className="bg-white max-w-[120px]"
+                                />
+                                <span className="text-sm text-muted-foreground">Default: ₱15</span>
                             </div>
                         </div>
 

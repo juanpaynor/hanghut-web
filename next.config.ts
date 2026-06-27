@@ -14,6 +14,10 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
+    formats: ['image/avif', 'image/webp'],
+    deviceSizes: [320, 640, 960, 1280, 1536, 1920],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    minimumCacheTTL: 2678400, // 31 days — user uploads are immutable (content-hashed paths)
     remotePatterns: [
       {
         protocol: 'https',
