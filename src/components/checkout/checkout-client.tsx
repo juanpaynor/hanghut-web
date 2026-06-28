@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import dynamic from 'next/dynamic'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { trackEventInteraction } from '@/lib/analytics/track-event'
 import { Button } from '@/components/ui/button'
@@ -9,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { Calendar, MapPin, Ticket, ShieldCheck, Loader2, ArrowRight, Lock, Mail, Phone, User, LogIn, Crown } from 'lucide-react'
+import { Calendar, MapPin, Ticket, ShieldCheck, Loader2, ArrowRight, Lock, Mail, Phone, User, LogIn, Crown, Tag, Info } from 'lucide-react'
 import { format } from 'date-fns'
 import { useToast } from '@/hooks/use-toast'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -93,6 +94,10 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     const [promoCodeInput, setPromoCodeInput] = useState('')
     const [appliedPromo, setAppliedPromo] = useState<{ code: string, discountAmount: number } | null>(null)
     const [promoError, setPromoError] = useState('')
+    const [showPromo, setShowPromo] = useState(false) // UI: collapse promo behind a toggle
+
+    // UI-only: lets the mobile pay bar nudge the buyer to the terms checkboxes
+    const termsRef = useRef<HTMLDivElement>(null)
 
     const [guestDetails, setGuestDetails] = useState({
         name: '',
@@ -411,6 +416,17 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         }
     }
 
+    // Pay trigger used by both the desktop button and the mobile fixed bar.
+    // handlePayment remains the single source of truth for validation; this only
+    // adds a scroll-to-terms nicety when the buyer taps Pay from the mobile bar
+    // without the (off-screen) terms checkbox in view.
+    const handlePayClick = () => {
+        if (!termsAccepted || (customTos && !organizerTermsAccepted)) {
+            termsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+        handlePayment()
+    }
+
     // Theme Logic
     const themeStyle = event.theme_color ? {
         '--primary': hexToHsl(event.theme_color),
@@ -441,7 +457,9 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     }
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8" style={themeStyle}>
+        <div style={themeStyle}>
+            {/* pb-28 on mobile clears the fixed pay bar */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-28 lg:pb-0">
             <div className="lg:col-span-2 space-y-6">
 
                 {/* 1. Account / Guest Info */}
@@ -531,6 +549,20 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="pt-6 space-y-4">
+                            {/* Portrait cover poster */}
+                            {event.cover_image_url && (
+                                <div className="relative mx-auto w-full max-w-[240px] aspect-[3/4] overflow-hidden rounded-xl border border-border/50 shadow-sm">
+                                    <Image
+                                        src={event.cover_image_url}
+                                        alt={event.title}
+                                        fill
+                                        priority
+                                        sizes="240px"
+                                        className="object-cover"
+                                    />
+                                </div>
+                            )}
+
                             <div className="space-y-3">
                                 <h3 className="font-semibold text-lg leading-tight line-clamp-2">{event.title}</h3>
 
@@ -566,14 +598,21 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                 {selectedSeatIds.length > 0 && (
                                     <div className="flex justify-between text-sm">
                                         <span className="text-muted-foreground">Seats</span>
-                                        <span className="font-medium text-primary">Picked on map · confirmed at payment</span>
+                                        <span className="font-medium text-primary text-right">
+                                            {selectedSeatIds.length} selected
+                                            <span className="block text-[11px] font-normal text-muted-foreground">confirmed at payment</span>
+                                        </span>
                                     </div>
                                 )}
                                 {passFees && !isFree && (
                                     <div className="flex justify-between text-sm text-muted-foreground">
-                                        <div className="flex flex-col">
-                                            <span>Booking Fee</span>
-                                        </div>
+                                        <span
+                                            className="flex items-center gap-1 cursor-help"
+                                            title="A small per-ticket fee that covers secure payment processing and ticket delivery."
+                                        >
+                                            Booking Fee
+                                            <Info className="h-3 w-3 opacity-60" />
+                                        </span>
                                         <span>+₱{totalFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     </div>
                                 )}
@@ -601,24 +640,35 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                 </div>
                             )}
 
-                            {/* Promo Code Input */}
-                            <div className="w-full flex gap-2 mb-2">
-                                <Input
-                                    placeholder="Promo Code"
-                                    value={promoCodeInput}
-                                    onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
-                                    disabled={!!appliedPromo || isLoading}
-                                />
-                                {appliedPromo ? (
-                                    <Button variant="outline" onClick={removePromo} disabled={isLoading}>
-                                        Remove
-                                    </Button>
-                                ) : (
-                                    <Button variant="secondary" onClick={applyPromo} disabled={!promoCodeInput || isLoading}>
-                                        Apply
-                                    </Button>
-                                )}
-                            </div>
+                            {/* Promo Code — collapsed behind a toggle to reduce clutter */}
+                            {!appliedPromo && !showPromo ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPromo(true)}
+                                    className="w-full flex items-center gap-1.5 text-sm text-primary hover:underline mb-2"
+                                >
+                                    <Tag className="h-3.5 w-3.5" /> Have a promo code?
+                                </button>
+                            ) : (
+                                <div className="w-full flex gap-2 mb-2">
+                                    <Input
+                                        placeholder="Promo Code"
+                                        value={promoCodeInput}
+                                        onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                                        disabled={!!appliedPromo || isLoading}
+                                        autoFocus
+                                    />
+                                    {appliedPromo ? (
+                                        <Button variant="outline" onClick={removePromo} disabled={isLoading}>
+                                            Remove
+                                        </Button>
+                                    ) : (
+                                        <Button variant="secondary" onClick={applyPromo} disabled={!promoCodeInput || isLoading}>
+                                            Apply
+                                        </Button>
+                                    )}
+                                </div>
+                            )}
                             {promoError === 'APP_ONLY' ? (
                                 <div className="w-full flex items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
                                     <span className="text-lg leading-none">📱</span>
@@ -640,7 +690,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                             <Separator className="my-2" />
 
                             {/* [NEW] Terms & Newsletter Checkboxes */}
-                            <div className="space-y-3 mb-4">
+                            <div ref={termsRef} className="space-y-3 mb-4 scroll-mt-24">
                                 <Label className="flex items-start gap-3 cursor-pointer">
                                     <input
                                         type="checkbox"
@@ -690,8 +740,8 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                             </div>
 
                             <Button
-                                className="w-full h-12 text-lg font-semibold shadow-md hover:shadow-lg transition-all"
-                                onClick={handlePayment}
+                                className="hidden lg:flex w-full h-12 text-lg font-semibold shadow-md hover:shadow-lg transition-all"
+                                onClick={handlePayClick}
                                 disabled={isLoading}
                             >
                                 {isLoading ? (
@@ -721,6 +771,26 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                             )}
                         </CardFooter>
                     </Card>
+                </div>
+            </div>
+            </div>
+
+            {/* Mobile fixed pay bar — always reachable, mirrors the desktop CTA */}
+            <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.08)]" style={themeStyle}>
+                <div className="flex items-center gap-3">
+                    <div className="flex flex-col leading-tight">
+                        <span className="text-[11px] text-muted-foreground">Total</span>
+                        <span className="font-bold text-lg text-primary">₱{(total - discount).toLocaleString()}</span>
+                    </div>
+                    <Button className="flex-1 h-12 text-base font-semibold" onClick={handlePayClick} disabled={isLoading}>
+                        {isLoading ? (
+                            <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Processing...</>
+                        ) : (total - discount) <= 0 ? (
+                            <>Get Free Tickets<ArrowRight className="ml-2 h-5 w-5" /></>
+                        ) : (
+                            <>Pay ₱{(total - discount).toLocaleString()}<ArrowRight className="ml-2 h-5 w-5" /></>
+                        )}
+                    </Button>
                 </div>
             </div>
         </div>

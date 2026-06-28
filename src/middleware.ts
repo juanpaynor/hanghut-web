@@ -48,6 +48,14 @@ export async function middleware(request: NextRequest) {
     const subdomain = getSubdomain(request)
     const hostname = (request.headers.get('host') || '').split(':')[0]
 
+    // 0. Well-known files (Apple AASA for iOS Universal Links, etc.) must serve from
+    //    the app root on EVERY host (apex + partner subdomains + custom domains),
+    //    bypassing the storefront rewrite. A rewrite in next.config maps the path to
+    //    the /aasa route handler. Apple fetches this directly and rejects redirects.
+    if (url.pathname.startsWith('/.well-known/')) {
+        return NextResponse.next()
+    }
+
     // 0. Supabase auth code redirect — password reset / email confirmation
     // Supabase sends users to the site root with ?code=xxx (PKCE flow)
     // We need to forward that to /auth/callback so it gets exchanged for a session

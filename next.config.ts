@@ -66,6 +66,15 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async rewrites() {
+    return [
+      // iOS Universal Links: serve the AASA at the exact extensionless path Apple
+      // requires, from the /aasa route handler (internal rewrite = 200, no redirect).
+      { source: '/.well-known/apple-app-site-association', destination: '/aasa' },
+      // Android App Links: Digital Asset Links file (same no-redirect requirement).
+      { source: '/.well-known/assetlinks.json', destination: '/assetlinks' },
+    ]
+  },
   async headers() {
     return [
       {
