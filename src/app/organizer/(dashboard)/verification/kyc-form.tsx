@@ -306,7 +306,10 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
     }
 
     const canNextBusiness = entityType && intents.length && sourceFunds.length && moneyOut
+    // Residential address is required — Xendit needs it on the individual for card
+    // capability approval (PH_CARDS). Gate the People step until it's filled.
     const canNextPeople = auth.first_name.trim() && auth.last_name.trim() && auth.date_of_birth
+        && (auth.address?.street_line1 || '').trim() && (auth.address?.city || '').trim()
 
     return (
         <div className="space-y-6">
@@ -550,7 +553,7 @@ function PersonForm({ person, setField, showRole }: {
                 <Input value={person.mobile_country_code || '+63'} onChange={(e) => setField('mobile_country_code', e.target.value)} className="w-20" />
                 <Input placeholder="Mobile number" value={person.mobile_number || ''} onChange={(e) => setField('mobile_number', e.target.value.replace(/[^0-9]/g, ''))} className="flex-1" />
             </div>
-            <AddressFields label="Residential address" value={person.address || {}} onChange={(a) => setField('address', a)} />
+            <AddressFields label="Residential address (required)" value={person.address || {}} onChange={(a) => setField('address', a)} />
         </div>
     )
 }

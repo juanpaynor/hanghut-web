@@ -41,9 +41,15 @@ export async function getEventAttendees(
     page: number = 1,
     limit: number = 20,
     search: string = '',
-    statusFilter: string = 'all'
+    statusFilter: string = 'all',
+    paymentFilter: string = 'all'
 ) {
     const supabase = await createClient()
+
+    // When filtering by payment method, the embed must be !inner so the filter
+    // narrows the ticket rows (payment_method lives on the joined purchase_intent),
+    // not just the embedded object.
+    const intentInner = paymentFilter && paymentFilter !== 'all' ? '!inner' : ''
 
     // Base Query
     let query = supabase
@@ -61,7 +67,7 @@ export async function getEventAttendees(
             guest_email,
             purchase_intent_id,
             legacy_tier_name:tier,
-            purchase_intent:purchase_intents (
+            purchase_intent:purchase_intents${intentInner} (
                 xendit_invoice_id,
                 unit_price,
                 guest_name,
@@ -93,6 +99,12 @@ export async function getEventAttendees(
         query = query.eq('status', 'used')
     } else if (statusFilter === 'refunded') {
         query = query.eq('status', 'refunded')
+    }
+
+    // Payment-method filter (e.g. find QRPH attendees who need a manual refund).
+    // Relies on the !inner embed above to filter ticket rows by the joined method.
+    if (paymentFilter && paymentFilter !== 'all') {
+        query = query.eq('purchase_intent.payment_method', paymentFilter)
     }
 
     // Search Filter
@@ -147,6 +159,28 @@ export async function getEventAttendees(
     }))
 
     return { attendees, total: count || 0 }
+}
+
+/**
+ * Distinct payment methods actually used for this event's attendees — drives the
+ * payment-method filter dropdown so it always matches the real data (cards, QRPH,
+ * GCash, direct debit, etc.) instead of a hardcoded list. Scoped to intents that
+ * produced attendees (completed/refunded); excludes the unresolved 'multiple' placeholder.
+ */
+export async function getEventPaymentMethods(eventId: string): Promise<string[]> {
+    const supabase = await createClient()
+    const { data } = await supabase
+        .from('purchase_intents')
+        .select('payment_method')
+        .eq('event_id', eventId)
+        .in('status', ['completed', 'refunded'])
+        .not('payment_method', 'is', null)
+    const set = new Set<string>()
+    for (const r of (data || []) as any[]) {
+        const m = (r.payment_method || '').toUpperCase()
+        if (m && m !== 'MULTIPLE') set.add(m)
+    }
+    return Array.from(set).sort()
 }
 
 /** Top-of-page attendee stats (independent of the current filter/page). */

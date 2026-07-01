@@ -93,7 +93,10 @@ export const ID_TYPES = [
     { value: 'DRIVING_LICENSE', label: "Driver's License" },
     { value: 'UMID', label: 'UMID' },
     { value: 'SSS', label: 'SSS ID' },
+    { value: 'PRC', label: 'PRC ID' },
     { value: 'POSTAL_ID', label: 'Postal ID' },
+    { value: 'VOTER_ID', label: "Voter's ID" },
+    { value: 'ACR', label: 'ACR / Immigrant COR' },
 ] as const
 
 // ─── Document types (our internal vocabulary stored in partner_kyc_documents) ──

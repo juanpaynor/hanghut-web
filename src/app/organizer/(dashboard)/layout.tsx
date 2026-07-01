@@ -34,7 +34,13 @@ export default async function OrganizerLayout({
     const { user } = await getAuthUser()
     if (!user) redirect('/organizer/login')
 
-    const partner = await getPartner(user.id)
+    // Resolve partner + role in parallel (was sequential). getPartner now also
+    // returns custom_domain / subscriptions_enabled, so the separate partners
+    // query below is gone — one partners read instead of three.
+    const [partner, userRole] = await Promise.all([
+        getPartner(user.id),
+        getUserRole(user.id),
+    ])
 
     if (!partner) {
         return (
@@ -58,22 +64,16 @@ export default async function OrganizerLayout({
         )
     }
 
-    const userRole = await getUserRole(user.id)
     const role = userRole?.role ?? 'scanner'
     const isVerified = true
 
-    // Fetch custom domain for storefront link
-    const supabase = await createClient()
-    const { data: partnerFull } = await supabase
-        .from('partners')
-        .select('custom_domain, custom_domain_verified, subscriptions_enabled')
-        .eq('id', partner.id)
-        .single()
-    const storefrontUrl = partnerFull?.custom_domain && partnerFull?.custom_domain_verified
-        ? `https://${partnerFull.custom_domain}`
+    // Storefront link derives from partner fields fetched above (no extra query).
+    const pf = partner as any
+    const storefrontUrl = pf.custom_domain && pf.custom_domain_verified
+        ? `https://${pf.custom_domain}`
         : partner.slug ? `https://${partner.slug}.hanghut.com` : null
 
-    const capabilities: string[] = (partner as any).capabilities ?? ['organizer']
+    const capabilities: string[] = pf.capabilities ?? ['organizer']
 
     return (
         <div className="min-h-screen bg-background flex">
@@ -85,7 +85,7 @@ export default async function OrganizerLayout({
                 partnerSlug={partner.slug ?? null}
                 storefrontUrl={storefrontUrl}
                 capabilities={capabilities}
-                subscriptionsEnabled={partnerFull?.subscriptions_enabled === true}
+                subscriptionsEnabled={pf.subscriptions_enabled === true}
             />
 
             {/* Main content — offset by sidebar width on md+ */}

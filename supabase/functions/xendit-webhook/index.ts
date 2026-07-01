@@ -177,6 +177,30 @@ function extractPaymentMethod(data: any): string {
     return 'UNKNOWN'
 }
 
+/**
+ * Xendit PH processing fee (MDR) by method — fixed/published rates, so the fee for
+ * a sale is deterministic from method + total charged. The PARTNER absorbs it.
+ * Mirror of src/lib/payment/processing-fees.ts (keep in sync). Returns 0 for
+ * FREE / UNKNOWN / unmapped methods (never guess a rate we don't have).
+ */
+const PROCESSING_FEE_RATES: Record<string, { pct: number; fixed?: number }> = {
+    QRPH: { pct: 0.014 },
+    GCASH: { pct: 0.023 },
+    GRABPAY: { pct: 0.020 },
+    SHOPEEPAY: { pct: 0.020 },
+    PAYMAYA: { pct: 0.018 },
+    MAYA: { pct: 0.018 },
+    CARDS: { pct: 0.032, fixed: 10 },
+    CARD: { pct: 0.032, fixed: 10 },
+    CREDIT_CARD: { pct: 0.032, fixed: 10 },
+}
+function getProcessingFee(method: string | null | undefined, amount: number): number {
+    if (!method || !amount || amount <= 0) return 0
+    const r = PROCESSING_FEE_RATES[String(method).toUpperCase()]
+    if (!r) return 0
+    return Math.round((amount * r.pct + (r.fixed ?? 0)) * 100) / 100
+}
+
 serve(async (req) => {
     console.log('🚨 WEBHOOK RECEIVED - VERSION 33 (xenPlatform KYC RESULT) 🚨')
 
@@ -452,6 +476,19 @@ serve(async (req) => {
                         .update({ payment_method: capturedMethod })
                         .eq('id', intent.id)
                         .or('payment_method.is.null,payment_method.in.(UNKNOWN,unknown,multiple)')
+
+                    // The winning event may have inserted the transaction before the
+                    // method was known, leaving processing_fee at 0. Now that we have a
+                    // real method, fill it in (only when still 0, to stay idempotent).
+                    const backfillFee = getProcessingFee(capturedMethod, Number(intent.total_amount) || 0)
+                    if (backfillFee > 0) {
+                        await supabaseClient
+                            .from('transactions')
+                            .update({ payment_processing_fee: backfillFee })
+                            .eq('purchase_intent_id', intent.id)
+                            .eq('status', 'completed')
+                            .or('payment_processing_fee.is.null,payment_processing_fee.eq.0')
+                    }
                 }
                 console.log(`⚡ Intent ${intent.id} already claimed by another execution — skipping`)
                 return new Response(
@@ -472,7 +509,10 @@ serve(async (req) => {
             // Use ?? instead of || so that 0% fee partners are handled correctly
             const platformFeePercentage = partner?.custom_percentage ?? 4.0
             const platformFee = Math.round((intent.subtotal * platformFeePercentage) / 100)
-            const processingFee = intent.payment_processing_fee || 0
+            // Xendit processing fee (absorbed by the partner) — computed from the
+            // resolved method + the TOTAL charged (what Xendit actually processed).
+            // 0 when the method is still UNKNOWN; the backfill branch fills it in once resolved.
+            const processingFee = getProcessingFee(capturedMethod, Number(intent.total_amount) || 0)
             const fixedFeePerTicket = partner?.fixed_fee_per_ticket ?? 15.0
             const totalFixedFee = fixedFeePerTicket * (intent.quantity || 1)
             // When pass_fees_to_customer is true, the customer already paid the fixed

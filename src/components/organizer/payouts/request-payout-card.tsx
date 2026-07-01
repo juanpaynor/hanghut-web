@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { requestPayout, sendPayoutOtp } from '@/lib/organizer/payout-actions'
-import { PAYOUT_OTP_THRESHOLD } from '@/lib/organizer/payout-constants'
+import { PAYOUT_OTP_THRESHOLD, DISBURSEMENT_FEE_PHP, DISBURSEMENT_FEE_TOTAL, DISBURSEMENT_VAT_AMOUNT } from '@/lib/organizer/payout-constants'
 import { useToast } from '@/hooks/use-toast'
 import { Loader2, Building2, ShieldCheck, ArrowLeft } from 'lucide-react'
 
@@ -41,14 +41,22 @@ export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet =
     const [code, setCode] = useState('')
     const [maskedEmail, setMaskedEmail] = useState('')
 
+    // Xendit charges a flat ₱11.20 (₱10 + 12% VAT) transfer fee per payout, on top of
+    // the requested amount, debited from the wallet — so the max requestable is the
+    // wallet balance minus that fee.
+    const feeTotal = DISBURSEMENT_FEE_TOTAL
+    const maxRequestable = Math.max(0, Math.floor(balance - feeTotal))
+    const amountNum = Number(amount) || 0
+    const totalDebit = amountNum > 0 ? amountNum + feeTotal : 0
+
     function validAmount(): number | null {
         const val = parseInt(amount)
         if (isNaN(val) || val <= 0) {
             toast({ title: 'Invalid Amount', description: 'Please enter a valid amount.', variant: 'destructive' })
             return null
         }
-        if (val > balance) {
-            toast({ title: 'Insufficient Balance', description: `You can only request up to ₱${balance.toLocaleString()}`, variant: 'destructive' })
+        if (val > maxRequestable) {
+            toast({ title: 'Insufficient Balance', description: `You can withdraw up to ₱${maxRequestable.toLocaleString()} (a ₱${feeTotal.toLocaleString()} transfer fee is added on top, debited from your ₱${balance.toLocaleString()} balance).`, variant: 'destructive' })
             return null
         }
         return val
@@ -228,7 +236,7 @@ export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet =
                     Enter amount to withdraw.
                     <br />
                     <span className="text-xs text-muted-foreground">
-                        Payouts over ₱{PAYOUT_OTP_THRESHOLD.toLocaleString()} require email verification. Amounts under ₱50,000 may be processed immediately.
+                        A ₱{DISBURSEMENT_FEE_TOTAL.toLocaleString()} transfer fee (₱{DISBURSEMENT_FEE_PHP} + 12% VAT) is charged by Xendit per payout, on top of your amount. Payouts over ₱{PAYOUT_OTP_THRESHOLD.toLocaleString()} require email verification.
                     </span>
                 </CardDescription>
             </CardHeader>
@@ -241,38 +249,56 @@ export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet =
                             id="amount"
                             type="number"
                             placeholder="0.00"
-                            className={`pl-8 text-lg font-bold ${Number(amount) > balance ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                            className={`pl-8 text-lg font-bold ${Number(amount) > maxRequestable ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                             value={amount}
                             onChange={(e) => {
                                 const val = e.target.value
-                                // Allow empty or valid numbers, clamp to balance
-                                if (val === '' || Number(val) <= balance) {
+                                // Allow empty or valid numbers, clamp to max (balance minus transfer fee)
+                                if (val === '' || Number(val) <= maxRequestable) {
                                     setAmount(val)
                                 } else {
-                                    setAmount(Math.floor(balance).toString())
+                                    setAmount(maxRequestable.toString())
                                 }
                             }}
                             min={0}
-                            max={balance}
+                            max={maxRequestable}
                         />
                     </div>
                     <div className="flex justify-between text-xs text-muted-foreground">
                         <span>Available: ₱{balance.toLocaleString()}</span>
                         <button
                             type="button"
-                            onClick={() => setAmount(Math.floor(balance).toString())}
+                            onClick={() => setAmount(maxRequestable.toString())}
                             className="text-primary hover:underline"
                         >
-                            Max
+                            Max (₱{maxRequestable.toLocaleString()})
                         </button>
                     </div>
+
+                    {/* Fee breakdown — what actually leaves the wallet */}
+                    {amountNum > 0 && (
+                        <div className="rounded-lg border bg-muted/30 p-3 space-y-1.5 text-sm">
+                            <div className="flex justify-between text-muted-foreground">
+                                <span>You receive</span>
+                                <span className="font-medium text-foreground">₱{amountNum.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between text-muted-foreground">
+                                <span>Transfer fee (₱{DISBURSEMENT_FEE_PHP} + ₱{DISBURSEMENT_VAT_AMOUNT.toLocaleString()} VAT)</span>
+                                <span>+₱{feeTotal.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between border-t pt-1.5 font-semibold">
+                                <span>Total debited from wallet</span>
+                                <span>₱{totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </CardContent>
             <CardFooter>
                 <Button
                     className="w-full"
                     onClick={handleContinue}
-                    disabled={isLoading || !amount || Number(amount) <= 0 || Number(amount) > balance}
+                    disabled={isLoading || !amount || Number(amount) <= 0 || Number(amount) > maxRequestable}
                 >
                     {isLoading ? (
                         <>

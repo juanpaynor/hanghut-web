@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Attendee, getEventAttendees, refundTicket, markIntentAsRefunded, getAttendeeStats, getRegistrationAnswers, type RegistrationAnswerView } from '@/lib/organizer/attendee-actions'
+import { Attendee, getEventAttendees, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getRegistrationAnswers, type RegistrationAnswerView } from '@/lib/organizer/attendee-actions'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/hooks/use-debounce'
@@ -65,6 +65,10 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
 
     // Status filter tab
     const [statusFilter, setStatusFilter] = useState<'all' | 'valid' | 'checked_in' | 'refunded'>('all')
+    // Payment-method filter (e.g. isolate QRPH attendees for manual refunds).
+    // Options are derived from the methods actually used in this event.
+    const [paymentFilter, setPaymentFilter] = useState('all')
+    const [paymentMethods, setPaymentMethods] = useState<string[]>([])
 
     // Top-of-page stats (filter-independent)
     const [stats, setStats] = useState<{ attendees: number; checkedIn: number; revenue: number } | null>(null)
@@ -85,7 +89,7 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
         ;(async () => {
             setLoading(true)
             try {
-                const result = await getEventAttendees(eventId, page, 20, debouncedSearch, statusFilter)
+                const result = await getEventAttendees(eventId, page, 20, debouncedSearch, statusFilter, paymentFilter)
                 if (!cancelled) { setAttendees(result.attendees); setTotal(result.total) }
             } catch {
                 if (!cancelled) toast({ title: 'Error', description: 'Failed to load attendees', variant: 'destructive' })
@@ -94,11 +98,12 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
             }
         })()
         return () => { cancelled = true }
-    }, [eventId, page, debouncedSearch, statusFilter, toast])
+    }, [eventId, page, debouncedSearch, statusFilter, paymentFilter, toast])
 
     // Load stats once
     useEffect(() => {
         getAttendeeStats(eventId).then(setStats).catch(() => {})
+        getEventPaymentMethods(eventId).then(setPaymentMethods).catch(() => {})
     }, [eventId])
 
     async function openAnswers(attendee: Attendee, name: string) {
@@ -272,8 +277,8 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
         setIsRefunding(false)
         setRefundModalOpen(false)
 
-        // Refresh Data
-        const result = await getEventAttendees(eventId, page, 20, debouncedSearch)
+        // Refresh Data (preserve active filters)
+        const result = await getEventAttendees(eventId, page, 20, debouncedSearch, statusFilter, paymentFilter)
         setAttendees(result.attendees)
         setTotal(result.total)
 
@@ -395,8 +400,8 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                 </div>
             </div>
 
-            {/* Status filter tabs */}
-            <div className="flex flex-wrap gap-2">
+            {/* Status filter tabs + payment-method filter */}
+            <div className="flex flex-wrap items-center gap-2">
                 {([
                     { key: 'all', label: 'All' },
                     { key: 'valid', label: 'Valid' },
@@ -417,6 +422,23 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                         {t.label}
                     </button>
                 ))}
+
+                {/* Payment-method filter */}
+                <select
+                    value={paymentFilter}
+                    onChange={(e) => { setPaymentFilter(e.target.value); setPage(1) }}
+                    className={cn(
+                        'ml-auto rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors cursor-pointer',
+                        paymentFilter !== 'all'
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground'
+                    )}
+                >
+                    <option value="all">All payments</option>
+                    {paymentMethods.map((m) => (
+                        <option key={m} value={m}>{m === 'UNKNOWN' ? 'Unknown' : getPaymentMethodLabel(m)}</option>
+                    ))}
+                </select>
             </div>
 
             <div className="flex items-center justify-between">
@@ -478,7 +500,7 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                             const fetchData = async () => {
                                 setLoading(true)
                                 try {
-                                    const result = await getEventAttendees(eventId, page, 20, debouncedSearch)
+                                    const result = await getEventAttendees(eventId, page, 20, debouncedSearch, statusFilter, paymentFilter)
                                     setAttendees(result.attendees)
                                     setTotal(result.total)
                                     toast({ title: "Refreshed", description: "Attendee list updated" })
@@ -799,9 +821,18 @@ function getPaymentMethodLabel(method: string | null) {
         'GCASH': 'GCash',
         'PAYMAYA': 'Maya',
         'GRABPAY': 'GrabPay',
+        'QRPH': 'QRPH',
+        'CARDS': 'Card',
+        'CARD': 'Card',
+        'CREDIT_CARD': 'Card',
         'VISA': 'Visa',
         'MASTERCARD': 'Mastercard',
-        'BPI': 'BPI Direct'
+        'BPI': 'BPI Direct',
+        'BPI_DIRECT_DEBIT': 'BPI Direct Debit',
+        'UBP_DIRECT_DEBIT': 'UnionBank Direct Debit',
+        'RCBC_DIRECT_DEBIT': 'RCBC Direct Debit',
+        'SHOPEEPAY': 'ShopeePay',
+        'FREE': 'Free',
     }
     return map[method] || method
 }

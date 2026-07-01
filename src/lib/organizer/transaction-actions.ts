@@ -24,6 +24,7 @@ export interface TransactionDetail {
     intent_status: string | null
     refunded_amount: number
     refunded_at: string | null
+    refund_method: string | null
     purchase_intent_id: string | null
     pass_fees: boolean
     tickets: { ticket_number: string | null; seat_info: any; status: string; tier: string | null }[]
@@ -43,7 +44,7 @@ export async function getTransactionDetail(transactionId: string): Promise<{ det
             id, gross_amount, platform_fee, payment_processing_fee, fixed_fee, organizer_payout,
             status, created_at, xendit_transaction_id, partner_id, event_id, purchase_intent_id,
             event:events ( title ),
-            purchase_intent:purchase_intents ( id, guest_name, guest_email, user_id, quantity, total_amount, payment_method, status, refunded_amount, refunded_at, metadata )
+            purchase_intent:purchase_intents ( id, guest_name, guest_email, user_id, quantity, total_amount, payment_method, status, refunded_amount, refunded_at, refund_method, metadata )
         `)
         .eq('id', transactionId)
         .maybeSingle()
@@ -95,6 +96,7 @@ export async function getTransactionDetail(transactionId: string): Promise<{ det
             intent_status: pi?.status ?? null,
             refunded_amount: Number(pi?.refunded_amount) || 0,
             refunded_at: pi?.refunded_at || null,
+            refund_method: pi?.refund_method || null,
             purchase_intent_id: pi?.id || null,
             pass_fees: pi?.metadata?.pass_fees === true,
             tickets,
@@ -157,4 +159,48 @@ export async function refundTransaction(
     } catch (e: any) {
         return { error: e?.message || 'Refund failed' }
     }
+}
+
+/**
+ * Record an OFF-PLATFORM (manual) refund for payment methods Xendit can't auto-reverse
+ * (QRPH). The organizer pays the customer back directly (GCash/bank/cash) and records it
+ * here; the atomic record_manual_refund RPC voids/partials the order, restores inventory +
+ * seats, writes the double-entry reversal row (platform fee kept), and logs the disbursement.
+ */
+export async function recordManualRefund(
+    transactionId: string,
+    amount: number,
+    channel: 'gcash' | 'bank' | 'cash',
+    reference: string,
+    note: string,
+): Promise<{ success?: boolean; error?: string }> {
+    const { user } = await getAuthUser()
+    if (!user) return { error: 'Unauthorized' }
+    const partnerId = await getPartnerId(user.id)
+    if (!partnerId) return { error: 'No partner account' }
+
+    const supabase = await createClient()
+    const { data: txn } = await supabase
+        .from('transactions')
+        .select('id, partner_id, purchase_intent:purchase_intents ( id )')
+        .eq('id', transactionId)
+        .maybeSingle()
+
+    if (!txn) return { error: 'Transaction not found' }
+    if (txn.partner_id !== partnerId) return { error: 'Not authorized' }
+    const pi: any = txn.purchase_intent
+    if (!pi?.id) return { error: 'No order is linked to this transaction.' }
+
+    const { data, error } = await supabase.rpc('record_manual_refund', {
+        p_intent_id: pi.id,
+        p_amount: amount,
+        p_channel: channel,
+        p_reference: reference || null,
+        p_note: note || null,
+    })
+    if (error) return { error: error.message }
+    if (!data?.success) return { error: data?.error || 'Manual refund failed' }
+
+    revalidatePath('/organizer/payouts')
+    return { success: true }
 }

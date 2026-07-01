@@ -26,11 +26,14 @@ export default async function ScanPage() {
         partnerIds.push(ownedPartner.id)
     }
 
-    // Check Team Membership
+    // Check Team Membership — only active members with an OPERATIONAL role may
+    // scan (matches scan_ticket's DB-level authorization; finance/marketing excluded).
     const { data: teamMemberships } = await supabase
         .from('partner_team_members')
         .select('partner_id')
         .eq('user_id', user.id)
+        .eq('is_active', true)
+        .in('role', ['owner', 'manager', 'scanner', 'cashier'])
 
     if (teamMemberships) {
         teamMemberships.forEach(tm => partnerIds.push(tm.partner_id))

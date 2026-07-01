@@ -8,10 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
-import { getTransactionDetail, refundTransaction, type TransactionDetail } from '@/lib/organizer/transaction-actions'
+import { getTransactionDetail, refundTransaction, recordManualRefund, type TransactionDetail } from '@/lib/organizer/transaction-actions'
 import { Loader2, RotateCcw, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
 import { getSettlementInfo, getPaymentChannel } from '@/lib/utils/settlement'
+import { getProcessingFee } from '@/lib/payment/processing-fees'
 
 const REASONS = [
     { value: 'Requested by customer', label: 'Requested by customer' },
@@ -47,10 +48,15 @@ export function TransactionDetailDialog({
     const [amount, setAmount] = useState('')
     const [reason, setReason] = useState('Requested by customer')
     const [refunding, setRefunding] = useState(false)
+    // Manual-refund (QRPH) fields
+    const [channel, setChannel] = useState<'gcash' | 'bank' | 'cash'>('gcash')
+    const [reference, setReference] = useState('')
+    const [note, setNote] = useState('')
 
     useEffect(() => {
         if (!open || !transactionId) return
         setDetail(null); setRefundMode(false); setRefunding(false)
+        setReference(''); setNote(''); setChannel('gcash')
         setLoading(true)
         getTransactionDetail(transactionId).then(r => {
             if (r.detail) { setDetail(r.detail); setAmount(String(r.detail.total_amount)) }
@@ -61,6 +67,8 @@ export function TransactionDetailDialog({
 
     const alreadyRefunded = !!detail && (detail.intent_status === 'refunded' || !!detail.refunded_at)
     const canRefund = !!detail && detail.status === 'completed' && detail.intent_status === 'completed' && !alreadyRefunded && !!detail.purchase_intent_id
+    // QRPH can't be reversed via Xendit — must be refunded off-platform and recorded manually.
+    const isManualOnly = (detail?.payment_method || '').toLowerCase() === 'qrph'
     const settlement = detail ? getSettlementInfo(detail.created_at, detail.payment_method) : null
     const totalFees = detail ? detail.platform_fee + detail.payment_processing_fee + (detail.fixed_fee || 0) : 0
 
@@ -71,15 +79,24 @@ export function TransactionDetailDialog({
             toast({ title: 'Invalid amount', description: `Enter an amount between ₱1 and ₱${detail.total_amount.toLocaleString()}.`, variant: 'destructive' })
             return
         }
+        if (isManualOnly && channel !== 'cash' && !reference.trim()) {
+            toast({ title: 'Reference required', description: 'Enter the GCash/bank reference number for this disbursement.', variant: 'destructive' })
+            return
+        }
         setRefunding(true)
-        const r = await refundTransaction(detail.id, amt, reason)
+        const r = isManualOnly
+            ? await recordManualRefund(detail.id, amt, channel, reference.trim(), note.trim())
+            : await refundTransaction(detail.id, amt, reason)
         setRefunding(false)
         if (r.success) {
-            toast({ title: 'Refund issued', description: `₱${amt.toLocaleString()} refunded to the customer.` })
+            toast({
+                title: isManualOnly ? 'Manual refund recorded' : 'Refund issued',
+                description: `₱${amt.toLocaleString()} ${isManualOnly ? 'recorded as refunded to the customer.' : 'refunded to the customer.'}`,
+            })
             onOpenChange(false)
             router.refresh()
         } else {
-            toast({ title: 'Refund failed', description: r.error, variant: 'destructive' })
+            toast({ title: isManualOnly ? 'Could not record refund' : 'Refund failed', description: r.error, variant: 'destructive' })
         }
     }
 
@@ -97,7 +114,7 @@ export function TransactionDetailDialog({
                         {alreadyRefunded && (
                             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
                                 <RotateCcw className="h-4 w-4" />
-                                Refunded {detail.refunded_amount ? `₱${detail.refunded_amount.toLocaleString()}` : ''}{detail.refunded_at ? ` on ${format(new Date(detail.refunded_at), 'MMM d, yyyy')}` : ''}.
+                                Refunded {detail.refunded_amount ? `₱${detail.refunded_amount.toLocaleString()}` : ''}{detail.refund_method === 'manual' ? ' (manual)' : ''}{detail.refunded_at ? ` on ${format(new Date(detail.refunded_at), 'MMM d, yyyy')}` : ''}.
                             </div>
                         )}
 
@@ -108,23 +125,35 @@ export function TransactionDetailDialog({
                             <p className="text-xs text-muted-foreground mt-1">{format(new Date(detail.created_at), 'MMM d, yyyy · h:mm a')}</p>
                         </div>
 
-                        {/* Amount breakdown */}
+                        {/* Amount breakdown.
+                            Processing fee: use the value captured at sale if present, else
+                            compute it from the method + total charged (PH rates are fixed).
+                            The partner absorbs it, so the true net = organizer_payout − processing. */}
+                        {(() => {
+                            const processingFee = detail.payment_processing_fee > 0
+                                ? detail.payment_processing_fee
+                                : getProcessingFee(detail.payment_method, detail.total_amount)
+                            const netToWallet = detail.organizer_payout - processingFee
+                            return (
                         <div className="rounded-lg border p-4">
                             <Row label={detail.pass_fees ? 'Ticket price' : 'Amount'} value={`₱${detail.gross_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
                             <Row label="Platform fee" value={`-₱${detail.platform_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
-                            <Row label="Processing fee" value={`-₱${detail.payment_processing_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
+                            <Row label="Processing fee" value={`-₱${processingFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
                             {/* Fixed fee is only a deduction when the organizer absorbs it.
                                 When passed to the customer it's not taken from the payout. */}
                             {!detail.pass_fees && detail.fixed_fee ? <Row label="Fixed fee" value={`-₱${detail.fixed_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} /> : null}
                             <div className="border-t mt-1 pt-1">
-                                <Row label="Net payout" strong value={<span className="text-emerald-600">₱{detail.organizer_payout.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>} />
+                                <Row label="Net to your wallet" strong value={<span className="text-emerald-600">₱{netToWallet.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>} />
                             </div>
+                            <p className="text-[11px] text-muted-foreground mt-1">Processing fee is charged by Xendit and deducted from your wallet.</p>
                             {detail.pass_fees && detail.fixed_fee ? (
                                 <p className="text-xs text-muted-foreground mt-2 border-t pt-2">
                                     Customer also paid a ₱{detail.fixed_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })} booking fee (collected by HangHut) — total charged ₱{detail.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}.
                                 </p>
                             ) : null}
                         </div>
+                            )
+                        })()}
 
                         {/* Meta */}
                         <div className="rounded-lg border p-4">
@@ -157,7 +186,7 @@ export function TransactionDetailDialog({
                         {/* Refund action */}
                         {canRefund && !refundMode && (
                             <Button variant="outline" className="w-full" onClick={() => setRefundMode(true)}>
-                                <RotateCcw className="h-4 w-4 mr-2" /> Issue refund
+                                <RotateCcw className="h-4 w-4 mr-2" /> {isManualOnly ? 'Record manual refund' : 'Issue refund'}
                             </Button>
                         )}
 
@@ -165,7 +194,11 @@ export function TransactionDetailDialog({
                             <div className="rounded-lg border border-amber-300 bg-amber-50/50 p-4 space-y-3">
                                 <div className="flex items-start gap-2 text-sm text-amber-800">
                                     <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                                    <span>Refunds are paid from your Xendit wallet and can&apos;t be undone. A full refund also voids the tickets.</span>
+                                    <span>
+                                        {isManualOnly
+                                            ? 'QRPH can’t be refunded automatically. Pay the customer back directly (GCash/bank/cash), then record it here. A full refund voids the tickets. HangHut’s platform fee is not returned.'
+                                            : 'Refunds are paid from your Xendit wallet and can’t be undone. A full refund also voids the tickets.'}
+                                    </span>
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label htmlFor="refund-amount">Refund amount (max ₱{detail.total_amount.toLocaleString()})</Label>
@@ -176,19 +209,48 @@ export function TransactionDetailDialog({
                                     </div>
                                     <p className="text-xs text-muted-foreground">{Number(amount) >= detail.total_amount ? 'Full refund — tickets will be voided.' : 'Partial refund — tickets stay valid.'}</p>
                                 </div>
-                                <div className="space-y-1.5">
-                                    <Label>Reason</Label>
-                                    <Select value={reason} onValueChange={setReason}>
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            {REASONS.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+
+                                {isManualOnly ? (
+                                    <>
+                                        <div className="space-y-1.5">
+                                            <Label>How did you pay the customer?</Label>
+                                            <Select value={channel} onValueChange={(v) => setChannel(v as 'gcash' | 'bank' | 'cash')}>
+                                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="gcash">GCash</SelectItem>
+                                                    <SelectItem value="bank">Bank transfer</SelectItem>
+                                                    <SelectItem value="cash">Cash</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="refund-ref">Reference no.{channel !== 'cash' && <span className="text-destructive"> *</span>}</Label>
+                                            <Input id="refund-ref" value={reference} onChange={(e) => setReference(e.target.value)}
+                                                placeholder={channel === 'cash' ? 'Optional' : 'e.g. GCash ref / bank txn no.'} />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="refund-note">Note (optional)</Label>
+                                            <Input id="refund-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Internal note" />
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="space-y-1.5">
+                                        <Label>Reason</Label>
+                                        <Select value={reason} onValueChange={setReason}>
+                                            <SelectTrigger><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                {REASONS.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
+
                                 <div className="flex gap-2">
                                     <Button variant="ghost" className="flex-1" onClick={() => setRefundMode(false)} disabled={refunding}>Cancel</Button>
                                     <Button className="flex-1" onClick={handleRefund} disabled={refunding}>
-                                        {refunding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Refunding…</> : <><CheckCircle2 className="h-4 w-4 mr-2" />Confirm refund</>}
+                                        {refunding
+                                            ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{isManualOnly ? 'Recording…' : 'Refunding…'}</>
+                                            : <><CheckCircle2 className="h-4 w-4 mr-2" />{isManualOnly ? 'Record refund' : 'Confirm refund'}</>}
                                     </Button>
                                 </div>
                             </div>
