@@ -9,30 +9,6 @@ import {
     type StructuredAddress,
 } from './kyc-constants'
 
-/**
- * Upload a KYC document to the private kyc-documents bucket (system of record).
- * Returns the bucket-relative storage path.
- */
-async function uploadKYCDocument(
-    adminSupabase: any,
-    userId: string,
-    file: File,
-    docType: string
-): Promise<string | null> {
-    if (!file || file.size === 0) return null
-    if (file.size > 10 * 1024 * 1024) throw new Error(`${docType} file too large (max 10MB)`)
-
-    const ext = file.name.split('.').pop() || 'file'
-    const fileName = `${userId}/${docType.toLowerCase()}-${Date.now()}.${ext}`
-
-    const { data, error } = await adminSupabase.storage
-        .from('kyc-documents')
-        .upload(fileName, file, { upsert: true, contentType: file.type })
-
-    if (error) throw new Error(`Failed to upload ${docType}: ${error.message}`)
-    return data.path
-}
-
 export type KYCFormState = {
     errors?: Record<string, string[]>
     message?: string
@@ -119,6 +95,10 @@ export async function submitKYCVerification(
     const stakeholders = parseJSON<StakeholderInput[]>(formData.get('stakeholders'), [])
     // reuse: map of "<scope>:<doc_type>[:<stakeholderIndex>]" -> existing storage path
     const reuse = parseJSON<Record<string, string>>(formData.get('reuse'), {})
+    // uploaded: docs uploaded THIS session — the browser uploads straight to the
+    // kyc-documents bucket (avoids Vercel's ~4.5MB server-action body limit), so we
+    // receive slot -> storage_path instead of the files themselves.
+    const uploaded = parseJSON<Record<string, string>>(formData.get('uploaded'), {})
 
     // ── Validate per entity type ─────────────────────────────────────────────
     const errors: Record<string, string[]> = {}
@@ -235,28 +215,14 @@ export async function submitKYCVerification(
         docRows.push({ partner_id: partner.id, owner_kind: ownerKind, owner_id: ownerId, doc_type: docType, storage_path: path })
     }
 
-    try {
-        // New file uploads. Form keys: "<scope>:<docType>[:<stakeholderIndex>]"
-        for (const [key, value] of formData.entries()) {
-            if (!key.startsWith('file:')) continue
-            const file = value as File
-            if (!file || typeof file === 'string' || file.size === 0) continue
-            const [, scope, docType, idxRaw] = key.split(':') // file:business:PH_BIR_2303 | file:authorized:ID_FRONT | file:stakeholder:ID_FRONT:0
-            const path = await uploadKYCDocument(adminSupabase, user.id, file, docType)
-            if (!path) continue
-            if (scope === 'stakeholder') {
-                const idx = Number(idxRaw)
-                addDoc('stakeholder', stakeholderIds[idx] ?? null, docType, path)
-            } else if (scope === 'authorized') {
-                addDoc('authorized_person', null, docType, path)
-            } else {
-                addDoc('business', null, docType, path)
-            }
-        }
-
-        // Reused docs (already in the bucket from registration / prior submission).
-        for (const [slot, path] of Object.entries(reuse)) {
-            if (!path) continue
+    // Both maps are "<scope>:<docType>[:<stakeholderIndex>]" -> storage_path.
+    // Guard: only accept paths under the caller's own folder. RLS already enforces
+    // this on write, but validate defensively so a client can't submit someone
+    // else's file by passing an arbitrary path.
+    const ownPrefix = `${user.id}/`
+    const applyPathMap = (map: Record<string, string>) => {
+        for (const [slot, path] of Object.entries(map)) {
+            if (!path || !path.startsWith(ownPrefix)) continue
             const [scope, docType, idxRaw] = slot.split(':')
             if (scope === 'stakeholder') {
                 const idx = Number(idxRaw)
@@ -267,9 +233,9 @@ export async function submitKYCVerification(
                 addDoc('business', null, docType, path)
             }
         }
-    } catch (e: any) {
-        return { message: e.message || 'File upload failed.' }
     }
+    applyPathMap(uploaded)   // uploaded this session
+    applyPathMap(reuse)      // carried forward from registration / prior submission
 
     if (docRows.length) {
         const { error: docErr } = await adminSupabase.from('partner_kyc_documents').insert(docRows)

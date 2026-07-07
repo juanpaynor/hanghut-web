@@ -16,6 +16,18 @@ import {
     Upload, FileText, X, CheckCircle, ArrowRight, ArrowLeft, Plus, Trash2, User,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
+
+// KYC docs upload straight to the private kyc-documents bucket, which caps each file
+// at 5MB and accepts only JPG / PNG / PDF. Validate client-side for a clear message
+// (esp. iPhone HEIC photos, which the bucket rejects).
+const MAX_DOC_BYTES = 5 * 1024 * 1024
+const ALLOWED_DOC_TYPES = ['image/jpeg', 'image/png', 'application/pdf']
+function validateFile(f: File): string | null {
+    if (f.size > MAX_DOC_BYTES) return `this file is ${(f.size / 1024 / 1024).toFixed(1)}MB — the max is 5MB. Please compress it or upload a smaller scan.`
+    if (f.type && !ALLOWED_DOC_TYPES.includes(f.type)) return `unsupported format (${f.type}). Use JPG, PNG or PDF — iPhone HEIC photos won't work, save as JPG first.`
+    return null
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Person = {
@@ -258,7 +270,15 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
 
     // Document files. key = slot string ("business:PH_BIR_2303" | "authorized:ID_FRONT" | "stakeholder:ID_FRONT:0")
     const [files, setFiles] = useState<Record<string, File | null>>({})
-    const setFile = (slot: string, f: File | null) => setFiles(prev => ({ ...prev, [slot]: f }))
+    const [fileError, setFileError] = useState<string | null>(null)
+    const setFile = (slot: string, f: File | null) => {
+        if (f) {
+            const err = validateFile(f)
+            if (err) { setFileError(`${slot.split(':')[1].replace(/_/g, ' ')}: ${err}`); return }
+        }
+        setFileError(null)
+        setFiles(prev => ({ ...prev, [slot]: f }))
+    }
 
     const single = isSinglePerson(entityType)
     const corp = requiresStakeholders(entityType)
@@ -291,12 +311,33 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
         if (corp) fd.append('contactPerson', JSON.stringify(contact))
         if (corp) fd.append('stakeholders', JSON.stringify(stakeholders))
 
-        // Files + reuse map
-        const reuse: Record<string, string> = {}
+        // Upload documents straight to storage from the browser — keeps the submission
+        // body tiny (avoids Vercel's ~4.5MB server-action limit). We send the resulting
+        // storage paths, not the files themselves.
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { setState({ message: 'Your session expired. Please sign in again.' }); setLoading(false); return }
+
+        const uploaded: Record<string, string> = {}
         for (const [slot, f] of Object.entries(files)) {
-            if (f) fd.append(`file:${slot}`, f)
+            if (!f) continue
+            const err = validateFile(f)
+            if (err) { setState({ message: `${slot.split(':')[1].replace(/_/g, ' ')}: ${err}` }); setLoading(false); return }
+            const ext = (f.name.split('.').pop() || 'file').toLowerCase()
+            const docType = slot.split(':')[1]
+            const path = `${user.id}/${docType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`
+            const { error } = await supabase.storage.from('kyc-documents')
+                .upload(path, f, { upsert: true, contentType: f.type })
+            if (error) {
+                setState({ message: `Couldn't upload ${docType.replace(/_/g, ' ')}: ${error.message}` })
+                setLoading(false); return
+            }
+            uploaded[slot] = path
         }
+        fd.append('uploaded', JSON.stringify(uploaded))
+
         // Carry forward business + authorized docs not replaced this session.
+        const reuse: Record<string, string> = {}
         for (const [slot, path] of Object.entries(existingDocs)) {
             if (!files[slot] && path) reuse[slot] = path
         }
@@ -450,8 +491,11 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
                 <div className="space-y-5">
                     <div>
                         <h2 className="text-xl font-bold">Documents</h2>
-                        <p className="text-sm text-muted-foreground mt-1">Upload the documents required for your business type</p>
+                        <p className="text-sm text-muted-foreground mt-1">Upload the documents required for your business type — JPG, PNG or PDF, up to 5MB each.</p>
                     </div>
+                    {fileError && (
+                        <div className="p-3 rounded-md text-sm bg-red-50 text-red-800 capitalize">{fileError}</div>
+                    )}
                     {bizSlots.length > 0 && (
                         <div className="space-y-3">
                             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Business Documents</h3>
