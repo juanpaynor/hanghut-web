@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AlertCircle, CheckCircle, Clock, ShieldCheck, CreditCard, Wallet, Lock } from 'lucide-react'
 import { KYCVerificationForm } from './kyc-form'
+import { ServiceAgreementSign } from '@/components/organizer/service-agreement-sign'
 
 export default async function VerificationPage() {
     const supabase = await createClient()
@@ -228,6 +229,11 @@ export default async function VerificationPage() {
                     </Card>
                 )
             })()}
+
+            {/* E-sign the Xendit Service Agreement (self-rolled e-consent → SERVICE_AGREEMENT_DOCUMENT) */}
+            {(status === 'not_started' || status === 'rejected' || status === 'resubmission_required') && (
+                <div className="mb-6"><ServiceAgreementSign /></div>
+            )}
 
             {/* Submission Form — hidden while awaiting admin review ('pending_review')
                 or payment-provider verification ('submitted') */}

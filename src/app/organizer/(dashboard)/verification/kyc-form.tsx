@@ -179,7 +179,9 @@ function AddressFields({ value, onChange, label }: { value: StructuredAddress; o
 // Per Xendit's official PH document requirements per entity type.
 // SERVICE_AGREEMENT is required for ALL entities; partnership differs from
 // corporation (Articles of Partnership + Notarized Partner's Certificate, no GIS).
-const SERVICE_AGREEMENT_SLOT = { type: 'SERVICE_AGREEMENT', label: 'Service Agreement', hint: 'Signed HangHut service agreement' }
+// This is Xendit's sub-merchant Service Agreement (Xendit ↔ partner), with HangHut
+// named as the Platform Account Holder — NOT a HangHut-drafted agreement.
+const SERVICE_AGREEMENT_SLOT = { type: 'SERVICE_AGREEMENT', label: 'Service Agreement', hint: 'Signed Xendit Service Agreement (HangHut as your platform)' }
 function businessDocSlots(entity: string): { type: string; label: string; hint: string }[] {
     if (entity === 'sole_proprietorship') return [
         { type: 'PH_DTI_CERTIFICATE_REGISTRATION', label: 'DTI Registration', hint: 'DTI business name registration' },
