@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -66,11 +66,19 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
     const isLast = step === steps.length - 1
     const progress = Math.round(((step + 1) / steps.length) * 100)
 
+    // Logged-in registrant with no questions → nothing to fill in. Register
+    // immediately instead of rendering an empty (undefined) step.
+    useEffect(() => {
+        if (open && phase === 'form' && steps.length === 0) submit()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, phase, steps.length])
+
     function setAnswer(qid: string, value: string | string[]) {
         setAnswers((prev) => ({ ...prev, [qid]: value }))
     }
 
     function stepValid(): boolean {
+        if (!current) return false
         if (current === 'identity') {
             return name.trim().length > 0 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())
         }
@@ -195,9 +203,9 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                                                 <p className="text-xs text-muted-foreground">Your ticket and updates go here.</p>
                                             </div>
                                         </div>
-                                    ) : (
+                                    ) : current ? (
                                         <QuestionStep q={current} value={answers[current.id]} onChange={(v) => setAnswer(current.id, v)} />
-                                    )}
+                                    ) : null}
                                 </motion.div>
                             )}
 
@@ -249,7 +257,7 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                 </div>
 
                 {/* Footer — pinned below the scrollable questions */}
-                {phase === 'form' && (
+                {phase === 'form' && current && (
                     <div className="shrink-0 border-t px-5 sm:px-7 py-4 space-y-3 bg-background">
                         {error && <p className="text-sm text-destructive">{error}</p>}
                         <div className="flex items-center justify-between">

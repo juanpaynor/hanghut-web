@@ -91,9 +91,11 @@ interface MobileTicketButtonProps {
     isExternal?: boolean
     externalUrl?: string
     eventId?: string
+    /** CTA label for the internal (non-external) button — e.g. an RSVP label. */
+    label?: string
 }
 
-export function MobileTicketButton({ showTickets, isSoldOut, isExternal, externalUrl, eventId }: MobileTicketButtonProps) {
+export function MobileTicketButton({ showTickets, isSoldOut, isExternal, externalUrl, eventId, label }: MobileTicketButtonProps) {
     if (!showTickets) return null
     if (!isExternal && isSoldOut) return null
 
@@ -124,7 +126,7 @@ export function MobileTicketButton({ showTickets, isSoldOut, isExternal, externa
                     document.getElementById('tickets')?.scrollIntoView({ behavior: 'smooth' })
                 }}
             >
-                Get Tickets
+                {label || 'Get Tickets'}
             </Button>
         </div>
     )

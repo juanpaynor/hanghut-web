@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { RichTextEditor } from '@/components/organizer/marketing/rich-text-editor'
 import { Card } from '@/components/ui/card'
@@ -21,12 +22,25 @@ import { GooglePlacesAutocomplete } from '@/components/organizer/google-places-a
 import { useToast } from '@/hooks/use-toast'
 import { TicketTiersManager } from '@/components/organizer/ticket-tiers-manager'
 import { SubscriberDiscountsSection, type SubscriptionTierBasic, type ExistingDiscount } from '@/components/organizer/subscriber-discounts-section'
+import { createClient } from '@/lib/supabase/client'
+
+// New events pick a Category from the server lookup (event_categories). We still derive
+// and write the legacy event_type enum during the transition so the old app's map +
+// Discover keep working until both platforms cut over to `category`.
+const CATEGORY_TO_EVENT_TYPE: Record<string, string> = {
+    live_music: 'concert', performing_arts: 'art', arts_culture: 'art',
+    food_drink: 'food', workshops_classes: 'workshop', wellness: 'other',
+    fitness_sports: 'sports', talks_discussions: 'conference', business_networking: 'conference',
+    tech: 'conference', games_social: 'social', family_kids: 'social', community: 'social',
+    outdoors_adventure: 'sports', markets_popups: 'other', nightlife: 'nightlife', other: 'other',
+}
 
 interface EventFormData {
     title: string
     description: string
     description_html: string
     event_type: string
+    category: string
     venue_name: string
     address: string
     city: string
@@ -48,6 +62,8 @@ interface EventFormData {
     external_provider_name: string
     require_approval: boolean
     invite_only: boolean
+    rsvp_enabled: boolean
+    rsvp_button_label: string
     hide_venue_until_registered: boolean
     approval_email_subject: string
     approval_email_body: string
@@ -86,6 +102,17 @@ export function EventForm({
     const [additionalPreviews, setAdditionalPreviews] = useState<string[]>([])
     const [errors, setErrors] = useState<Record<string, string>>({})
 
+    // Categories render from the server lookup so web + app never drift.
+    const [categories, setCategories] = useState<{ key: string; label: string; emoji: string | null }[]>([])
+    useEffect(() => {
+        createClient()
+            .from('event_categories')
+            .select('key,label,emoji')
+            .eq('is_active', true)
+            .order('sort_order')
+            .then(({ data }) => { if (data) setCategories(data) })
+    }, [])
+
     const isEditing = !!eventId
     const [step, setStep] = useState<1 | 2>(1)
     const [createdEventId, setCreatedEventId] = useState<string | null>(null)
@@ -97,6 +124,7 @@ export function EventForm({
         // events keep their description when edited.
         description_html: initialData?.description_html || initialData?.description || '',
         event_type: initialData?.event_type || 'concert',
+        category: initialData?.category || '',
         venue_name: initialData?.venue_name || '',
         address: initialData?.address || '',
         city: initialData?.city || '',
@@ -118,6 +146,8 @@ export function EventForm({
         external_provider_name: initialData?.external_provider_name || '',
         require_approval: initialData?.require_approval || false,
         invite_only: initialData?.invite_only || false,
+        rsvp_enabled: initialData?.rsvp_enabled || false,
+        rsvp_button_label: initialData?.rsvp_button_label || '',
         hide_venue_until_registered: initialData?.hide_venue_until_registered || false,
         approval_email_subject: initialData?.approval_email_subject || '',
         approval_email_body: initialData?.approval_email_body || '',
@@ -215,8 +245,8 @@ export function EventForm({
         if (!formData.title || formData.title.length < 5) {
             newErrors.title = 'Title must be at least 5 characters'
         }
-        if (!formData.event_type) {
-            newErrors.event_type = 'Event type is required'
+        if (!formData.category) {
+            newErrors.category = 'Category is required'
         }
         if (!formData.venue_name) {
             newErrors.venue_name = 'Venue name is required'
@@ -293,7 +323,8 @@ export function EventForm({
                 .trim()
             formDataToSend.append('description', plainDescription.slice(0, 5000))
             formDataToSend.append('description_html', formData.description_html)
-            formDataToSend.append('event_type', formData.event_type)
+            formDataToSend.append('category', formData.category)
+            formDataToSend.append('event_type', CATEGORY_TO_EVENT_TYPE[formData.category] || 'other')
             formDataToSend.append('venue_name', formData.venue_name)
             formDataToSend.append('address', formData.address)
             formDataToSend.append('city', formData.city)
@@ -313,6 +344,8 @@ export function EventForm({
             formDataToSend.append('external_provider_name', formData.external_provider_name || '')
             formDataToSend.append('require_approval', formData.require_approval ? 'true' : 'false')
             formDataToSend.append('invite_only', formData.invite_only ? 'true' : 'false')
+            formDataToSend.append('rsvp_enabled', formData.rsvp_enabled ? 'true' : 'false')
+            formDataToSend.append('rsvp_button_label', formData.rsvp_button_label || '')
             formDataToSend.append('hide_venue_until_registered', formData.hide_venue_until_registered ? 'true' : 'false')
             formDataToSend.append('approval_email_subject', formData.approval_email_subject || '')
             formDataToSend.append('approval_email_body', formData.approval_email_body || '')
@@ -477,25 +510,56 @@ export function EventForm({
                         </div>
 
                         <div>
-                            <Label htmlFor="event_type">Event Type *</Label>
+                            <Label htmlFor="category">Category *</Label>
                             <Select
-                                value={formData.event_type}
-                                onValueChange={(value) => handleInputChange('event_type', value)}
+                                value={formData.category}
+                                onValueChange={(value) => handleInputChange('category', value)}
                             >
-                                <SelectTrigger className={errors.event_type ? 'border-red-500' : ''}>
-                                    <SelectValue />
+                                <SelectTrigger className={errors.category ? 'border-red-500' : ''}>
+                                    <SelectValue placeholder="Select a category" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="concert">Music & Concerts</SelectItem>
-                                    <SelectItem value="sports">Sports & Fitness</SelectItem>
-                                    <SelectItem value="food">Food & Drink</SelectItem>
-                                    <SelectItem value="workshop">Workshop & Classes</SelectItem>
-                                    <SelectItem value="nightlife">Nightlife & Parties</SelectItem>
-                                    <SelectItem value="art">Arts & Culture</SelectItem>
+                                    {categories.map((c) => (
+                                        <SelectItem key={c.key} value={c.key}>
+                                            {c.emoji ? `${c.emoji} ` : ''}{c.label}
+                                        </SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
-                            {errors.event_type && <p className="text-sm text-red-500 mt-1">{errors.event_type}</p>}
+                            {errors.category && <p className="text-sm text-red-500 mt-1">{errors.category}</p>}
                         </div>
+
+                        {/* RSVP mode — free events only. Lets attendees reserve a spot in one
+                            tap (no checkout) instead of the ticket/quantity flow. */}
+                        {ticketPrice === 0 && (
+                            <div className="rounded-lg border p-4 space-y-3">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                        <Label htmlFor="rsvp_enabled" className="font-medium">Collect RSVPs instead of tickets</Label>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            Free events only. Attendees reserve their spot with one tap — no checkout. They still get a scannable QR.
+                                        </p>
+                                    </div>
+                                    <Switch
+                                        id="rsvp_enabled"
+                                        checked={formData.rsvp_enabled}
+                                        onCheckedChange={(checked) => handleInputChange('rsvp_enabled', checked)}
+                                    />
+                                </div>
+                                {formData.rsvp_enabled && (
+                                    <div>
+                                        <Label htmlFor="rsvp_button_label" className="text-sm">Button text</Label>
+                                        <Input
+                                            id="rsvp_button_label"
+                                            value={formData.rsvp_button_label}
+                                            onChange={(e) => handleInputChange('rsvp_button_label', e.target.value)}
+                                            placeholder="RSVP"
+                                            maxLength={30}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </Card>
 

@@ -131,29 +131,12 @@ export default async function PublicEventPage({
 
     if (!event) notFound()
 
-    // Venue gating: check if current user has a confirmed ticket
+    // ── Viewer-dependent state (venue, subscriber, tickets) ─────────────────
+    // Resolve the viewer ONCE, then run every per-viewer lookup in parallel.
+    // (Previously this made two separate auth.getUser() round-trips and ran the
+    //  ticket / registration / RPC queries sequentially — the main cause of slow
+    //  logged-in loads.)
     let venueVisible = !event.hide_venue_until_registered
-    if (!venueVisible) {
-        try {
-            const authClient = await createClient()
-            const { data: { user } } = await authClient.auth.getUser()
-            if (user) {
-                const { data: ticket } = await authClient
-                    .from('tickets')
-                    .select('id')
-                    .eq('event_id', id)
-                    .eq('user_id', user.id)
-                    .in('status', ['valid', 'used', 'approved'])
-                    .limit(1)
-                    .maybeSingle()
-                if (ticket) venueVisible = true
-            }
-        } catch {
-            // If auth check fails, keep venue hidden
-        }
-    }
-
-    // Subscriber checks — discount, early access, subscriber-only gating
     let subscriberDiscount: {
         has_discount: boolean
         discount_type?: 'fixed_price' | 'percentage'
@@ -169,6 +152,15 @@ export default async function PublicEventPage({
     let viewerHasTicket = false
     let viewerTicketToken: string | null = null
 
+    // Seat-map presence is viewer-independent — kick it off now so it overlaps
+    // the auth work below instead of running strictly after it.
+    const seatMapPromise = createPublicClient()
+        .from('event_seat_maps')
+        .select('id')
+        .eq('event_id', id)
+        .maybeSingle()
+        .then(r => !!r.data, () => false)
+
     try {
         const authClient = await createClient()
         const { data: { user } } = await authClient.auth.getUser()
@@ -176,44 +168,51 @@ export default async function PublicEventPage({
         viewerEmail = user?.email ?? null
         if (user) {
             const admin = createAdminClient()
-            // Returning approved users skip the question step and go straight to tickets.
-            if (event.require_approval || event.invite_only) {
-                const { data: reg } = await admin
-                    .from('event_registrations')
-                    .select('id')
+            const gated = event.require_approval || event.invite_only
+            const [regRes, tkRes, discountRes, subRes] = await Promise.all([
+                // Returning approved users skip the question step (only when gated).
+                gated
+                    ? admin.from('event_registrations')
+                        .select('id')
+                        .eq('event_id', id)
+                        .eq('user_id', user.id)
+                        .in('status', ['approved', 'auto_approved'])
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle()
+                    : Promise.resolve({ data: null }),
+                // Held ticket → drives both "You're going" AND venue reveal
+                // (a confirmed ticket is exactly the venue-gating condition, so
+                //  this single query covers both — no separate venue lookup).
+                admin.from('tickets')
+                    .select('id, purchase_intents(access_token)')
                     .eq('event_id', id)
                     .eq('user_id', user.id)
-                    .in('status', ['approved', 'auto_approved'])
+                    .in('status', ['valid', 'used', 'approved'])
                     .order('created_at', { ascending: false })
                     .limit(1)
-                    .maybeSingle()
-                approvedRegistrationId = reg?.id ?? null
-            }
-            // Already holds a ticket → show "You're going" instead of re-prompting checkout.
-            const { data: tk } = await admin
-                .from('tickets')
-                .select('id, purchase_intents(access_token)')
-                .eq('event_id', id)
-                .eq('user_id', user.id)
-                .in('status', ['valid', 'used', 'approved'])
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle()
+                    .maybeSingle(),
+                // Subscriber discount + active flag (only when there's an organizer).
+                event.organizer?.id
+                    ? authClient.rpc('get_subscriber_event_discount', { p_event_id: id })
+                    : Promise.resolve({ data: null }),
+                event.organizer?.id
+                    ? authClient.rpc('is_active_subscriber', { p_partner_id: event.organizer.id })
+                    : Promise.resolve({ data: null }),
+            ])
+
+            approvedRegistrationId = (regRes.data as any)?.id ?? null
+            const tk = tkRes.data as any
             if (tk) {
                 viewerHasTicket = true
-                viewerTicketToken = (tk.purchase_intents as any)?.access_token ?? null
+                viewerTicketToken = tk.purchase_intents?.access_token ?? null
+                venueVisible = true
             }
-        }
-        if (user && event.organizer?.id) {
-            const [discountRes, subRes] = await Promise.all([
-                authClient.rpc('get_subscriber_event_discount', { p_event_id: id }),
-                authClient.rpc('is_active_subscriber', { p_partner_id: event.organizer.id }),
-            ])
-            if (discountRes.data?.has_discount) subscriberDiscount = discountRes.data
-            if (subRes.data === true) isActiveSubscriber = true
+            if ((discountRes.data as any)?.has_discount) subscriberDiscount = discountRes.data as any
+            if ((subRes.data as any) === true) isActiveSubscriber = true
         }
     } catch {
-        // Non-blocking
+        // Non-blocking — anonymous or auth failure keeps public defaults.
     }
 
     // ── Invite-only resolution ──────────────────────────────────────────────
@@ -269,19 +268,9 @@ export default async function PublicEventPage({
         (isSubscriberOnly && !isActiveSubscriber) ||
         (inEarlyAccessWindow && !isActiveSubscriber)
 
-    // Seated event check — shows the "Pick Your Seats" option alongside Get Tickets
-    let hasSeatMap = false
-    try {
-        const publicClient = createPublicClient()
-        const { data: seatMapRow } = await publicClient
-            .from('event_seat_maps')
-            .select('id')
-            .eq('event_id', id)
-            .maybeSingle()
-        hasSeatMap = !!seatMapRow
-    } catch {
-        // Non-blocking — falls back to quantity-based checkout
-    }
+    // Seated event check — resolved from the promise kicked off above so it
+    // overlaps the auth work instead of running after it.
+    const hasSeatMap = await seatMapPromise
 
     const ticketsRemaining = event.capacity - event.tickets_sold
     let isSoldOut = ticketsRemaining <= 0
@@ -294,6 +283,14 @@ export default async function PublicEventPage({
             isSoldOut = true
         }
     }
+
+    // RSVP mode — free events where the organizer opted into a one-tap RSVP instead
+    // of the ticket/quantity/checkout flow. Only valid when the event is actually free.
+    const isFreeEvent = activeTiers.length > 0
+        ? activeTiers.every((t: any) => Number(t.price) === 0)
+        : Number(event.ticket_price) === 0
+    const rsvpMode = !!event.rsvp_enabled && isFreeEvent
+    const rsvpLabel = (event.rsvp_button_label || '').trim() || 'RSVP'
 
     // External ticketing redirect URL (edge function handles click tracking + 302 redirect)
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -678,23 +675,29 @@ export default async function PublicEventPage({
                         <h2 className="text-2xl font-bold">
                             {event.is_external
                                 ? `Get Tickets${event.external_provider_name ? ` on ${event.external_provider_name}` : ''}`
-                                : (isSoldOut ? 'Sold Out' : 'Get Tickets')}
+                                : rsvpMode
+                                    ? (isSoldOut ? 'Event full' : rsvpLabel)
+                                    : (isSoldOut ? 'Sold Out' : 'Get Tickets')}
                         </h2>
                         <p className="text-muted-foreground text-sm">
                             {event.is_external
                                 ? 'Tickets sold by external provider'
-                                : (isSoldOut ? 'Tickets are no longer available' : 'Secure your spot now')}
+                                : rsvpMode
+                                    ? (isSoldOut ? 'This event is full' : 'Free event — reserve your spot')
+                                    : (isSoldOut ? 'Tickets are no longer available' : 'Secure your spot now')}
                         </p>
                     </div>
                 </div>
-                <div className="text-right">
-                    <span className="block text-sm text-muted-foreground uppercase tracking-wider font-semibold">
-                        {event.is_external ? 'From' : 'Starting at'}
-                    </span>
-                    <span className="text-3xl font-extrabold text-primary">
-                        {event.ticket_price === 0 ? 'Free' : `₱${event.ticket_price.toLocaleString()}`}
-                    </span>
-                </div>
+                {!rsvpMode && (
+                    <div className="text-right">
+                        <span className="block text-sm text-muted-foreground uppercase tracking-wider font-semibold">
+                            {event.is_external ? 'From' : 'Starting at'}
+                        </span>
+                        <span className="text-3xl font-extrabold text-primary">
+                            {event.ticket_price === 0 ? 'Free' : `₱${event.ticket_price.toLocaleString()}`}
+                        </span>
+                    </div>
+                )}
             </div>
             <div className="p-8">
                 {event.invite_only && inviteState === 'uninvited' && (
@@ -805,6 +808,8 @@ export default async function PublicEventPage({
                             initialApprovedRegistrationId={approvedRegistrationId}
                             hasTicket={viewerHasTicket}
                             ticketToken={viewerTicketToken}
+                            rsvpMode={rsvpMode}
+                            rsvpLabel={rsvpLabel}
                         />
                         {!isLoggedIn && (
                             <LoginNudge
@@ -986,6 +991,7 @@ export default async function PublicEventPage({
                     isExternal={event.is_external}
                     externalUrl={externalRedirectUrl}
                     eventId={event.id}
+                    label={rsvpMode ? rsvpLabel : undefined}
                 />
             </div>
         )
@@ -1068,6 +1074,7 @@ export default async function PublicEventPage({
                     isExternal={event.is_external}
                     externalUrl={externalRedirectUrl}
                     eventId={event.id}
+                    label={rsvpMode ? rsvpLabel : undefined}
                 />
             </div>
         )

@@ -30,6 +30,9 @@ interface RegistrationGateProps {
     hasTicket?: boolean
     /** Token for the buyer's hosted ticket page (when known). */
     ticketToken?: string | null
+    /** RSVP mode (free events): single custom-labeled button, no quantity/checkout. */
+    rsvpMode?: boolean
+    rsvpLabel?: string
 }
 
 /**
@@ -58,6 +61,8 @@ export function RegistrationGate({
     initialApprovedRegistrationId,
     hasTicket,
     ticketToken,
+    rsvpMode,
+    rsvpLabel,
 }: RegistrationGateProps) {
     const activeTiers = (tiers || []).filter((t: any) => t.is_active !== false)
     const isFree = activeTiers.length > 0
@@ -72,6 +77,7 @@ export function RegistrationGate({
     const [claimed, setClaimed] = useState(false)
     const [claimFailed, setClaimFailed] = useState(false)
     const [isLoggedIn, setIsLoggedIn] = useState(false)
+    const [rsvpSubmitting, setRsvpSubmitting] = useState(false)
     const claimStartedRef = useRef(false)
 
     const registered = !!regId
@@ -169,6 +175,74 @@ export function RegistrationGate({
         }
         // Paid (or free claim failed → let them retry via checkout).
         return selector(true)
+    }
+
+    // ── RSVP mode (free events): single custom-labeled button, no quantity ─────
+    if (rsvpMode) {
+        if (rsvpSubmitting) {
+            return (
+                <div className="rounded-xl border p-6 text-center">
+                    <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground">Reserving your spot…</p>
+                </div>
+            )
+        }
+        const label = isSoldOut ? 'Event full' : (rsvpLabel || 'RSVP')
+        const onRsvp = async () => {
+            setClaimFailed(false)
+            // Any custom questions → modal (collects answers; guests also get an
+            // identity step). Safe for both guest and logged-in.
+            if (questions.length > 0) { setModalOpen(true); return }
+            // No questions → decide from FRESH auth. The isLoggedIn state resolves
+            // async, so relying on it can race the modal into an empty-step crash.
+            const { data: { user } } = await createClient().auth.getUser()
+            if (!user) { setModalOpen(true); return } // guest → modal identity step
+            // Logged-in + no questions → register in one tap via the same RPC the
+            // modal uses. Setting regId then hands off to the shared free-claim
+            // effect, which issues the (scannable) ticket.
+            if (claimStartedRef.current) return
+            setRsvpSubmitting(true)
+            try {
+                const { data, error } = await createClient().rpc('submit_event_request', {
+                    p_event_id: eventId, p_answers: [], p_guest_email: null, p_guest_name: null,
+                })
+                if (error) { setClaimFailed(true); setRsvpSubmitting(false); return }
+                if ((data as any)?.status === 'pending') { setPending(true); setRsvpSubmitting(false) }
+                else setRegId((data as any)?.registration_id ?? null) // → registered spinner → claim
+            } catch { setClaimFailed(true); setRsvpSubmitting(false) }
+        }
+        return (
+            <>
+                {claimFailed && (
+                    <p className="mb-3 text-sm text-red-600 text-center">Something went wrong. Please try again.</p>
+                )}
+                <Button
+                    size="lg"
+                    className={fullWidth ? 'w-full' : 'w-full md:w-auto'}
+                    disabled={isSoldOut}
+                    onClick={onRsvp}
+                >
+                    <CheckCircle2 className="mr-2 h-5 w-5" />
+                    {label}
+                </Button>
+                <RegisterModal
+                    open={modalOpen}
+                    onOpenChange={setModalOpen}
+                    event={{ id: eventId, title: eventTitle, require_approval: requireApproval, invite_only: inviteOnly }}
+                    questions={questions}
+                    isLoggedIn={isLoggedIn}
+                    themeColor={themeColor}
+                    dark={dark}
+                    onApproved={(rid, g) => {
+                        if (typeof window !== 'undefined') sessionStorage.setItem(`approved_reg_${eventId}`, rid)
+                        setModalOpen(false)
+                        setGuest(g ?? null)
+                        setRegId(rid)
+                    }}
+                    onPending={() => { setModalOpen(false); setPending(true) }}
+                />
+            </>
+        )
     }
 
     // ── No registration questions → normal ticket flow ───────────────────────
