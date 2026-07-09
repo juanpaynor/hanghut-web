@@ -29,6 +29,23 @@ export async function getPublishedVenueTemplates() {
   return data
 }
 
+/** Templates an organizer can start from: published (admin-curated) + their own. */
+export async function getUsableVenueTemplates() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const { data, error } = await supabase
+    .from('venue_templates')
+    .select('*')
+    .or(`is_published.eq.true,created_by.eq.${user.id}`)
+    .order('is_published', { ascending: false })
+    .order('venue_name', { ascending: true })
+
+  if (error) throw new Error(error.message)
+  return data
+}
+
 export async function getVenueTemplate(id: string) {
   const supabase = await createClient()
   const { data, error } = await supabase

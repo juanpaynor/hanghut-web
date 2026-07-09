@@ -285,6 +285,19 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             }
 
             // ── STEP 2: Create purchase intent ──
+            // Release the picker's browsing-session holds first: assign_seats_to_intent
+            // rejects seats held by any OTHER session, so the buyer's own selection
+            // hold would block their own checkout. Assign re-holds them (under the
+            // intent id) within the same statement, so the unheld window is ~ms.
+            if (selectedSeatIds.length > 0) {
+                const seatSession = typeof window !== 'undefined' ? sessionStorage.getItem('hh_seat_session') : null
+                if (seatSession) {
+                    await Promise.all(selectedSeatIds.map(id =>
+                        supabase.rpc('release_seat_hold', { p_seat_id: id, p_session_id: seatSession })
+                    ))
+                }
+            }
+
             const requestPayload: any = {
                 event_id: event.id,
                 quantity: quantity,

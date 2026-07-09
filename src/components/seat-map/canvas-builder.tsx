@@ -372,8 +372,25 @@ export function CanvasBuilder({
   onUploadImageFile,
 }: CanvasBuilderProps) {
   const stageRef = useRef<Konva.Stage>(null)
-  const { state, dispatch, dispatchWithHistory, undo, redo } = useCanvasState()
+  const { state, dispatch, dispatchWithHistory: rawDispatchWithHistory, undo: rawUndo, redo: rawRedo, canUndo, canRedo } = useCanvasState()
   const [stageSize, setStageSize] = useState({ width: 1400, height: 900 })
+
+  // Unsaved-changes tracking: any history-worthy edit marks the canvas dirty;
+  // Save clears it. Backed by a beforeunload guard so closing the tab can't
+  // silently discard work.
+  const [dirty, setDirty] = useState(false)
+  const dispatchWithHistory = useCallback((action: Parameters<typeof rawDispatchWithHistory>[0]) => {
+    setDirty(true)
+    rawDispatchWithHistory(action)
+  }, [rawDispatchWithHistory])
+  const undo = useCallback(() => { setDirty(true); rawUndo() }, [rawUndo])
+  const redo = useCallback(() => { setDirty(true); rawRedo() }, [rawRedo])
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
   const containerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Clipboard for copy/paste of seats (Cmd/Ctrl + C / V)
@@ -385,6 +402,27 @@ export function CanvasBuilder({
 
   // Track mouse position for live drawing preview
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
+
+  // Sections with sold seats can't be deleted — the server refuses to drop booked
+  // rows on save, so the section would silently "resurrect" on reload. Block it
+  // here with an explanation instead. Returns the ids that are SAFE to delete.
+  const filterDeletableSections = useCallback((ids: string[]): string[] => {
+    const blocked: string[] = []
+    const ok: string[] = []
+    for (const id of ids) {
+      const section = state.sections.find((s) => s.id === id)
+      if (!section) continue
+      const sold = section.seats.filter((s) => s.status === 'booked').length
+      if (sold > 0) blocked.push(`${section.label} (${sold} sold)`)
+      else ok.push(id)
+    }
+    if (blocked.length > 0) {
+      window.alert(
+        `Can't delete ${blocked.join(', ')} — sections with sold seats can't be removed. You can mark the section inactive or block its remaining seats instead.`
+      )
+    }
+    return ok
+  }, [state.sections])
 
   // ─── Load initial data ──────────────────────────────────────────────
   useEffect(() => {
@@ -413,6 +451,59 @@ export function CanvasBuilder({
     const ro = new ResizeObserver(updateSize)
     if (containerRef.current) ro.observe(containerRef.current)
     return () => ro.disconnect()
+  }, [])
+
+  // ─── Zoom-to-fit once on open ───────────────────────────────────────
+  // Big maps used to open at 100% zoom anchored at the origin — often showing
+  // empty grid. Fit the drawn content (sections + shapes) once both the map
+  // and the real container size are known.
+  const didFitRef = useRef(false)
+  useEffect(() => {
+    if (didFitRef.current || stageSize.width < 200) return
+    const hasContent = state.sections.length > 0 || state.backgroundShapes.length > 0
+    if (!hasContent) return
+    didFitRef.current = true
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    const extend = (x: number, y: number) => {
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y)
+    }
+    for (const s of state.sections) {
+      for (let i = 0; i < s.polygonPoints.length; i += 2) extend(s.polygonPoints[i], s.polygonPoints[i + 1])
+      for (const seat of s.seats) extend(seat.x, seat.y)
+    }
+    for (const sh of state.backgroundShapes) {
+      extend(sh.x, sh.y)
+      extend(sh.x + (sh.width ?? sh.radius ?? 60), sh.y + (sh.height ?? sh.radius ?? 60))
+    }
+    if (!isFinite(minX)) return
+    const pad = 60
+    const w = maxX - minX + pad * 2
+    const h = maxY - minY + pad * 2
+    const zoom = Math.max(0.15, Math.min(1.5, Math.min(stageSize.width / w, stageSize.height / h)))
+    dispatch({ type: 'SET_ZOOM', zoom })
+    dispatch({
+      type: 'SET_PAN',
+      offset: {
+        x: stageSize.width / 2 - (minX + (maxX - minX) / 2) * zoom,
+        y: stageSize.height / 2 - (minY + (maxY - minY) / 2) * zoom,
+      },
+    })
+  }, [state.sections, state.backgroundShapes, stageSize, dispatch])
+
+  // ─── Sticky middle-pan fix ──────────────────────────────────────────
+  // Releasing the middle button OUTSIDE the canvas never fired the stage's
+  // mouseup, leaving the pan "stuck" to the cursor. Window-level cleanup.
+  useEffect(() => {
+    const clear = (e: MouseEvent) => {
+      if (e.button === 1 && middlePanRef.current) {
+        middlePanRef.current = null
+        const c = stageRef.current?.container()
+        if (c) c.style.cursor = ''
+      }
+    }
+    window.addEventListener('mouseup', clear)
+    return () => window.removeEventListener('mouseup', clear)
   }, [])
 
   // ─── Convert screen coords → canvas coords ─────────────────────────
@@ -491,7 +582,15 @@ export function CanvasBuilder({
       // seats and pressing Delete can never nuke the whole section
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (state.selectedSeatIds.length > 0) {
-          dispatchWithHistory({ type: 'DELETE_SEATS', seatIds: state.selectedSeatIds })
+          // Sold seats can't be deleted (server keeps them → confusing resurrection)
+          const bookedIds = new Set(
+            state.sections.flatMap((s) => s.seats.filter((seat) => seat.status === 'booked').map((seat) => seat.id))
+          )
+          const deletable = state.selectedSeatIds.filter((id) => !bookedIds.has(id))
+          if (deletable.length < state.selectedSeatIds.length) {
+            window.alert(`${state.selectedSeatIds.length - deletable.length} sold seat(s) were skipped — sold seats can't be deleted.`)
+          }
+          if (deletable.length > 0) dispatchWithHistory({ type: 'DELETE_SEATS', seatIds: deletable })
         } else if (state.selectedSeatId && state.selectedIds.length > 0) {
           dispatchWithHistory({
             type: 'DELETE_SEAT',
@@ -502,7 +601,7 @@ export function CanvasBuilder({
           // Selection can hold section IDs and/or decorative shape IDs
           const shapeIds = new Set(state.backgroundShapes.map((s) => s.id))
           const selectedShapeIds = state.selectedIds.filter((id) => shapeIds.has(id))
-          const selectedSectionIds = state.selectedIds.filter((id) => !shapeIds.has(id))
+          const selectedSectionIds = filterDeletableSections(state.selectedIds.filter((id) => !shapeIds.has(id)))
           selectedShapeIds.forEach((id) => dispatchWithHistory({ type: 'DELETE_SHAPE', id }))
           if (selectedSectionIds.length > 0) {
             dispatchWithHistory({ type: 'DELETE_SECTIONS', ids: selectedSectionIds })
@@ -522,7 +621,7 @@ export function CanvasBuilder({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [readOnly, state.sections, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, state.backgroundShapes, undo, redo, dispatch, dispatchWithHistory])
+  }, [readOnly, state.sections, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, state.backgroundShapes, undo, redo, dispatch, dispatchWithHistory, filterDeletableSections])
 
   // ─── Zoom via Mouse Wheel ────────────────────────────────────────────
   const handleWheel = useCallback(
@@ -748,7 +847,12 @@ export function CanvasBuilder({
               })
             })
             if (selectedIds.length > 0) {
-              dispatch({ type: 'SELECT_SEATS', seatIds: selectedIds })
+              // Shift-drag ADDS to the existing selection (multi-area select)
+              const additive = e.evt.shiftKey
+              const merged = additive
+                ? Array.from(new Set([...state.selectedSeatIds, ...selectedIds]))
+                : selectedIds
+              dispatch({ type: 'SELECT_SEATS', seatIds: merged })
             }
           }
         }
@@ -1020,6 +1124,7 @@ export function CanvasBuilder({
       seatShape: state.seatShape,
     }
     onSave?.(data)
+    setDirty(false)
   }, [state, onSave])
 
   // ─── External save trigger (from parent header buttons) ─────────────
@@ -1229,6 +1334,9 @@ export function CanvasBuilder({
           onToolChange={(tool) => dispatch({ type: 'SET_TOOL', tool })}
           onUndo={undo}
           onRedo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          dirty={dirty}
           onSave={handleExport}
           zoom={state.zoom}
           onZoomChange={handleToolbarZoom}
@@ -1309,6 +1417,34 @@ export function CanvasBuilder({
                 tierColorMap={tierColorMap}
               />
             ))}
+            {/* Vertex handles — reshape the selected section by dragging its
+                corners. Rendered AFTER sections so they sit on top and win the
+                hit test. Committed on release (state stays untouched during the
+                drag so undo restores the true pre-drag shape). */}
+            {!readOnly && state.tool === 'select' && selectedSection && !selectedSection.locked && state.selectedSeatIds.length === 0 &&
+              Array.from({ length: selectedSection.polygonPoints.length / 2 }).map((_, i) => (
+                <Circle
+                  key={`vertex-${selectedSection.id}-${i}-${selectedSection.polygonPoints[i * 2]}-${selectedSection.polygonPoints[i * 2 + 1]}`}
+                  x={selectedSection.polygonPoints[i * 2]}
+                  y={selectedSection.polygonPoints[i * 2 + 1]}
+                  radius={6 / state.zoom}
+                  fill="#ffffff"
+                  stroke="#6366f1"
+                  strokeWidth={2 / state.zoom}
+                  draggable
+                  onDragStart={(e) => { e.cancelBubble = true }}
+                  onDragEnd={(e) => {
+                    e.cancelBubble = true
+                    const pts = [...selectedSection.polygonPoints]
+                    pts[i * 2] = e.target.x()
+                    pts[i * 2 + 1] = e.target.y()
+                    dispatchWithHistory({ type: 'UPDATE_SECTION', id: selectedSection.id, updates: { polygonPoints: pts } })
+                  }}
+                  onMouseEnter={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = 'move' }}
+                  onMouseLeave={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = '' }}
+                  perfectDrawEnabled={false}
+                />
+              ))}
           </Layer>
 
           {/* Drawing Preview Layer */}
@@ -1461,11 +1597,14 @@ export function CanvasBuilder({
             dispatchWithHistory({ type: 'UPDATE_SECTIONS', ids, updates })
           }
           onDeleteSection={(id) => {
+            if (filterDeletableSections([id]).length === 0) return
             dispatchWithHistory({ type: 'DELETE_SECTION', id })
             dispatch({ type: 'DESELECT_ALL' })
           }}
           onDeleteSections={(ids) => {
-            dispatchWithHistory({ type: 'DELETE_SECTIONS', ids })
+            const ok = filterDeletableSections(ids)
+            if (ok.length === 0) return
+            dispatchWithHistory({ type: 'DELETE_SECTIONS', ids: ok })
             dispatch({ type: 'DESELECT_ALL' })
           }}
           onSelectSection={(id) => {
@@ -1490,6 +1629,11 @@ export function CanvasBuilder({
           selectedSeatId={state.selectedSeatId}
           selectedSeatIds={state.selectedSeatIds}
           onDeleteSeat={(sectionId, seatId) => {
+            const seat = state.sections.find((s) => s.id === sectionId)?.seats.find((s) => s.id === seatId)
+            if (seat?.status === 'booked') {
+              window.alert(`${seat.label} is sold — sold seats can't be deleted.`)
+              return
+            }
             dispatchWithHistory({ type: 'DELETE_SEAT', sectionId, seatId })
           }}
           onSelectSeat={(seatId) => {
@@ -1503,7 +1647,14 @@ export function CanvasBuilder({
             dispatchWithHistory({ type: 'RENUMBER_SEATS', sectionId, seatIds, startRow: rowLabel, startNum: startNumber, mode })
           }}
           onDeleteSelectedSeats={() => {
-            dispatchWithHistory({ type: 'DELETE_SEATS', seatIds: state.selectedSeatIds })
+            const bookedIds = new Set(
+              state.sections.flatMap((s) => s.seats.filter((seat) => seat.status === 'booked').map((seat) => seat.id))
+            )
+            const deletable = state.selectedSeatIds.filter((id) => !bookedIds.has(id))
+            if (deletable.length < state.selectedSeatIds.length) {
+              window.alert(`${state.selectedSeatIds.length - deletable.length} sold seat(s) were skipped — sold seats can't be deleted.`)
+            }
+            if (deletable.length > 0) dispatchWithHistory({ type: 'DELETE_SEATS', seatIds: deletable })
           }}
           onSetSeatStatus={(seatIds, status) => {
             dispatchWithHistory({ type: 'SET_SEAT_STATUS', seatIds, status })
@@ -1513,6 +1664,25 @@ export function CanvasBuilder({
           }}
           onDuplicateSection={(id, mirror) => {
             dispatchWithHistory({ type: 'DUPLICATE_SECTION', id, mirror })
+          }}
+          onScaleSection={(id, factor) => {
+            const section = state.sections.find((s) => s.id === id)
+            if (!section) return
+            const c = getSectionCenter(section.polygonPoints)
+            const scalePt = (x: number, y: number) => ({ x: c.x + (x - c.x) * factor, y: c.y + (y - c.y) * factor })
+            const polygonPoints = section.polygonPoints.map((v, i) =>
+              i % 2 === 0 ? c.x + (v - c.x) * factor : c.y + (v - c.y) * factor
+            )
+            const seats = section.seats.map((seat) => ({ ...seat, ...scalePt(seat.x, seat.y) }))
+            const arcConfig = section.arcConfig
+              ? {
+                  ...section.arcConfig,
+                  ...(() => { const p = scalePt(section.arcConfig.cx, section.arcConfig.cy); return { cx: p.x, cy: p.y } })(),
+                  rInner: section.arcConfig.rInner * factor,
+                  rOuter: section.arcConfig.rOuter * factor,
+                }
+              : section.arcConfig
+            dispatchWithHistory({ type: 'UPDATE_SECTION', id, updates: { polygonPoints, seats, arcConfig } })
           }}
           seatRadius={state.seatRadius}
           seatShape={state.seatShape}

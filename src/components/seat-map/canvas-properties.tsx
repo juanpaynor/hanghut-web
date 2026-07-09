@@ -39,6 +39,7 @@ interface CanvasPropertiesProps {
   onSetSeatStatus?: (seatIds: string[], status: 'available' | 'disabled') => void
   onScaleSeats?: (seatIds: string[], factor: number) => void
   onDuplicateSection?: (id: string, mirror?: boolean) => void
+  onScaleSection?: (id: string, factor: number) => void
   seatRadius: number
   seatShape: SeatShape
   onSetSeatRadius: (r: number) => void
@@ -220,6 +221,7 @@ export function CanvasProperties({
   onSetSeatStatus,
   onScaleSeats,
   onDuplicateSection,
+  onScaleSection,
   seatRadius,
   seatShape,
   onSetSeatRadius,
@@ -278,19 +280,42 @@ export function CanvasProperties({
       })
     }
 
-    const seats: SeatData[] = seatPositions.map((pos) => ({
-      id: crypto.randomUUID(),
-      rowLabel: pos.rowLabel,
-      seatNumber: pos.seatNumber,
-      label: pos.label,
-      x: pos.x,
-      y: pos.y,
-      status: 'available',
-      customPrice: null,
-    }))
+    // Preserve seat IDENTITY across re-fills. Canvas id = DB id, so regenerating
+    // ids would orphan sold seats (save refuses to delete booked rows → invisible
+    // duplicates + oversell) and silently wipe statuses, per-seat tiers and prices.
+    // Match old→new by label (e.g. "A1"): matched seats keep id/status/tier/price
+    // and only move to the new position. Booked seats whose label vanished from
+    // the new layout are KEPT in place — a sold seat can never be dropped.
+    const prevByLabel = new Map(selectedSection.seats.map((s) => [s.label, s]))
+    const newLabels = new Set(seatPositions.map((p) => p.label))
+
+    const seats: SeatData[] = seatPositions.map((pos) => {
+      const prev = prevByLabel.get(pos.label)
+      return prev
+        ? { ...prev, rowLabel: pos.rowLabel, seatNumber: pos.seatNumber, x: pos.x, y: pos.y }
+        : {
+            id: crypto.randomUUID(),
+            rowLabel: pos.rowLabel,
+            seatNumber: pos.seatNumber,
+            label: pos.label,
+            x: pos.x,
+            y: pos.y,
+            status: 'available' as const,
+            customPrice: null,
+          }
+    })
+
+    const keptBooked = selectedSection.seats.filter(
+      (s) => s.status === 'booked' && !newLabels.has(s.label)
+    )
+    if (keptBooked.length > 0) {
+      window.alert(
+        `${keptBooked.length} sold seat(s) (${keptBooked.slice(0, 5).map((s) => s.label).join(', ')}${keptBooked.length > 5 ? '…' : ''}) aren't in the new layout — they were kept in place because sold seats can't be removed.`
+      )
+    }
 
     onUpdateSection(selectedSection.id, {
-      seats,
+      seats: [...seats, ...keptBooked],
       rowCount: fillRows,
       seatsPerRow: fillCols,
       gridRotation,
@@ -902,6 +927,19 @@ export function CanvasProperties({
                     inheritLabel="— Not assigned —"
                     onChange={(tierId) => onUpdateSection(selectedSection.id, { tierId })}
                   />
+                  {/* GA guard: a section with no seats sells by QUANTITY from its tier.
+                      Without a tier it can't be sold at all (buyers see it dead). */}
+                  {selectedSection.seats.length === 0 && !selectedSection.tierId && (
+                    <p className="text-[11px] text-amber-400 mt-1.5 leading-relaxed">
+                      ⚠ This section has no seats, so it sells as <span className="font-semibold">general admission</span> —
+                      assign a price category or buyers can&apos;t purchase from it.
+                    </p>
+                  )}
+                  {selectedSection.seats.length === 0 && selectedSection.tierId && (
+                    <p className="text-[11px] text-emerald-400 mt-1.5 leading-relaxed">
+                      ✓ General admission zone — sells by quantity at this price category&apos;s remaining inventory.
+                    </p>
+                  )}
                 </div>
 
                 {/* Row-level overrides */}
@@ -1214,6 +1252,33 @@ export function CanvasProperties({
                   ↔ Mirror
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Resize Section — scales frame + seats around the section center.
+              Drag the white corner handles on the canvas to reshape freely. */}
+          {onScaleSection && (
+            <div className="border-t border-slate-800 pt-4 space-y-2">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                Resize
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onScaleSection(selectedSection.id, 0.9)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium py-2 rounded-lg transition-all border border-slate-700"
+                >
+                  − Smaller
+                </button>
+                <button
+                  onClick={() => onScaleSection(selectedSection.id, 1.1)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium py-2 rounded-lg transition-all border border-slate-700"
+                >
+                  + Larger
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Scales the section and its seats together. Tip: drag the white corner dots on the canvas to reshape the outline freely.
+              </p>
             </div>
           )}
 

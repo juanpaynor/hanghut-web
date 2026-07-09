@@ -28,9 +28,11 @@ const SeatMapPicker = dynamic(
 interface SeatPickerLauncherProps {
     eventId: string
     fullWidth?: boolean
+    /** Event's max tickets per order — forwarded to the picker's selection cap. */
+    maxPerOrder?: number
 }
 
-export function SeatPickerLauncher({ eventId, fullWidth = false }: SeatPickerLauncherProps) {
+export function SeatPickerLauncher({ eventId, fullWidth = false, maxPerOrder }: SeatPickerLauncherProps) {
     const [open, setOpen] = useState(false)
 
     return (
@@ -54,7 +56,7 @@ export function SeatPickerLauncher({ eventId, fullWidth = false }: SeatPickerLau
                     </DialogHeader>
                     {open && (
                         <div className="min-w-0">
-                            <SeatMapPicker eventId={eventId} />
+                            <SeatMapPicker eventId={eventId} maxPerOrder={maxPerOrder} />
                         </div>
                     )}
                 </DialogContent>

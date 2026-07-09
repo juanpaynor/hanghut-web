@@ -772,7 +772,7 @@ export default async function PublicEventPage({
                                 Tickets are no longer available
                             </div>
                         ) : (
-                            <SeatPickerLauncher eventId={event.id} fullWidth />
+                            <SeatPickerLauncher eventId={event.id} fullWidth maxPerOrder={event.max_seats_per_order ?? undefined} />
                         )}
                         {!isLoggedIn && (
                             <LoginNudge

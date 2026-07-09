@@ -76,6 +76,7 @@ export interface TierInfo {
   name: string
   price: number
   color: string   // assigned from TIER_PALETTE by sort order
+  quantityTotal?: number   // tier's quantity_total — for capacity-vs-map validation
 }
 
 export const TIER_PALETTE = [

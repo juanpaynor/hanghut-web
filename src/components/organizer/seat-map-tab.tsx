@@ -13,7 +13,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
-import { getEventSeatMap, saveEventSeatMap, getPublishedVenueTemplates } from '@/lib/seat-map/seat-map-actions'
+import { getEventSeatMap, saveEventSeatMap, getUsableVenueTemplates, saveVenueTemplate } from '@/lib/seat-map/seat-map-actions'
 import type { CanvasData, TierInfo } from '@/components/seat-map/types'
 import { TIER_PALETTE } from '@/components/seat-map/types'
 import { createClient } from '@/lib/supabase/client'
@@ -75,7 +75,7 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                     getEventSeatMap(eventId),
                     supabase
                         .from('ticket_tiers')
-                        .select('id, name, price, sort_order')
+                        .select('id, name, price, sort_order, quantity_total')
                         .eq('event_id', eventId)
                         .eq('is_active', true)
                         .order('sort_order', { ascending: true }),
@@ -91,6 +91,7 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                         name: t.name,
                         price: Number(t.price),
                         color: TIER_PALETTE[i % TIER_PALETTE.length],
+                        quantityTotal: t.quantity_total ?? undefined,
                     }))
                 )
             } catch (err) {
@@ -125,15 +126,54 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
         }
     }, [eventId])
 
-    // Load available templates
+    // Load available templates (admin-published + the organizer's own saved layouts)
     const loadTemplates = useCallback(async () => {
         try {
-            const data = await getPublishedVenueTemplates()
+            const data = await getUsableVenueTemplates()
             setTemplates(data || [])
         } catch (err) {
             console.error('Failed to load templates:', err)
         }
     }, [])
+
+    // Save the current (last-saved) layout as a reusable private template.
+    // Strips sale state — statuses, price categories, per-seat prices — so the
+    // template is pure geometry + labels, safe to apply to any future event.
+    const [savingTemplate, setSavingTemplate] = useState(false)
+    const handleSaveAsTemplate = async () => {
+        if (!canvasData) return
+        const name = window.prompt('Template name (e.g. "Skydome — standard setup"):')
+        if (!name?.trim()) return
+        setSavingTemplate(true)
+        try {
+            const stripped: CanvasData = {
+                ...canvasData,
+                sections: canvasData.sections.map(s => ({
+                    ...s,
+                    tierId: null,
+                    rowTierOverrides: {},
+                    seats: s.seats.map(seat => ({
+                        ...seat,
+                        status: 'available' as const,
+                        tierId: null,
+                        customPrice: null,
+                    })),
+                })),
+            }
+            await saveVenueTemplate(null, {
+                name: name.trim(),
+                venue_name: event?.venue_name || name.trim(),
+                canvas_data: stripped,
+                is_published: false,
+            })
+            toast({ title: 'Template saved', description: 'You can reuse this layout when setting up future events.' })
+        } catch (err: any) {
+            console.error('Failed to save template:', err)
+            toast({ title: 'Error', description: err?.message || 'Failed to save template.', variant: 'destructive' })
+        } finally {
+            setSavingTemplate(false)
+        }
+    }
 
     const handleChooseTemplate = async () => {
         await loadTemplates()
@@ -258,7 +298,12 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                                         )}
                                     </div>
                                     <div className="p-3">
-                                        <h3 className="font-semibold text-sm">{template.name}</h3>
+                                        <h3 className="font-semibold text-sm flex items-center gap-1.5">
+                                            {template.name}
+                                            {!template.is_published && (
+                                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-500">Mine</span>
+                                            )}
+                                        </h3>
                                         <p className="text-xs text-muted-foreground">{template.venue_name}</p>
                                         {template.total_capacity && (
                                             <p className="text-xs text-muted-foreground mt-1">
@@ -290,12 +335,22 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                             </span>
                         )}
                     </div>
-                    {saving && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Saving...
-                        </div>
-                    )}
+                    <div className="flex items-center gap-3">
+                        {saving && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Saving...
+                            </div>
+                        )}
+                        {canvasData && (
+                            <Button variant="outline" size="sm" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
+                                {savingTemplate
+                                    ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                                    : <Save className="w-4 h-4 mr-1.5" />}
+                                Save as template
+                            </Button>
+                        )}
+                    </div>
                 </div>
 
                 <div className="h-[calc(100vh-140px)] min-h-[700px]">

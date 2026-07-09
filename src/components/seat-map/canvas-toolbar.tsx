@@ -25,6 +25,10 @@ interface CanvasToolbarProps {
   zoom: number
   onZoomChange: (zoom: number) => void
   onUploadImage: () => void
+  canUndo?: boolean
+  canRedo?: boolean
+  /** Unsaved edits exist — shows an amber dot on the Save button. */
+  dirty?: boolean
 }
 
 const tools: { tool: CanvasTool; icon: typeof MousePointer2; label: string; shortcut?: string }[] = [
@@ -44,6 +48,9 @@ export function CanvasToolbar({
   zoom,
   onZoomChange,
   onUploadImage,
+  canUndo = true,
+  canRedo = true,
+  dirty = false,
 }: CanvasToolbarProps) {
   return (
     <div className="w-14 bg-slate-900 border-r border-slate-800 flex flex-col items-center py-3 gap-1 shrink-0">
@@ -79,14 +86,16 @@ export function CanvasToolbar({
       {/* Undo / Redo */}
       <button
         onClick={onUndo}
-        className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition-all"
+        disabled={!canUndo}
+        className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
         title="Undo (⌘Z)"
       >
         <Undo2 className="w-4.5 h-4.5" />
       </button>
       <button
         onClick={onRedo}
-        className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition-all"
+        disabled={!canRedo}
+        className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
         title="Redo (⌘⇧Z)"
       >
         <Redo2 className="w-4.5 h-4.5" />
@@ -133,10 +142,13 @@ export function CanvasToolbar({
       {/* Save */}
       <button
         onClick={onSave}
-        className="w-10 h-10 rounded-lg flex items-center justify-center bg-emerald-600 text-white hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-500/20"
-        title="Save Layout"
+        className="relative w-10 h-10 rounded-lg flex items-center justify-center bg-emerald-600 text-white hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-500/20"
+        title={dirty ? 'Save Layout — unsaved changes' : 'Save Layout'}
       >
         <Save className="w-5 h-5" />
+        {dirty && (
+          <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-amber-400 border-2 border-slate-900" />
+        )}
       </button>
     </div>
   )

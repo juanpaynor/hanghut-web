@@ -44,10 +44,30 @@ export function CapacitySummary({ sections, tiers }: CapacitySummaryProps) {
     const projectedGross = tierRows.reduce((sum, r) => sum + r.subtotal, 0)
     const activeSeats = totalSeats - disabledSeats
 
-    return { totalSeats, activeSeats, disabledSeats, unassigned, tierRows, projectedGross }
+    // GA zones (no seats): with a tier they sell by quantity; without one they
+    // can't be sold at all.
+    const gaSections = sections.filter((s) => s.seats.length === 0)
+    const gaNoTier = gaSections.filter((s) => !s.tierId).map((s) => s.label)
+    const gaTierIds = new Set(gaSections.map((s) => s.tierId).filter(Boolean))
+
+    // Capacity-vs-map validation per tier (only when we know quantity_total).
+    // Over-mapped: more seats than tickets — the extra seats can never be booked.
+    // Under-mapped: tickets without a seat — fine if a GA zone sells that tier.
+    const tierWarnings: string[] = []
+    for (const t of tiers) {
+      if (t.quantityTotal == null) continue
+      const mapped = tierCounts.get(t.id) ?? 0
+      if (mapped > t.quantityTotal) {
+        tierWarnings.push(`${t.name}: ${mapped} seats mapped but only ${t.quantityTotal} tickets exist — ${mapped - t.quantityTotal} seat(s) can never be sold.`)
+      } else if (mapped > 0 && mapped < t.quantityTotal && !gaTierIds.has(t.id)) {
+        tierWarnings.push(`${t.name}: only ${mapped} of ${t.quantityTotal} tickets have seats — the other ${t.quantityTotal - mapped} can't be bought on the map.`)
+      }
+    }
+
+    return { totalSeats, activeSeats, disabledSeats, unassigned, tierRows, projectedGross, gaNoTier, tierWarnings }
   }, [sections, tiers])
 
-  if (summary.totalSeats === 0) return null
+  if (summary.totalSeats === 0 && summary.gaNoTier.length === 0 && summary.tierWarnings.length === 0) return null
 
   return (
     <div className="space-y-3">
@@ -104,6 +124,25 @@ export function CapacitySummary({ sections, tiers }: CapacitySummaryProps) {
           </p>
         </div>
       )}
+
+      {/* GA zone without a price category — unsellable */}
+      {summary.gaNoTier.length > 0 && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-500/20">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-amber-300">
+            Standing/GA zone{summary.gaNoTier.length !== 1 ? 's' : ''} <span className="font-semibold">{summary.gaNoTier.join(', ')}</span> ha{summary.gaNoTier.length !== 1 ? 've' : 's'} no
+            price category — buyers can&apos;t purchase from {summary.gaNoTier.length !== 1 ? 'them' : 'it'}. Assign a ticket tier in the section properties.
+          </p>
+        </div>
+      )}
+
+      {/* Tier capacity vs mapped seats mismatches */}
+      {summary.tierWarnings.map((w, i) => (
+        <div key={i} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-500/20">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-amber-300">{w}</p>
+        </div>
+      ))}
     </div>
   )
 }

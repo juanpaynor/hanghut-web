@@ -52,6 +52,8 @@ interface MapSection {
     tier_id: string | null
     row_tier_overrides: Record<string, string>
     available_count: number
+    /** 'ga' = general admission (no seats, buy by quantity); price/capacity from tier_id */
+    sales_mode?: 'seated' | 'ga'
     seats: MapSeat[]
 }
 
@@ -87,6 +89,14 @@ interface SeatMapData {
 
 interface SeatMapPickerProps {
     eventId: string
+    /** Event's max tickets per order (events.max_seats_per_order); defaults to 10. */
+    maxPerOrder?: number
+}
+
+/** GA = buy by quantity, no seat dots. Fallback matches the pre-sales_mode
+ *  contract from team_comms #169: empty seats[] + a tier_id. */
+function isGASection(section: MapSection): boolean {
+    return section.sales_mode === 'ga' || (section.seats.length === 0 && !!section.tier_id)
 }
 
 const TIER_PALETTE = [
@@ -98,7 +108,7 @@ const TIER_PALETTE = [
 const TAKEN_COLOR = '#d1d5db'
 const SELECTED_COLOR = '#0f172a'
 
-export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
+export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps) {
     const router = useRouter()
     const { toast } = useToast()
     const containerRef = useRef<HTMLDivElement>(null)
@@ -112,6 +122,36 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
     const [view, setView] = useState({ scale: 1, x: 0, y: 0 })
     const [navigating, setNavigating] = useState(false)
     const [hoveredSeat, setHoveredSeat] = useState<{ seat: MapSeat; screenX: number; screenY: number } | null>(null)
+    // GA (general admission) purchase sheet: tapping a GA zone picks a quantity,
+    // not seats. gaSection is the zone being bought from.
+    const [gaSection, setGaSection] = useState<MapSection | null>(null)
+    const [gaQty, setGaQty] = useState(1)
+
+    // Browsing-session id for seat holds. Persisted per-tab so checkout (same tab)
+    // can release these holds right before assign_seats_to_intent takes its own —
+    // a foreign-session hold would otherwise block the buyer's OWN checkout.
+    const sessionIdRef = useRef('')
+    useEffect(() => {
+        let sid = sessionStorage.getItem('hh_seat_session')
+        if (!sid) {
+            sid = crypto.randomUUID()
+            sessionStorage.setItem('hh_seat_session', sid)
+        }
+        sessionIdRef.current = sid
+    }, [])
+
+    // Release held seats when the picker closes WITHOUT continuing to checkout
+    // (abandoned holds would otherwise block other buyers for the 12-min TTL).
+    const selectedIdsRef = useRef<string[]>([])
+    useEffect(() => { selectedIdsRef.current = selectedSeatIds }, [selectedSeatIds])
+    const continuingRef = useRef(false)
+    useEffect(() => () => {
+        if (continuingRef.current || selectedIdsRef.current.length === 0) return
+        const supabase = createClient()
+        for (const id of selectedIdsRef.current) {
+            void supabase.rpc('release_seat_hold', { p_seat_id: id, p_session_id: sessionIdRef.current })
+        }
+    }, [])
 
     // ─── Data loading + periodic availability refresh ────────────────────
     const loadMap = useCallback(async () => {
@@ -259,27 +299,52 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
     }, [stageSize])
 
     // ─── Interactions ────────────────────────────────────────────────────
+    // Seated sections zoom to their seat dots; GA zones open the quantity sheet.
+    const handleSectionTap = useCallback((section: MapSection) => {
+        if (isGASection(section)) {
+            setGaSection(section)
+            setGaQty(1)
+            return
+        }
+        zoomToSection(section)
+    }, [zoomToSection])
+
     const handleSeatTap = useCallback((seat: MapSeat) => {
         if (seat.status !== 'available' || !seat.tier_id) return
+        const supabase = createClient()
+        const sid = sessionIdRef.current
 
-        setSelectedSeatIds(prev => {
-            if (prev.includes(seat.id)) return prev.filter(id => id !== seat.id)
+        // Deselect → release our hold so others can take the seat immediately.
+        if (selectedSeatIds.includes(seat.id)) {
+            setSelectedSeatIds(prev => prev.filter(id => id !== seat.id))
+            void supabase.rpc('release_seat_hold', { p_seat_id: seat.id, p_session_id: sid })
+            return
+        }
 
-            const currentTier = prev.length > 0 ? allSeats.get(prev[0])?.tier_id : null
-            if (currentTier && currentTier !== seat.tier_id) {
-                toast({
-                    title: 'One price category per order',
-                    description: 'Finish this order first, or clear your selection to switch categories.',
-                })
-                return prev
+        const currentTier = selectedSeatIds.length > 0 ? allSeats.get(selectedSeatIds[0])?.tier_id : null
+        if (currentTier && currentTier !== seat.tier_id) {
+            toast({
+                title: 'One price category per order',
+                description: 'Finish this order first, or clear your selection to switch categories.',
+            })
+            return
+        }
+        if (selectedSeatIds.length >= maxPerOrder) {
+            toast({ title: 'Limit reached', description: `Maximum of ${maxPerOrder} seats per order.` })
+            return
+        }
+
+        // Optimistic select, then take a server-side hold; roll back if another
+        // buyer beat us to it (hold_seat returns false when already held/taken).
+        setSelectedSeatIds(prev => [...prev, seat.id])
+        supabase.rpc('hold_seat', { p_seat_id: seat.id, p_session_id: sid }).then(({ data, error }) => {
+            if (error || data !== true) {
+                setSelectedSeatIds(prev => prev.filter(id => id !== seat.id))
+                toast({ title: 'Seat just taken', description: `${seat.label} was grabbed by another buyer.` })
+                loadMap()
             }
-            if (prev.length >= 10) {
-                toast({ title: 'Limit reached', description: 'Maximum of 10 seats per order.' })
-                return prev
-            }
-            return [...prev, seat.id]
         })
-    }, [allSeats, toast])
+    }, [selectedSeatIds, allSeats, toast, maxPerOrder, loadMap])
 
     const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
         e.evt.preventDefault()
@@ -311,12 +376,25 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
 
     const handleContinue = () => {
         if (!selectedTierId || selectedSeats.length === 0) return
+        continuingRef.current = true // keep holds alive — checkout releases + re-holds them
         setNavigating(true)
         const params = new URLSearchParams()
         params.set('eventId', eventId)
         params.set('quantity', String(selectedSeats.length))
         params.set('tierId', selectedTierId)
         params.set('seatIds', selectedSeatIds.join(','))
+        router.push(`/checkout?${params.toString()}`)
+    }
+
+    // GA checkout = the existing quantity flow (tier + quantity, NO seatIds);
+    // tickets get seat_info = null, which the scanner already handles.
+    const handleGAContinue = () => {
+        if (!gaSection?.tier_id || gaQty < 1) return
+        setNavigating(true)
+        const params = new URLSearchParams()
+        params.set('eventId', eventId)
+        params.set('quantity', String(gaQty))
+        params.set('tierId', gaSection.tier_id)
         router.push(`/checkout?${params.toString()}`)
     }
 
@@ -407,7 +485,7 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
                                     soldOut={soldOut}
                                     center={center}
                                     showLabel={!activeSection || isActive}
-                                    onTap={() => !soldOut && zoomToSection(section)}
+                                    onTap={() => !soldOut && handleSectionTap(section)}
                                 />
                             )
                         })}
@@ -528,6 +606,55 @@ export function SeatMapPicker({ eventId }: SeatMapPickerProps) {
                     </div>
                 )}
             </div>
+
+            {/* GA quantity sheet — tapping a standing/GA zone buys by quantity */}
+            {gaSection && (() => {
+                const gaTier = gaSection.tier_id ? tierById.get(gaSection.tier_id) : null
+                const gaMax = Math.max(1, Math.min(gaSection.available_count, maxPerOrder))
+                const gaTotal = gaTier ? Number(gaTier.price) * gaQty : 0
+                return (
+                    <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <p className="font-semibold">{gaSection.label}</p>
+                                <p className="text-sm text-muted-foreground">
+                                    {gaTier ? `${gaTier.name} · ₱${Number(gaTier.price).toLocaleString()} each` : 'General admission'}
+                                    {' · '}{gaSection.available_count} left
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                    General admission — no assigned seat, first come first served.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setGaSection(null)}
+                                className="text-muted-foreground hover:text-foreground text-sm px-1"
+                                aria-label="Close"
+                            >✕</button>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                                <Button size="icon" variant="outline" className="h-9 w-9"
+                                    disabled={gaQty <= 1}
+                                    onClick={() => setGaQty(q => Math.max(1, q - 1))}>
+                                    <Minus className="h-4 w-4" />
+                                </Button>
+                                <span className="w-8 text-center font-bold text-lg">{gaQty}</span>
+                                <Button size="icon" variant="outline" className="h-9 w-9"
+                                    disabled={gaQty >= gaMax}
+                                    onClick={() => setGaQty(q => Math.min(gaMax, q + 1))}>
+                                    <Plus className="h-4 w-4" />
+                                </Button>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="font-bold text-lg">₱{gaTotal.toLocaleString()}</div>
+                                <Button onClick={handleGAContinue} disabled={navigating || !gaTier} className="h-11 px-6 font-semibold">
+                                    {navigating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Continue'}
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            })()}
 
             {/* Selection bar */}
             <div className={cn(
