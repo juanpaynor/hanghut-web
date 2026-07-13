@@ -85,6 +85,9 @@ interface SeatMapData {
     tiers: MapTier[]
     sections: MapSection[]
     background_shapes: MapBackgroundShape[]
+    /** Organizer's chosen seat dot size (world units) from the editor. */
+    seat_radius?: number | null
+    seat_shape?: string | null
 }
 
 interface SeatMapPickerProps {
@@ -233,6 +236,17 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         return map
     }, [mapData])
 
+    // Seat dot size (world units). Respect the organizer's chosen size from the
+    // editor (canvas_data.seatRadius) so the picker matches the builder exactly;
+    // only fall back to a spacing-derived size for legacy maps that never stored
+    // one (guarantees no overlap either way).
+    const activeSeatRadius = useMemo(() => {
+        if (!activeSection || !mapData) return 6
+        if (mapData.seat_radius && mapData.seat_radius > 0) return Number(mapData.seat_radius)
+        const sec = mapData.sections.find(s => s.id === activeSection)
+        return sec ? computeSeatRadius(sec.seats) : 6
+    }, [activeSection, mapData])
+
     const selectedSeats = selectedSeatIds.map(id => allSeats.get(id)).filter(Boolean) as MapSeat[]
     const selectedTierId = selectedSeats[0]?.tier_id ?? null
     const selectedTier = selectedTierId ? tierById.get(selectedTierId) : null
@@ -278,18 +292,28 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
 
     useEffect(() => { fitOverview() }, [fitOverview])
 
-    // Zoom into one section's bounding box
+    // Zoom into a section. Fit to the SEATS' bounds, not the polygon — a section
+    // outline is often far larger than its seated area (see the huge empty lower
+    // two-thirds on dense maps), so fitting the polygon buries the seats up top.
     const zoomToSection = useCallback((section: MapSection) => {
-        const pts = section.polygon_points
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-        for (let i = 0; i < pts.length; i += 2) {
-            minX = Math.min(minX, pts[i]); maxX = Math.max(maxX, pts[i])
-            minY = Math.min(minY, pts[i + 1]); maxY = Math.max(maxY, pts[i + 1])
+        const extend = (x: number, y: number) => {
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y)
         }
-        const pad = 30
+        if (section.seats.length > 0) {
+            for (const s of section.seats) extend(s.x, s.y)
+        } else {
+            const pts = section.polygon_points
+            for (let i = 0; i < pts.length; i += 2) extend(pts[i], pts[i + 1])
+        }
+        if (!isFinite(minX)) return
+        // Pad by a few seat-widths so edge seats + their labels aren't clipped.
+        const r = section.seats.length > 0 ? computeSeatRadius(section.seats) : 20
+        const pad = r * 3 + 24
         const w = maxX - minX + pad * 2
         const h = maxY - minY + pad * 2
-        const scale = Math.min(stageSize.width / w, stageSize.height / h, 4)
+        const scale = Math.min(stageSize.width / w, stageSize.height / h, 6)
         setView({
             scale,
             x: stageSize.width / 2 - (minX + (maxX - minX) / 2) * scale,
@@ -430,6 +454,9 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         ? mapData.sections.find(s => s.id === activeSection)
         : null
 
+    // Show seat numbers only once a dot is big enough on screen to fit the text.
+    const showSeatLabels = activeSeatRadius * view.scale >= 11
+
     return (
         <div className="space-y-3 min-w-0">
             {/* Price legend */}
@@ -490,40 +517,64 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                             )
                         })}
 
-                        {/* Seats — only the active section's, drawn above polygons */}
-                        {activeSectionData?.seats.map(seat => (
-                            <Circle
-                                key={seat.id}
-                                x={seat.x}
-                                y={seat.y}
-                                radius={selectedSeatIds.includes(seat.id) ? 8 : 6}
-                                fill={seatFill(seat)}
-                                stroke={selectedSeatIds.includes(seat.id) ? '#ffffff' : undefined}
-                                strokeWidth={2}
-                                opacity={seat.status === 'available' ? 1 : 0.55}
-                                onClick={() => handleSeatTap(seat)}
-                                onTap={() => handleSeatTap(seat)}
-                                hitStrokeWidth={10}
-                                perfectDrawEnabled={false}
-                                onMouseEnter={(e) => {
-                                    const stage = e.target.getStage()
-                                    const pos = stage?.getPointerPosition()
-                                    if (pos) setHoveredSeat({ seat, screenX: pos.x, screenY: pos.y })
-                                    const container = stage?.container()
-                                    if (container) container.style.cursor = seat.status === 'available' ? 'pointer' : 'not-allowed'
-                                }}
-                                onMouseMove={(e) => {
-                                    const stage = e.target.getStage()
-                                    const pos = stage?.getPointerPosition()
-                                    if (pos) setHoveredSeat(prev => prev ? { ...prev, screenX: pos.x, screenY: pos.y } : null)
-                                }}
-                                onMouseLeave={(e) => {
-                                    setHoveredSeat(null)
-                                    const container = e.target.getStage()?.container()
-                                    if (container) container.style.cursor = 'default'
-                                }}
-                            />
-                        ))}
+                        {/* Seats — only the active section's, drawn above polygons.
+                            Radius comes from the section's real spacing; seat numbers
+                            appear once the dots are big enough on screen to fit them. */}
+                        {activeSectionData?.seats.map(seat => {
+                            const isSel = selectedSeatIds.includes(seat.id)
+                            const r = isSel ? activeSeatRadius * 1.15 : activeSeatRadius
+                            return (
+                                <Group key={seat.id} x={seat.x} y={seat.y}>
+                                    <Circle
+                                        radius={r}
+                                        fill={seatFill(seat)}
+                                        stroke="#ffffff"
+                                        strokeWidth={Math.max(0.75, activeSeatRadius * (isSel ? 0.3 : 0.16))}
+                                        opacity={seat.status === 'available' || isSel ? 1 : 0.5}
+                                        shadowColor={isSel ? '#0f172a' : undefined}
+                                        shadowBlur={isSel ? activeSeatRadius * 0.8 : 0}
+                                        shadowOpacity={isSel ? 0.5 : 0}
+                                        onClick={() => handleSeatTap(seat)}
+                                        onTap={() => handleSeatTap(seat)}
+                                        hitStrokeWidth={Math.max(8, activeSeatRadius)}
+                                        perfectDrawEnabled={false}
+                                        onMouseEnter={(e) => {
+                                            const stage = e.target.getStage()
+                                            const pos = stage?.getPointerPosition()
+                                            if (pos) setHoveredSeat({ seat, screenX: pos.x, screenY: pos.y })
+                                            const container = stage?.container()
+                                            if (container) container.style.cursor = seat.status === 'available' ? 'pointer' : 'not-allowed'
+                                        }}
+                                        onMouseMove={(e) => {
+                                            const stage = e.target.getStage()
+                                            const pos = stage?.getPointerPosition()
+                                            if (pos) setHoveredSeat(prev => prev ? { ...prev, screenX: pos.x, screenY: pos.y } : null)
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            setHoveredSeat(null)
+                                            const container = e.target.getStage()?.container()
+                                            if (container) container.style.cursor = 'default'
+                                        }}
+                                    />
+                                    {showSeatLabels && (
+                                        <Text
+                                            text={String(seat.seat)}
+                                            fontSize={activeSeatRadius}
+                                            fontStyle="bold"
+                                            fill={seat.status === 'available' || isSel ? '#ffffff' : '#9ca3af'}
+                                            width={activeSeatRadius * 2}
+                                            height={activeSeatRadius * 2}
+                                            offsetX={activeSeatRadius}
+                                            offsetY={activeSeatRadius}
+                                            align="center"
+                                            verticalAlign="middle"
+                                            listening={false}
+                                            perfectDrawEnabled={false}
+                                        />
+                                    )}
+                                </Group>
+                            )
+                        })}
                     </Layer>
                 </Stage>
 
@@ -862,6 +913,35 @@ function BuyerBackgroundShape({ shape }: { shape: MapBackgroundShape }) {
         )
     }
     return null
+}
+
+/**
+ * Pick a seat dot radius (world units) from the section's real seat spacing so
+ * dots always have a gap — a fixed radius blobs up tightly-packed maps. Uses the
+ * 10th percentile of nearest-neighbor distances (robust to a few outlier-tight
+ * pairs) and leaves ~12% clearance between adjacent seats. Caps the O(n²) scan
+ * by sampling for very large sections.
+ */
+function computeSeatRadius(seats: { x: number; y: number }[]): number {
+    const n = seats.length
+    if (n < 2) return 8
+    const sampleStep = Math.max(1, Math.floor(n / 400))
+    const nn: number[] = []
+    for (let i = 0; i < n; i += sampleStep) {
+        let best = Infinity
+        for (let j = 0; j < n; j++) {
+            if (i === j) continue
+            const dx = seats[i].x - seats[j].x
+            const dy = seats[i].y - seats[j].y
+            const d2 = dx * dx + dy * dy
+            if (d2 < best) best = d2
+        }
+        if (isFinite(best)) nn.push(Math.sqrt(best))
+    }
+    if (nn.length === 0) return 8
+    nn.sort((a, b) => a - b)
+    const spacing = nn[Math.floor(nn.length * 0.1)]
+    return Math.max(3, Math.min(22, spacing * 0.44))
 }
 
 function sectionCenter(points: number[]): { x: number; y: number } {

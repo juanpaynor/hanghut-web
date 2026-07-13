@@ -76,34 +76,49 @@ const nextConfig: NextConfig = {
     ]
   },
   async headers() {
-    return [
+    // Security headers shared by every route.
+    const commonHeaders = [
+      { key: 'X-DNS-Prefetch-Control', value: 'on' },
       {
-        source: '/(.*)',
+        key: 'Strict-Transport-Security',
+        value: 'max-age=63072000; includeSubDomains; preload'
+      },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'origin-when-cross-origin' },
+      { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=(self), payment=*' }
+    ]
+
+    return [
+      // App routes: block framing entirely (clickjacking protection). Excludes
+      // /embed and /checkout, which are designed to be embedded on partner sites.
+      {
+        source: '/((?!embed|checkout).*)',
         headers: [
-          {
-            key: 'X-DNS-Prefetch-Control',
-            value: 'on'
-          },
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload'
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'SAMEORIGIN'
-          },
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff'
-          },
-          {
-            key: 'Referrer-Policy',
-            value: 'origin-when-cross-origin'
-          },
-          {
-            key: 'Permissions-Policy',
-            value: 'camera=(self), microphone=(), geolocation=(self)'
-          }
+          ...commonHeaders,
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' }
+        ]
+      },
+      // Embeddable routes: NO X-Frame-Options (legacy, no allowlist support).
+      // frame-ancestors * lets partners iframe the widget + checkout on any domain.
+      {
+        source: '/embed/:path*',
+        headers: [
+          ...commonHeaders,
+          { key: 'Content-Security-Policy', value: 'frame-ancestors *' }
+        ]
+      },
+      {
+        source: '/checkout/:path*',
+        headers: [
+          ...commonHeaders,
+          { key: 'Content-Security-Policy', value: 'frame-ancestors *' }
+        ]
+      },
+      {
+        source: '/checkout',
+        headers: [
+          ...commonHeaders,
+          { key: 'Content-Security-Policy', value: 'frame-ancestors *' }
         ]
       }
     ]

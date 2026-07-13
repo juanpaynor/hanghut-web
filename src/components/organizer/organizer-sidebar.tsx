@@ -7,6 +7,7 @@ import {
     LayoutDashboard, CalendarDays, Wallet, Mail, Users, ScanLine,
     Settings, Code2, ShieldCheck, ExternalLink, LogOut, Megaphone,
     MousePointerClick, Crown, Compass, BookOpen, CalendarClock, UserSearch,
+    Puzzle,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/auth/cached'
@@ -62,6 +63,7 @@ const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
         items: [
             { label: 'Settings',     href: '/organizer/settings',      icon: Settings,   section: 'settings' },
             { label: 'Developers',   href: '/organizer/developers',    icon: Code2,      section: 'developers', capability: 'organizer' },
+            { label: 'Embed Widget', href: '/organizer/developers/embed', icon: Puzzle,  section: 'embed', capability: 'organizer' },
             { label: 'Verification', href: '/organizer/verification',  icon: ShieldCheck, section: 'verification' },
         ],
     },
@@ -82,6 +84,7 @@ const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
     scanner:       ['owner', 'manager', 'scanner'],
     settings:      ['owner', 'manager'],
     developers:    ['owner'],
+    embed:         ['owner', 'marketing'],
     verification:  ['owner'],
 }
 
@@ -144,8 +147,12 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, 
                             <div className="space-y-0.5">
                                 {visibleItems.map(item => {
                                     const Icon = item.icon
-                                    const isActive = item.href === '/organizer'
-                                        ? pathname === '/organizer'
+                                    // Parent routes that have deeper sibling links use exact
+                                    // matching so they don't stay highlighted on child routes
+                                    // (e.g. Developers vs. its /developers/embed child).
+                                    const exactMatch = item.href === '/organizer' || item.href === '/organizer/developers'
+                                    const isActive = exactMatch
+                                        ? pathname === item.href
                                         : pathname?.startsWith(item.href)
 
                                     if (item.external) {

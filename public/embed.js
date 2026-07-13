@@ -202,6 +202,9 @@
 
       var frameId = 'hanghut-frame-' + i;
 
+      // Pass the frame id so the child page can report its height back for auto-resize.
+      src += (params ? '&' : '?') + '_frameId=' + encodeURIComponent(frameId);
+
       var iframe = document.createElement('iframe');
       iframe.id = frameId;
       iframe.src = src;
