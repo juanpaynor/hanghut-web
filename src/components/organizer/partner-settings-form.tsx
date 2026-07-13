@@ -81,6 +81,14 @@ interface PartnerSettingsFormProps {
             ticket?: {
                 message?: string
                 banner_url?: string
+                template?: 'classic' | 'boarding' | 'minimal'
+                theme?: 'light' | 'dark'
+                background?: 'default' | 'brand' | 'event'
+                show_pdf?: boolean
+                show_ticket_number?: boolean
+                show_hint?: boolean
+                footer?: string
+                links?: { label?: string; url?: string }[]
             }
         }
     }
@@ -141,6 +149,14 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             ticket: {
                 message: initialData.branding?.ticket?.message || '',
                 banner_url: initialData.branding?.ticket?.banner_url || '',
+                template: initialData.branding?.ticket?.template || 'classic',
+                theme: initialData.branding?.ticket?.theme || 'light',
+                background: initialData.branding?.ticket?.background || 'default',
+                show_pdf: initialData.branding?.ticket?.show_pdf ?? true,
+                show_ticket_number: initialData.branding?.ticket?.show_ticket_number ?? true,
+                show_hint: initialData.branding?.ticket?.show_hint ?? true,
+                footer: initialData.branding?.ticket?.footer || '',
+                links: initialData.branding?.ticket?.links || [],
             },
         }
     })
@@ -1047,6 +1063,157 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                     onChange={(e) => handleBrandingChange('ticket', 'message', e.target.value)}
                                     placeholder="Doors at 7PM. Bring a valid ID."
                                 />
+                            </div>
+
+                            <Separator />
+
+                            {/* Template */}
+                            <div className="space-y-2">
+                                <Label>Ticket style</Label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {([
+                                        { v: 'classic', label: 'Classic', hint: 'Banner + QR' },
+                                        { v: 'boarding', label: 'Boarding pass', hint: 'Stub + perforation' },
+                                        { v: 'minimal', label: 'Minimal', hint: 'QR only' },
+                                    ] as const).map((opt) => (
+                                        <button
+                                            key={opt.v}
+                                            type="button"
+                                            onClick={() => handleBrandingChange('ticket', 'template', opt.v)}
+                                            className={cn(
+                                                'rounded-lg border p-2.5 text-left transition-colors',
+                                                (formData.branding.ticket?.template || 'classic') === opt.v
+                                                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                                                    : 'hover:bg-accent'
+                                            )}
+                                        >
+                                            <span className="block text-sm font-semibold">{opt.label}</span>
+                                            <span className="block text-[11px] text-muted-foreground">{opt.hint}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Theme + background */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label>Theme</Label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {(['light', 'dark'] as const).map((opt) => (
+                                            <Button
+                                                key={opt}
+                                                type="button"
+                                                size="sm"
+                                                variant={(formData.branding.ticket?.theme || 'light') === opt ? 'default' : 'outline'}
+                                                className="capitalize"
+                                                onClick={() => handleBrandingChange('ticket', 'theme', opt)}
+                                            >
+                                                {opt}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Background</Label>
+                                    <Select
+                                        value={formData.branding.ticket?.background || 'default'}
+                                        onValueChange={(v) => handleBrandingChange('ticket', 'background', v)}
+                                    >
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="default">Plain</SelectItem>
+                                            <SelectItem value="brand">Brand tint</SelectItem>
+                                            <SelectItem value="event">Event image (blurred)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            {/* Show / hide toggles */}
+                            <div className="space-y-3">
+                                <Label>Show on ticket</Label>
+                                {([
+                                    { key: 'show_pdf', label: 'PDF download button' },
+                                    { key: 'show_ticket_number', label: 'Ticket number' },
+                                    { key: 'show_hint', label: '“Show at entrance / screenshot works” hint' },
+                                ] as const).map((row) => (
+                                    <div key={row.key} className="flex items-center justify-between">
+                                        <span className="text-sm text-muted-foreground">{row.label}</span>
+                                        <Switch
+                                            checked={(formData.branding.ticket as any)?.[row.key] !== false}
+                                            onCheckedChange={(checked) => handleBrandingChange('ticket', row.key, checked)}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Custom footer */}
+                            <div className="space-y-2">
+                                <Label htmlFor="ticket-footer">Entry instructions (footer)</Label>
+                                <p className="text-xs text-muted-foreground">
+                                    Replaces the default hint at the bottom — e.g. &quot;No re-entry. 18+ only.&quot;
+                                </p>
+                                <Textarea
+                                    id="ticket-footer"
+                                    rows={2}
+                                    maxLength={280}
+                                    value={formData.branding.ticket?.footer || ''}
+                                    onChange={(e) => handleBrandingChange('ticket', 'footer', e.target.value)}
+                                    placeholder="No re-entry. 18+ only."
+                                />
+                            </div>
+
+                            <Separator />
+
+                            {/* Links / call-to-action */}
+                            <div className="space-y-2">
+                                <Label>Links on ticket</Label>
+                                <p className="text-xs text-muted-foreground">
+                                    Buttons shown under the ticket — directions, event page, socials. Up to 4.
+                                </p>
+                                <div className="space-y-2">
+                                    {(formData.branding.ticket?.links || []).map((link, i) => (
+                                        <div key={i} className="flex items-center gap-2">
+                                            <Input
+                                                className="w-1/3"
+                                                placeholder="Label"
+                                                value={link?.label || ''}
+                                                onChange={(e) => handleBrandingChange('ticket', 'links',
+                                                    (formData.branding.ticket?.links || []).map((l, idx) => idx === i ? { ...l, label: e.target.value } : l))}
+                                            />
+                                            <Input
+                                                className="flex-1"
+                                                placeholder="https://…"
+                                                value={link?.url || ''}
+                                                onChange={(e) => handleBrandingChange('ticket', 'links',
+                                                    (formData.branding.ticket?.links || []).map((l, idx) => idx === i ? { ...l, url: e.target.value } : l))}
+                                            />
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="shrink-0 text-destructive hover:text-destructive"
+                                                onClick={() => handleBrandingChange('ticket', 'links',
+                                                    (formData.branding.ticket?.links || []).filter((_, idx) => idx !== i))}
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                                {(formData.branding.ticket?.links || []).length < 4 && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleBrandingChange('ticket', 'links',
+                                            [...(formData.branding.ticket?.links || []), { label: '', url: '' }])}
+                                    >
+                                        + Add link
+                                    </Button>
+                                )}
                             </div>
                         </CardContent>
                     </Card>

@@ -53,6 +53,17 @@ const profileSchema = z.object({
         ticket: z.object({
             message: z.string().nullable().optional(),
             banner_url: z.string().nullable().optional(),
+            template: z.enum(['classic', 'boarding', 'minimal']).optional(),
+            theme: z.enum(['light', 'dark']).optional(),
+            background: z.enum(['default', 'brand', 'event']).optional(),
+            show_pdf: z.boolean().optional(),
+            show_ticket_number: z.boolean().optional(),
+            show_hint: z.boolean().optional(),
+            footer: z.string().max(280).nullable().optional(),
+            links: z.array(z.object({
+                label: z.string().max(40),
+                url: z.string().max(400),
+            })).max(4).optional(),
         }).optional(),
     }).optional(),
     social_links: z.object({
