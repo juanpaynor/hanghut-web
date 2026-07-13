@@ -1,17 +1,20 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { format } from 'date-fns'
-import { EmbedThemeWrapper } from '@/components/embed/embed-theme-wrapper'
+import { EmbedThemeWrapper, type EmbedTheme } from '@/components/embed/embed-theme-wrapper'
 import { EmbedTicketButton } from '@/components/embed/embed-ticket-button'
+import { EmbedTierSelector } from '@/components/embed/embed-tier-selector'
 
-export const revalidate = 30
+// Always render fresh so ticket availability / sold-out / price changes show
+// immediately in the embed instead of a cached snapshot.
+export const dynamic = 'force-dynamic'
 
 export default async function EmbedEventPage({
     params,
     searchParams,
 }: {
     params: Promise<{ id: string }>
-    searchParams: Promise<{ primary?: string; bg?: string; text?: string; radius?: string }>
+    searchParams: Promise<{ primary?: string; bg?: string; text?: string; radius?: string; theme?: string }>
 }) {
     const { id } = await params
     const search = await searchParams
@@ -33,6 +36,7 @@ export default async function EmbedEventPage({
             event_type,
             capacity,
             tickets_sold,
+            max_seats_per_order,
             organizer:partners!events_organizer_id_fkey(
                 business_name,
                 profile_photo_url,
@@ -56,8 +60,9 @@ export default async function EmbedEventPage({
     const isSoldOut = event.tickets_sold >= event.capacity
     const eventDate = new Date(event.start_datetime)
     const organizer = Array.isArray(event.organizer) ? event.organizer[0] : event.organizer
-    const lowestPrice = event.ticket_tiers?.length > 0
-        ? Math.min(...event.ticket_tiers.filter((t: any) => t.is_active).map((t: any) => Number(t.price)))
+    const activeTiers = (event.ticket_tiers || []).filter((t: any) => t.is_active)
+    const lowestPrice = activeTiers.length > 0
+        ? Math.min(...activeTiers.map((t: any) => Number(t.price)))
         : event.ticket_price
 
     return (
@@ -65,6 +70,7 @@ export default async function EmbedEventPage({
             primaryColor={search.primary}
             bgColor={search.bg}
             textColor={search.text}
+            theme={search.theme === 'dark' || search.theme === 'auto' ? (search.theme as EmbedTheme) : 'light'}
         >
             <div style={{ overflow: 'hidden', borderRadius: '12px', border: '1px solid rgba(128,128,128,0.15)' }}>
                 {/* Cover image */}
@@ -187,11 +193,19 @@ export default async function EmbedEventPage({
                         </div>
                     )}
 
-                    {/* Buy Ticket button */}
-                    <EmbedTicketButton
-                        eventId={event.id}
-                        isSoldOut={isSoldOut}
-                    />
+                    {/* Tier selector (multi-tier) or simple buy button (single price) */}
+                    {activeTiers.length > 0 ? (
+                        <EmbedTierSelector
+                            eventId={event.id}
+                            tiers={activeTiers}
+                            maxPerOrder={event.max_seats_per_order || 10}
+                        />
+                    ) : (
+                        <EmbedTicketButton
+                            eventId={event.id}
+                            isSoldOut={isSoldOut}
+                        />
+                    )}
                 </div>
 
                 {/* Powered by */}

@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Copy, Check, Code2, Globe, Palette, Eye } from 'lucide-react'
+import { Copy, Check, Code2, Globe, Palette, Eye, LayoutGrid, SunMoon } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 export default function EmbedPage() {
@@ -19,12 +19,15 @@ export default function EmbedPage() {
     const [copied, setCopied] = useState(false)
 
     // Customization state
-    const [embedType, setEmbedType] = useState<'storefront' | 'event'>('storefront')
+    const [embedType, setEmbedType] = useState<'storefront' | 'event' | 'button'>('storefront')
     const [selectedEventId, setSelectedEventId] = useState('')
     const [primaryColor, setPrimaryColor] = useState('#000000')
     const [bgColor, setBgColor] = useState('#ffffff')
     const [textColor, setTextColor] = useState('#111111')
     const [height, setHeight] = useState('500')
+    const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>('light')
+    const [layout, setLayout] = useState<'grid' | 'list' | 'carousel'>('grid')
+    const [buttonLabel, setButtonLabel] = useState('🎫 Get Tickets')
 
     useEffect(() => {
         async function load() {
@@ -66,14 +69,27 @@ export default function EmbedPage() {
 
         if (embedType === 'storefront' && partner?.slug) {
             attrs.push(`data-partner="${partner.slug}"`)
-        } else if (embedType === 'event' && selectedEventId) {
+        } else if ((embedType === 'event' || embedType === 'button') && selectedEventId) {
             attrs.push(`data-event="${selectedEventId}"`)
         }
 
+        if (embedType === 'button') {
+            attrs.push('data-button="true"')
+            if (buttonLabel && buttonLabel !== '🎫 Get Tickets') attrs.push(`data-label="${buttonLabel}"`)
+        }
+
+        // Layout only applies to the storefront (multi-event) widget.
+        if (embedType === 'storefront' && layout !== 'grid') attrs.push(`data-layout="${layout}"`)
+
+        // Theme applies to storefront + single-event card (not the bare button).
+        if (embedType !== 'button' && theme !== 'light') attrs.push(`data-theme="${theme}"`)
+
         if (primaryColor !== '#000000') attrs.push(`data-primary-color="${primaryColor}"`)
+        // Explicit bg/text colors override the theme — skip them when using a non-light
+        // theme so its defaults apply, unless the user changed them from the light defaults.
         if (bgColor !== '#ffffff') attrs.push(`data-bg-color="${bgColor}"`)
         if (textColor !== '#111111') attrs.push(`data-text-color="${textColor}"`)
-        if (height !== '500') attrs.push(`data-height="${height}"`)
+        if (embedType !== 'button' && height !== '500') attrs.push(`data-height="${height}"`)
 
         const attrStr = attrs.length > 0 ? ' ' + attrs.join('\n  ') : ''
 
@@ -130,10 +146,11 @@ export default function EmbedPage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <Tabs value={embedType} onValueChange={(v) => setEmbedType(v as 'storefront' | 'event')}>
+                            <Tabs value={embedType} onValueChange={(v) => setEmbedType(v as 'storefront' | 'event' | 'button')}>
                                 <TabsList className="w-full">
                                     <TabsTrigger value="storefront" className="flex-1">All Events</TabsTrigger>
                                     <TabsTrigger value="event" className="flex-1">Single Event</TabsTrigger>
+                                    <TabsTrigger value="button" className="flex-1">Buy Button</TabsTrigger>
                                 </TabsList>
                                 <TabsContent value="storefront" className="pt-4">
                                     <div className="bg-muted/50 p-4 rounded-lg border">
@@ -163,9 +180,101 @@ export default function EmbedPage() {
                                         </p>
                                     </div>
                                 </TabsContent>
+                                <TabsContent value="button" className="pt-4">
+                                    <div className="space-y-3">
+                                        <Label>Select Event</Label>
+                                        <Select value={selectedEventId} onValueChange={setSelectedEventId}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Choose an event..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {events.map((evt) => (
+                                                    <SelectItem key={evt.id} value={evt.id}>
+                                                        {evt.title}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-medium">Button Text</Label>
+                                            <Input
+                                                value={buttonLabel}
+                                                onChange={(e) => setButtonLabel(e.target.value)}
+                                                placeholder="🎫 Get Tickets"
+                                            />
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            A single inline button (no card). Clicking it opens the checkout popup directly — perfect for dropping into any page.
+                                        </p>
+                                    </div>
+                                </TabsContent>
                             </Tabs>
                         </CardContent>
                     </Card>
+
+                    {/* Layout & Theme */}
+                    {embedType !== 'button' && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <SunMoon className="h-5 w-5 text-primary" />
+                                    Layout &amp; Theme
+                                </CardTitle>
+                                <CardDescription>
+                                    Choose how the widget looks on your site.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                {/* Layout — storefront only */}
+                                {embedType === 'storefront' && (
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-medium flex items-center gap-1.5">
+                                            <LayoutGrid className="h-3.5 w-3.5" /> Layout
+                                        </Label>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {(['grid', 'list', 'carousel'] as const).map((opt) => (
+                                                <Button
+                                                    key={opt}
+                                                    type="button"
+                                                    variant={layout === opt ? 'default' : 'outline'}
+                                                    size="sm"
+                                                    className="capitalize"
+                                                    onClick={() => setLayout(opt)}
+                                                >
+                                                    {opt}
+                                                </Button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Theme */}
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-medium">Theme</Label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {(['light', 'dark', 'auto'] as const).map((opt) => (
+                                            <Button
+                                                key={opt}
+                                                type="button"
+                                                variant={theme === opt ? 'default' : 'outline'}
+                                                size="sm"
+                                                className="capitalize"
+                                                onClick={() => setTheme(opt)}
+                                            >
+                                                {opt}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        {theme === 'auto'
+                                            ? 'Matches your visitor’s light/dark system preference.'
+                                            : theme === 'dark'
+                                                ? 'Dark background with light text.'
+                                                : 'Light background (default).'}
+                                    </p>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
 
                     {/* Customization */}
                     <Card>
@@ -229,17 +338,19 @@ export default function EmbedPage() {
                                     </div>
                                 </div>
                             </div>
-                            <div className="space-y-2">
-                                <Label className="text-xs font-medium">Widget Height (px)</Label>
-                                <Input
-                                    type="number"
-                                    value={height}
-                                    onChange={(e) => setHeight(e.target.value)}
-                                    min="300"
-                                    max="1200"
-                                    step="50"
-                                />
-                            </div>
+                            {embedType !== 'button' && (
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-medium">Widget Height (px)</Label>
+                                    <Input
+                                        type="number"
+                                        value={height}
+                                        onChange={(e) => setHeight(e.target.value)}
+                                        min="300"
+                                        max="1200"
+                                        step="50"
+                                    />
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                 </div>

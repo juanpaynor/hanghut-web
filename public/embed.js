@@ -41,12 +41,24 @@
       'data-bg-color': 'bg',
       'data-text-color': 'text',
       'data-border-radius': 'radius',
+      'data-theme': 'theme',
+      'data-layout': 'layout',
     };
     for (var attr in map) {
       var val = el.getAttribute(attr);
       if (val) params.push(map[attr] + '=' + encodeURIComponent(val));
     }
     return params.length ? '?' + params.join('&') : '';
+  }
+
+  // Open the checkout flow in the modal overlay for a given event.
+  function openCheckout(eventId) {
+    createOverlay();
+    if (modalIframe) {
+      modalIframe.src =
+        HANGHUT_ORIGIN + '/checkout?eventId=' + encodeURIComponent(eventId) +
+        '&quantity=1&embed=true';
+    }
   }
 
   // ── Overlay / Modal ─────────────────────────────────────
@@ -188,8 +200,38 @@
       var partner = el.getAttribute('data-partner');
       var eventId = el.getAttribute('data-event');
       var height = el.getAttribute('data-height') || '500';
+      var buttonMode = el.hasAttribute('data-button') && el.getAttribute('data-button') !== 'false';
       var params = buildParams(el);
       var src;
+
+      // Inline "Buy" button: no iframe — inject a styled button that opens the
+      // checkout modal directly. Requires data-event.
+      if (buttonMode) {
+        if (!eventId) {
+          console.warn('[HangHut Embed] data-button requires data-event.');
+          continue;
+        }
+        var label = el.getAttribute('data-label') || '🎫 Get Tickets';
+        var primary = el.getAttribute('data-primary-color') || '#000000';
+        var radius = el.getAttribute('data-border-radius') || '10';
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.style.cssText =
+          'display:inline-flex;align-items:center;justify-content:center;gap:8px;' +
+          'padding:12px 22px;border:none;cursor:pointer;font-size:15px;font-weight:700;' +
+          'font-family:inherit;letter-spacing:-0.01em;color:#fff;' +
+          'background:' + primary + ';border-radius:' + radius + 'px;' +
+          'transition:opacity .2s,transform .15s;line-height:1;';
+        (function (b, id) {
+          b.addEventListener('mouseenter', function () { b.style.opacity = '0.9'; });
+          b.addEventListener('mouseleave', function () { b.style.opacity = '1'; });
+          b.addEventListener('click', function () { openCheckout(id); });
+        })(btn, eventId);
+        el.innerHTML = '';
+        el.appendChild(btn);
+        continue;
+      }
 
       if (eventId) {
         src = HANGHUT_ORIGIN + '/embed/event/' + eventId + params;

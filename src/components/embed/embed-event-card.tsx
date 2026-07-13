@@ -14,9 +14,10 @@ interface EmbedEventCardProps {
         capacity?: number
         tickets_sold?: number
     }
+    variant?: 'grid' | 'list'
 }
 
-export function EmbedEventCard({ event }: EmbedEventCardProps) {
+export function EmbedEventCard({ event, variant = 'grid' }: EmbedEventCardProps) {
     const isSoldOut = typeof event.capacity === 'number' && typeof event.tickets_sold === 'number'
         ? event.tickets_sold >= event.capacity
         : false
@@ -30,9 +31,84 @@ export function EmbedEventCard({ event }: EmbedEventCardProps) {
         }, '*')
     }
 
+    const priceLabel = event.ticket_price === 0 ? 'Free' : `₱${event.ticket_price.toLocaleString()}`
+    const hover = {
+        onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
+            e.currentTarget.style.transform = 'translateY(-2px)'
+            e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.10)'
+        },
+        onMouseLeave: (e: React.MouseEvent<HTMLElement>) => {
+            e.currentTarget.style.transform = 'translateY(0)'
+            e.currentTarget.style.boxShadow = 'none'
+        },
+    }
+
+    // ── List / compact variant ──────────────────────────────
+    if (variant === 'list') {
+        return (
+            <div
+                onClick={handleClick}
+                {...hover}
+                style={{
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'stretch',
+                    gap: '12px',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    border: '1px solid rgba(128,128,128,0.15)',
+                    transition: 'transform 0.2s, box-shadow 0.2s',
+                    background: 'var(--embed-bg, #fff)',
+                }}
+            >
+                {/* Thumbnail */}
+                <div style={{ position: 'relative', width: '96px', flexShrink: 0, alignSelf: 'stretch', minHeight: '96px', background: '#f3f4f6' }}>
+                    {event.cover_image_url ? (
+                        <img
+                            src={event.cover_image_url}
+                            alt={event.title}
+                            loading="lazy"
+                            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: isSoldOut ? 'grayscale(1)' : 'none' }}
+                        />
+                    ) : (
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc', fontSize: '24px' }}>🎫</div>
+                    )}
+                </div>
+
+                {/* Details */}
+                <div style={{ flex: 1, minWidth: 0, padding: '10px 12px 10px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '4px' }}>
+                    <h3 style={{
+                        fontSize: '14px', fontWeight: 700, lineHeight: 1.35, color: 'var(--embed-text, inherit)',
+                        overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                    }}>
+                        {event.title}
+                    </h3>
+                    <div style={{ fontSize: '12px', color: 'var(--embed-text, #888)', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 500 }}>{format(new Date(event.start_datetime), 'EEE, MMM d · h:mm a')}</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--embed-text, #888)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {event.venue_name}
+                    </div>
+                </div>
+
+                {/* Price / status */}
+                <div style={{ display: 'flex', alignItems: 'center', paddingRight: '14px', flexShrink: 0 }}>
+                    <span style={{
+                        fontSize: '13px', fontWeight: 700,
+                        color: isSoldOut ? '#ef4444' : 'var(--embed-primary, var(--embed-text, #111))',
+                    }}>
+                        {isSoldOut ? 'Sold Out' : priceLabel}
+                    </span>
+                </div>
+            </div>
+        )
+    }
+
+    // ── Grid variant (default) ──────────────────────────────
     return (
         <div
             onClick={handleClick}
+            {...hover}
             style={{
                 cursor: 'pointer',
                 borderRadius: '12px',
@@ -40,14 +116,7 @@ export function EmbedEventCard({ event }: EmbedEventCardProps) {
                 border: '1px solid rgba(128,128,128,0.15)',
                 transition: 'transform 0.2s, box-shadow 0.2s',
                 background: 'var(--embed-bg, #fff)',
-            }}
-            onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)';
-                (e.currentTarget as HTMLElement).style.boxShadow = '0 8px 25px rgba(0,0,0,0.08)'
-            }}
-            onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
-                (e.currentTarget as HTMLElement).style.boxShadow = 'none'
+                height: '100%',
             }}
         >
             {/* Image */}
@@ -90,14 +159,15 @@ export function EmbedEventCard({ event }: EmbedEventCardProps) {
                     position: 'absolute',
                     top: '8px',
                     right: '8px',
-                    background: 'rgba(255,255,255,0.9)',
+                    background: 'rgba(255,255,255,0.92)',
+                    color: '#111',
                     padding: '3px 8px',
                     borderRadius: '6px',
                     fontSize: '12px',
                     fontWeight: 600,
                     backdropFilter: 'blur(4px)',
                 }}>
-                    {event.ticket_price === 0 ? 'Free' : `₱${event.ticket_price.toLocaleString()}`}
+                    {priceLabel}
                 </span>
 
                 {/* Category badge */}

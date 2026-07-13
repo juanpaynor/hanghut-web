@@ -1,16 +1,20 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { EmbedEventCard } from '@/components/embed/embed-event-card'
-import { EmbedThemeWrapper } from '@/components/embed/embed-theme-wrapper'
+import { EmbedThemeWrapper, type EmbedTheme } from '@/components/embed/embed-theme-wrapper'
 
-export const revalidate = 60
+// Always render fresh — a ticketing widget must reflect the organizer's current
+// events immediately (adds/removes/edits). ISR caching served stale "old events".
+export const dynamic = 'force-dynamic'
+
+type EmbedLayout = 'grid' | 'list' | 'carousel'
 
 export default async function EmbedStorefrontPage({
     params,
     searchParams,
 }: {
     params: Promise<{ slug: string }>
-    searchParams: Promise<{ primary?: string; bg?: string; text?: string; radius?: string }>
+    searchParams: Promise<{ primary?: string; bg?: string; text?: string; radius?: string; theme?: string; layout?: string }>
 }) {
     const { slug } = await params
     const search = await searchParams
@@ -40,11 +44,23 @@ export default async function EmbedStorefrontPage({
 
     const upcomingEvents = events || []
 
+    const theme: EmbedTheme = search.theme === 'dark' || search.theme === 'auto' ? search.theme : 'light'
+    const layout: EmbedLayout = search.layout === 'list' || search.layout === 'carousel' ? search.layout : 'grid'
+
+    // Container + card variant per layout.
+    const containerStyle: React.CSSProperties =
+        layout === 'list'
+            ? { display: 'flex', flexDirection: 'column', gap: '10px' }
+            : layout === 'carousel'
+                ? { display: 'flex', gap: '14px', overflowX: 'auto', scrollSnapType: 'x mandatory', paddingBottom: '10px', WebkitOverflowScrolling: 'touch' }
+                : { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }
+
     return (
         <EmbedThemeWrapper
             primaryColor={search.primary}
             bgColor={search.bg}
             textColor={search.text}
+            theme={theme}
         >
             <div style={{ padding: '16px' }}>
                 {/* Minimal header */}
@@ -77,15 +93,17 @@ export default async function EmbedStorefrontPage({
                     </span>
                 </div>
 
-                {/* Event grid */}
+                {/* Event grid / list / carousel */}
                 {upcomingEvents.length > 0 ? (
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                        gap: '16px',
-                    }}>
+                    <div style={containerStyle}>
                         {upcomingEvents.map((event: any) => (
-                            <EmbedEventCard key={event.id} event={event} />
+                            layout === 'carousel' ? (
+                                <div key={event.id} style={{ flex: '0 0 260px', scrollSnapAlign: 'start' }}>
+                                    <EmbedEventCard event={event} variant="grid" />
+                                </div>
+                            ) : (
+                                <EmbedEventCard key={event.id} event={event} variant={layout === 'list' ? 'list' : 'grid'} />
+                            )
                         ))}
                     </div>
                 ) : (
