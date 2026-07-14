@@ -1,5 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+
+export const metadata: Metadata = {
+    title: "Terms of Service for Hosts",
+    description: "The terms that govern how hosts list events, sell tickets, and get paid on HangHut. Read the full Host agreement here.",
+};
 
 export default function TermsOfService() {
     return (

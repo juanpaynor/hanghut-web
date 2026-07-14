@@ -1,37 +1,56 @@
 import { createClient } from '@/lib/supabase/client';
 import { MetadataRoute } from 'next';
+import { USE_CASES } from '@/lib/marketing/use-cases';
+
+const baseUrl = 'https://hanghut.com';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const supabase = createClient();
-    const baseUrl = 'https://hanghut.com';
+    const now = new Date();
 
-    // Static routes
-    const routes = [
-        '',
-        '/login',
-        '/terms',
-        '/privacy-policy',
-        '/organizer/register',
-    ].map((route) => ({
-        url: `${baseUrl}${route}`,
-        lastModified: new Date(),
-        changeFrequency: 'daily' as const,
-        priority: 1,
+    // Public marketing + legal pages. (Do NOT list /organizer, /login, /checkout,
+    // /admin, /scan — they're robots-disallowed or gated.)
+    const staticRoutes: { path: string; priority: number; freq: MetadataRoute.Sitemap[number]['changeFrequency'] }[] = [
+        { path: '', priority: 1.0, freq: 'daily' },
+        { path: '/events', priority: 0.9, freq: 'daily' },
+        { path: '/ticketing', priority: 0.9, freq: 'weekly' },
+        { path: '/use-cases', priority: 0.8, freq: 'monthly' },
+        { path: '/experiences', priority: 0.8, freq: 'weekly' },
+        { path: '/download', priority: 0.6, freq: 'monthly' },
+        { path: '/terms-of-service', priority: 0.3, freq: 'yearly' },
+        { path: '/privacy-policy', priority: 0.3, freq: 'yearly' },
+        { path: '/child-safety', priority: 0.3, freq: 'yearly' },
+        { path: '/copyright', priority: 0.3, freq: 'yearly' },
+    ];
+
+    const staticEntries: MetadataRoute.Sitemap = staticRoutes.map((r) => ({
+        url: `${baseUrl}${r.path}`,
+        lastModified: now,
+        changeFrequency: r.freq,
+        priority: r.priority,
     }));
 
-    // Dynamic routes: Fetch active events
+    // Use-case vertical pages
+    const useCaseEntries: MetadataRoute.Sitemap = USE_CASES.map((u) => ({
+        url: `${baseUrl}/use-cases/${u.slug}`,
+        lastModified: now,
+        changeFrequency: 'monthly',
+        priority: 0.7,
+    }));
+
+    // Public active events
     const { data: events } = await supabase
         .from('events')
         .select('id, updated_at')
         .eq('status', 'active')
         .neq('invite_only', true);
 
-    const eventRoutes = (events || []).map((event) => ({
+    const eventEntries: MetadataRoute.Sitemap = (events || []).map((event) => ({
         url: `${baseUrl}/events/${event.id}`,
-        lastModified: new Date(event.updated_at),
-        changeFrequency: 'weekly' as const,
-        priority: 0.8,
+        lastModified: event.updated_at ? new Date(event.updated_at) : now,
+        changeFrequency: 'weekly',
+        priority: 0.6,
     }));
 
-    return [...routes, ...eventRoutes];
+    return [...staticEntries, ...useCaseEntries, ...eventEntries];
 }

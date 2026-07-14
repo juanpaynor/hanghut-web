@@ -1,5 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+
+export const metadata: Metadata = {
+    title: "Privacy Policy",
+    description: "How HangHut collects, uses, and protects your personal data across our app and ticketing platform.",
+};
 
 export default function PrivacyPolicy() {
     return (

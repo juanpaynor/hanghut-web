@@ -58,11 +58,9 @@ const jsonLd = {
   '@type': 'Organization',
   name: 'HangHut',
   url: 'https://hanghut.com',
-  logo: 'https://hanghut.com/logo.png',
+  logo: 'https://hanghut.com/logo_base.png',
   sameAs: [
-    'https://twitter.com/hanghutapp',
-    'https://instagram.com/hanghutapp',
-    'https://facebook.com/hanghutapp'
+    'https://www.instagram.com/hanghut.app/'
   ],
   description: 'HangHut is a social marketplace connecting people through real-world events and experiences.'
 };
