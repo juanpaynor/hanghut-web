@@ -81,75 +81,53 @@ export function SalesDashboardClient({ data }: SalesDashboardProps) {
         <div className="space-y-6">
             {/* Top Metrics Cards */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Gross Revenue</CardTitle>
-                        <DollarSign className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">₱{metrics.totalRevenue.toLocaleString()}</div>
-                        <p className="text-xs text-muted-foreground">
-                            Before fees
+                {/* Net Earnings — the money you keep, promoted as the hero stat */}
+                <Card className="relative overflow-hidden rounded-2xl border-primary/20 bg-gradient-to-br from-primary/10 to-transparent">
+                    <CardContent className="p-5">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-primary/80">Net Earnings</span>
+                            <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary/15 text-primary">
+                                <DollarSign className="h-4 w-4" />
+                            </span>
+                        </div>
+                        <div className="mt-2 font-headline text-2xl font-bold tracking-tight text-primary">
+                            ₱{metrics.netRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            After ₱{(metrics.totalPlatformFees + metrics.totalPaymentFees).toLocaleString(undefined, { maximumFractionDigits: 0 })} in fees
                         </p>
                     </CardContent>
                 </Card>
-                <Card className="bg-primary/5 border-primary/20">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-primary">Net Earnings</CardTitle>
-                        <DollarSign className="h-4 w-4 text-primary" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-primary">₱{metrics.netRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-                        <p className="text-xs text-muted-foreground flex flex-col gap-0.5 mt-1">
-                            <span>- ₱{metrics.totalPlatformFees.toLocaleString()} Platform</span>
-                            <span>- ₱{metrics.totalPaymentFees.toLocaleString()} Processing (3%)</span>
-                        </p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Tickets Sold</CardTitle>
-                        <Ticket className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{metrics.totalTicketsSold}</div>
-                        <div className="flex items-center space-x-2 mt-1">
-                            <Progress value={percentSold} className="h-2 w-16" />
-                            <p className="text-xs text-muted-foreground">
-                                {percentSold}% sold
-                            </p>
+
+                <StatCard label="Gross Revenue" icon={TrendingUp} tint="emerald"
+                    value={`₱${metrics.totalRevenue.toLocaleString()}`} sub="Before fees" />
+
+                <Card className="rounded-2xl">
+                    <CardContent className="p-5">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tickets Sold</span>
+                            <span className="grid h-8 w-8 place-items-center rounded-xl bg-violet-500/10 text-violet-600">
+                                <Ticket className="h-4 w-4" />
+                            </span>
+                        </div>
+                        <div className="mt-2 font-headline text-2xl font-bold tracking-tight">{metrics.totalTicketsSold}</div>
+                        <div className="mt-2 flex items-center gap-2">
+                            <Progress value={percentSold} className="h-1.5 flex-1" />
+                            <span className="text-xs text-muted-foreground tabular-nums">{percentSold}%</span>
                         </div>
                     </CardContent>
                 </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Avg. Order</CardTitle>
-                        <Users className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">₱{metrics.avgOrderValue.toFixed(0)}</div>
-                        <p className="text-xs text-muted-foreground">
-                            Per transaction
-                        </p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Active Events</CardTitle>
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{metrics.activeEventsCount}</div>
-                        <p className="text-xs text-muted-foreground">
-                            Currently live
-                        </p>
-                    </CardContent>
-                </Card>
+
+                <StatCard label="Avg. Order" icon={Users} tint="amber"
+                    value={`₱${metrics.avgOrderValue.toFixed(0)}`} sub="Per transaction" />
+
+                <StatCard label="Active Events" icon={Calendar} tint="sky"
+                    value={`${metrics.activeEventsCount}`} sub="Currently live" />
             </div>
 
             <div className="grid gap-4 md:grid-cols-7">
                 {/* Main Chart Area */}
-                <Card className="col-span-4">
+                <Card className="col-span-4 rounded-2xl">
                     <CardHeader>
                         <div className="flex items-center justify-between">
                             <div>
@@ -195,8 +173,8 @@ export function SalesDashboardClient({ data }: SalesDashboardProps) {
                                     <AreaChart data={velocityData}>
                                         <defs>
                                             <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#8884d8" stopOpacity={0.3} />
-                                                <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
+                                                <stop offset="5%" stopColor="#4E47DC" stopOpacity={0.35} />
+                                                <stop offset="95%" stopColor="#4E47DC" stopOpacity={0} />
                                             </linearGradient>
                                         </defs>
                                         <XAxis
@@ -223,10 +201,10 @@ export function SalesDashboardClient({ data }: SalesDashboardProps) {
                                         <Area
                                             type="monotone"
                                             dataKey={chartMode}
-                                            stroke="#8884d8"
+                                            stroke="#4E47DC"
                                             fillOpacity={1}
                                             fill="url(#colorRevenue)"
-                                            strokeWidth={2}
+                                            strokeWidth={2.5}
                                         />
                                     </AreaChart>
                                 </ResponsiveContainer>
@@ -259,7 +237,7 @@ export function SalesDashboardClient({ data }: SalesDashboardProps) {
                                             type="monotone"
                                             dataKey="currentRevenue"
                                             name="Current Event"
-                                            stroke="#2563eb"
+                                            stroke="#4E47DC"
                                             strokeWidth={3}
                                             dot={false}
                                         />
@@ -280,7 +258,7 @@ export function SalesDashboardClient({ data }: SalesDashboardProps) {
                 </Card>
 
                 {/* Right Column: Inventory & Recent Activity */}
-                <Card className="col-span-3">
+                <Card className="col-span-3 rounded-2xl">
                     <CardHeader>
                         <CardTitle>Recent Activity</CardTitle>
                         <CardDescription>
@@ -307,7 +285,7 @@ export function SalesDashboardClient({ data }: SalesDashboardProps) {
                                                 {sale.events?.title} • {sale.purchase_intents?.tier?.name} (x{sale.purchase_intents?.quantity})
                                             </p>
                                         </div>
-                                        <div className="ml-auto font-medium text-sm">
+                                        <div className="ml-auto font-semibold text-sm text-emerald-600 tabular-nums">
                                             +₱{sale.gross_amount}
                                         </div>
                                     </div>
@@ -327,7 +305,7 @@ export function SalesDashboardClient({ data }: SalesDashboardProps) {
                 />
 
                 {/* Live Inventory List (Moved here) */}
-                <Card>
+                <Card className="rounded-2xl">
                     <CardHeader>
                         <CardTitle>Live Inventory</CardTitle>
                         <CardDescription>Real-time ticket availability for active events</CardDescription>
@@ -369,5 +347,35 @@ export function SalesDashboardClient({ data }: SalesDashboardProps) {
                 </Card>
             </div>
         </div>
+    )
+}
+
+const TINTS: Record<string, string> = {
+    emerald: 'bg-emerald-500/10 text-emerald-600',
+    violet: 'bg-violet-500/10 text-violet-600',
+    amber: 'bg-amber-500/10 text-amber-600',
+    sky: 'bg-sky-500/10 text-sky-600',
+}
+
+function StatCard({ label, value, sub, icon: Icon, tint }: {
+    label: string
+    value: string
+    sub: string
+    icon: React.ComponentType<{ className?: string }>
+    tint: keyof typeof TINTS
+}) {
+    return (
+        <Card className="rounded-2xl">
+            <CardContent className="p-5">
+                <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</span>
+                    <span className={`grid h-8 w-8 place-items-center rounded-xl ${TINTS[tint]}`}>
+                        <Icon className="h-4 w-4" />
+                    </span>
+                </div>
+                <div className="mt-2 font-headline text-2xl font-bold tracking-tight">{value}</div>
+                <p className="mt-1 text-xs text-muted-foreground">{sub}</p>
+            </CardContent>
+        </Card>
     )
 }

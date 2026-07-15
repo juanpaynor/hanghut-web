@@ -172,20 +172,49 @@ export async function createEvent(formData: FormData) {
             return { error: 'Failed to create event: ' + eventError.message }
         }
 
-        // 5. Create default "General Admission" ticket tier (internal ticketing only)
+        // 5. Create ticket tiers (internal ticketing only). Prefer the tiers built
+        //    in the create wizard; fall back to a single default "General Admission".
         if (!isExternal) {
-            const { error: tierError } = await adminSupabase
-                .from('ticket_tiers')
-                .insert({
+            let tierRows: Record<string, unknown>[] = []
+            try {
+                const raw = formData.get('tiers') as string | null
+                if (raw) {
+                    const parsed = JSON.parse(raw)
+                    if (Array.isArray(parsed)) {
+                        tierRows = parsed
+                            .filter((t: any) => t && typeof t.name === 'string' && t.name.trim())
+                            .map((t: any, i: number) => ({
+                                event_id: event.id,
+                                name: String(t.name).trim().slice(0, 100),
+                                description: '',
+                                price: Math.max(0, Number(t.price) || 0),
+                                quantity_total: Math.max(0, parseInt(String(t.quantity_total)) || 0),
+                                quantity_sold: 0,
+                                is_active: true,
+                                sort_order: Number.isFinite(t.sort_order) ? t.sort_order : i,
+                            }))
+                    }
+                }
+            } catch (e) {
+                console.error('Tier payload parse error:', e)
+            }
+
+            if (tierRows.length === 0) {
+                tierRows = [{
                     event_id: event.id,
                     name: 'General Admission',
                     description: 'Standard entry ticket',
-                    price: parseFloat(formData.get('ticket_price') as string),
-                    quantity_total: parseInt(formData.get('capacity') as string),
+                    price: parseFloat(formData.get('ticket_price') as string) || 0,
+                    quantity_total: parseInt(formData.get('capacity') as string) || 0,
                     quantity_sold: 0,
                     is_active: true,
                     sort_order: 0,
-                })
+                }]
+            }
+
+            const { error: tierError } = await adminSupabase
+                .from('ticket_tiers')
+                .insert(tierRows)
 
             if (tierError) {
                 console.error('Ticket tier creation error:', tierError)

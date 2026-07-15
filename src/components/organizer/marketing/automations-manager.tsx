@@ -8,15 +8,19 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Save, UserPlus, CalendarClock, PartyPopper, Megaphone } from 'lucide-react'
+import { Loader2, Save, UserPlus, CalendarClock, PartyPopper, Megaphone, ShoppingCart, HeartHandshake } from 'lucide-react'
 import { RichTextEditor } from './rich-text-editor'
 import {
     getAutomations, upsertAutomation, toggleAutomation,
     type Automation, type AutomationTrigger,
 } from '@/lib/marketing/automation-actions'
 
+// `offset` describes the timing input for automations that have one. `unit`
+// picks how offset_minutes is shown/edited (hours or days).
+type OffsetCfg = { label: string; hint: string; unit: 'hours' | 'days' }
+
 const META: Record<AutomationTrigger, {
-    title: string; description: string; icon: any; timing?: 'before' | 'after'; tokens: string[]
+    title: string; description: string; icon: any; offset?: OffsetCfg; tokens: string[]
 }> = {
     welcome: {
         title: 'Welcome email', icon: UserPlus,
@@ -24,12 +28,14 @@ const META: Record<AutomationTrigger, {
         tokens: ['{{first_name}}', '{{business_name}}'],
     },
     pre_event: {
-        title: 'Pre-event reminder', icon: CalendarClock, timing: 'before',
+        title: 'Pre-event reminder', icon: CalendarClock,
+        offset: { label: 'Hours before the event', hint: 'e.g. 24 = one day before', unit: 'hours' },
         description: "Your own reminder sent before an event starts, to that event's attendees.",
         tokens: ['{{first_name}}', '{{event_title}}', '{{event_date}}', '{{business_name}}'],
     },
     post_event: {
-        title: 'Post-event thank-you', icon: PartyPopper, timing: 'after',
+        title: 'Post-event thank-you', icon: PartyPopper,
+        offset: { label: 'Hours after the event', hint: 'e.g. 24 = one day after', unit: 'hours' },
         description: "Sent after an event ends, to that event's attendees.",
         tokens: ['{{first_name}}', '{{event_title}}', '{{event_date}}', '{{business_name}}'],
     },
@@ -38,9 +44,21 @@ const META: Record<AutomationTrigger, {
         description: 'Sent to all your subscribers when you publish a new event.',
         tokens: ['{{first_name}}', '{{event_title}}', '{{event_date}}', '{{business_name}}'],
     },
+    abandoned_checkout: {
+        title: 'Abandoned checkout recovery', icon: ShoppingCart,
+        offset: { label: 'Hours after checkout is abandoned', hint: 'e.g. 1 = nudge an hour later', unit: 'hours' },
+        description: 'Nudges a shopper who started buying tickets but never finished. Use {{checkout_url}} for the “finish paying” button.',
+        tokens: ['{{first_name}}', '{{event_title}}', '{{checkout_url}}', '{{business_name}}'],
+    },
+    winback: {
+        title: 'Win-back quiet customers', icon: HeartHandshake,
+        offset: { label: 'Days since last purchase', hint: 'e.g. 120 = quiet for 4 months', unit: 'days' },
+        description: 'Re-engages past customers who have gone quiet. Sends at most once per customer each quarter.',
+        tokens: ['{{first_name}}', '{{business_name}}'],
+    },
 }
 
-const ORDER: AutomationTrigger[] = ['welcome', 'pre_event', 'post_event', 'new_event']
+const ORDER: AutomationTrigger[] = ['welcome', 'pre_event', 'post_event', 'new_event', 'abandoned_checkout', 'winback']
 
 export function AutomationsManager() {
     const [items, setItems] = useState<Record<string, Automation>>({})
@@ -102,7 +120,8 @@ export function AutomationsManager() {
                 const meta = META[type]
                 const a = items[type]
                 const Icon = meta.icon
-                const hours = a.offset_minutes != null ? Math.round((a.offset_minutes / 60) * 10) / 10 : ''
+                const perUnit = meta.offset?.unit === 'days' ? 1440 : 60
+                const offsetValue = a.offset_minutes != null ? Math.round((a.offset_minutes / perUnit) * 10) / 10 : ''
                 return (
                     <Card key={type}>
                         <CardHeader>
@@ -123,18 +142,18 @@ export function AutomationsManager() {
                             </div>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                            {meta.timing && (
+                            {meta.offset && (
                                 <div className="flex items-end gap-2">
                                     <div className="space-y-1">
-                                        <Label className="text-xs">Hours {meta.timing} the event</Label>
+                                        <Label className="text-xs">{meta.offset.label}</Label>
                                         <Input
-                                            type="number" min={0} step={0.5} className="w-32"
-                                            value={hours}
-                                            onChange={(e) => patch(type, { offset_minutes: e.target.value === '' ? null : Math.round(parseFloat(e.target.value) * 60) })}
+                                            type="number" min={0} step={meta.offset.unit === 'days' ? 1 : 0.5} className="w-32"
+                                            value={offsetValue}
+                                            onChange={(e) => patch(type, { offset_minutes: e.target.value === '' ? null : Math.round(parseFloat(e.target.value) * perUnit) })}
                                         />
                                     </div>
                                     <span className="text-xs text-muted-foreground pb-2.5">
-                                        e.g. 24 = one day {meta.timing}
+                                        {meta.offset.hint}
                                     </span>
                                 </div>
                             )}
@@ -143,7 +162,12 @@ export function AutomationsManager() {
                                 <Input
                                     value={a.subject || ''}
                                     onChange={(e) => patch(type, { subject: e.target.value })}
-                                    placeholder={type === 'welcome' ? 'Welcome to {{business_name}}!' : 'See you at {{event_title}}'}
+                                    placeholder={
+                                        type === 'welcome' ? 'Welcome to {{business_name}}!'
+                                            : type === 'abandoned_checkout' ? 'You left something behind 👀'
+                                                : type === 'winback' ? 'We miss you — here’s what’s new'
+                                                    : 'See you at {{event_title}}'
+                                    }
                                 />
                             </div>
                             <div className="space-y-1">

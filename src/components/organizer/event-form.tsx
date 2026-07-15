@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +16,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair } from 'lucide-react'
+import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair, Plus, Trash2, Check, Copy, ExternalLink, Code2, Send } from 'lucide-react'
 import { createEvent, updateEvent } from '@/lib/organizer/event-actions'
 import { GooglePlacesAutocomplete } from '@/components/organizer/google-places-autocomplete'
 import { useToast } from '@/hooks/use-toast'
@@ -116,6 +116,9 @@ export function EventForm({
     const isEditing = !!eventId
     const [step, setStep] = useState<1 | 2>(1)
     const [createdEventId, setCreatedEventId] = useState<string | null>(null)
+    // Post-publish success screen (create only).
+    const [published, setPublished] = useState<{ id: string; status: string } | null>(null)
+    const [linkCopied, setLinkCopied] = useState(false)
 
     const [formData, setFormData] = useState<EventFormData>({
         title: initialData?.title || '',
@@ -155,10 +158,103 @@ export function EventForm({
         rejection_email_body: initialData?.rejection_email_body || '',
     })
 
+    // Draft autosave (new events only): protect a half-filled form against tab
+    // switches / accidental reloads. Files can't be serialized, so we persist
+    // the text fields only; the cover is re-picked. Cleared on successful save.
+    const AUTOSAVE_KEY = `hh:event-draft:${partnerId}`
+    const hydratedRef = useRef(false)
+    const [descKey, setDescKey] = useState(0) // remounts the uncontrolled description editor after restore
+
+    // Ticket tiers built inline in the wizard (create only). Persisted with the
+    // draft and turned into ticket_tiers rows on publish (createEvent). Existing
+    // events manage tiers on their dashboard, so editing keeps the single-price fields.
+    type TierDraft = { id: string; name: string; price: string; quantity: string }
+    const newTierId = () => Math.random().toString(36).slice(2)
+    const [tiers, setTiers] = useState<TierDraft[]>([{ id: newTierId(), name: 'General Admission', price: '0', quantity: '' }])
+    const addTier = () => setTiers(t => [...t, { id: newTierId(), name: '', price: '0', quantity: '' }])
+    const updateTier = (id: string, field: keyof TierDraft, value: string) =>
+        setTiers(t => t.map(x => (x.id === id ? { ...x, [field]: value } : x)))
+    const removeTier = (id: string) => setTiers(t => (t.length > 1 ? t.filter(x => x.id !== id) : t))
+
+    useEffect(() => {
+        if (isEditing) { hydratedRef.current = true; return }
+        try {
+            const raw = localStorage.getItem(AUTOSAVE_KEY)
+            if (raw) {
+                const { __tiers, ...saved } = JSON.parse(raw)
+                setFormData(prev => ({ ...prev, ...saved, cover_image: null, additional_images: [] }))
+                if (saved.description_html) setDescKey(k => k + 1)
+                if (Array.isArray(__tiers) && __tiers.length) setTiers(__tiers)
+            }
+        } catch { /* ignore corrupt autosave */ }
+        hydratedRef.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    useEffect(() => {
+        if (isEditing || !hydratedRef.current) return
+        try {
+            const { cover_image, additional_images, ...rest } = formData
+            void cover_image; void additional_images
+            localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ ...rest, __tiers: tiers }))
+        } catch { /* storage unavailable — non-fatal */ }
+    }, [formData, tiers, isEditing])
+
     // Calculate pricing preview
     const ticketPrice = parseFloat(formData.ticket_price) || 0
     const platformFee = ticketPrice * commissionRate
     const organizerPayout = ticketPrice - platformFee
+    const priceLabel = ticketPrice === 0 ? 'Free' : `From ₱${ticketPrice.toLocaleString()}`
+
+    // Wizard (create only) — groups the sections into guided steps. Editing keeps
+    // a single-page scroll (see stepCls). Sections stay mounted (hidden, not
+    // unmounted) so no editor loses its state when you move between steps.
+    const [wizardStep, setWizardStep] = useState(0)
+    // Sell mode drives an adaptive step list: external skips tiers/seating/settings,
+    // RSVP skips pricing, and assigned seating gets its own step.
+    const sellMode: 'tickets' | 'rsvp' | 'external' =
+        formData.ticketing_type === 'external' ? 'external'
+            : formData.rsvp_enabled ? 'rsvp' : 'tickets'
+    const stepKeys: string[] = ['basics', 'when', 'sell']
+    if (sellMode === 'tickets') stepKeys.push('seating')
+    if (sellMode !== 'external') stepKeys.push('settings')
+    stepKeys.push('details')
+    const STEP_TITLE: Record<string, string> = {
+        basics: 'Basics', when: 'When & where', sell: 'Tickets', seating: 'Seating', settings: 'Settings', details: 'Details',
+    }
+    const curStepIdx = Math.min(wizardStep, stepKeys.length - 1)
+    const curKey = stepKeys[curStepIdx]
+    const stepCls = (key: string) => (isEditing ? 'space-y-8' : curKey === key ? 'space-y-8' : 'hidden')
+    const goNext = () => {
+        // Guard: don't advance past a step with missing/invalid required fields.
+        if (!isEditing && !validateStep(curKey)) {
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+            return
+        }
+        setWizardStep(s => Math.min(stepKeys.length - 1, s + 1))
+    }
+    const goBack = () => setWizardStep(s => Math.max(0, s - 1))
+    // Jump to a step: back/current freely; forward only if the current step is valid.
+    const goToStep = (i: number) => {
+        if (isEditing || i <= curStepIdx || validateStep(curKey)) setWizardStep(i)
+        else window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+    useEffect(() => { if (!isEditing) window.scrollTo({ top: 0, behavior: 'smooth' }) }, [wizardStep, isEditing])
+
+    // Derive the event's starting price ("From ₱X") and total capacity from the
+    // tiers, so the rest of the app's single-price/capacity columns stay correct.
+    useEffect(() => {
+        if (isEditing || formData.ticketing_type === 'external') return
+        const active = tiers.filter(t => t.name.trim())
+        const prices = active.map(t => parseFloat(t.price) || 0)
+        const minPrice = prices.length ? Math.min(...prices) : 0
+        const totalQty = active.reduce((s, t) => s + (parseInt(t.quantity) || 0), 0)
+        setFormData(prev => (
+            prev.ticket_price === String(minPrice) && prev.capacity === String(totalQty)
+                ? prev
+                : { ...prev, ticket_price: String(minPrice), capacity: String(totalQty) }
+        ))
+    }, [tiers, formData.ticketing_type, isEditing])
 
     const handleInputChange = (field: keyof EventFormData, value: any) => {
         setFormData(prev => ({ ...prev, [field]: value }))
@@ -189,16 +285,31 @@ export function EventForm({
         }))
     }
 
-    const handleCoverImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]
-        if (file) {
-            if (file.size > 5 * 1024 * 1024) {
-                setErrors(prev => ({ ...prev, cover_image: 'Image must be less than 5MB' }))
-                return
-            }
-            setFormData(prev => ({ ...prev, cover_image: file }))
-            setCoverPreview(URL.createObjectURL(file))
+    const [coverDragActive, setCoverDragActive] = useState(false)
+
+    const setCoverFile = (file: File | undefined | null) => {
+        if (!file) return
+        if (!file.type.startsWith('image/')) {
+            setErrors(prev => ({ ...prev, cover_image: 'Please choose an image file (PNG, JPG or WebP)' }))
+            return
         }
+        if (file.size > 5 * 1024 * 1024) {
+            setErrors(prev => ({ ...prev, cover_image: 'Image must be less than 5MB' }))
+            return
+        }
+        setErrors(prev => { const n = { ...prev }; delete n.cover_image; return n })
+        setFormData(prev => ({ ...prev, cover_image: file }))
+        setCoverPreview(URL.createObjectURL(file))
+    }
+
+    const handleCoverImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setCoverFile(e.target.files?.[0])
+    }
+
+    const handleCoverDrop = (e: React.DragEvent) => {
+        e.preventDefault()
+        setCoverDragActive(false)
+        setCoverFile(e.dataTransfer.files?.[0])
     }
 
     const handleAdditionalImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -239,7 +350,7 @@ export function EventForm({
         setAdditionalPreviews(prev => prev.filter((_, i) => i !== index))
     }
 
-    const validateForm = (): boolean => {
+    const validateForm = (): Record<string, string> => {
         const newErrors: Record<string, string> = {}
 
         if (!formData.title || formData.title.length < 5) {
@@ -274,12 +385,22 @@ export function EventForm({
                     newErrors.external_ticket_url = 'Please enter a valid URL (e.g. https://ticketworld.com.ph/event)'
                 }
             }
-        } else {
+        } else if (isEditing) {
             if (!formData.ticket_price || parseFloat(formData.ticket_price) < 0) {
                 newErrors.ticket_price = 'Ticket price must be 0 or greater'
             }
             if (!formData.capacity || parseInt(formData.capacity) < 1) {
                 newErrors.capacity = 'Capacity must be at least 1'
+            }
+        } else {
+            // Create flow validates the inline tier builder.
+            const active = tiers.filter(t => t.name.trim())
+            if (active.length === 0) {
+                newErrors.tiers = 'Add at least one ticket type with a name'
+            } else if (active.some(t => !(parseInt(t.quantity) >= 1))) {
+                newErrors.tiers = 'Give each ticket type a quantity of at least 1'
+            } else if (active.some(t => isNaN(parseFloat(t.price)) || parseFloat(t.price) < 0)) {
+                newErrors.tiers = 'Ticket prices must be 0 or more'
             }
         }
         if (!isEditing && !formData.cover_image) {
@@ -296,13 +417,67 @@ export function EventForm({
         }
 
         setErrors(newErrors)
-        return Object.keys(newErrors).length === 0
+        return newErrors
+    }
+
+    // Which wizard step (by key) each validated field lives on, so a failed
+    // publish can jump the organizer straight to the step that needs fixing.
+    const FIELD_STEP: Record<string, string> = {
+        title: 'basics', category: 'basics',
+        venue_name: 'when', address: 'when', location: 'when', start_datetime: 'when', end_datetime: 'when', sales_end_datetime: 'when',
+        ticket_price: 'sell', capacity: 'sell', external_ticket_url: 'sell', tiers: 'sell',
+        cover_image: 'details',
+    }
+
+    // Validate just the current step's required fields (used by Continue / forward
+    // navigation). Sets/clears only this step's errors so nothing shows on steps
+    // the organizer hasn't reached yet.
+    const validateStep = (key: string): boolean => {
+        const e: Record<string, string> = {}
+        if (key === 'basics') {
+            if (!formData.title || formData.title.length < 5) e.title = 'Title must be at least 5 characters'
+            if (!formData.category) e.category = 'Pick a category'
+        } else if (key === 'when') {
+            if (!formData.venue_name) e.venue_name = 'Venue name is required'
+            if (!formData.address) e.address = 'Address is required'
+            if (!formData.latitude || !formData.longitude) e.location = 'Pick a location from the suggestions'
+            if (!formData.start_datetime) e.start_datetime = 'Start date and time is required'
+            else if (new Date(formData.start_datetime) <= new Date() && !isEditing) e.start_datetime = 'Event must be in the future'
+            if (formData.end_datetime && new Date(formData.end_datetime) <= new Date(formData.start_datetime)) e.end_datetime = 'End time must be after start time'
+            if (formData.sales_end_datetime && formData.start_datetime && new Date(formData.sales_end_datetime) >= new Date(formData.start_datetime)) e.sales_end_datetime = 'Sales must close before the event starts'
+        } else if (key === 'sell') {
+            if (sellMode === 'external') {
+                if (!formData.external_ticket_url) e.external_ticket_url = 'External ticket URL is required'
+                else { try { new URL(formData.external_ticket_url) } catch { e.external_ticket_url = 'Enter a valid URL (e.g. https://ticketworld.com.ph/event)' } }
+            } else {
+                const active = tiers.filter(t => t.name.trim())
+                if (active.length === 0) e.tiers = 'Add at least one ticket type with a name'
+                else if (active.some(t => !(parseInt(t.quantity) >= 1))) e.tiers = 'Give each ticket type a quantity of at least 1'
+                else if (active.some(t => isNaN(parseFloat(t.price)) || parseFloat(t.price) < 0)) e.tiers = 'Ticket prices must be 0 or more'
+            }
+        }
+        // seating / settings / details have no fields that block Continue.
+        setErrors(prev => {
+            const next = { ...prev }
+            Object.keys(FIELD_STEP).forEach(f => { if (FIELD_STEP[f] === key) delete next[f] })
+            return { ...next, ...e }
+        })
+        return Object.keys(e).length === 0
     }
 
     const handleSubmit = async (status: 'draft' | 'active' | 'paused' | 'cancelled' | 'hidden') => {
         setFormData(prev => ({ ...prev, status }))
 
-        if (!validateForm()) {
+        const vErrors = validateForm()
+        if (Object.keys(vErrors).length > 0) {
+            // Guided create: surface the earliest step that has an error.
+            if (!isEditing) {
+                const firstIdx = Math.min(...Object.keys(vErrors).map(k => {
+                    const i = stepKeys.indexOf(FIELD_STEP[k] || 'details')
+                    return i < 0 ? stepKeys.length - 1 : i
+                }))
+                setWizardStep(firstIdx)
+            }
             window.scrollTo({ top: 0, behavior: 'smooth' })
             return
         }
@@ -352,6 +527,20 @@ export function EventForm({
             formDataToSend.append('rejection_email_subject', formData.rejection_email_subject || '')
             formDataToSend.append('rejection_email_body', formData.rejection_email_body || '')
 
+            // Ticket tiers (create flow, internal ticketing) — createEvent turns
+            // these into ticket_tiers rows instead of a single default tier.
+            if (!isEditing && formData.ticketing_type !== 'external') {
+                const tierPayload = tiers
+                    .filter(t => t.name.trim())
+                    .map((t, i) => ({
+                        name: t.name.trim(),
+                        price: parseFloat(t.price) || 0,
+                        quantity_total: parseInt(t.quantity) || 0,
+                        sort_order: i,
+                    }))
+                formDataToSend.append('tiers', JSON.stringify(tierPayload))
+            }
+
             // Only send organizer_id for create, backend handles auth for update
             if (!isEditing) {
                 formDataToSend.append('organizer_id', partnerId)
@@ -393,11 +582,12 @@ export function EventForm({
                     title: "Success",
                     description: isEditing ? "Event updated successfully" : "Event saved! Now add your ticket tiers.",
                 })
+                try { localStorage.removeItem(AUTOSAVE_KEY) } catch { /* non-fatal */ }
                 if (isEditing) {
                     router.push('/organizer/events')
                 } else {
-                    setCreatedEventId(result.eventId)
-                    setStep(2)
+                    // Land on the success screen (share / embed / promote).
+                    setPublished({ id: result.eventId as string, status })
                     window.scrollTo({ top: 0, behavior: 'smooth' })
                 }
             }
@@ -408,6 +598,79 @@ export function EventForm({
         } finally {
             setIsLoading(false)
         }
+    }
+
+    if (published) {
+        const publicUrl = `https://hanghut.com/events/${published.id}`
+        const heading = published.status === 'active'
+            ? 'Your event is live!'
+            : published.status === 'hidden'
+                ? 'Published as unlisted'
+                : 'Saved as draft'
+        const sub = published.status === 'active'
+            ? 'Share it far and wide — here’s everything you need to fill the room.'
+            : published.status === 'hidden'
+                ? 'Only people with the link can see it. Publish it publicly anytime.'
+                : 'It’s saved privately. Publish it when you’re ready.'
+        const copyLink = async () => {
+            try {
+                await navigator.clipboard.writeText(publicUrl)
+                setLinkCopied(true)
+                setTimeout(() => setLinkCopied(false), 2000)
+            } catch { /* clipboard blocked */ }
+        }
+        return (
+            <div className="max-w-2xl mx-auto py-10 sm:py-16 space-y-8">
+                <div className="text-center space-y-4">
+                    <div className="mx-auto h-16 w-16 rounded-2xl bg-green-500/10 text-green-600 grid place-items-center">
+                        <Check className="h-8 w-8" strokeWidth={2.5} />
+                    </div>
+                    <div>
+                        <h1 className="font-headline text-3xl font-bold tracking-tight">{heading}</h1>
+                        <p className="text-muted-foreground mt-1">{sub}</p>
+                    </div>
+                    <p className="text-lg font-semibold">{formData.title}</p>
+                </div>
+
+                <Card className="p-5 space-y-5">
+                    <div className="space-y-2">
+                        <Label>Share link</Label>
+                        <div className="flex gap-2">
+                            <Input
+                                readOnly
+                                value={publicUrl}
+                                className="font-mono text-sm"
+                                onFocus={(e) => e.currentTarget.select()}
+                            />
+                            <Button type="button" onClick={copyLink} className="shrink-0 gap-1.5">
+                                {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                                {linkCopied ? 'Copied' : 'Copy'}
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div className="grid sm:grid-cols-3 gap-3">
+                        <Button type="button" variant="outline" className="justify-start gap-2" onClick={() => router.push(`/organizer/events/${published.id}`)}>
+                            <ExternalLink className="h-4 w-4" /> Manage event
+                        </Button>
+                        <Button type="button" variant="outline" className="justify-start gap-2" onClick={() => router.push('/organizer/developers/embed')}>
+                            <Code2 className="h-4 w-4" /> Embed widget
+                        </Button>
+                        <Button type="button" className="justify-start gap-2 bg-primary" onClick={() => router.push('/organizer/marketing')}>
+                            <Send className="h-4 w-4" /> Email subscribers
+                        </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        Tip: turn on the <strong>New event announcement</strong> automation in Marketing and your subscribers get emailed automatically whenever you publish.
+                    </p>
+                </Card>
+
+                <div className="flex items-center justify-center gap-3">
+                    <Button type="button" variant="ghost" onClick={() => router.push('/organizer/events')}>Back to events</Button>
+                    <Button type="button" variant="ghost" onClick={() => window.location.assign('/organizer/events/create')}>Create another</Button>
+                </div>
+            </div>
+        )
     }
 
     if (step === 2 && createdEventId) {
@@ -455,24 +718,88 @@ export function EventForm({
     }
 
     return (
-        <div className="max-w-4xl mx-auto space-y-8 pb-20">
-            <div>
-                {!isEditing && (
-                    <div className="flex items-center gap-3 mb-1">
-                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-semibold">1</span>
-                        <span className="text-sm font-medium">Event Details</span>
-                        <span className="text-muted-foreground">›</span>
-                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-muted text-muted-foreground text-xs font-semibold">2</span>
-                        <span className="text-muted-foreground text-sm">Ticket Tiers</span>
+        <div className="max-w-6xl mx-auto space-y-6 pb-28">
+            <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 p-6 sm:p-8 text-white shadow-lg">
+                <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
+                <div className="relative flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        {!isEditing && (
+                            <div className="inline-flex items-center gap-1.5 rounded-full bg-white/20 text-white px-3 py-1 text-xs font-semibold mb-3">
+                                <Calendar className="h-3.5 w-3.5" /> New event
+                            </div>
+                        )}
+                        <h1 className="font-headline text-3xl sm:text-4xl font-bold tracking-tight">
+                            {isEditing ? 'Edit event' : 'Create event'}
+                        </h1>
+                        <p className="text-white/80 mt-1 max-w-lg">
+                            {isEditing ? 'Update your event details.' : 'Fill in the details to bring your event to life — your work saves automatically as you go.'}
+                        </p>
                     </div>
-                )}
-                <h1 className="text-4xl font-bold mb-2">
-                    {isEditing ? 'Edit Event' : 'Create Event'}
-                </h1>
-                <p className="text-muted-foreground">
-                    {isEditing ? 'Update your event details' : 'Fill in the details to create your ticketed event'}
-                </p>
+                    {!isEditing && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 backdrop-blur px-3 py-1 text-xs text-white/90">
+                            <span className="h-1.5 w-1.5 rounded-full bg-green-400" /> Draft autosaved
+                        </span>
+                    )}
+                    {isEditing && eventId && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5 border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                            onClick={() => window.open(`/events/${eventId}`, '_blank')}
+                        >
+                            <ExternalLink className="h-4 w-4" /> View public page
+                        </Button>
+                    )}
+                </div>
             </div>
+
+            {!isEditing && (
+                <nav className="flex flex-wrap items-center gap-1.5">
+                    {stepKeys.map((key, i) => (
+                        <button
+                            key={key}
+                            type="button"
+                            onClick={() => goToStep(i)}
+                            className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                                i === curStepIdx
+                                    ? 'bg-primary text-primary-foreground'
+                                    : i < curStepIdx
+                                        ? 'bg-primary/10 text-primary hover:bg-primary/15'
+                                        : 'bg-muted text-muted-foreground hover:text-foreground'
+                            }`}
+                        >
+                            <span className={`grid place-items-center h-5 w-5 rounded-full text-[11px] ${i === curStepIdx ? 'bg-white/20' : 'bg-background/70'}`}>
+                                {i + 1}
+                            </span>
+                            <span className="hidden sm:inline">{STEP_TITLE[key]}</span>
+                        </button>
+                    ))}
+                </nav>
+            )}
+
+            {/* Edit: single-page manage view with a section jump-nav */}
+            {isEditing && (
+                <nav className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-1.5 rounded-lg bg-background/85 px-1 py-2 backdrop-blur">
+                    {[
+                        { key: 'basics', label: 'Basics', show: true },
+                        { key: 'when', label: 'When & where', show: true },
+                        { key: 'sell', label: 'Tickets', show: true },
+                        { key: 'seating', label: 'Seating', show: formData.ticketing_type === 'internal' },
+                        { key: 'settings', label: 'Settings', show: formData.ticketing_type === 'internal' },
+                        { key: 'details', label: 'Details', show: true },
+                    ].filter(s => s.show).map(s => (
+                        <button
+                            key={s.key}
+                            type="button"
+                            onClick={() => document.getElementById(`sec-${s.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                            className="rounded-full bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                        >
+                            {s.label}
+                        </button>
+                    ))}
+                </nav>
+            )}
 
             {errors.form && (
                 <Card className="p-4 bg-red-500/10 border-red-500/20">
@@ -480,7 +807,9 @@ export function EventForm({
                 </Card>
             )}
 
-            <div className="space-y-8">
+            <div className="grid lg:grid-cols-[minmax(0,1fr)_360px] gap-8 items-start">
+                <div className="min-w-0 space-y-8">
+                    <div id="sec-basics" className={`scroll-mt-24 ${stepCls('basics')}`}>
                 {/* Basic Information */}
                 <Card className="p-6">
                     <h2 className="text-2xl font-bold mb-6">Basic Information</h2>
@@ -504,65 +833,45 @@ export function EventForm({
                                 Format with rich text, paste HTML, or preview. This is shown on your event page.
                             </p>
                             <RichTextEditor
+                                key={descKey}
                                 value={formData.description_html}
                                 onChange={(html) => handleInputChange('description_html', html)}
                             />
                         </div>
 
                         <div>
-                            <Label htmlFor="category">Category *</Label>
-                            <Select
-                                value={formData.category}
-                                onValueChange={(value) => handleInputChange('category', value)}
-                            >
-                                <SelectTrigger className={errors.category ? 'border-red-500' : ''}>
-                                    <SelectValue placeholder="Select a category" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {categories.map((c) => (
-                                        <SelectItem key={c.key} value={c.key}>
-                                            {c.emoji ? `${c.emoji} ` : ''}{c.label}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            {errors.category && <p className="text-sm text-red-500 mt-1">{errors.category}</p>}
-                        </div>
-
-                        {/* RSVP mode — free events only. Lets attendees reserve a spot in one
-                            tap (no checkout) instead of the ticket/quantity flow. */}
-                        {ticketPrice === 0 && (
-                            <div className="rounded-lg border p-4 space-y-3">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div>
-                                        <Label htmlFor="rsvp_enabled" className="font-medium">Collect RSVPs instead of tickets</Label>
-                                        <p className="text-xs text-muted-foreground mt-0.5">
-                                            Free events only. Attendees reserve their spot with one tap — no checkout. They still get a scannable QR.
-                                        </p>
-                                    </div>
-                                    <Switch
-                                        id="rsvp_enabled"
-                                        checked={formData.rsvp_enabled}
-                                        onCheckedChange={(checked) => handleInputChange('rsvp_enabled', checked)}
-                                    />
-                                </div>
-                                {formData.rsvp_enabled && (
-                                    <div>
-                                        <Label htmlFor="rsvp_button_label" className="text-sm">Button text</Label>
-                                        <Input
-                                            id="rsvp_button_label"
-                                            value={formData.rsvp_button_label}
-                                            onChange={(e) => handleInputChange('rsvp_button_label', e.target.value)}
-                                            placeholder="RSVP"
-                                            maxLength={30}
-                                        />
-                                    </div>
+                            <Label>Category *</Label>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                                {categories.map((c) => {
+                                    const selected = formData.category === c.key
+                                    return (
+                                        <button
+                                            key={c.key}
+                                            type="button"
+                                            onClick={() => handleInputChange('category', c.key)}
+                                            aria-pressed={selected}
+                                            className={`inline-flex items-center rounded-full border px-3.5 py-2 text-sm font-medium transition-all ${
+                                                selected
+                                                    ? 'border-primary bg-primary/5 text-primary ring-2 ring-primary/20'
+                                                    : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                                            }`}
+                                        >
+                                            {c.label}
+                                        </button>
+                                    )
+                                })}
+                                {categories.length === 0 && (
+                                    <p className="text-sm text-muted-foreground">Loading categories…</p>
                                 )}
                             </div>
-                        )}
+                            {errors.category && <p className="text-sm text-red-500 mt-2">{errors.category}</p>}
+                        </div>
+
                     </div>
                 </Card>
 
+                    </div>
+                    <div id="sec-when" className={`scroll-mt-24 ${stepCls('when')}`}>
                 {/* Location & Venue */}
                 <Card className="p-6">
                     <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
@@ -652,6 +961,8 @@ export function EventForm({
                     </div>
                 </Card>
 
+                    </div>
+                    <div id="sec-sell" className={`scroll-mt-24 ${stepCls('sell')}`}>
                 {/* Ticketing & Pricing */}
                 <Card className="p-6">
                     <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
@@ -659,40 +970,92 @@ export function EventForm({
                         Ticketing & Pricing
                     </h2>
                     <div className="space-y-4">
-                        {/* Ticketing Type Toggle */}
-                        <div>
-                            <Label>Ticketing Type</Label>
-                            <div className="grid grid-cols-2 gap-3 mt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => handleInputChange('ticketing_type', 'internal')}
-                                    className={`p-4 rounded-lg border-2 text-left transition-all ${
-                                        formData.ticketing_type === 'internal'
-                                            ? 'border-primary bg-primary/5'
-                                            : 'border-border hover:border-muted-foreground/30'
-                                    }`}
-                                >
-                                    <div className="font-semibold">HangHut Ticketing</div>
-                                    <p className="text-sm text-muted-foreground mt-1">
-                                        Sell tickets directly through HangHut
-                                    </p>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleInputChange('ticketing_type', 'external')}
-                                    className={`p-4 rounded-lg border-2 text-left transition-all ${
-                                        formData.ticketing_type === 'external'
-                                            ? 'border-blue-500 bg-blue-50/50'
-                                            : 'border-border hover:border-muted-foreground/30'
-                                    }`}
-                                >
-                                    <div className="font-semibold">External URL</div>
-                                    <p className="text-sm text-muted-foreground mt-1">
-                                        Link to an external ticketing site
-                                    </p>
-                                </button>
+                        {/* Sell-mode chooser — reshapes the rest of the wizard */}
+                        {!isEditing && (
+                            <div>
+                                <Label>How are you hosting this?</Label>
+                                <div className="grid sm:grid-cols-3 gap-3 mt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => { handleInputChange('ticketing_type', 'internal'); handleInputChange('rsvp_enabled', false) }}
+                                        className={`p-4 rounded-xl border-2 text-left transition-all ${
+                                            sellMode === 'tickets' ? 'border-primary bg-primary/5 ring-2 ring-primary/15' : 'border-border hover:border-primary/40'
+                                        }`}
+                                    >
+                                        <div className="font-semibold">Paid tickets</div>
+                                        <p className="text-sm text-muted-foreground mt-1">Sell tickets on HangHut</p>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            handleInputChange('ticketing_type', 'internal')
+                                            handleInputChange('rsvp_enabled', true)
+                                            setTiers(t => t.map(x => ({ ...x, price: '0' })))
+                                        }}
+                                        className={`p-4 rounded-xl border-2 text-left transition-all ${
+                                            sellMode === 'rsvp' ? 'border-primary bg-primary/5 ring-2 ring-primary/15' : 'border-border hover:border-primary/40'
+                                        }`}
+                                    >
+                                        <div className="font-semibold">Free RSVP</div>
+                                        <p className="text-sm text-muted-foreground mt-1">One-tap reserve, no checkout</p>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleInputChange('ticketing_type', 'external')}
+                                        className={`p-4 rounded-xl border-2 text-left transition-all ${
+                                            sellMode === 'external' ? 'border-primary bg-primary/5 ring-2 ring-primary/15' : 'border-border hover:border-primary/40'
+                                        }`}
+                                    >
+                                        <div className="font-semibold">External link</div>
+                                        <p className="text-sm text-muted-foreground mt-1">Link to another seller</p>
+                                    </button>
+                                </div>
                             </div>
-                        </div>
+                        )}
+
+                        {/* RSVP button label (free RSVP mode) */}
+                        {!isEditing && sellMode === 'rsvp' && (
+                            <div>
+                                <Label htmlFor="rsvp_button_label">RSVP button text</Label>
+                                <Input
+                                    id="rsvp_button_label"
+                                    value={formData.rsvp_button_label}
+                                    onChange={(e) => handleInputChange('rsvp_button_label', e.target.value)}
+                                    placeholder="RSVP"
+                                    maxLength={30}
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">Attendees reserve with one tap and get a scannable QR — no payment.</p>
+                            </div>
+                        )}
+
+                        {/* Ticketing Type toggle (edit only — keeps existing behavior) */}
+                        {isEditing && (
+                            <div>
+                                <Label>Ticketing Type</Label>
+                                <div className="grid grid-cols-2 gap-3 mt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleInputChange('ticketing_type', 'internal')}
+                                        className={`p-4 rounded-lg border-2 text-left transition-all ${
+                                            formData.ticketing_type === 'internal' ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/30'
+                                        }`}
+                                    >
+                                        <div className="font-semibold">HangHut Ticketing</div>
+                                        <p className="text-sm text-muted-foreground mt-1">Sell tickets directly through HangHut</p>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleInputChange('ticketing_type', 'external')}
+                                        className={`p-4 rounded-lg border-2 text-left transition-all ${
+                                            formData.ticketing_type === 'external' ? 'border-blue-500 bg-blue-50/50' : 'border-border hover:border-muted-foreground/30'
+                                        }`}
+                                    >
+                                        <div className="font-semibold">External URL</div>
+                                        <p className="text-sm text-muted-foreground mt-1">Link to an external ticketing site</p>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
 
                         {formData.ticketing_type === 'external' ? (
                             <>
@@ -736,7 +1099,7 @@ export function EventForm({
                                     />
                                 </div>
                             </>
-                        ) : (
+                        ) : isEditing ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <Label htmlFor="ticket_price">Ticket Price (₱) *</Label>
@@ -766,6 +1129,70 @@ export function EventForm({
                                     />
                                     {errors.capacity && <p className="text-sm text-red-500 mt-1">{errors.capacity}</p>}
                                 </div>
+                            </div>
+                        ) : (
+                            /* Create flow: build ticket tiers inline. Created on publish; the
+                               event's starting price + total capacity are derived from them. */
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <Label>Ticket types *</Label>
+                                    <span className="text-xs text-muted-foreground">Buyers pick from these at checkout</span>
+                                </div>
+                                {tiers.map((t) => (
+                                    <div key={t.id} className="rounded-xl border p-3 sm:p-4 space-y-3">
+                                        <div className="flex items-center gap-2">
+                                            <Input
+                                                value={t.name}
+                                                onChange={(e) => updateTier(t.id, 'name', e.target.value)}
+                                                placeholder="e.g. General Admission, VIP, Early Bird"
+                                                className="font-medium"
+                                            />
+                                            {tiers.length > 1 && (
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                                                    onClick={() => removeTier(t.id)}
+                                                    aria-label="Remove ticket type"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <Label className="text-xs">Price (₱)</Label>
+                                                {sellMode === 'rsvp' ? (
+                                                    <div className="h-10 flex items-center rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground">Free</div>
+                                                ) : (
+                                                    <Input
+                                                        type="number" min="0" step="0.01"
+                                                        value={t.price}
+                                                        onChange={(e) => updateTier(t.id, 'price', e.target.value)}
+                                                        placeholder="0"
+                                                    />
+                                                )}
+                                            </div>
+                                            <div>
+                                                <Label className="text-xs">{sellMode === 'rsvp' ? 'Spots available' : 'Quantity'}</Label>
+                                                <Input
+                                                    type="number" min="1"
+                                                    value={t.quantity}
+                                                    onChange={(e) => updateTier(t.id, 'quantity', e.target.value)}
+                                                    placeholder="e.g. 100"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                <Button type="button" variant="outline" onClick={addTier} className="w-full gap-1.5 border-dashed">
+                                    <Plus className="h-4 w-4" /> Add ticket type
+                                </Button>
+                                <p className="text-xs text-muted-foreground">
+                                    Use a price of 0 for free tickets. Total capacity is the sum of all quantities.
+                                </p>
+                                {errors.tiers && <p className="text-sm text-red-500">{errors.tiers}</p>}
                             </div>
                         )}
 
@@ -832,6 +1259,8 @@ export function EventForm({
                     </div>
                 </Card>
 
+                    </div>
+                    <div id="sec-seating" className={`scroll-mt-24 ${stepCls('seating')}`}>
                 {/* Seating Configuration — only for internal ticketing */}
                 {formData.ticketing_type === 'internal' && (
                 <Card className="p-6">
@@ -899,6 +1328,8 @@ export function EventForm({
                 </Card>
                 )}
 
+                    </div>
+                    <div id="sec-settings" className={`scroll-mt-24 ${stepCls('settings')}`}>
                 {/* Registration Settings */}
                 {formData.ticketing_type === 'internal' && (
                 <Card className="p-6">
@@ -910,8 +1341,8 @@ export function EventForm({
                     </p>
                     <div className="space-y-4">
                         {/* Private / invite-only */}
-                        <div className="flex items-center justify-between p-4 border rounded-lg">
-                            <div>
+                        <div className="flex items-center justify-between gap-4 p-4 border rounded-lg">
+                            <div className="min-w-0">
                                 <h3 className="font-semibold">Private (invite-only)</h3>
                                 <p className="text-sm text-muted-foreground">
                                     Hide this event from discovery. Only people you invite by email can
@@ -919,21 +1350,15 @@ export function EventForm({
                                     event&apos;s Invites tab after saving.
                                 </p>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => handleInputChange('invite_only', !formData.invite_only)}
-                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                                    formData.invite_only ? 'bg-primary' : 'bg-muted-foreground/30'
-                                }`}
-                            >
-                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                    formData.invite_only ? 'translate-x-6' : 'translate-x-1'
-                                }`} />
-                            </button>
+                            <Switch
+                                className="shrink-0"
+                                checked={formData.invite_only}
+                                onCheckedChange={(v) => handleInputChange('invite_only', v)}
+                            />
                         </div>
 
-                        <div className="flex items-center justify-between p-4 border rounded-lg">
-                            <div>
+                        <div className="flex items-center justify-between gap-4 p-4 border rounded-lg">
+                            <div className="min-w-0">
                                 <h3 className="font-semibold">Require Approval</h3>
                                 <p className="text-sm text-muted-foreground">
                                     Attendees must be approved before their spot is confirmed.
@@ -942,18 +1367,12 @@ export function EventForm({
                                     )}
                                 </p>
                             </div>
-                            <button
-                                type="button"
+                            <Switch
+                                className="shrink-0"
+                                checked={formData.require_approval}
                                 disabled={formData.ticket_price !== '0' && parseFloat(formData.ticket_price) > 0}
-                                onClick={() => handleInputChange('require_approval', !formData.require_approval)}
-                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                                    formData.require_approval ? 'bg-primary' : 'bg-muted-foreground/30'
-                                } disabled:opacity-40 disabled:cursor-not-allowed`}
-                            >
-                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                    formData.require_approval ? 'translate-x-6' : 'translate-x-1'
-                                }`} />
-                            </button>
+                                onCheckedChange={(v) => handleInputChange('require_approval', v)}
+                            />
                         </div>
                         {/* Approval email templates — shown when require_approval is on */}
                         {formData.require_approval && (
@@ -1121,29 +1540,25 @@ export function EventForm({
                             </div>
                         )}
 
-                        <div className="flex items-center justify-between p-4 border rounded-lg">
-                            <div>
+                        <div className="flex items-center justify-between gap-4 p-4 border rounded-lg">
+                            <div className="min-w-0">
                                 <h3 className="font-semibold">Hide Venue Until Registered</h3>
                                 <p className="text-sm text-muted-foreground">
                                     The venue address is hidden from the public event page. Only registered attendees can see it.
                                 </p>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => handleInputChange('hide_venue_until_registered', !formData.hide_venue_until_registered)}
-                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                                    formData.hide_venue_until_registered ? 'bg-primary' : 'bg-muted-foreground/30'
-                                }`}
-                            >
-                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                    formData.hide_venue_until_registered ? 'translate-x-6' : 'translate-x-1'
-                                }`} />
-                            </button>
+                            <Switch
+                                className="shrink-0"
+                                checked={formData.hide_venue_until_registered}
+                                onCheckedChange={(v) => handleInputChange('hide_venue_until_registered', v)}
+                            />
                         </div>
                     </div>
                 </Card>
                 )}
 
+                    </div>
+                    <div id="sec-details" className={`scroll-mt-24 ${stepCls('details')}`}>
                 {/* Media & Images */}
                 <Card className="p-6">
                     <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
@@ -1176,13 +1591,25 @@ export function EventForm({
                                         </Button>
                                     </div>
                                 ) : (
-                                    <label className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
-                                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                            <Upload className="h-12 w-12 mb-3 text-muted-foreground" />
-                                            <p className="mb-2 text-sm text-muted-foreground">
-                                                <span className="font-semibold">Click to upload</span> or drag and drop
+                                    <label
+                                        onDragOver={(e) => { e.preventDefault(); setCoverDragActive(true) }}
+                                        onDragLeave={(e) => { e.preventDefault(); setCoverDragActive(false) }}
+                                        onDrop={handleCoverDrop}
+                                        className={`flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-2xl cursor-pointer transition-all ${
+                                            coverDragActive
+                                                ? 'border-primary bg-primary/5 scale-[.99]'
+                                                : 'border-border hover:border-primary/40 hover:bg-muted/40'
+                                        }`}
+                                    >
+                                        <div className="flex flex-col items-center justify-center pt-5 pb-6 pointer-events-none">
+                                            <div className={`h-14 w-14 mb-3 rounded-2xl grid place-items-center transition-colors ${coverDragActive ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'}`}>
+                                                <Upload className="h-6 w-6" />
+                                            </div>
+                                            <p className="mb-1 text-sm">
+                                                <span className="font-semibold text-foreground">{coverDragActive ? 'Drop to upload' : 'Click to upload'}</span>
+                                                {!coverDragActive && <span className="text-muted-foreground"> or drag &amp; drop your poster</span>}
                                             </p>
-                                            <p className="text-xs text-muted-foreground">PNG, JPG or WebP (MAX. 5MB)</p>
+                                            <p className="text-xs text-muted-foreground">PNG, JPG or WebP · up to 5 MB · 16:9 looks best</p>
                                         </div>
                                         <input
                                             type="file"
@@ -1369,41 +1796,158 @@ export function EventForm({
                     </Card>
                 )}
 
-                {/* Action Buttons */}
-                <div className="flex gap-4 sticky bottom-0 bg-background pt-4 border-t flex-wrap">
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="lg"
-                        className="flex-1"
-                        onClick={() => handleSubmit('draft')}
-                        disabled={isLoading || formData.status === 'cancelled'}
-                    >
-                        {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Save as Draft'}
-                    </Button>
-                    {!isEditing && (
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="lg"
-                            className="flex-1 border-purple-300 text-purple-700 hover:bg-purple-50"
-                            onClick={() => handleSubmit('hidden')}
-                            disabled={isLoading}
-                        >
-                            {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : '🔒 Publish as Unlisted'}
-                        </Button>
+                    </div>{/* /step 4 */}
+
+                    {/* Publish actions — always for edit; only on the last step for create */}
+                    {(isEditing || curStepIdx === stepKeys.length - 1) && (
+                        <div className="flex gap-4 pt-4 border-t flex-wrap">
+                            {!isEditing && (
+                                <Button type="button" variant="ghost" size="lg" onClick={goBack}>← Back</Button>
+                            )}
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="lg"
+                                className="flex-1"
+                                onClick={() => handleSubmit('draft')}
+                                disabled={isLoading || formData.status === 'cancelled'}
+                            >
+                                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Save as Draft'}
+                            </Button>
+                            {!isEditing && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="lg"
+                                    className="flex-1 border-purple-300 text-purple-700 hover:bg-purple-50"
+                                    onClick={() => handleSubmit('hidden')}
+                                    disabled={isLoading}
+                                >
+                                    {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Publish as Unlisted'}
+                                </Button>
+                            )}
+                            <Button
+                                type="button"
+                                size="lg"
+                                className="flex-1 bg-primary"
+                                onClick={() => handleSubmit(isEditing ? formData.status : 'active')}
+                                disabled={isLoading || formData.status === 'cancelled'}
+                            >
+                                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (isEditing ? 'Update Event' : 'Publish event')}
+                            </Button>
+                        </div>
                     )}
-                    <Button
-                        type="button"
-                        size="lg"
-                        className="flex-1 bg-primary"
-                        onClick={() => handleSubmit(isEditing ? formData.status : 'active')}
-                        disabled={isLoading || formData.status === 'cancelled'}
-                    >
-                        {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (isEditing ? 'Update Event' : 'Next: Add Tiers →')}
-                    </Button>
+                </div>{/* /form column */}
+
+                {/* Live event-page preview */}
+                <aside className="hidden lg:block lg:sticky lg:top-6">
+                    <EventPreviewPane
+                        title={formData.title}
+                        categoryLabel={categories.find(c => c.key === formData.category)?.label || null}
+                        coverPreview={coverPreview}
+                        venueName={formData.venue_name}
+                        city={formData.city}
+                        startDatetime={formData.start_datetime}
+                        priceLabel={priceLabel}
+                        reveal={isEditing || curStepIdx >= 1}
+                    />
+                </aside>
+            </div>{/* /grid */}
+
+            {/* Sticky nav for the guided steps (create) */}
+            {!isEditing && curStepIdx < stepKeys.length - 1 && (
+                <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/90 backdrop-blur">
+                    <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground hidden sm:block">
+                            Step {curStepIdx + 1} of {stepKeys.length} · {STEP_TITLE[curKey]}
+                        </span>
+                        <div className="ml-auto flex items-center gap-3">
+                            <Button type="button" variant="outline" onClick={goBack} disabled={wizardStep === 0}>Back</Button>
+                            <Button type="button" className="bg-primary" onClick={goNext}>Continue →</Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+/** Live, brand-styled preview of the public event page, shown beside the create wizard. */
+function EventPreviewPane({
+    title, categoryLabel, coverPreview, venueName, city, startDatetime, priceLabel, reveal,
+}: {
+    title: string
+    categoryLabel: string | null
+    coverPreview: string | null
+    venueName: string
+    city: string
+    startDatetime: string
+    priceLabel: string
+    reveal: boolean
+}) {
+    if (!reveal) {
+        return (
+            <div className="rounded-2xl border border-dashed p-8 text-center space-y-3">
+                <div className="mx-auto h-12 w-12 rounded-2xl bg-primary/10 text-primary grid place-items-center">
+                    <Calendar className="h-6 w-6" />
+                </div>
+                <p className="font-semibold text-sm">Your live preview is coming up</p>
+                <p className="text-xs text-muted-foreground max-w-[26ch] mx-auto">
+                    Add a date and location next and your event page builds itself right here.
+                </p>
+            </div>
+        )
+    }
+
+    const venue = [venueName, city].filter(Boolean).join(', ')
+    let dateStr = ''
+    try {
+        if (startDatetime) {
+            dateStr = new Date(startDatetime).toLocaleString('en-PH', {
+                weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+            })
+        }
+    } catch { /* invalid partial date */ }
+
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Live preview
+            </div>
+            <div className="rounded-2xl border overflow-hidden bg-card shadow-sm">
+                <div className="aspect-[16/10] relative bg-muted">
+                    {coverPreview ? (
+                        <img src={coverPreview} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                        <div className="w-full h-full grid place-items-center bg-gradient-to-br from-primary/25 via-primary/10 to-transparent">
+                            <Upload className="h-7 w-7 text-primary/40" />
+                        </div>
+                    )}
+                    {categoryLabel && (
+                        <span className="absolute top-3 left-3 rounded-full bg-black/55 text-white text-xs font-medium px-3 py-1 backdrop-blur">
+                            {categoryLabel}
+                        </span>
+                    )}
+                </div>
+                <div className="p-4 space-y-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-primary">{priceLabel}</p>
+                    <h3 className="font-headline text-xl font-bold leading-tight tracking-tight">
+                        {title || 'Your event title'}
+                    </h3>
+                    <div className="space-y-1.5 text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <Calendar className="h-4 w-4 shrink-0" /> {dateStr || 'Date TBA'}
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <MapPin className="h-4 w-4 shrink-0" /> <span className="truncate">{venue || 'Venue TBA'}</span>
+                        </div>
+                    </div>
+                    <div className="rounded-full bg-primary text-primary-foreground text-center text-sm font-semibold py-2.5">
+                        Get Tickets
+                    </div>
                 </div>
             </div>
+            <p className="text-[11px] text-center text-muted-foreground">A preview of your public event page.</p>
         </div>
     )
 }

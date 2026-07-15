@@ -179,10 +179,16 @@ export async function processAttendeeUnsubscribe(
 
 export async function getAudienceCount(
     partnerId: string,
-    audienceType: 'all_subscribers' | 'event_attendees',
-    eventId?: string
+    audienceType: 'all_subscribers' | 'event_attendees' | 'customer_segment',
+    eventId?: string,
+    segment?: string
 ): Promise<number> {
     const supabase = createAdminClient()
+
+    if (audienceType === 'customer_segment' && segment) {
+        const emails = await getSegmentEmails(partnerId, segment)
+        return emails.length
+    }
 
     if (audienceType === 'all_subscribers') {
         const { count } = await supabase
@@ -221,6 +227,177 @@ export async function getEventAttendeeEmails(eventId: string): Promise<string[]>
         if ((row as any).guest_email) unique.add((row as any).guest_email.toLowerCase())
     }
     return Array.from(unique)
+}
+
+/** First word of a full name (for {{first_name}} personalization). */
+function firstNameOf(name?: string | null): string | null {
+    if (!name) return null
+    return name.trim().split(/\s+/)[0] || null
+}
+
+export interface Recipient { email: string; first_name: string | null }
+
+/**
+ * Like getEventAttendeeEmails but carries each buyer's first name so the send
+ * pipeline can resolve {{first_name}}. Deduped by lowercased email (first
+ * non-empty name wins).
+ */
+export async function getEventAttendeeRecipients(eventId: string): Promise<Recipient[]> {
+    const supabase = createAdminClient()
+    const { data } = await supabase
+        .from('purchase_intents')
+        .select('guest_email, guest_name')
+        .eq('event_id', eventId)
+        .eq('status', 'completed')
+        .not('guest_email', 'is', null)
+
+    const byEmail = new Map<string, Recipient>()
+    for (const row of (data as { guest_email: string | null; guest_name: string | null }[]) || []) {
+        if (!row.guest_email) continue
+        const email = row.guest_email.toLowerCase()
+        const existing = byEmail.get(email)
+        const first = firstNameOf(row.guest_name)
+        if (!existing) byEmail.set(email, { email, first_name: first })
+        else if (!existing.first_name && first) existing.first_name = first
+    }
+    return Array.from(byEmail.values())
+}
+
+/**
+ * Like getSegmentEmails but carries first names (get_organizer_customers returns
+ * `email` + `name` per customer). Deduped by lowercased email.
+ */
+export async function getSegmentRecipients(partnerId: string, segment: string): Promise<Recipient[]> {
+    const supabase = await createClient()
+    const { data } = await supabase.rpc('get_organizer_customers', {
+        p_partner_id: partnerId,
+        p_segment: segment === 'all' ? 'customers' : segment,
+        p_search: null,
+        p_limit: 10000,
+        p_offset: 0,
+        p_sort: 'recent',
+    })
+    const rows = ((data as { customers?: { email: string; name?: string | null }[] } | null)?.customers) || []
+    const byEmail = new Map<string, Recipient>()
+    for (const r of rows) {
+        if (!r.email) continue
+        const email = r.email.toLowerCase()
+        if (!byEmail.has(email)) byEmail.set(email, { email, first_name: firstNameOf(r.name) })
+    }
+    return Array.from(byEmail.values())
+}
+
+/**
+ * Resolves the emails for a customer/RFM segment (champion, loyal, new, at_risk,
+ * lost, repeat, no_show, abandoned, rejected, reengaged, or 'customers' for all).
+ * Reuses get_organizer_customers (SECURITY DEFINER, self-authorizes via auth.uid).
+ * Suppression (unsubscribes/bounces) is applied downstream by send-promotional-email.
+ */
+export async function getSegmentEmails(partnerId: string, segment: string): Promise<string[]> {
+    const supabase = await createClient()
+    const { data } = await supabase.rpc('get_organizer_customers', {
+        p_partner_id: partnerId,
+        p_segment: segment === 'all' ? 'customers' : segment,
+        p_search: null,
+        p_limit: 10000,
+        p_offset: 0,
+        p_sort: 'recent',
+    })
+    const rows = ((data as { customers?: { email: string }[] } | null)?.customers) || []
+    const unique = new Set<string>()
+    for (const r of rows) if (r.email) unique.add(r.email.toLowerCase())
+    return Array.from(unique)
+}
+
+// ─────────────────────────────────────────────────────────────
+// TEMPLATES (Phase 1) — starter gallery + save-your-own
+// ─────────────────────────────────────────────────────────────
+
+export interface EmailTemplate {
+    id: string
+    name: string
+    description: string | null
+    category: string | null
+    html_content: string
+    is_system: boolean
+}
+
+export async function getTemplates(): Promise<EmailTemplate[]> {
+    const supabase = await createClient()
+    const { data } = await supabase
+        .from('email_templates')
+        .select('id, name, description, category, html_content, is_system')
+        .order('is_system', { ascending: false })
+        .order('created_at', { ascending: false })
+    return (data as EmailTemplate[]) ?? []
+}
+
+export async function saveAsTemplate(name: string, html_content: string) {
+    const supabase = await createClient()
+    const partnerId = await resolveMarketingPartnerId(supabase)
+    if (!partnerId) return { error: 'Partner account not found' }
+    if (!name.trim() || !html_content.trim()) return { error: 'A name and content are required.' }
+    const { data, error } = await supabase
+        .from('email_templates')
+        .insert({ partner_id: partnerId, name: name.trim(), html_content, is_system: false, category: 'custom' })
+        .select('id').single()
+    if (error || !data) return { error: error?.message || 'Failed to save template' }
+    return { success: true as const, id: data.id }
+}
+
+export async function deleteTemplate(id: string) {
+    const supabase = await createClient()
+    const partnerId = await resolveMarketingPartnerId(supabase)
+    if (!partnerId) return { error: 'Partner account not found' }
+    const { error } = await supabase.from('email_templates').delete().eq('id', id).eq('partner_id', partnerId)
+    if (error) return { error: error.message }
+    return { success: true as const }
+}
+
+// ─────────────────────────────────────────────────────────────
+// INSERT-EVENT BLOCK (Phase 1) — email-safe live event card
+// ─────────────────────────────────────────────────────────────
+
+function esc(s: string): string {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+/** Renders a table-based, email-client-safe event card (cover, title, date, venue, price, CTA). */
+export async function buildEventEmailBlock(eventId: string): Promise<{ html?: string; error?: string }> {
+    const supabase = await createClient()
+    const { data: event } = await supabase
+        .from('events')
+        .select('id, title, cover_image_url, start_datetime, venue_name, city, ticket_price, ticket_tiers(price, is_active)')
+        .eq('id', eventId)
+        .maybeSingle()
+    if (!event) return { error: 'Event not found' }
+
+    const tiers = ((event.ticket_tiers as { price: number; is_active: boolean }[] | null) || []).filter((t) => t.is_active)
+    const price = tiers.length ? Math.min(...tiers.map((t) => Number(t.price))) : Number(event.ticket_price || 0)
+    const priceLabel = price === 0 ? 'Free' : `From ₱${price.toLocaleString()}`
+    const dateStr = event.start_datetime
+        ? new Date(event.start_datetime).toLocaleString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        : ''
+    const venue = [event.venue_name, event.city].filter(Boolean).join(', ')
+    const url = `https://hanghut.com/events/${event.id}`
+
+    const cover = event.cover_image_url
+        ? `<a href="${url}" style="text-decoration:none;"><img src="${esc(event.cover_image_url)}" alt="" width="100%" style="display:block;width:100%;height:auto;border:0;" /></a>`
+        : ''
+
+    const html = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;border-collapse:separate;">
+<tr><td style="border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+${cover}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:18px 20px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+<p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#4f46e5;text-transform:uppercase;letter-spacing:.05em;">${esc(priceLabel)}</p>
+<h2 style="margin:0 0 10px;font-size:20px;line-height:1.25;font-weight:800;color:#111827;">${esc(event.title)}</h2>
+${dateStr ? `<p style="margin:0 0 4px;font-size:14px;color:#475569;">📅 ${esc(dateStr)}</p>` : ''}
+${venue ? `<p style="margin:0 0 16px;font-size:14px;color:#475569;">📍 ${esc(venue)}</p>` : '<div style="height:12px"></div>'}
+<a href="${url}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:11px 26px;border-radius:999px;">Get Tickets →</a>
+</td></tr></table>
+</td></tr></table>`
+
+    return { html }
 }
 
 export async function subscribeGuestToNewsletter(partnerId: string, email: string, name: string, eventId?: string) {
@@ -361,7 +538,8 @@ export interface ScheduleInput {
     id?: string // reuse an existing draft / scheduled row
     subject: string
     html_content: string
-    segment: 'all_subscribers' | 'event_attendees'
+    // 'all_subscribers' | 'event_attendees' | a customer-segment key (champion, at_risk, …)
+    segment: string
     event_id?: string | null
     scheduled_for: string // ISO timestamp
 }
@@ -393,10 +571,17 @@ export async function scheduleCampaign(input: ScheduleInput) {
 
     if (input.segment === 'event_attendees') {
         if (!input.event_id) return { error: 'Select an event for the attendee audience.' }
-        const emails = await getEventAttendeeEmails(input.event_id)
-        if (emails.length === 0) return { error: 'No attendee emails found for this event.' }
-        payload.target_emails = emails
-        recipientCount = emails.length
+        // Snapshot named recipients now so the scheduled send can personalize {{first_name}}.
+        const recipients = await getEventAttendeeRecipients(input.event_id)
+        if (recipients.length === 0) return { error: 'No attendee emails found for this event.' }
+        payload.target_recipients = recipients
+        recipientCount = recipients.length
+    } else if (input.segment !== 'all_subscribers') {
+        // Customer/RFM segment — snapshot named recipients now (like event_attendees).
+        const recipients = await getSegmentRecipients(partnerId, input.segment)
+        if (recipients.length === 0) return { error: 'No customers in this segment yet.' }
+        payload.target_recipients = recipients
+        recipientCount = recipients.length
     }
 
     const row = {

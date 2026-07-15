@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
-export type AutomationTrigger = 'welcome' | 'post_event' | 'pre_event' | 'new_event'
+export type AutomationTrigger = 'welcome' | 'post_event' | 'pre_event' | 'new_event' | 'abandoned_checkout' | 'winback'
 
 export interface Automation {
     trigger_type: AutomationTrigger
@@ -13,7 +13,15 @@ export interface Automation {
     offset_minutes: number | null
 }
 
-const ALL_TRIGGERS: AutomationTrigger[] = ['welcome', 'pre_event', 'post_event', 'new_event']
+const ALL_TRIGGERS: AutomationTrigger[] = ['welcome', 'pre_event', 'post_event', 'new_event', 'abandoned_checkout', 'winback']
+
+// Sensible starting offsets (minutes) for the timed automations.
+const DEFAULT_OFFSET: Partial<Record<AutomationTrigger, number>> = {
+    pre_event: 1440,            // 1 day before
+    post_event: 120,            // 2 hours after
+    abandoned_checkout: 60,     // 1 hour after the cart is abandoned
+    winback: 172800,            // 120 days (4 months) of silence
+}
 
 /** Resolve the caller's partner id (owner or team member). */
 async function resolvePartnerId(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string | null> {
@@ -43,7 +51,7 @@ export async function getAutomations(): Promise<Automation[]> {
     const byType = new Map((data ?? []).map(a => [a.trigger_type, a]))
     return ALL_TRIGGERS.map(t => byType.get(t) as Automation ?? {
         trigger_type: t, enabled: false, subject: null, html_content: null,
-        offset_minutes: t === 'pre_event' ? 1440 : t === 'post_event' ? 120 : null,
+        offset_minutes: DEFAULT_OFFSET[t] ?? null,
     })
 }
 
@@ -61,9 +69,8 @@ export async function upsertAutomation(input: {
     if (input.enabled && (!input.subject?.trim() || !input.html_content?.trim())) {
         return { error: 'Add a subject and message before enabling this automation.' }
     }
-    if ((input.trigger_type === 'pre_event' || input.trigger_type === 'post_event')
-        && input.offset_minutes != null && input.offset_minutes < 0) {
-        return { error: 'Timing must be a positive number of minutes.' }
+    if (input.offset_minutes != null && input.offset_minutes < 0) {
+        return { error: 'Timing must be a positive number.' }
     }
 
     const { error } = await supabase
