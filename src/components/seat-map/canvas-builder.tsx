@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { Stage, Layer, Line, Circle, Ellipse, Rect, Text, Group, Image as KonvaImage } from 'react-konva'
 import type Konva from 'konva'
+import { Maximize2, Minimize2 } from 'lucide-react'
 import { useCanvasState } from './canvas-state'
 import { CanvasToolbar } from './canvas-toolbar'
 import { CanvasProperties } from './canvas-properties'
@@ -374,6 +375,10 @@ export function CanvasBuilder({
   const stageRef = useRef<Konva.Stage>(null)
   const { state, dispatch, dispatchWithHistory: rawDispatchWithHistory, undo: rawUndo, redo: rawRedo, canUndo, canRedo } = useCanvasState()
   const [stageSize, setStageSize] = useState({ width: 1400, height: 900 })
+  // "Large screen" mode — the editor breaks out of its boxed layout to fill the
+  // whole viewport. The ResizeObserver below picks up the new container size and
+  // resizes the Konva stage automatically, so no manual re-fit is needed.
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   // Unsaved-changes tracking: any history-worthy edit marks the canvas dirty;
   // Save clears it. Backed by a beforeunload guard so closing the tab can't
@@ -490,6 +495,26 @@ export function CanvasBuilder({
       },
     })
   }, [state.sections, state.backgroundShapes, stageSize, dispatch])
+
+  // ─── Full-screen: lock page scroll + Esc to exit ────────────────────
+  useEffect(() => {
+    if (!isFullscreen) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => {
+      // Only hijack Esc when nothing is selected/being drawn, so Esc still works
+      // as "deselect" first and only exits full screen on a second press.
+      if (e.key !== 'Escape') return
+      if (state.selectedIds.length === 0 && state.selectedSeatIds.length === 0 && !state.selectedSeatId && !state.isDrawing) {
+        setIsFullscreen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [isFullscreen, state.selectedIds, state.selectedSeatIds, state.selectedSeatId, state.isDrawing])
 
   // ─── Sticky middle-pan fix ──────────────────────────────────────────
   // Releasing the middle button OUTSIDE the canvas never fired the stage's
@@ -1326,7 +1351,7 @@ export function CanvasBuilder({
   }, [state.tool, state.drawingPoints, state.isDrawing, state.selectedIds, state.selectedSeatId, state.dropRow, state.dropSeatNumber])
 
   return (
-    <div className="flex h-full w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
+    <div className={`flex bg-slate-950 overflow-hidden border border-slate-800 ${isFullscreen ? 'fixed inset-0 z-[100] rounded-none' : 'h-full w-full rounded-xl'}`}>
       {/* Left Toolbar */}
       {!readOnly && (
         <CanvasToolbar
@@ -1556,9 +1581,20 @@ export function CanvasBuilder({
           {Math.round(state.zoom * 100)}%
         </div>
 
+        {/* Full-screen / large-screen toggle */}
+        <button
+          type="button"
+          onClick={() => setIsFullscreen((f) => !f)}
+          title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+          className="absolute top-4 right-4 z-10 flex items-center gap-1.5 bg-slate-800/80 hover:bg-slate-700 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none transition-colors"
+        >
+          {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          {isFullscreen ? 'Exit' : 'Full screen'}
+        </button>
+
         {/* Image upload progress */}
         {uploadingImage && (
-          <div className="absolute top-4 right-4 bg-slate-800/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none">
+          <div className="absolute top-16 right-4 bg-slate-800/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none">
             Uploading image…
           </div>
         )}
