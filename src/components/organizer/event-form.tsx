@@ -215,8 +215,13 @@ export function EventForm({
     const sellMode: 'tickets' | 'rsvp' | 'external' =
         formData.ticketing_type === 'external' ? 'external'
             : formData.rsvp_enabled ? 'rsvp' : 'tickets'
+    // Assigned seating turns tiers into pure price categories — their inventory
+    // comes from the seat map, not a typed quantity. GA keeps the typed quantity.
+    const isAssignedSeating = sellMode === 'tickets' && formData.seating_type === 'assigned_seating'
     const stepKeys: string[] = ['basics', 'when', 'sell']
-    if (sellMode === 'tickets') stepKeys.push('seating')
+    // Only assigned-seating events need the seating-options step (max per order +
+    // seat-map note); GA has nothing extra to configure, so it skips it.
+    if (isAssignedSeating) stepKeys.push('seating')
     if (sellMode !== 'external') stepKeys.push('settings')
     stepKeys.push('details')
     const STEP_TITLE: Record<string, string> = {
@@ -248,13 +253,15 @@ export function EventForm({
         const active = tiers.filter(t => t.name.trim())
         const prices = active.map(t => parseFloat(t.price) || 0)
         const minPrice = prices.length ? Math.min(...prices) : 0
-        const totalQty = active.reduce((s, t) => s + (parseInt(t.quantity) || 0), 0)
+        // Assigned seating: capacity is defined by the seat map (built after create),
+        // so leave it at 0 here. GA: capacity = sum of the typed quantities.
+        const totalQty = isAssignedSeating ? 0 : active.reduce((s, t) => s + (parseInt(t.quantity) || 0), 0)
         setFormData(prev => (
             prev.ticket_price === String(minPrice) && prev.capacity === String(totalQty)
                 ? prev
                 : { ...prev, ticket_price: String(minPrice), capacity: String(totalQty) }
         ))
-    }, [tiers, formData.ticketing_type, isEditing])
+    }, [tiers, formData.ticketing_type, isEditing, isAssignedSeating])
 
     const handleInputChange = (field: keyof EventFormData, value: any) => {
         setFormData(prev => ({ ...prev, [field]: value }))
@@ -396,8 +403,8 @@ export function EventForm({
             // Create flow validates the inline tier builder.
             const active = tiers.filter(t => t.name.trim())
             if (active.length === 0) {
-                newErrors.tiers = 'Add at least one ticket type with a name'
-            } else if (active.some(t => !(parseInt(t.quantity) >= 1))) {
+                newErrors.tiers = isAssignedSeating ? 'Add at least one price category with a name' : 'Add at least one ticket type with a name'
+            } else if (!isAssignedSeating && active.some(t => !(parseInt(t.quantity) >= 1))) {
                 newErrors.tiers = 'Give each ticket type a quantity of at least 1'
             } else if (active.some(t => isNaN(parseFloat(t.price)) || parseFloat(t.price) < 0)) {
                 newErrors.tiers = 'Ticket prices must be 0 or more'
@@ -451,8 +458,8 @@ export function EventForm({
                 else { try { new URL(formData.external_ticket_url) } catch { e.external_ticket_url = 'Enter a valid URL (e.g. https://ticketworld.com.ph/event)' } }
             } else {
                 const active = tiers.filter(t => t.name.trim())
-                if (active.length === 0) e.tiers = 'Add at least one ticket type with a name'
-                else if (active.some(t => !(parseInt(t.quantity) >= 1))) e.tiers = 'Give each ticket type a quantity of at least 1'
+                if (active.length === 0) e.tiers = isAssignedSeating ? 'Add at least one price category with a name' : 'Add at least one ticket type with a name'
+                else if (!isAssignedSeating && active.some(t => !(parseInt(t.quantity) >= 1))) e.tiers = 'Give each ticket type a quantity of at least 1'
                 else if (active.some(t => isNaN(parseFloat(t.price)) || parseFloat(t.price) < 0)) e.tiers = 'Ticket prices must be 0 or more'
             }
         }
@@ -1134,9 +1141,40 @@ export function EventForm({
                             /* Create flow: build ticket tiers inline. Created on publish; the
                                event's starting price + total capacity are derived from them. */
                             <div className="space-y-3">
+                                {/* Seating model drives what "quantity" means below, so it's
+                                    chosen here (paid tickets only; RSVP has no seat map). */}
+                                {sellMode === 'tickets' && (
+                                    <div className="space-y-2">
+                                        <Label>How are tickets seated?</Label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleInputChange('seating_type', 'general_admission')}
+                                                className={`p-3 rounded-lg border-2 text-left transition-all ${
+                                                    !isAssignedSeating ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/30'
+                                                }`}
+                                            >
+                                                <div className="font-semibold text-sm">General Admission</div>
+                                                <p className="text-xs text-muted-foreground mt-0.5">Set a quantity per ticket type</p>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleInputChange('seating_type', 'assigned_seating')}
+                                                className={`p-3 rounded-lg border-2 text-left transition-all ${
+                                                    isAssignedSeating ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/30'
+                                                }`}
+                                            >
+                                                <div className="font-semibold text-sm">Assigned Seating</div>
+                                                <p className="text-xs text-muted-foreground mt-0.5">Quantities come from your seat map</p>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="flex items-center justify-between">
-                                    <Label>Ticket types *</Label>
-                                    <span className="text-xs text-muted-foreground">Buyers pick from these at checkout</span>
+                                    <Label>{isAssignedSeating ? 'Price categories *' : 'Ticket types *'}</Label>
+                                    <span className="text-xs text-muted-foreground">
+                                        {isAssignedSeating ? 'Assign seats to these on the seat map' : 'Buyers pick from these at checkout'}
+                                    </span>
                                 </div>
                                 {tiers.map((t) => (
                                     <div key={t.id} className="rounded-xl border p-3 sm:p-4 space-y-3">
@@ -1176,12 +1214,18 @@ export function EventForm({
                                             </div>
                                             <div>
                                                 <Label className="text-xs">{sellMode === 'rsvp' ? 'Spots available' : 'Quantity'}</Label>
-                                                <Input
-                                                    type="number" min="1"
-                                                    value={t.quantity}
-                                                    onChange={(e) => updateTier(t.id, 'quantity', e.target.value)}
-                                                    placeholder="e.g. 100"
-                                                />
+                                                {isAssignedSeating ? (
+                                                    <div className="h-10 flex items-center gap-1.5 rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground">
+                                                        <Armchair className="h-3.5 w-3.5 shrink-0" /> Set by seat map
+                                                    </div>
+                                                ) : (
+                                                    <Input
+                                                        type="number" min="1"
+                                                        value={t.quantity}
+                                                        onChange={(e) => updateTier(t.id, 'quantity', e.target.value)}
+                                                        placeholder="e.g. 100"
+                                                    />
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -1190,7 +1234,9 @@ export function EventForm({
                                     <Plus className="h-4 w-4" /> Add ticket type
                                 </Button>
                                 <p className="text-xs text-muted-foreground">
-                                    Use a price of 0 for free tickets. Total capacity is the sum of all quantities.
+                                    {isAssignedSeating
+                                        ? 'Use a price of 0 for free seats. How many of each you sell is set by the seats you assign on the seat map after creating the event.'
+                                        : 'Use a price of 0 for free tickets. Total capacity is the sum of all quantities.'}
                                 </p>
                                 {errors.tiers && <p className="text-sm text-red-500">{errors.tiers}</p>}
                             </div>
@@ -1269,6 +1315,9 @@ export function EventForm({
                         Seating Configuration
                     </h2>
                     <div className="space-y-4">
+                        {/* Create flow chooses the seating model in the Tickets step (it
+                            drives what "quantity" means); editing keeps it here. */}
+                        {isEditing && (
                         <div>
                             <Label>Seating Type</Label>
                             <div className="grid grid-cols-2 gap-3 mt-2">
@@ -1302,6 +1351,7 @@ export function EventForm({
                                 </button>
                             </div>
                         </div>
+                        )}
 
                         {formData.seating_type === 'assigned_seating' && (
                             <>

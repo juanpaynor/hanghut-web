@@ -99,6 +99,8 @@ export function CustomerBehaviour({ partnerId }: { partnerId: string }) {
     const [loading, setLoading] = useState(true)
     const [exporting, setExporting] = useState(false)
     const [detail, setDetail] = useState<{ customer: Customer; rows: DetailRow[] | null } | null>(null)
+    // Hand-picked selection (by email) for emailing specific customers.
+    const [selected, setSelected] = useState<Record<string, { email: string; first_name?: string }>>({})
 
     const load = useCallback(async () => {
         setLoading(true)
@@ -175,6 +177,39 @@ export function CustomerBehaviour({ partnerId }: { partnerId: string }) {
         } finally {
             setExporting(false)
         }
+    }
+
+    // ─── Hand-picked selection ──────────────────────────────────────────
+    const firstNameOf = (c: Customer) => (c.name?.trim().split(/\s+/)[0]) || undefined
+    const selectedCount = Object.keys(selected).length
+    const pageEmails = customers.map((c) => c.email)
+    const allPageSelected = customers.length > 0 && pageEmails.every((e) => selected[e])
+
+    function toggleOne(c: Customer) {
+        setSelected((prev) => {
+            const next = { ...prev }
+            if (next[c.email]) delete next[c.email]
+            else next[c.email] = { email: c.email, first_name: firstNameOf(c) }
+            return next
+        })
+    }
+    function togglePage() {
+        setSelected((prev) => {
+            const next = { ...prev }
+            if (allPageSelected) {
+                for (const c of customers) delete next[c.email]
+            } else {
+                for (const c of customers) next[c.email] = { email: c.email, first_name: firstNameOf(c) }
+            }
+            return next
+        })
+    }
+    // Hand off the picked list to the composer via sessionStorage (too many for a URL).
+    function emailSelected() {
+        const list = Object.values(selected)
+        if (list.length === 0) return
+        try { sessionStorage.setItem('hh:email-recipients', JSON.stringify(list)) } catch { /* non-fatal */ }
+        router.push('/organizer/marketing?recipients=selected')
     }
 
     async function openDetail(c: Customer) {
@@ -270,6 +305,21 @@ export function CustomerBehaviour({ partnerId }: { partnerId: string }) {
                 </div>
             </div>
 
+            {/* Selection action bar */}
+            {selectedCount > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
+                    <p className="text-sm font-medium">
+                        {selectedCount} customer{selectedCount !== 1 ? 's' : ''} selected
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => setSelected({})}>Clear</Button>
+                        <Button size="sm" onClick={emailSelected} className="gap-1.5">
+                            <Mail className="h-4 w-4" /> Email selected
+                        </Button>
+                    </div>
+                </div>
+            )}
+
             {/* Table */}
             <Card className="overflow-hidden">
                 {loading ? (
@@ -281,6 +331,15 @@ export function CustomerBehaviour({ partnerId }: { partnerId: string }) {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="text-left text-xs text-muted-foreground border-b bg-muted/30">
+                                    <th className="px-4 py-2.5 w-10">
+                                        <input
+                                            type="checkbox"
+                                            checked={allPageSelected}
+                                            onChange={togglePage}
+                                            className="h-4 w-4 rounded border-input accent-[#4E47DC] cursor-pointer align-middle"
+                                            title="Select all on this page"
+                                        />
+                                    </th>
                                     <th className="px-4 py-2.5 font-medium">Customer</th>
                                     <th className="px-4 py-2.5 font-medium text-right">Total spent</th>
                                     <th className="px-4 py-2.5 font-medium text-right">Bought</th>
@@ -291,7 +350,15 @@ export function CustomerBehaviour({ partnerId }: { partnerId: string }) {
                             </thead>
                             <tbody>
                                 {customers.map((c) => (
-                                    <tr key={c.email} onClick={() => openDetail(c)} className="border-b last:border-0 hover:bg-muted/40 cursor-pointer">
+                                    <tr key={c.email} onClick={() => openDetail(c)} className={`border-b last:border-0 hover:bg-muted/40 cursor-pointer ${selected[c.email] ? 'bg-primary/5' : ''}`}>
+                                        <td className="px-4 py-3" onClick={(e) => { e.stopPropagation(); toggleOne(c) }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={!!selected[c.email]}
+                                                onChange={() => {}}
+                                                className="h-4 w-4 rounded border-input accent-[#4E47DC] cursor-pointer align-middle pointer-events-none"
+                                            />
+                                        </td>
                                         <td className="px-4 py-3">
                                             <p className="font-medium">{c.name || c.email}</p>
                                             {c.name && <p className="text-xs text-muted-foreground">{c.email}</p>}

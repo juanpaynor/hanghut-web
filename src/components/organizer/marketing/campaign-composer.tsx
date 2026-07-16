@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Send, Eye, Edit, Code, Users, Calendar, ChevronDown, FileText, Save, Trash2, CalendarClock, Clock, X, Target, LayoutTemplate, CalendarPlus, Bookmark, Plus, Search, Beaker, Sparkles, Wand2 } from 'lucide-react'
+import { Loader2, Send, Eye, Edit, Code, Users, Calendar, ChevronDown, FileText, Save, Trash2, CalendarClock, Clock, X, Target, LayoutTemplate, CalendarPlus, Bookmark, Plus, Search, Beaker, Sparkles, Wand2, UserCheck } from 'lucide-react'
 import { RichTextEditor } from './rich-text-editor'
 import { EventCombobox } from './event-combobox'
 import { Badge } from '@/components/ui/badge'
@@ -31,7 +31,7 @@ interface EventOption {
     tickets_sold: number
 }
 
-type AudienceType = 'all_subscribers' | 'event_attendees' | 'customer_segment'
+type AudienceType = 'all_subscribers' | 'event_attendees' | 'customer_segment' | 'specific_customers'
 
 // Customer/RFM segments that can be emailed (resolved server-side to their emails).
 const SEGMENT_OPTIONS: { value: string; label: string }[] = [
@@ -83,6 +83,8 @@ export function CampaignComposer() {
     // Audience segmentation state
     const [audienceType, setAudienceType] = useState<AudienceType>('all_subscribers')
     const [selectedSegment, setSelectedSegment] = useState<string>('')
+    // Hand-picked recipients deep-linked from the Customers page (checkbox selection).
+    const [specificRecipients, setSpecificRecipients] = useState<{ email: string; first_name?: string }[]>([])
     const [selectedEventId, setSelectedEventId] = useState<string>('')
     const [events, setEvents] = useState<EventOption[]>([])
     const [loadingEvents, setLoadingEvents] = useState(false)
@@ -116,7 +118,23 @@ export function CampaignComposer() {
         refreshTemplates()
 
         // Deep-link from Customer analytics: /organizer/marketing?segment=at_risk
-        const seg = new URLSearchParams(window.location.search).get('segment')
+        const params = new URLSearchParams(window.location.search)
+        const seg = params.get('segment')
+
+        // Deep-link from the Customers page checkbox selection: hand-picked
+        // recipients are handed over via sessionStorage (too many for a URL).
+        let picked: { email: string; first_name?: string }[] = []
+        if (params.get('recipients') === 'selected') {
+            try {
+                const raw = sessionStorage.getItem('hh:email-recipients')
+                if (raw) {
+                    const list = JSON.parse(raw)
+                    if (Array.isArray(list)) picked = list.filter((r) => r && r.email)
+                }
+            } catch { /* ignore */ }
+            sessionStorage.removeItem('hh:email-recipients') // consume once
+        }
+        const hasPicked = picked.length > 0
 
         // Restore any autosaved draft-in-progress.
         try {
@@ -130,16 +148,22 @@ export function CampaignComposer() {
                 }
                 if (s.editorMode) setEditorMode(s.editorMode)
                 if (s.draftId) setDraftId(s.draftId)
-                // Only restore the saved audience if we're not deep-linking a segment.
-                if (!seg) {
-                    if (s.audienceType) setAudienceType(s.audienceType)
+                // Only restore the saved audience if we're not deep-linking a segment
+                // or a hand-picked list. A saved 'specific_customers' can't be restored
+                // (the list isn't persisted) — fall back to all subscribers.
+                if (!seg && !hasPicked) {
+                    if (s.audienceType && s.audienceType !== 'specific_customers') setAudienceType(s.audienceType)
                     if (s.selectedSegment) setSelectedSegment(s.selectedSegment)
                     if (s.selectedEventId) setSelectedEventId(s.selectedEventId)
                 }
             }
         } catch { /* ignore corrupt autosave */ }
 
-        if (seg) {
+        if (hasPicked) {
+            setSpecificRecipients(picked)
+            setAudienceType('specific_customers')
+            setAudienceCount(picked.length)
+        } else if (seg) {
             setAudienceType('customer_segment')
             setSelectedSegment(SEGMENT_OPTIONS.some((o) => o.value === seg) ? seg : 'customers')
         }
@@ -261,6 +285,10 @@ export function CampaignComposer() {
         }
         if (audienceType === 'customer_segment' && !selectedSegment) {
             toast({ title: 'Choose a segment', description: 'Please pick a customer segment to target.', variant: 'destructive' })
+            return
+        }
+        if (audienceType === 'specific_customers') {
+            toast({ title: 'Send now instead', description: "Scheduling isn't available for a hand-picked list — use Send now.", variant: 'destructive' })
             return
         }
         if (!scheduledFor) {
@@ -438,6 +466,8 @@ export function CampaignComposer() {
     }, [eventQuery, insertEventOpen])
 
     async function loadAudienceCount() {
+        // Hand-picked lists carry their own exact count — no server lookup needed.
+        if (audienceType === 'specific_customers') return
         setLoadingCount(true)
         try {
             const partnerId = await getPartnerId()
@@ -520,12 +550,19 @@ export function CampaignComposer() {
             return
         }
 
+        if (audienceType === 'specific_customers' && specificRecipients.length === 0) {
+            toast({ title: 'No customers selected', description: 'Pick customers from the Customers page first.', variant: 'destructive' })
+            return
+        }
+
         const selectedEventTitle = events.find(e => e.id === selectedEventId)?.title
         const audienceLabel = audienceType === 'all_subscribers'
             ? 'ALL active subscribers'
             : audienceType === 'event_attendees'
                 ? `all attendees of "${selectedEventTitle}"`
-                : `your "${segmentLabel(selectedSegment)}" segment`
+                : audienceType === 'specific_customers'
+                    ? `${specificRecipients.length} hand-picked customer${specificRecipients.length !== 1 ? 's' : ''}`
+                    : `your "${segmentLabel(selectedSegment)}" segment`
 
         const confirmSend = window.confirm(`Are you sure you want to send this email to ${audienceLabel}? This cannot be undone.`)
         if (!confirmSend) return
@@ -590,6 +627,11 @@ export function CampaignComposer() {
                 }
                 body.target_recipients = recipients
                 body.segment = selectedSegment
+            } else if (audienceType === 'specific_customers') {
+                // Hand-picked list from the Customers page; suppression still applies downstream.
+                if (specificRecipients.length === 0) throw new Error('No customers selected')
+                body.target_recipients = specificRecipients
+                body.segment = 'specific_customers'
             }
 
             // Call Edge Function
@@ -612,6 +654,7 @@ export function CampaignComposer() {
             setAudienceType('all_subscribers')
             setSelectedEventId('')
             setSelectedSegment('')
+            setSpecificRecipients([])
             setDraftId(null)
             refreshDrafts()
 
@@ -700,6 +743,39 @@ export function CampaignComposer() {
                     {/* Audience Selector */}
                     <div className="space-y-3">
                         <Label className="text-base font-semibold">Audience</Label>
+
+                        {/* Hand-picked list (deep-linked from the Customers page) */}
+                        {audienceType === 'specific_customers' && (
+                            <div className="rounded-lg border-2 border-primary bg-primary/5 p-4 space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <UserCheck className="h-5 w-5 text-primary shrink-0" />
+                                    <p className="font-medium text-sm">
+                                        Sending to {specificRecipients.length} hand-picked customer{specificRecipients.length !== 1 ? 's' : ''}
+                                    </p>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {specificRecipients.slice(0, 10).map((r) => (
+                                        <span key={r.email} className="text-xs bg-background border rounded-full px-2 py-0.5 text-muted-foreground">
+                                            {r.first_name || r.email}
+                                        </span>
+                                    ))}
+                                    {specificRecipients.length > 10 && (
+                                        <span className="text-xs text-muted-foreground px-1 py-0.5">
+                                            +{specificRecipients.length - 10} more
+                                        </span>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => { setSpecificRecipients([]); setAudienceType('all_subscribers'); setAudienceCount(null) }}
+                                    className="text-xs text-primary hover:underline"
+                                >
+                                    Choose a different audience instead
+                                </button>
+                            </div>
+                        )}
+
+                        {audienceType !== 'specific_customers' && (
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <button
                                 type="button"
@@ -747,6 +823,7 @@ export function CampaignComposer() {
                                 </div>
                             </button>
                         </div>
+                        )}
 
                         {/* Event Picker (shown when event-specific audience selected) */}
                         {audienceType === 'event_attendees' && (

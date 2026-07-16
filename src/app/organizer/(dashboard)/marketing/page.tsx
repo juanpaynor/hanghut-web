@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SubscribersTable } from '@/components/organizer/marketing/subscribers-table'
 import { CampaignComposer } from '@/components/organizer/marketing/campaign-composer'
@@ -15,6 +16,15 @@ const TABS = [
 ]
 
 export default function MarketingPage() {
+    const [tab, setTab] = useState('subscribers')
+
+    // Deep-links from the Customers page open the composer directly:
+    // ?recipients=selected (hand-picked list) or ?segment=… (whole segment).
+    useEffect(() => {
+        const p = new URLSearchParams(window.location.search)
+        if (p.get('recipients') === 'selected' || p.get('segment')) setTab('campaigns')
+    }, [])
+
     return (
         <div className="flex-1 p-6 sm:p-8 pt-6">
             {/* Hero header */}
@@ -32,7 +42,7 @@ export default function MarketingPage() {
                 </div>
             </div>
 
-            <Tabs defaultValue="subscribers" className="mt-6 space-y-6">
+            <Tabs value={tab} onValueChange={setTab} className="mt-6 space-y-6">
                 <TabsList className="h-auto flex-wrap gap-1 rounded-xl bg-muted/60 p-1">
                     {TABS.map(({ value, label, icon: Icon }) => (
                         <TabsTrigger
