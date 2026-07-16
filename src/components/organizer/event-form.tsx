@@ -253,9 +253,15 @@ export function EventForm({
         const active = tiers.filter(t => t.name.trim())
         const prices = active.map(t => parseFloat(t.price) || 0)
         const minPrice = prices.length ? Math.min(...prices) : 0
-        // Assigned seating: capacity is defined by the seat map (built after create),
-        // so leave it at 0 here. GA: capacity = sum of the typed quantities.
-        const totalQty = isAssignedSeating ? 0 : active.reduce((s, t) => s + (parseInt(t.quantity) || 0), 0)
+        // Assigned seating: the per-tier split is set on the seat map, but the event
+        // still needs a positive total capacity (events.capacity CHECK > 0, and the
+        // map save doesn't write it back), so that's a manual field — only sync price.
+        if (isAssignedSeating) {
+            setFormData(prev => prev.ticket_price === String(minPrice) ? prev : { ...prev, ticket_price: String(minPrice) })
+            return
+        }
+        // GA: capacity = sum of the typed quantities.
+        const totalQty = active.reduce((s, t) => s + (parseInt(t.quantity) || 0), 0)
         setFormData(prev => (
             prev.ticket_price === String(minPrice) && prev.capacity === String(totalQty)
                 ? prev
@@ -409,6 +415,9 @@ export function EventForm({
             } else if (active.some(t => isNaN(parseFloat(t.price)) || parseFloat(t.price) < 0)) {
                 newErrors.tiers = 'Ticket prices must be 0 or more'
             }
+            if (isAssignedSeating && (!formData.capacity || parseInt(formData.capacity) < 1)) {
+                newErrors.capacity = 'Enter your total capacity (at least 1)'
+            }
         }
         if (!isEditing && !formData.cover_image) {
             // Required for new events, optional for updates (keep existing)
@@ -461,6 +470,7 @@ export function EventForm({
                 if (active.length === 0) e.tiers = isAssignedSeating ? 'Add at least one price category with a name' : 'Add at least one ticket type with a name'
                 else if (!isAssignedSeating && active.some(t => !(parseInt(t.quantity) >= 1))) e.tiers = 'Give each ticket type a quantity of at least 1'
                 else if (active.some(t => isNaN(parseFloat(t.price)) || parseFloat(t.price) < 0)) e.tiers = 'Ticket prices must be 0 or more'
+                if (isAssignedSeating && (!formData.capacity || parseInt(formData.capacity) < 1)) e.capacity = 'Enter your total capacity (at least 1)'
             }
         }
         // seating / settings / details have no fields that block Continue.
@@ -1231,11 +1241,28 @@ export function EventForm({
                                     </div>
                                 ))}
                                 <Button type="button" variant="outline" onClick={addTier} className="w-full gap-1.5 border-dashed">
-                                    <Plus className="h-4 w-4" /> Add ticket type
+                                    <Plus className="h-4 w-4" /> Add {isAssignedSeating ? 'price category' : 'ticket type'}
                                 </Button>
+                                {isAssignedSeating && (
+                                    <div className="rounded-xl border p-3 sm:p-4">
+                                        <Label htmlFor="assigned_capacity" className="text-xs">Total capacity (all seats) *</Label>
+                                        <Input
+                                            id="assigned_capacity"
+                                            type="number" min="1"
+                                            value={formData.capacity}
+                                            onChange={(e) => handleInputChange('capacity', e.target.value)}
+                                            placeholder="e.g. 300"
+                                            className={errors.capacity ? 'border-red-500' : ''}
+                                        />
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            Your venue&apos;s total seats. You&apos;ll place them exactly — and split them across the price categories above — on the seat map.
+                                        </p>
+                                        {errors.capacity && <p className="text-sm text-red-500 mt-1">{errors.capacity}</p>}
+                                    </div>
+                                )}
                                 <p className="text-xs text-muted-foreground">
                                     {isAssignedSeating
-                                        ? 'Use a price of 0 for free seats. How many of each you sell is set by the seats you assign on the seat map after creating the event.'
+                                        ? 'Use a price of 0 for free seats. How many of each price category sells is set by the seats you assign on the seat map.'
                                         : 'Use a price of 0 for free tickets. Total capacity is the sum of all quantities.'}
                                 </p>
                                 {errors.tiers && <p className="text-sm text-red-500">{errors.tiers}</p>}
