@@ -1,16 +1,23 @@
 'use client'
 
 /**
- * Buyer-facing seat picker. Renders the event's seat map (from the
- * get_event_seat_map RPC) in a customer-facing style: light theme, venue
- * overview with price-colored sections, tap a section to zoom into seats.
+ * Buyer-facing seat picker. Customer-facing style: light theme, venue overview
+ * with price-colored sections, tap a section to zoom into seats.
+ *
+ * Data is fetched as two halves for scale (geometry/status split):
+ *  - GEOMETRY (/api/seat-map/geometry) — sections, seat coords, prices. Immutable
+ *    per version token, served from the CDN. Fetched once; costs the DB ~nothing
+ *    under load.
+ *  - STATUS (/api/seat-map/status) — which seats are taken + remaining counts.
+ *    Tiny, micro-cached, polled every ~12s (Realtime patches bookings sooner).
+ * They're merged back into one SeatMapData so the render is unchanged.
  *
  * Selection is optimistic — seats are validated and held server-side at
- * checkout (assign_seats_to_intent). A SEATS_UNAVAILABLE error there sends
- * the buyer back here with fresh availability.
+ * checkout (assign_seats_to_intent). A SEATS_UNAVAILABLE error there sends the
+ * buyer back here with fresh availability.
  *
- * The Flutter app renders the same RPC payload with CustomPainter; this
- * component and that one share the JSON contract, not the rendering code.
+ * NOTE: the Flutter app still consumes the single get_event_seat_map RPC (kept
+ * intact). It can migrate to the split endpoints later — see team_comms.
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
@@ -54,6 +61,10 @@ interface MapSection {
     available_count: number
     /** 'ga' = general admission (no seats, buy by quantity); price/capacity from tier_id */
     sales_mode?: 'seated' | 'ga'
+    /** Total seats in this section (from overview geometry). Present before the
+     *  seats themselves are lazily loaded, so seated sections aren't mistaken for GA. */
+    seat_count?: number
+    /** Empty until the section is opened (Phase 2 lazy load). */
     seats: MapSeat[]
 }
 
@@ -96,10 +107,12 @@ interface SeatMapPickerProps {
     maxPerOrder?: number
 }
 
-/** GA = buy by quantity, no seat dots. Fallback matches the pre-sales_mode
- *  contract from team_comms #169: empty seats[] + a tier_id. */
+/** GA = buy by quantity, no seat dots. Uses `sales_mode` (authoritative from the
+ *  geometry RPC) with a seat_count fallback — NOT seats.length, which is 0 for a
+ *  seated section whose seats haven't been lazily loaded yet. */
 function isGASection(section: MapSection): boolean {
-    return section.sales_mode === 'ga' || (section.seats.length === 0 && !!section.tier_id)
+    return section.sales_mode === 'ga'
+        || ((section.seat_count ?? section.seats.length) === 0 && !!section.tier_id)
 }
 
 const TIER_PALETTE = [
@@ -156,19 +169,131 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         }
     }, [])
 
-    // ─── Data loading + periodic availability refresh ────────────────────
-    const loadMap = useCallback(async () => {
-        const supabase = createClient()
-        const { data, error } = await supabase.rpc('get_event_seat_map', { p_event_id: eventId })
-        if (!error && data) setMapData(data as SeatMapData)
-        setLoading(false)
+    // ─── Data loading: overview geometry (cached) + status + lazy seats ──
+    // Fetched in pieces for scale:
+    //  - GEOMETRY = section polygons + counts ONLY (no seat arrays); keyed by a
+    //    version token, CDN-cached. Tiny even for a huge arena.
+    //  - Each section's SEATS are loaded on demand when the buyer zooms in
+    //    (also version-keyed + CDN-cached).
+    //  - STATUS = which seats are taken + remaining counts; small, polled.
+    // We merge them into `mapData` so the render/selection code is unchanged.
+    const geometryRef = useRef<any>(null)
+    const statusRef = useRef<any>(null)
+    const versionRef = useRef<number | null>(null)
+    // Sections whose seats have been lazily fetched into geometryRef.
+    const loadedSectionsRef = useRef<Set<string>>(new Set())
+    const [loadingSectionId, setLoadingSectionId] = useState<string | null>(null)
+
+    const mergeStatus = useCallback((geo: any, status: any): SeatMapData => {
+        const takenMap = new Map<string, MapSeat['status']>(
+            (status?.taken ?? []).map((t: any) => [t.id as string, t.status as MapSeat['status']])
+        )
+        const countMap = new Map<string, number>(
+            (status?.sections ?? []).map((s: any) => [s.id as string, s.available_count as number])
+        )
+        return {
+            ...geo,
+            sections: (geo.sections ?? []).map((sec: any) => ({
+                ...sec,
+                available_count: countMap.get(sec.id) ?? 0,
+                // seats is absent until the section is opened (lazy) → [] for now.
+                seats: (sec.seats ?? []).map((s: any) => ({
+                    ...s,
+                    status: takenMap.get(s.id) ?? 'available',
+                })),
+            })),
+        } as SeatMapData
+    }, [])
+
+    // Re-project current geometry + status into mapData (call after either changes).
+    const remerge = useCallback(() => {
+        if (geometryRef.current && statusRef.current) {
+            setMapData(mergeStatus(geometryRef.current, statusRef.current))
+        }
+    }, [mergeStatus])
+
+    const fetchStatus = useCallback(async (): Promise<any | null> => {
+        try {
+            const res = await fetch(`/api/seat-map/status?eventId=${eventId}`, { cache: 'no-store' })
+            if (!res.ok) return null
+            return await res.json()
+        } catch { return null }
     }, [eventId])
 
+    const fetchGeometry = useCallback(async (version: number): Promise<any | null> => {
+        try {
+            // Version-keyed URL → immutable CDN cache; a new save = new URL.
+            const res = await fetch(`/api/seat-map/geometry?eventId=${eventId}&v=${version}`)
+            if (!res.ok) return null
+            return await res.json()
+        } catch { return null }
+    }, [eventId])
+
+    const fetchSectionSeats = useCallback(async (sectionId: string, version: number): Promise<any[] | null> => {
+        try {
+            const res = await fetch(`/api/seat-map/section?sectionId=${sectionId}&v=${version}`)
+            if (!res.ok) return null
+            return await res.json()
+        } catch { return null }
+    }, [])
+
+    // Load a section's seats on demand (once), then remerge so they render.
+    const ensureSectionSeats = useCallback(async (sectionId: string) => {
+        if (loadedSectionsRef.current.has(sectionId)) return
+        const version = versionRef.current
+        const geo = geometryRef.current
+        if (version == null || !geo) return
+        setLoadingSectionId(sectionId)
+        try {
+            const seats = await fetchSectionSeats(sectionId, version)
+            // Bail if the geometry was swapped (version bump) mid-fetch.
+            if (seats && geometryRef.current === geo) {
+                geometryRef.current = {
+                    ...geo,
+                    sections: geo.sections.map((sec: any) => sec.id === sectionId ? { ...sec, seats } : sec),
+                }
+                loadedSectionsRef.current.add(sectionId)
+                remerge()
+            }
+        } finally {
+            setLoadingSectionId(null)
+        }
+    }, [fetchSectionSeats, remerge])
+
+    // Initial load: status first (carries the version) → overview geometry → merge.
+    const loadAll = useCallback(async () => {
+        const status = await fetchStatus()
+        if (!status) { setLoading(false); return }
+        statusRef.current = status
+        versionRef.current = status.version
+        const geo = await fetchGeometry(status.version)
+        if (geo) {
+            geometryRef.current = geo
+            loadedSectionsRef.current = new Set()
+            remerge()
+        }
+        setLoading(false)
+    }, [fetchStatus, fetchGeometry, remerge])
+
+    // Cheap refresh: re-pull status only. If the version moved (organizer re-saved
+    // mid-sale — rare), re-fetch the overview geometry (loaded seats reset).
+    const refreshStatus = useCallback(async () => {
+        const status = await fetchStatus()
+        if (!status) return
+        statusRef.current = status
+        if (status.version !== versionRef.current) {
+            versionRef.current = status.version
+            const geo = await fetchGeometry(status.version)
+            if (geo) { geometryRef.current = geo; loadedSectionsRef.current = new Set() }
+        }
+        remerge()
+    }, [fetchStatus, fetchGeometry, remerge])
+
     useEffect(() => {
-        loadMap()
-        const interval = setInterval(loadMap, 30000)
+        loadAll()
+        const interval = setInterval(refreshStatus, 12000)
         return () => clearInterval(interval)
-    }, [loadMap])
+    }, [loadAll, refreshStatus])
 
     // Live updates: booked seats grey out as other buyers complete payment
     useEffect(() => {
@@ -323,27 +448,37 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     }, [stageSize])
 
     // ─── Interactions ────────────────────────────────────────────────────
-    // Seated sections zoom to their seat dots; GA zones open the quantity sheet.
-    const handleSectionTap = useCallback((section: MapSection) => {
+    // Seated sections lazily load their seats, then zoom to them; GA zones open
+    // the quantity sheet (no seats to load).
+    const handleSectionTap = useCallback(async (section: MapSection) => {
         if (isGASection(section)) {
             setGaSection(section)
             setGaQty(1)
             return
         }
-        zoomToSection(section)
-    }, [zoomToSection])
+        await ensureSectionSeats(section.id)
+        // Zoom using the freshly-loaded section (geometryRef is updated synchronously
+        // by ensureSectionSeats before its remerge), so we fit the seats, not the polygon.
+        const loaded = geometryRef.current?.sections.find((s: any) => s.id === section.id)
+        zoomToSection(loaded ?? section)
+    }, [ensureSectionSeats, zoomToSection])
 
     const handleSeatTap = useCallback((seat: MapSeat) => {
-        if (seat.status !== 'available' || !seat.tier_id) return
         const supabase = createClient()
         const sid = sessionIdRef.current
 
-        // Deselect → release our hold so others can take the seat immediately.
+        // Deselect FIRST — must run before the availability guard below. Once a
+        // seat is selected we hold it server-side, so the next map poll returns
+        // it as status 'held' (our OWN hold); if the guard ran first, tapping to
+        // cancel would be rejected and the seat would be stuck selected.
         if (selectedSeatIds.includes(seat.id)) {
             setSelectedSeatIds(prev => prev.filter(id => id !== seat.id))
             void supabase.rpc('release_seat_hold', { p_seat_id: seat.id, p_session_id: sid })
             return
         }
+
+        // Not selected yet → only selectable if actually available + priced.
+        if (seat.status !== 'available' || !seat.tier_id) return
 
         const currentTier = selectedSeatIds.length > 0 ? allSeats.get(selectedSeatIds[0])?.tier_id : null
         if (currentTier && currentTier !== seat.tier_id) {
@@ -365,10 +500,10 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
             if (error || data !== true) {
                 setSelectedSeatIds(prev => prev.filter(id => id !== seat.id))
                 toast({ title: 'Seat just taken', description: `${seat.label} was grabbed by another buyer.` })
-                loadMap()
+                refreshStatus()
             }
         })
-    }, [selectedSeatIds, allSeats, toast, maxPerOrder, loadMap])
+    }, [selectedSeatIds, allSeats, toast, maxPerOrder, refreshStatus])
 
     const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
         e.evt.preventDefault()
@@ -543,7 +678,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                                             const pos = stage?.getPointerPosition()
                                             if (pos) setHoveredSeat({ seat, screenX: pos.x, screenY: pos.y })
                                             const container = stage?.container()
-                                            if (container) container.style.cursor = seat.status === 'available' ? 'pointer' : 'not-allowed'
+                                            if (container) container.style.cursor = seat.status === 'available' || isSel ? 'pointer' : 'not-allowed'
                                         }}
                                         onMouseMove={(e) => {
                                             const stage = e.target.getStage()
@@ -625,6 +760,15 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                         </div>
                     )
                 })()}
+
+                {/* Loading a section's seats (Phase 2 lazy load) */}
+                {loadingSectionId && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 backdrop-blur-[1px] pointer-events-none">
+                        <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2 shadow-md border text-sm text-slate-600">
+                            <Loader2 className="h-4 w-4 animate-spin" /> Loading seats…
+                        </div>
+                    </div>
+                )}
 
                 {/* Controls overlay */}
                 <div className="absolute top-3 right-3 flex flex-col gap-1.5">
