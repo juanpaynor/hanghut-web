@@ -124,6 +124,12 @@ const TIER_PALETTE = [
 const TAKEN_COLOR = '#d1d5db'
 const SELECTED_COLOR = '#0f172a'
 
+// Below this many seats, prefetch every section's seats in the background right
+// after the overview loads, so section taps are instant (covers ~all real
+// events). Above it — a true arena — stay lazy: only load sections on tap so the
+// initial payload stays tiny.
+const PREFETCH_SEAT_LIMIT = 6000
+
 export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps) {
     const router = useRouter()
     const { toast } = useToast()
@@ -180,8 +186,9 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     const geometryRef = useRef<any>(null)
     const statusRef = useRef<any>(null)
     const versionRef = useRef<number | null>(null)
-    // Sections whose seats have been lazily fetched into geometryRef.
+    // Sections whose seats have been fetched into geometryRef (+ ones in flight).
     const loadedSectionsRef = useRef<Set<string>>(new Set())
+    const inflightRef = useRef<Set<string>>(new Set())
     const [loadingSectionId, setLoadingSectionId] = useState<string | null>(null)
 
     const mergeStatus = useCallback((geo: any, status: any): SeatMapData => {
@@ -237,28 +244,48 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         } catch { return null }
     }, [])
 
-    // Load a section's seats on demand (once), then remerge so they render.
-    const ensureSectionSeats = useCallback(async (sectionId: string) => {
-        if (loadedSectionsRef.current.has(sectionId)) return
-        const version = versionRef.current
-        const geo = geometryRef.current
-        if (version == null || !geo) return
-        setLoadingSectionId(sectionId)
+    // Load one section's seats into geometryRef (once), then remerge so they
+    // render. `background` skips the spinner (used by prefetch). Parallel-safe:
+    // the write reads the LATEST geometryRef so concurrent loads don't clobber
+    // each other, and a version guard drops results from a stale map.
+    const loadSection = useCallback(async (sectionId: string, background = false) => {
+        if (loadedSectionsRef.current.has(sectionId) || inflightRef.current.has(sectionId)) return
+        const startVersion = versionRef.current
+        if (startVersion == null || !geometryRef.current) return
+        inflightRef.current.add(sectionId)
+        if (!background) setLoadingSectionId(sectionId)
         try {
-            const seats = await fetchSectionSeats(sectionId, version)
-            // Bail if the geometry was swapped (version bump) mid-fetch.
-            if (seats && geometryRef.current === geo) {
+            const seats = await fetchSectionSeats(sectionId, startVersion)
+            const cur = geometryRef.current
+            if (seats && cur && versionRef.current === startVersion) {
                 geometryRef.current = {
-                    ...geo,
-                    sections: geo.sections.map((sec: any) => sec.id === sectionId ? { ...sec, seats } : sec),
+                    ...cur,
+                    sections: cur.sections.map((sec: any) => sec.id === sectionId ? { ...sec, seats } : sec),
                 }
                 loadedSectionsRef.current.add(sectionId)
                 remerge()
             }
         } finally {
-            setLoadingSectionId(null)
+            inflightRef.current.delete(sectionId)
+            if (!background) setLoadingSectionId(null)
         }
     }, [fetchSectionSeats, remerge])
+
+    // For normal-size maps, warm every section in the background so taps are
+    // instant. A true arena (over the limit) stays lazy — sections load on tap.
+    const maybePrefetch = useCallback(() => {
+        const geo = geometryRef.current
+        if (!geo) return
+        const seated = (geo.sections ?? []).filter((s: any) => (s.seat_count ?? 0) > 0)
+        const total = seated.reduce((n: number, s: any) => n + (s.seat_count ?? 0), 0)
+        if (total === 0 || total > PREFETCH_SEAT_LIMIT) return
+        // Gentle: a few at a time, in overview order.
+        ;(async () => {
+            const queue = [...seated]
+            const worker = async () => { while (queue.length) { const s = queue.shift(); if (s) await loadSection(s.id, true) } }
+            await Promise.all([worker(), worker(), worker()])
+        })()
+    }, [loadSection])
 
     // Initial load: status first (carries the version) → overview geometry → merge.
     const loadAll = useCallback(async () => {
@@ -271,9 +298,10 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
             geometryRef.current = geo
             loadedSectionsRef.current = new Set()
             remerge()
+            maybePrefetch()
         }
         setLoading(false)
-    }, [fetchStatus, fetchGeometry, remerge])
+    }, [fetchStatus, fetchGeometry, remerge, maybePrefetch])
 
     // Cheap refresh: re-pull status only. If the version moved (organizer re-saved
     // mid-sale — rare), re-fetch the overview geometry (loaded seats reset).
@@ -284,10 +312,10 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         if (status.version !== versionRef.current) {
             versionRef.current = status.version
             const geo = await fetchGeometry(status.version)
-            if (geo) { geometryRef.current = geo; loadedSectionsRef.current = new Set() }
+            if (geo) { geometryRef.current = geo; loadedSectionsRef.current = new Set(); remerge(); maybePrefetch() }
         }
         remerge()
-    }, [fetchStatus, fetchGeometry, remerge])
+    }, [fetchStatus, fetchGeometry, remerge, maybePrefetch])
 
     useEffect(() => {
         loadAll()
@@ -456,12 +484,12 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
             setGaQty(1)
             return
         }
-        await ensureSectionSeats(section.id)
+        await loadSection(section.id)
         // Zoom using the freshly-loaded section (geometryRef is updated synchronously
-        // by ensureSectionSeats before its remerge), so we fit the seats, not the polygon.
+        // before remerge), so we fit the seats, not the polygon.
         const loaded = geometryRef.current?.sections.find((s: any) => s.id === section.id)
         zoomToSection(loaded ?? section)
-    }, [ensureSectionSeats, zoomToSection])
+    }, [loadSection, zoomToSection])
 
     const handleSeatTap = useCallback((seat: MapSeat) => {
         const supabase = createClient()
