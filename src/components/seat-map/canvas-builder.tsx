@@ -360,6 +360,8 @@ interface CanvasBuilderProps {
   readOnly?: boolean
   /** Price categories (ticket tiers) available for section/row/seat assignment */
   tiers?: TierInfo[]
+  /** Creates a new price category (organizer mode) — returns it so it can be auto-assigned. */
+  onCreateTier?: (name: string, price: number) => Promise<TierInfo | null>
   /** Uploads a floor-plan image and returns its public URL. Falls back to inline data URL if not provided. */
   onUploadImageFile?: (file: File) => Promise<string | null>
 }
@@ -370,6 +372,7 @@ export function CanvasBuilder({
   mode = 'admin',
   readOnly = false,
   tiers = [],
+  onCreateTier,
   onUploadImageFile,
 }: CanvasBuilderProps) {
   const stageRef = useRef<Konva.Stage>(null)
@@ -771,7 +774,11 @@ export function CanvasBuilder({
         stage.draggable(true)
       }
     },
-    [readOnly, state.tool, state.panOffset, dispatch, screenToCanvas]
+    // state.selectedIds is read above (seat-drop needs a section selected). It
+    // MUST be a dep — otherwise selecting a section without changing the tool
+    // leaves this handler stale, and the seat tool silently no-ops until you
+    // toggle tools (which changes state.tool and rebuilds the callback).
+    [readOnly, state.tool, state.panOffset, state.selectedIds, dispatch, screenToCanvas]
   )
 
   // ─── Mouse Up (finish rectangle drag) ───────────────────────────────
@@ -1622,6 +1629,7 @@ export function CanvasBuilder({
           sections={state.sections}
           tool={state.tool}
           tiers={tiers}
+          onCreateTier={onCreateTier}
           onAssignSeatsTier={(seatIds, tierId) => {
             dispatchWithHistory({ type: 'ASSIGN_SEATS_TIER', seatIds, tierId })
           }}

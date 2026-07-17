@@ -370,12 +370,18 @@ export async function saveEventSeatMap(
       if (tierId) tierCounts.set(tierId, (tierCounts.get(tierId) ?? 0) + 1)
     }
   }
-  // Every tier the map *references* (section default, row override, or per-seat)
-  // must be synced — including ones whose seats were just deleted/reassigned, so
-  // their quantity_total resets to 0 instead of advertising phantom capacity.
-  // Tiers never referenced by the map (pure GA tiers) are left untouched.
+  // Every tier the map references through SEATS (section default on a seated
+  // section, row override, or per-seat) must be synced — including ones whose
+  // seats were just deleted/reassigned, so their quantity_total resets to 0
+  // instead of advertising phantom capacity. GA zones (a tier on a section with
+  // NO seats) sell by their TYPED quantity, so those tiers are left untouched —
+  // zeroing them would kill the zone's inventory.
+  const gaZoneTierIds = new Set(
+    canvasData.sections.filter((s) => s.seats.length === 0 && s.tierId).map((s) => s.tierId as string)
+  )
   const referencedTierIds = new Set<string>(tierCounts.keys())
   for (const section of canvasData.sections) {
+    if (section.seats.length === 0) continue // GA zone — typed quantity is authoritative
     if (section.tierId) referencedTierIds.add(section.tierId)
     for (const t of Object.values(section.rowTierOverrides ?? {})) {
       if (t) referencedTierIds.add(t)
@@ -383,11 +389,42 @@ export async function saveEventSeatMap(
   }
 
   for (const tierId of referencedTierIds) {
+    if (gaZoneTierIds.has(tierId)) continue // shared with a GA zone — don't clobber
     await supabase
       .from('ticket_tiers')
       .update({ quantity_total: tierCounts.get(tierId) ?? 0 })
       .eq('id', tierId)
       .eq('event_id', eventId)
+  }
+
+  // ── Sync event capacity from the map ──────────────────────────────────
+  // Sellable capacity = non-disabled seats + GA-zone tier inventory. Keeps
+  // events.capacity truthful for assigned-seating events (the wizard only asks
+  // for an estimate). Non-fatal: events_capacity_check requires > 0, so an
+  // empty map leaves capacity alone.
+  try {
+    const activeSeats = canvasData.sections.reduce(
+      (sum, s) => sum + s.seats.filter((seat) => seat.status !== 'disabled').length, 0
+    )
+    let gaCapacity = 0
+    if (gaZoneTierIds.size > 0) {
+      const { data: gaTiers } = await supabase
+        .from('ticket_tiers')
+        .select('quantity_total')
+        .eq('event_id', eventId)
+        .in('id', Array.from(gaZoneTierIds))
+      gaCapacity = (gaTiers ?? []).reduce((sum, t) => sum + (t.quantity_total ?? 0), 0)
+    }
+    const totalCapacity = activeSeats + gaCapacity
+    if (totalCapacity > 0) {
+      const { error: capErr } = await supabase
+        .from('events')
+        .update({ capacity: totalCapacity })
+        .eq('id', eventId)
+      if (capErr) console.error('Capacity sync skipped:', capErr.message)
+    }
+  } catch (e) {
+    console.error('Capacity sync failed (non-fatal):', e)
   }
 
   revalidatePath(`/organizer/events/${eventId}`)

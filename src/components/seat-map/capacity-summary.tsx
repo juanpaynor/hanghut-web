@@ -55,7 +55,9 @@ export function CapacitySummary({ sections, tiers }: CapacitySummaryProps) {
     // Under-mapped: tickets without a seat — fine if a GA zone sells that tier.
     const tierWarnings: string[] = []
     for (const t of tiers) {
-      if (t.quantityTotal == null) continue
+      // 0 = "inventory defined by the seat map" (assigned-seating tiers start
+      // at 0 and sync from the mapped seats on save) — nothing to validate.
+      if (t.quantityTotal == null || t.quantityTotal === 0) continue
       const mapped = tierCounts.get(t.id) ?? 0
       if (mapped > t.quantityTotal) {
         tierWarnings.push(`${t.name}: ${mapped} seats mapped but only ${t.quantityTotal} tickets exist — ${mapped - t.quantityTotal} seat(s) can never be sold.`)

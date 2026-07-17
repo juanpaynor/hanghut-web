@@ -14,6 +14,7 @@ interface CanvasPropertiesProps {
   sections: SectionData[]
   tool: CanvasTool
   tiers?: TierInfo[]
+  onCreateTier?: (name: string, price: number) => Promise<TierInfo | null>
   onAssignSeatsTier?: (seatIds: string[], tierId: string | null) => void
   onSelectRow?: () => void
   onUpdateSection: (id: string, updates: Partial<SectionData>) => void
@@ -86,6 +87,90 @@ function TierSelect({
         </option>
       ))}
     </select>
+  )
+}
+
+/** Inline "new price category" form — create tiers without leaving the editor.
+ *  Inventory starts at 0 and is filled by the seats assigned to the tier. */
+function NewTierForm({
+  onCreateTier,
+  onCreated,
+}: {
+  onCreateTier: (name: string, price: number) => Promise<TierInfo | null>
+  onCreated?: (tier: TierInfo) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [price, setPrice] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    if (!name.trim() || busy) return
+    setBusy(true)
+    const tier = await onCreateTier(name, parseFloat(price) || 0)
+    setBusy(false)
+    if (tier) {
+      setName('')
+      setPrice('')
+      setOpen(false)
+      onCreated?.(tier)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full flex items-center justify-center gap-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 text-xs font-medium py-2 rounded-lg transition-all border border-dashed border-indigo-600/40"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        New price category
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-2 bg-slate-800/60 border border-slate-700 rounded-lg p-2.5">
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setOpen(false) }}
+        placeholder="Name — e.g. VIP, Lower Box"
+        className="w-full bg-slate-900 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+      />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500">₱</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setOpen(false) }}
+            placeholder="0"
+            className="w-full bg-slate-900 border border-slate-700 rounded-md pl-6 pr-2.5 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+        </div>
+        <button
+          onClick={submit}
+          disabled={!name.trim() || busy}
+          className="shrink-0 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium px-3 py-1.5 rounded-md transition-all"
+        >
+          {busy ? 'Adding…' : 'Add'}
+        </button>
+        <button
+          onClick={() => setOpen(false)}
+          className="shrink-0 text-slate-400 hover:text-slate-200 text-xs px-1"
+        >
+          ✕
+        </button>
+      </div>
+      <p className="text-[10px] text-slate-500 leading-relaxed">
+        How many sell = the seats you assign to it. Free seats? Use ₱0.
+      </p>
+    </div>
   )
 }
 
@@ -196,6 +281,7 @@ export function CanvasProperties({
   sections,
   tool,
   tiers = [],
+  onCreateTier,
   onAssignSeatsTier,
   onSelectRow,
   onUpdateSection,
@@ -914,9 +1000,19 @@ export function CanvasProperties({
               Pricing
             </label>
             {tiers.length === 0 ? (
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                No ticket tiers on this event yet. Create tiers in the Tickets tab to price sections.
-              </p>
+              <div className="space-y-2">
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  {onCreateTier
+                    ? 'No price categories yet — create one to price this section.'
+                    : 'No ticket tiers on this event yet. Create tiers in the Tickets tab to price sections.'}
+                </p>
+                {onCreateTier && (
+                  <NewTierForm
+                    onCreateTier={onCreateTier}
+                    onCreated={(tier) => onUpdateSection(selectedSection.id, { tierId: tier.id })}
+                  />
+                )}
+              </div>
             ) : (
               <div className="space-y-3">
                 <div>
@@ -927,6 +1023,14 @@ export function CanvasProperties({
                     inheritLabel="— Not assigned —"
                     onChange={(tierId) => onUpdateSection(selectedSection.id, { tierId })}
                   />
+                  {onCreateTier && (
+                    <div className="mt-2">
+                      <NewTierForm
+                        onCreateTier={onCreateTier}
+                        onCreated={(tier) => onUpdateSection(selectedSection.id, { tierId: tier.id })}
+                      />
+                    </div>
+                  )}
                   {/* GA guard: a section with no seats sells by QUANTITY from its tier.
                       Without a tier it can't be sold at all (buyers see it dead). */}
                   {selectedSection.seats.length === 0 && !selectedSection.tierId && (
@@ -1304,6 +1408,31 @@ export function CanvasProperties({
                 Capacity &amp; Revenue
               </label>
               <CapacitySummary sections={sections} tiers={tiers} />
+            </div>
+          )}
+
+          {/* Price categories — list + in-editor creation (organizer mode) */}
+          {(tiers.length > 0 || onCreateTier) && (
+            <div className={sections.length > 0 ? 'border-t border-slate-800 pt-4' : ''}>
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 block flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5" />
+                Price Categories ({tiers.length})
+              </label>
+              {tiers.length > 0 && (
+                <div className="space-y-1.5 mb-2">
+                  {tiers.map((t) => (
+                    <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/50">
+                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
+                      <span className="text-xs text-white truncate flex-1">{t.name}</span>
+                      <span className="text-[10px] text-slate-400">₱{Number(t.price).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {onCreateTier && <NewTierForm onCreateTier={onCreateTier} />}
+              {tiers.length === 0 && !onCreateTier && (
+                <p className="text-[11px] text-slate-500">No price categories on this event yet.</p>
+              )}
             </div>
           )}
 

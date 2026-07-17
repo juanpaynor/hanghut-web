@@ -14,6 +14,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import { getEventSeatMap, saveEventSeatMap, getUsableVenueTemplates, saveVenueTemplate } from '@/lib/seat-map/seat-map-actions'
+import { createTicketTier } from '@/lib/organizer/tier-actions'
 import type { CanvasData, TierInfo } from '@/components/seat-map/types'
 import { TIER_PALETTE } from '@/components/seat-map/types'
 import { createClient } from '@/lib/supabase/client'
@@ -102,6 +103,39 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
         }
         load()
     }, [eventId])
+
+    // Create a price category (ticket tier) without leaving the editor. Inventory
+    // starts at 0 — the seat-map save syncs it from the seats assigned to it.
+    const handleCreateTier = useCallback(async (name: string, price: number): Promise<TierInfo | null> => {
+        try {
+            const res = await createTicketTier(eventId, {
+                name: name.trim().slice(0, 100),
+                description: '',
+                price: Math.max(0, price || 0),
+                quantity_total: 0,
+                is_active: true,
+                sort_order: tiers.length,
+            })
+            if ('error' in res && res.error) {
+                toast({ title: 'Could not create category', description: res.error, variant: 'destructive' })
+                return null
+            }
+            const tier = (res as any).tier
+            const info: TierInfo = {
+                id: tier.id,
+                name: tier.name,
+                price: Number(tier.price),
+                color: TIER_PALETTE[tiers.length % TIER_PALETTE.length],
+                quantityTotal: 0,
+            }
+            setTiers((prev) => [...prev, info])
+            toast({ title: 'Price category created', description: `${info.name} — ₱${info.price.toLocaleString()}. Assign seats to it to set how many sell.` })
+            return info
+        } catch (err: any) {
+            toast({ title: 'Could not create category', description: err?.message || 'Please try again.', variant: 'destructive' })
+            return null
+        }
+    }, [eventId, tiers.length, toast])
 
     // Upload floor-plan images to Storage so canvas_data stays small
     const handleUploadImageFile = useCallback(async (file: File): Promise<string | null> => {
@@ -359,6 +393,7 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                         onSave={handleSave}
                         mode="organizer"
                         tiers={tiers}
+                        onCreateTier={handleCreateTier}
                         onUploadImageFile={handleUploadImageFile}
                     />
                 </div>
