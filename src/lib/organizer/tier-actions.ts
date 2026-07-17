@@ -2,7 +2,6 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { revalidatePath } from 'next/cache'
 
 export async function createTicketTier(eventId: string, tierData: {
     name: string
@@ -73,7 +72,9 @@ export async function createTicketTier(eventId: string, tierData: {
         return { error: 'Failed to create ticket tier' }
     }
 
-    revalidatePath(`/organizer/events/${eventId}`)
+    // No revalidatePath: callers patch their list locally, and the event
+    // dashboard is force-dynamic (refetches on navigation). Revalidating here
+    // forced a full route refresh that felt like a page reload on every save.
     return { success: true, tier }
 }
 
@@ -142,7 +143,6 @@ export async function updateTicketTier(tierId: string, tierData: {
         return { error: 'Failed to update ticket tier' }
     }
 
-    revalidatePath(`/organizer/events/${tier.event_id}`)
     return { success: true }
 }
 
@@ -204,6 +204,5 @@ export async function deleteTicketTier(tierId: string) {
         return { error: 'Failed to delete ticket tier' }
     }
 
-    revalidatePath(`/organizer/events/${tier.event_id}`)
     return { success: true }
 }

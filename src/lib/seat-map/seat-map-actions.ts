@@ -35,15 +35,31 @@ export async function getUsableVenueTemplates() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
+  // Only the columns the chooser grid needs — NOT canvas_data. That jsonb holds
+  // the full seat geometry (thousands of seats per arena); pulling it for every
+  // template just to render cards made the picker crawl. Loaded on select instead.
   const { data, error } = await supabase
     .from('venue_templates')
-    .select('*')
+    .select('id, name, venue_name, thumbnail_url, total_capacity, is_published, created_by')
     .or(`is_published.eq.true,created_by.eq.${user.id}`)
     .order('is_published', { ascending: false })
     .order('venue_name', { ascending: true })
 
   if (error) throw new Error(error.message)
   return data
+}
+
+/** Just the canvas_data for one template — fetched when a template is picked,
+ *  so the chooser stays light. */
+export async function getVenueTemplateCanvas(id: string) {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('venue_templates')
+    .select('canvas_data')
+    .eq('id', id)
+    .single()
+  if (error) throw new Error(error.message)
+  return (data?.canvas_data ?? null) as unknown
 }
 
 export async function getVenueTemplate(id: string) {

@@ -63,6 +63,10 @@ export function TicketTiersManager({
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     const [editingTier, setEditingTier] = useState<TicketTier | null>(null)
     const [isLoading, setIsLoading] = useState(false)
+    // Local copy so create/update/delete patch the list in place — avoids a
+    // router.refresh() that re-fetches the whole event dashboard (felt like a
+    // full reload). The server actions still revalidate for the next load.
+    const [tiers, setTiers] = useState<TicketTier[]>(initialTiers)
 
     const [formData, setFormData] = useState({
         name: '',
@@ -127,7 +131,7 @@ export function TicketTiersManager({
                 min_per_order: parseInt(formData.min_per_order),
                 max_per_order: parseInt(formData.max_per_order),
                 is_active: formData.is_active,
-                sort_order: editingTier ? editingTier.sort_order : initialTiers.length,
+                sort_order: editingTier ? editingTier.sort_order : tiers.length,
             }
 
             let result
@@ -148,9 +152,15 @@ export function TicketTiersManager({
                     title: 'Success',
                     description: editingTier ? 'Tier updated successfully' : 'Tier created successfully',
                 })
+                // Patch the list locally instead of a full route refresh.
+                if (editingTier) {
+                    const updated = { ...editingTier, ...tierData } as TicketTier
+                    setTiers(prev => prev.map(t => (t.id === editingTier.id ? updated : t)))
+                } else if ('tier' in result && result.tier) {
+                    setTiers(prev => [...prev, result.tier as TicketTier])
+                }
                 setIsDialogOpen(false)
                 resetForm()
-                router.refresh()
             }
         } catch (error) {
             toast({
@@ -182,7 +192,7 @@ export function TicketTiersManager({
                 title: 'Success',
                 description: 'Tier deleted successfully',
             })
-            router.refresh()
+            setTiers(prev => prev.filter(t => t.id !== tierId))
         }
         setIsLoading(false)
     }
@@ -203,7 +213,7 @@ export function TicketTiersManager({
             </div>
 
             <div className="grid gap-4">
-                {initialTiers.length === 0 ? (
+                {tiers.length === 0 ? (
                     <Card>
                         <CardContent className="flex flex-col items-center justify-center py-12">
                             <Ticket className="h-12 w-12 text-muted-foreground mb-4" />
@@ -213,7 +223,7 @@ export function TicketTiersManager({
                         </CardContent>
                     </Card>
                 ) : (
-                    initialTiers.map((tier) => (
+                    tiers.map((tier) => (
                         <Card key={tier.id}>
                             <CardHeader>
                                 <div className="flex items-start justify-between">

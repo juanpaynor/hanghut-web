@@ -13,7 +13,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
-import { getEventSeatMap, saveEventSeatMap, getUsableVenueTemplates, saveVenueTemplate } from '@/lib/seat-map/seat-map-actions'
+import { getEventSeatMap, saveEventSeatMap, getUsableVenueTemplates, getVenueTemplateCanvas, saveVenueTemplate } from '@/lib/seat-map/seat-map-actions'
 import { createTicketTier } from '@/lib/organizer/tier-actions'
 import type { CanvasData, TierInfo } from '@/components/seat-map/types'
 import { TIER_PALETTE } from '@/components/seat-map/types'
@@ -214,9 +214,24 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
         setView('templates')
     }
 
-    const handleSelectTemplate = (template: any) => {
-        setCanvasData(template.canvas_data as CanvasData)
-        setView('builder')
+    // Canvas_data isn't in the list payload (kept light) — fetch it on pick.
+    const [applyingTemplate, setApplyingTemplate] = useState<string | null>(null)
+    const handleSelectTemplate = async (template: any) => {
+        setApplyingTemplate(template.id)
+        try {
+            const canvas = await getVenueTemplateCanvas(template.id)
+            if (!canvas) {
+                toast({ title: 'Empty template', description: 'This template has no layout.', variant: 'destructive' })
+                return
+            }
+            setCanvasData(canvas as CanvasData)
+            setView('builder')
+        } catch (err: any) {
+            console.error('Failed to load template:', err)
+            toast({ title: 'Could not load template', description: err?.message || 'Please try again.', variant: 'destructive' })
+        } finally {
+            setApplyingTemplate(null)
+        }
     }
 
     const handleSave = async (data: CanvasData) => {
@@ -316,10 +331,15 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                             {templates.map((template) => (
                                 <Card
                                     key={template.id}
-                                    className="overflow-hidden cursor-pointer hover:border-primary/50 hover:shadow-lg transition-all"
+                                    className={`overflow-hidden transition-all ${applyingTemplate ? 'pointer-events-none opacity-60' : 'cursor-pointer hover:border-primary/50 hover:shadow-lg'}`}
                                     onClick={() => handleSelectTemplate(template)}
                                 >
-                                    <div className="h-36 bg-slate-100 flex items-center justify-center">
+                                    <div className="h-36 bg-slate-100 flex items-center justify-center relative">
+                                        {applyingTemplate === template.id && (
+                                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-sm">
+                                                <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+                                            </div>
+                                        )}
                                         {template.thumbnail_url ? (
                                             // eslint-disable-next-line @next/next/no-img-element
                                             <img
