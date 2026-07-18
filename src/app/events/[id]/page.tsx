@@ -307,8 +307,18 @@ export default async function PublicEventPage({
     } as React.CSSProperties : undefined;
 
     // Layout Config
-    const defaultOrder = ["hero", "title", "details", "about", "gallery", "organizer", "tickets"]
-    const layoutOrder: string[] = event.layout_config?.order || defaultOrder
+    const defaultOrder = ["hero", "title", "details", "about", "lineup", "schedule", "gallery", "organizer", "faq", "sponsors", "tickets"]
+    let layoutOrder: string[] = event.layout_config?.order || defaultOrder
+    // Events saved before lineup/schedule/faq/sponsors existed have orders without
+    // them — merge missing ids in (before tickets) so their content can render.
+    {
+        const missing = ['lineup', 'schedule', 'faq', 'sponsors'].filter(s => !layoutOrder.includes(s))
+        if (missing.length) {
+            layoutOrder = [...layoutOrder]
+            const ti = layoutOrder.indexOf('tickets')
+            layoutOrder.splice(ti === -1 ? layoutOrder.length : ti, 0, ...missing)
+        }
+    }
     const hiddenSections = new Set(event.layout_config?.hidden || [])
     const rawVideoPosition = event.layout_config?.video_position || 'center 50%'
 
@@ -444,11 +454,11 @@ export default async function PublicEventPage({
                             {event.title}
                         </h1>
                         <div className="flex items-center gap-3 text-white/75 text-sm font-medium flex-wrap justify-center">
-                            <span>📅 {format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
+                            <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
                             {event.venue_name && (
                                 <>
                                     <span className="w-1 h-1 rounded-full bg-white/40" />
-                                    <span>📍 {event.venue_name}</span>
+                                    <span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{event.venue_name}</span>
                                 </>
                             )}
                         </div>
@@ -810,6 +820,7 @@ export default async function PublicEventPage({
                             inviteOnly={event.invite_only}
                             themeColor={event.theme_color}
                             dark={isDarkBg}
+                            pageTheme={pageTheme}
                             initialApprovedRegistrationId={approvedRegistrationId}
                             hasTicket={viewerHasTicket}
                             ticketToken={viewerTicketToken}
@@ -836,16 +847,102 @@ export default async function PublicEventPage({
         )
     }
 
-    const LocationSection = () => {
-        if (!venueVisible) return null
+    // ── Rich content sections (lineup / schedule / FAQ / sponsors) ──
+    // Content lives in layout_config.sections (jsonb); each section renders
+    // only when the organizer has added entries.
+    const sectionsContent = event.layout_config?.sections || {}
+
+    const LineupSection = () => {
+        const lineup: Array<{ name: string; role?: string; photo_url?: string }> = sectionsContent.lineup || []
+        if (lineup.length === 0) return null
         return (
-            // Only render if we haven't already rendered details, or if user wants specific map
             <div className="py-8">
-                <h3 data-hh-section-title className="text-xl font-bold mb-4">Location</h3>
-                <Card className="h-[300px] flex items-center justify-center bg-muted">
-                    {/* Embed map or placeholder */}
-                    <p className="text-muted-foreground">Map View ({event.latitude}, {event.longitude})</p>
-                </Card>
+                <h2 data-hh-section-title className="text-2xl font-bold mb-6">Lineup</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {lineup.map((artist, i) => (
+                        <div data-hh-card key={`${artist.name}-${i}`} className="rounded-2xl border border-border/50 overflow-hidden text-center bg-card/50">
+                            {artist.photo_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={artist.photo_url} alt={artist.name} className="w-full aspect-square object-cover" />
+                            ) : (
+                                <div className="w-full aspect-square bg-primary/10 flex items-center justify-center text-4xl font-bold text-primary">
+                                    {artist.name.charAt(0)}
+                                </div>
+                            )}
+                            <div className="p-3">
+                                <p className="font-bold leading-tight">{artist.name}</p>
+                                {artist.role && <p className="text-xs text-muted-foreground mt-0.5">{artist.role}</p>}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )
+    }
+
+    const ScheduleSection = () => {
+        const schedule: Array<{ time: string; title: string; description?: string }> = sectionsContent.schedule || []
+        if (schedule.length === 0) return null
+        return (
+            <div className="py-8">
+                <h2 data-hh-section-title className="text-2xl font-bold mb-6">Schedule</h2>
+                <div className="relative pl-6 space-y-6 before:absolute before:left-[5px] before:top-1 before:bottom-1 before:w-px before:bg-primary/30">
+                    {schedule.map((item, i) => (
+                        <div key={i} className="relative">
+                            <span className="absolute -left-6 top-1.5 w-[11px] h-[11px] rounded-full bg-primary ring-4 ring-primary/15" />
+                            <p className="text-sm font-semibold text-primary tabular-nums">{item.time}</p>
+                            <p className="font-bold text-lg leading-snug">{item.title}</p>
+                            {item.description && <p className="text-sm text-muted-foreground mt-0.5">{item.description}</p>}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )
+    }
+
+    const FaqSection = () => {
+        const faq: Array<{ q: string; a: string }> = sectionsContent.faq || []
+        if (faq.length === 0) return null
+        return (
+            <div className="py-8">
+                <h2 data-hh-section-title className="text-2xl font-bold mb-6">FAQ</h2>
+                <div className="space-y-3">
+                    {faq.map((item, i) => (
+                        // Native details/summary — accordion with zero JS
+                        <details data-hh-card key={i} className="group rounded-2xl border border-border/50 px-5 py-4 bg-card/50">
+                            <summary className="font-semibold cursor-pointer list-none flex items-center justify-between gap-3 select-none">
+                                {item.q}
+                                <span className="text-primary transition-transform group-open:rotate-45 shrink-0 text-xl leading-none">+</span>
+                            </summary>
+                            <p className="text-sm text-muted-foreground mt-3 whitespace-pre-wrap">{item.a}</p>
+                        </details>
+                    ))}
+                </div>
+            </div>
+        )
+    }
+
+    const SponsorsSection = () => {
+        const sponsors: Array<{ name: string; logo_url?: string; url?: string }> = sectionsContent.sponsors || []
+        if (sponsors.length === 0) return null
+        return (
+            <div className="py-8">
+                <h2 data-hh-section-title className="text-2xl font-bold mb-6">Sponsors & Partners</h2>
+                <div className="flex flex-wrap items-center gap-x-8 gap-y-6">
+                    {sponsors.map((s, i) => {
+                        const inner = s.logo_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={s.logo_url} alt={s.name} title={s.name} className="h-10 md:h-12 w-auto max-w-[140px] object-contain opacity-70 hover:opacity-100 transition-opacity" />
+                        ) : (
+                            <span className="font-bold text-lg text-muted-foreground hover:text-foreground transition-colors">{s.name}</span>
+                        )
+                        return s.url ? (
+                            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer">{inner}</a>
+                        ) : (
+                            <span key={i}>{inner}</span>
+                        )
+                    })}
+                </div>
             </div>
         )
     }
@@ -858,10 +955,15 @@ export default async function PublicEventPage({
             case 'title': return <TitleSection key="title" />
             case 'details': return <DetailsSection key="details" />
             case 'about': return <AboutSection key="about" />
+            case 'lineup': return <LineupSection key="lineup" />
+            case 'schedule': return <ScheduleSection key="schedule" />
+            case 'faq': return <FaqSection key="faq" />
+            case 'sponsors': return <SponsorsSection key="sponsors" />
             case 'organizer': return <OrganizerSection key="organizer" />
             case 'gallery': return <GallerySection key="gallery" />
             case 'tickets': return <TicketsSection key="tickets" />
-            case 'location': return <LocationSection key="location" />
+            // 'location' (Map & Directions) removed — the Details card already
+            // covers venue + Get Directions; old saved orders fall through to null
             default: return null
         }
     }
@@ -950,11 +1052,11 @@ export default async function PublicEventPage({
 
                     {/* Date + venue */}
                     <div className="flex items-center gap-3 text-white/70 text-sm font-medium flex-wrap justify-center">
-                        <span>📅 {formattedPosterDate}</span>
+                        <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{formattedPosterDate}</span>
                         {event.venue_name && (
                             <>
                                 <span className="w-1 h-1 rounded-full bg-white/35" />
-                                <span>📍 {event.venue_name}</span>
+                                <span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{event.venue_name}</span>
                             </>
                         )}
                     </div>
@@ -1043,11 +1145,11 @@ export default async function PublicEventPage({
                         </div>
                         <h1 className="text-4xl md:text-5xl font-black leading-tight tracking-tight">{event.title}</h1>
                         <div className="flex items-center gap-2 text-muted-foreground text-sm pt-1 flex-wrap">
-                            <span>📅 {format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
+                            <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
                             {event.venue_name && (
                                 <>
                                     <span>·</span>
-                                    <span>📍 {event.venue_name}</span>
+                                    <span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{event.venue_name}</span>
                                 </>
                             )}
                         </div>
@@ -1233,8 +1335,8 @@ export default async function PublicEventPage({
                             {event.title}
                         </h1>
                         <div className="flex items-center gap-3 text-white/75 text-sm font-medium flex-wrap justify-center">
-                            <span>📅 {format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
-                            {event.venue_name && <><span className="w-1 h-1 rounded-full bg-white/40" /><span>📍 {event.venue_name}</span></>}
+                            <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
+                            {event.venue_name && <><span className="w-1 h-1 rounded-full bg-white/40" /><span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{event.venue_name}</span></>}
                         </div>
                         {showCountdown && <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />}
                         {showSocialProof && recentNames.length > 0 && <SocialProofTicker names={recentNames} />}

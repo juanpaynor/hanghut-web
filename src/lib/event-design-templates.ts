@@ -23,7 +23,7 @@ export type EventDesignTemplate = {
     /** Art-directed theme applied to the public page (layout_config.theme) */
     theme: EventThemeId
     theme_color: string
-    bg_style: 'default' | 'particles' | 'gradient-mesh' | 'noise' | 'parallax'
+    bg_style: 'default' | 'particles' | 'gradient-mesh' | 'noise' | 'parallax' | 'cover-blur'
     page_layout: 'default' | 'poster' | 'minimal'
     font_heading: string
     font_body: string
@@ -115,6 +115,38 @@ export const EVENT_DESIGN_TEMPLATES: EventDesignTemplate[] = [
         show_social_proof: false,
     },
     {
+        id: 'spotlight',
+        name: 'Spotlight',
+        tagline: 'Your poster becomes the whole atmosphere',
+        vibe: 'Concerts & showcases',
+        theme: 'classic',
+        theme_color: '#8B5CF6',
+        bg_style: 'cover-blur',
+        page_layout: 'default',
+        font_heading: 'playfair',
+        font_body: 'inter',
+        heading_color: '#FFFFFF',
+        text_color: null,
+        show_countdown: true,
+        show_social_proof: true,
+    },
+    {
+        id: 'fiesta',
+        name: 'Fiesta',
+        tagline: 'Banderitas, bright stickers, street-party energy',
+        vibe: 'Fiestas & food fests',
+        theme: 'fiesta',
+        theme_color: '#E11D48',
+        bg_style: 'default',
+        page_layout: 'default',
+        font_heading: 'outfit',
+        font_body: 'inter',
+        heading_color: null,
+        text_color: null,
+        show_countdown: true,
+        show_social_proof: true,
+    },
+    {
         id: 'broadsheet',
         name: 'Broadsheet',
         tagline: 'Print rules, numbered sections, serif headlines',
@@ -146,4 +178,4 @@ export const TEMPLATE_FONT_CSS: Record<string, string> = {
 
 /** One stylesheet that loads every face the gallery previews need */
 export const TEMPLATE_FONTS_URL =
-    'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Bebas+Neue&family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@600;900&family=DM+Serif+Display&display=swap'
+    'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Bebas+Neue&family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@600;900&family=DM+Serif+Display&family=Playfair+Display:wght@700&display=swap'

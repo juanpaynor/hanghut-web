@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { updateEventStorefront, uploadEventBgImage } from "@/lib/organizer/event-actions"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, ArrowUp, ArrowDown, LayoutDashboard, Palette, FileCode, Sparkles, Timer, Upload, Type, X } from "lucide-react"
+import { Loader2, ArrowUp, ArrowDown, LayoutDashboard, Palette, FileCode, Sparkles, Timer, Upload, Type, X, Plus, ListMusic } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { VideoUploader } from "@/components/ui/video-uploader"
 import { DraggableVideoCropper } from "@/components/ui/draggable-video-cropper"
@@ -33,7 +33,61 @@ interface StorefrontCustomizationFormProps {
         video_url?: string | null
         description_html?: string | null
         theme_color?: string | null
+        cover_image_url?: string | null
         layout_config?: any
+    }
+}
+
+/**
+ * Client-side vibrant-color extraction from the event cover: downsample to a
+ * small canvas, bucket pixels by hue, and pick the most saturated dominant
+ * bucket. Powers "Match my cover" so pages theme themselves from the poster.
+ */
+async function extractVibrantColor(imageUrl: string): Promise<string | null> {
+    try {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const el = document.createElement('img')
+            el.crossOrigin = 'anonymous'
+            el.onload = () => resolve(el)
+            el.onerror = reject
+            el.src = imageUrl
+        })
+        const size = 48
+        const canvas = document.createElement('canvas')
+        canvas.width = size
+        canvas.height = size
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return null
+        ctx.drawImage(img, 0, 0, size, size)
+        const { data } = ctx.getImageData(0, 0, size, size)
+
+        // 12 hue buckets, scored by saturation × mid-tone weight
+        const buckets = Array.from({ length: 12 }, () => ({ score: 0, r: 0, g: 0, b: 0, n: 0 }))
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i + 1], b = data[i + 2]
+            const max = Math.max(r, g, b), min = Math.min(r, g, b)
+            const sat = max === 0 ? 0 : (max - min) / max
+            const light = (max + min) / 510
+            if (sat < 0.25 || light < 0.12 || light > 0.92) continue // skip greys/extremes
+            let h = 0
+            const d = max - min
+            if (d > 0) {
+                if (max === r) h = ((g - b) / d + 6) % 6
+                else if (max === g) h = (b - r) / d + 2
+                else h = (r - g) / d + 4
+            }
+            const bucket = buckets[Math.floor(h * 2) % 12]
+            const score = sat * (1 - Math.abs(light - 0.5))
+            bucket.score += score
+            bucket.r += r * score; bucket.g += g * score; bucket.b += b * score
+            bucket.n += score
+        }
+        const best = buckets.reduce((a, c) => (c.score > a.score ? c : a))
+        if (!best.n) return null
+        const hex = (v: number) => Math.round(v / best.n).toString(16).padStart(2, '0')
+        return `#${hex(best.r)}${hex(best.g)}${hex(best.b)}`
+    } catch {
+        return null // CORS or decode failure — non-fatal
     }
 }
 
@@ -42,13 +96,22 @@ const SECTION_LABELS: Record<string, string> = {
     title: "Event Title & Date",
     details: "Key Details (Location/Time)",
     about: "About Section",
+    lineup: "Lineup (Artists/Speakers)",
+    schedule: "Schedule / Rundown",
     gallery: "Photo Gallery",
     organizer: "Organizer Info",
-    tickets: "Ticket Selector",
-    location: "Map & Directions"
+    faq: "FAQ",
+    sponsors: "Sponsors & Partners",
+    tickets: "Ticket Selector"
 }
 
-const DEFAULT_LAYOUT = ["hero", "title", "details", "about", "gallery", "organizer", "tickets", "location"]
+const DEFAULT_LAYOUT = ["hero", "title", "details", "about", "lineup", "schedule", "gallery", "organizer", "faq", "sponsors", "tickets"]
+
+// Rich-section content types (stored in layout_config.sections)
+type LineupEntry = { name: string; role?: string; photo_url?: string }
+type ScheduleEntry = { time: string; title: string; description?: string }
+type FaqEntry = { q: string; a: string }
+type SponsorEntry = { name: string; logo_url?: string; url?: string }
 
 export function StorefrontCustomizationForm({ eventId, initialData }: StorefrontCustomizationFormProps) {
     const router = useRouter()
@@ -56,10 +119,20 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
     const [isLoading, setIsLoading] = useState(false)
 
     // Layout State
-    // Ensure we have a valid array even if DB is null or empty
-    const initialOrder = initialData.layout_config?.order && initialData.layout_config.order.length > 0
-        ? initialData.layout_config.order
-        : DEFAULT_LAYOUT
+    // Ensure we have a valid array even if DB is null or empty; merge in any
+    // section ids added after this event's order was saved (before tickets).
+    const initialOrder: string[] = (() => {
+        const saved: string[] = (initialData.layout_config?.order && initialData.layout_config.order.length > 0
+            ? [...initialData.layout_config.order]
+            : [...DEFAULT_LAYOUT]
+        ).filter((s: string) => s in SECTION_LABELS) // drop retired sections (e.g. 'location')
+        const missing = DEFAULT_LAYOUT.filter(s => !saved.includes(s))
+        if (missing.length) {
+            const ti = saved.indexOf('tickets')
+            saved.splice(ti === -1 ? saved.length : ti, 0, ...missing)
+        }
+        return saved
+    })()
 
     const initialHidden = new Set((initialData.layout_config?.hidden || []) as string[])
     const initialVideoPosition = initialData.layout_config?.video_position || 'center 50%'
@@ -70,6 +143,23 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
 
     // Visual style state
     const [pageThemeId, setPageThemeId] = useState<string>(initialData.layout_config?.theme || 'classic')
+    const [matchingCover, setMatchingCover] = useState(false)
+
+    // Rich content sections (rendered on the public page only when non-empty)
+    const [lineup, setLineup] = useState<LineupEntry[]>(initialData.layout_config?.sections?.lineup || [])
+    const [schedule, setSchedule] = useState<ScheduleEntry[]>(initialData.layout_config?.sections?.schedule || [])
+    const [faq, setFaq] = useState<FaqEntry[]>(initialData.layout_config?.sections?.faq || [])
+    const [sponsors, setSponsors] = useState<SponsorEntry[]>(initialData.layout_config?.sections?.sponsors || [])
+
+    // Shared image-upload plumbing for lineup photos / sponsor logos: one hidden
+    // input; whoever opens it registers a callback for the uploaded URL.
+    const sectionImageInputRef = useRef<HTMLInputElement>(null)
+    const sectionImageCbRef = useRef<((url: string) => void) | null>(null)
+    const [sectionImageUploading, setSectionImageUploading] = useState(false)
+    const pickSectionImage = (cb: (url: string) => void) => {
+        sectionImageCbRef.current = cb
+        sectionImageInputRef.current?.click()
+    }
     const [bgStyle, setBgStyle] = useState<string>(initialData.layout_config?.bg_style || 'default')
     const [pageLayout, setPageLayout] = useState<string>(initialData.layout_config?.page_layout || 'default')
     const [showCountdown, setShowCountdown] = useState<boolean>(initialData.layout_config?.show_countdown ?? false)
@@ -164,6 +254,12 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                     font_body: fontBody,
                     text_color: textColor || null,
                     heading_color: headingColor || null,
+                    sections: {
+                        lineup: lineup.filter(a => a.name.trim()),
+                        schedule: schedule.filter(s => s.title.trim()),
+                        faq: faq.filter(f => f.q.trim()),
+                        sponsors: sponsors.filter(s => s.name.trim()),
+                    },
                 }
             })
 
@@ -243,7 +339,7 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Brand Color (Hex)</FormLabel>
-                                        <div className="flex items-center gap-4">
+                                        <div className="flex items-center gap-4 flex-wrap">
                                             <Input
                                                 type="color"
                                                 className="w-16 h-10 p-1 cursor-pointer"
@@ -251,9 +347,30 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                                             />
                                             <Input
                                                 placeholder="#000000"
-                                                className="font-mono"
+                                                className="font-mono flex-1 min-w-[120px]"
                                                 {...field}
                                             />
+                                            {initialData.cover_image_url && (
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={matchingCover}
+                                                    onClick={async () => {
+                                                        setMatchingCover(true)
+                                                        const color = await extractVibrantColor(initialData.cover_image_url!)
+                                                        setMatchingCover(false)
+                                                        if (color) {
+                                                            form.setValue('theme_color', color, { shouldDirty: true })
+                                                            toast({ title: 'Matched your cover', description: `Brand color set to ${color}.` })
+                                                        } else {
+                                                            toast({ title: "Couldn't read the cover", description: 'Try picking a color manually.', variant: 'destructive' })
+                                                        }
+                                                    }}
+                                                >
+                                                    {matchingCover ? <Loader2 className="h-4 w-4 animate-spin" /> : <>🎨 Match my cover</>}
+                                                </Button>
+                                            )}
                                         </div>
                                         <FormDescription>Used for buttons and accents on your event page.</FormDescription>
                                         <FormMessage />
@@ -329,6 +446,131 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                                     </FormItem>
                                 )}
                             />
+                        </CardContent>
+                    </Card>
+
+                    {/* 2.5 Rich Sections — lineup / schedule / FAQ / sponsors */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <ListMusic className="h-5 w-5" />
+                                Lineup, Schedule, FAQ & Sponsors
+                            </CardTitle>
+                            <CardDescription>
+                                Give your page real substance. Sections only appear on the public page once they have content.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-8">
+                            {/* Shared hidden uploader for photos/logos */}
+                            <input
+                                ref={sectionImageInputRef}
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                onChange={async (e) => {
+                                    const file = e.target.files?.[0]
+                                    e.target.value = ''
+                                    if (!file || !sectionImageCbRef.current) return
+                                    setSectionImageUploading(true)
+                                    const fd = new FormData()
+                                    fd.append('file', file)
+                                    const result = await uploadEventBgImage(eventId, fd)
+                                    setSectionImageUploading(false)
+                                    if (result.error) {
+                                        toast({ title: 'Upload failed', description: result.error, variant: 'destructive' })
+                                    } else if (result.url) {
+                                        sectionImageCbRef.current(result.url)
+                                    }
+                                    sectionImageCbRef.current = null
+                                }}
+                            />
+
+                            {/* Lineup */}
+                            <div className="space-y-3">
+                                <Label className="text-sm font-semibold">Lineup — artists, DJs, speakers</Label>
+                                {lineup.map((artist, i) => (
+                                    <div key={i} className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            disabled={sectionImageUploading}
+                                            onClick={() => pickSectionImage((url) => setLineup(l => l.map((a, j) => j === i ? { ...a, photo_url: url } : a)))}
+                                            className="w-10 h-10 rounded-lg border-2 border-dashed border-border hover:border-primary/50 shrink-0 overflow-hidden flex items-center justify-center text-muted-foreground"
+                                            title="Upload photo"
+                                        >
+                                            {artist.photo_url
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                ? <img src={artist.photo_url} alt="" className="w-full h-full object-cover" />
+                                                : <Upload className="h-4 w-4" />}
+                                        </button>
+                                        <Input placeholder="Name" value={artist.name} onChange={e => setLineup(l => l.map((a, j) => j === i ? { ...a, name: e.target.value } : a))} />
+                                        <Input placeholder="Role (DJ, Host…)" value={artist.role || ''} onChange={e => setLineup(l => l.map((a, j) => j === i ? { ...a, role: e.target.value } : a))} />
+                                        <Button type="button" variant="ghost" size="sm" className="shrink-0 px-2" onClick={() => setLineup(l => l.filter((_, j) => j !== i))}><X className="h-4 w-4" /></Button>
+                                    </div>
+                                ))}
+                                <Button type="button" variant="outline" size="sm" onClick={() => setLineup(l => [...l, { name: '' }])}>
+                                    <Plus className="h-4 w-4 mr-1" /> Add artist
+                                </Button>
+                            </div>
+
+                            {/* Schedule */}
+                            <div className="space-y-3">
+                                <Label className="text-sm font-semibold">Schedule / rundown</Label>
+                                {schedule.map((item, i) => (
+                                    <div key={i} className="flex items-center gap-2">
+                                        <Input placeholder="7:00 PM" className="w-28 shrink-0" value={item.time} onChange={e => setSchedule(s => s.map((x, j) => j === i ? { ...x, time: e.target.value } : x))} />
+                                        <Input placeholder="Doors open" value={item.title} onChange={e => setSchedule(s => s.map((x, j) => j === i ? { ...x, title: e.target.value } : x))} />
+                                        <Input placeholder="Details (optional)" value={item.description || ''} onChange={e => setSchedule(s => s.map((x, j) => j === i ? { ...x, description: e.target.value } : x))} />
+                                        <Button type="button" variant="ghost" size="sm" className="shrink-0 px-2" onClick={() => setSchedule(s => s.filter((_, j) => j !== i))}><X className="h-4 w-4" /></Button>
+                                    </div>
+                                ))}
+                                <Button type="button" variant="outline" size="sm" onClick={() => setSchedule(s => [...s, { time: '', title: '' }])}>
+                                    <Plus className="h-4 w-4 mr-1" /> Add slot
+                                </Button>
+                            </div>
+
+                            {/* FAQ */}
+                            <div className="space-y-3">
+                                <Label className="text-sm font-semibold">FAQ</Label>
+                                {faq.map((item, i) => (
+                                    <div key={i} className="flex items-start gap-2">
+                                        <div className="flex-1 space-y-2">
+                                            <Input placeholder="Question — e.g. What's the dress code?" value={item.q} onChange={e => setFaq(f => f.map((x, j) => j === i ? { ...x, q: e.target.value } : x))} />
+                                            <Textarea placeholder="Answer" className="min-h-[60px]" value={item.a} onChange={e => setFaq(f => f.map((x, j) => j === i ? { ...x, a: e.target.value } : x))} />
+                                        </div>
+                                        <Button type="button" variant="ghost" size="sm" className="shrink-0 px-2 mt-1" onClick={() => setFaq(f => f.filter((_, j) => j !== i))}><X className="h-4 w-4" /></Button>
+                                    </div>
+                                ))}
+                                <Button type="button" variant="outline" size="sm" onClick={() => setFaq(f => [...f, { q: '', a: '' }])}>
+                                    <Plus className="h-4 w-4 mr-1" /> Add question
+                                </Button>
+                            </div>
+
+                            {/* Sponsors */}
+                            <div className="space-y-3">
+                                <Label className="text-sm font-semibold">Sponsors & partners</Label>
+                                {sponsors.map((s, i) => (
+                                    <div key={i} className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            disabled={sectionImageUploading}
+                                            onClick={() => pickSectionImage((url) => setSponsors(list => list.map((x, j) => j === i ? { ...x, logo_url: url } : x)))}
+                                            className="w-10 h-10 rounded-lg border-2 border-dashed border-border hover:border-primary/50 shrink-0 overflow-hidden flex items-center justify-center text-muted-foreground"
+                                            title="Upload logo"
+                                        >
+                                            {s.logo_url
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                ? <img src={s.logo_url} alt="" className="w-full h-full object-contain" />
+                                                : <Upload className="h-4 w-4" />}
+                                        </button>
+                                        <Input placeholder="Sponsor name" value={s.name} onChange={e => setSponsors(list => list.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+                                        <Input placeholder="Website (optional)" value={s.url || ''} onChange={e => setSponsors(list => list.map((x, j) => j === i ? { ...x, url: e.target.value } : x))} />
+                                        <Button type="button" variant="ghost" size="sm" className="shrink-0 px-2" onClick={() => setSponsors(list => list.filter((_, j) => j !== i))}><X className="h-4 w-4" /></Button>
+                                    </div>
+                                ))}
+                                <Button type="button" variant="outline" size="sm" onClick={() => setSponsors(s => [...s, { name: '' }])}>
+                                    <Plus className="h-4 w-4 mr-1" /> Add sponsor
+                                </Button>
+                            </div>
                         </CardContent>
                     </Card>
 
@@ -422,6 +664,7 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                     {[
                                         { value: 'default',       label: 'Default',        emoji: '⬜', desc: 'Clean & minimal' },
+                                        { value: 'cover-blur',    label: 'Cover Glow',     emoji: '🌆', desc: 'Blurred echo of your poster' },
                                         { value: 'particles',     label: 'Particles',      emoji: '✦',  desc: 'Floating dots' },
                                         { value: 'gradient-mesh', label: 'Gradient Mesh',  emoji: '🌈', desc: 'Animated blobs' },
                                         { value: 'noise',         label: 'Film Grain',     emoji: '📷', desc: 'Textured overlay' },

@@ -86,7 +86,28 @@ function PreviewBackground({ t }: { t: EventDesignTemplate }) {
                     />
                 </div>
             )
+        case 'cover-blur':
+            // Blurred "poster echo" imitation: overlapping soft color fields
+            return (
+                <div className="absolute inset-0" style={{ background: '#0a0a12' }}>
+                    <div className="absolute -top-[20%] left-[10%] w-2/3 h-2/3 rounded-full opacity-50" style={{ background: t.theme_color, filter: 'blur(28px)' }} />
+                    <div className="absolute bottom-[-10%] right-[5%] w-1/2 h-1/2 rounded-full opacity-35" style={{ background: `rgb(${b},${Math.round(g * 0.6)},${r})`, filter: 'blur(26px)' }} />
+                    <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.55))' }} />
+                </div>
+            )
         default:
+            if (t.theme === 'fiesta') {
+                // Light page + banderitas pennant string
+                return (
+                    <div className="absolute inset-0 bg-white">
+                        <div className="absolute top-0 inset-x-0 flex">
+                            {['#F43F5E', '#FBBF24', '#22C55E', '#3B82F6', '#F43F5E', '#FBBF24', '#22C55E', '#3B82F6', '#F43F5E', '#FBBF24'].map((color, i) => (
+                                <div key={i} className="flex-1 h-2.5" style={{ background: color, clipPath: 'polygon(0 0, 100% 0, 50% 100%)' }} />
+                            ))}
+                        </div>
+                    </div>
+                )
+            }
             return <div className="absolute inset-0 bg-white" />
     }
 }
@@ -133,6 +154,7 @@ function PreviewContent({ t }: { t: EventDesignTemplate }) {
         ...(t.theme === 'sunset-festival' && { borderRadius: 999, background: accent, color: '#fff', transform: 'rotate(-2deg)', boxShadow: '0 2px 0 rgba(0,0,0,0.18)' }),
         ...(t.theme === 'circuit' && { borderRadius: 2, border: `1px solid ${accent}B0`, color: accent }),
         ...(t.theme === 'broadsheet' && { borderRadius: 0, border: `1px solid ${dark ? '#fff' : '#18181B'}`, color: dark ? '#fff' : '#18181B', letterSpacing: '0.16em' }),
+        ...(t.theme === 'fiesta' && { borderRadius: 999, background: accent, color: '#fff', transform: 'rotate(-2deg)', boxShadow: '0 2px 0 rgba(0,0,0,0.15)' }),
     }
 
     const buttonStyle: React.CSSProperties = {
@@ -149,6 +171,7 @@ function PreviewContent({ t }: { t: EventDesignTemplate }) {
         ...(t.theme === 'sunset-festival' && { borderRadius: 999, color: '#fff' }),
         ...(t.theme === 'circuit' && { borderRadius: 2, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#04120b' }),
         ...(t.theme === 'broadsheet' && { borderRadius: 0, color: '#fff' }),
+        ...(t.theme === 'fiesta' && { borderRadius: 999, color: '#fff', fontWeight: 800 }),
     }
 
     // Sidebar "ticket card" — decorated per theme
@@ -161,6 +184,7 @@ function PreviewContent({ t }: { t: EventDesignTemplate }) {
         ...(t.theme === 'sunset-festival' && { border: `2px solid ${accent}55`, borderRadius: 12 }),
         ...(t.theme === 'circuit' && { border: `1px solid ${accent}55`, borderRadius: 1 }),
         ...(t.theme === 'broadsheet' && { border: 'none', borderTop: `2px solid ${dark ? '#fff' : '#18181B'}`, borderRadius: 0, boxShadow: 'none' }),
+        ...(t.theme === 'fiesta' && { border: `2px dashed ${accent}70`, borderRadius: 10 }),
     }
 
     const sectionLabel =
@@ -181,6 +205,9 @@ function PreviewContent({ t }: { t: EventDesignTemplate }) {
             )}
             {t.theme === 'velvet-gala' && (
                 <div style={{ height: 1, width: 40, marginTop: 4, background: `linear-gradient(90deg, ${accent}, transparent)` }} />
+            )}
+            {t.theme === 'fiesta' && (
+                <div style={{ height: 3, width: 48, marginTop: 4, borderRadius: 2, background: 'linear-gradient(90deg,#F43F5E 0 25%,#FBBF24 25% 50%,#22C55E 50% 75%,#3B82F6 75% 100%)' }} />
             )}
         </div>
     )

@@ -24,6 +24,9 @@ interface RegistrationGateProps {
     inviteOnly?: boolean
     themeColor?: string | null
     dark?: boolean
+    /** Art-directed page theme id — carried into the register dialog so the
+     *  checkout moment keeps the event's look. */
+    pageTheme?: string
     /** Buyer already has an approved registration → skip questions, go to tickets. */
     initialApprovedRegistrationId?: string | null
     /** Buyer already holds a valid ticket → show "You're going". */
@@ -58,6 +61,7 @@ export function RegistrationGate({
     inviteOnly,
     themeColor,
     dark,
+    pageTheme,
     initialApprovedRegistrationId,
     hasTicket,
     ticketToken,
@@ -233,6 +237,7 @@ export function RegistrationGate({
                     isLoggedIn={isLoggedIn}
                     themeColor={themeColor}
                     dark={dark}
+                    pageTheme={pageTheme}
                     onApproved={(rid, g) => {
                         if (typeof window !== 'undefined') sessionStorage.setItem(`approved_reg_${eventId}`, rid)
                         setModalOpen(false)
@@ -271,6 +276,7 @@ export function RegistrationGate({
                 isLoggedIn={isLoggedIn}
                 themeColor={themeColor}
                 dark={dark}
+                pageTheme={pageTheme}
                 onApproved={(rid, g) => {
                     if (typeof window !== 'undefined') sessionStorage.setItem(`approved_reg_${eventId}`, rid)
                     setModalOpen(false)

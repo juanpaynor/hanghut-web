@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
 
-export type BgStyle = 'default' | 'particles' | 'noise' | 'gradient-mesh' | 'parallax' | 'custom-image'
+export type BgStyle = 'default' | 'particles' | 'noise' | 'gradient-mesh' | 'parallax' | 'custom-image' | 'cover-blur'
 
 function hexToRgb(hex: string): [number, number, number] {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
@@ -265,6 +265,41 @@ function ParallaxBg({ coverImageUrl }: { coverImageUrl?: string }) {
   )
 }
 
+// ─── Cover Blur ───────────────────────────────────────────────────────────────
+/** Apple-Music-style blurred echo of the event's own cover art: the poster is
+ *  scaled up, heavily blurred, and saturated so the whole page swims in the
+ *  artwork's palette. Falls back to a theme-color glow when there's no cover. */
+function CoverBlurBg({ coverImageUrl, themeColor }: { coverImageUrl?: string; themeColor: string }) {
+    if (!coverImageUrl) {
+        const [r, g, b] = hexToRgb(themeColor)
+        return (
+            <div
+                className="absolute inset-0"
+                style={{
+                    background: `radial-gradient(ellipse 80% 60% at 50% 30%, rgba(${r},${g},${b},0.45) 0%, transparent 70%), #0a0a12`,
+                }}
+            />
+        )
+    }
+    return (
+        <>
+            <div className="absolute inset-0 bg-[#0a0a12]" />
+            {/* Oversized + blurred so edges never show; saturation lifted so the
+                palette reads even through the dark scrim */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+                src={coverImageUrl}
+                alt=""
+                aria-hidden
+                className="absolute inset-[-12%] w-[124%] h-[124%] object-cover"
+                style={{ filter: 'blur(64px) saturate(1.35) brightness(0.75)', transform: 'scale(1.05)' }}
+            />
+            {/* Scrim: readable text everywhere, artwork glowing through */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/45 to-black/70" />
+        </>
+    )
+}
+
 // ─── Custom Image ─────────────────────────────────────────────────────────────
 function CustomImageBg({ bgImageUrl }: { bgImageUrl?: string }) {
   if (!bgImageUrl) {
@@ -313,10 +348,12 @@ export function EventPageBackground({
         <CustomImageBg bgImageUrl={bgImageUrl} />
       ) : bgStyle === 'parallax' ? (
         <ParallaxBg coverImageUrl={coverImageUrl} />
+      ) : bgStyle === 'cover-blur' ? (
+        <CoverBlurBg coverImageUrl={coverImageUrl} themeColor={accent} />
       ) : null}
 
       {/* When a video is playing under particles/mesh/noise, darken it first so effects read */}
-      {videoUrl && bgStyle !== 'custom-image' && bgStyle !== 'parallax' && (
+      {videoUrl && bgStyle !== 'custom-image' && bgStyle !== 'parallax' && bgStyle !== 'cover-blur' && (
         <div className="absolute inset-0 bg-black/55 z-[1]" />
       )}
 

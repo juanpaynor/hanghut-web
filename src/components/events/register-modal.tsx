@@ -25,6 +25,9 @@ interface RegisterModalProps {
     themeColor?: string | null
     /** Whether the event page is using a dark background — match it. */
     dark?: boolean
+    /** Art-directed page theme id — stamped on the dialog (which portals out of
+     *  the themed page root) so the theme CSS keeps applying at checkout. */
+    pageTheme?: string
 }
 
 type Phase = 'form' | 'submitting' | 'approved' | 'pending'
@@ -35,12 +38,12 @@ const slide = {
     exit: (dir: number) => ({ x: dir > 0 ? -48 : 48, opacity: 0 }),
 }
 
-export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn, onApproved, onPending, themeColor, dark }: RegisterModalProps) {
+export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn, onApproved, onPending, themeColor, dark, pageTheme }: RegisterModalProps) {
     // Mirror the event page's theme inside the portal: a `dark` class flips the
     // shadcn tokens to their dark values, and the brand hue overrides --primary.
     const brandHsl = themeColor ? hexToHsl(themeColor) : null
     const brandVars = brandHsl
-        ? ({ ['--primary']: brandHsl, ['--ring']: brandHsl } as React.CSSProperties)
+        ? ({ ['--primary']: brandHsl, ['--ring']: brandHsl, ['--hh-accent']: themeColor } as React.CSSProperties)
         : undefined
     const sorted = useMemo(
         () => [...questions].sort((a, b) => a.display_order - b.display_order),
@@ -153,7 +156,7 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
 
     return (
         <Dialog open={open} onOpenChange={(o) => { if (!o) { /* reset on close */ setStep(0); setPhase('form') } onOpenChange(o) }}>
-            <DialogContent className={cn('w-[calc(100%-1.5rem)] sm:w-full max-w-xl overflow-hidden p-0 gap-0 flex flex-col max-h-[88vh] rounded-xl', dark && 'dark bg-background text-foreground')} style={brandVars}>
+            <DialogContent data-hh-theme={pageTheme || undefined} data-hh-modal={pageTheme ? '' : undefined} className={cn('w-[calc(100%-1.5rem)] sm:w-full max-w-xl overflow-hidden p-0 gap-0 flex flex-col max-h-[88vh] rounded-xl', dark && 'dark bg-background text-foreground')} style={brandVars}>
                 <DialogTitle className="sr-only">Register for {event.title}</DialogTitle>
 
                 {/* Progress bar */}
