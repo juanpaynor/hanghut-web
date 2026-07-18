@@ -18,6 +18,8 @@ import { Loader2, ArrowUp, ArrowDown, LayoutDashboard, Palette, FileCode, Sparkl
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { VideoUploader } from "@/components/ui/video-uploader"
 import { DraggableVideoCropper } from "@/components/ui/draggable-video-cropper"
+import { EventDesignGallery } from "@/components/organizer/event-design-gallery"
+import type { EventDesignTemplate } from "@/lib/event-design-templates"
 
 const formSchema = z.object({
     video_url: z.string().url("Must be a valid URL").optional().or(z.literal('')).or(z.null()).transform(v => v ?? ''),
@@ -67,6 +69,7 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
     const [videoPosition, setVideoPosition] = useState<string>(initialVideoPosition)
 
     // Visual style state
+    const [pageThemeId, setPageThemeId] = useState<string>(initialData.layout_config?.theme || 'classic')
     const [bgStyle, setBgStyle] = useState<string>(initialData.layout_config?.bg_style || 'default')
     const [pageLayout, setPageLayout] = useState<string>(initialData.layout_config?.page_layout || 'default')
     const [showCountdown, setShowCountdown] = useState<boolean>(initialData.layout_config?.show_countdown ?? false)
@@ -110,6 +113,25 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
         setLayoutOrder(newOrder)
     }
 
+    /** One-click template: applies the art-directed theme + fills every LOOK knob;
+     *  content (sections, video, HTML) is untouched */
+    const applyTemplate = (t: EventDesignTemplate) => {
+        setPageThemeId(t.theme)
+        form.setValue('theme_color', t.theme_color, { shouldDirty: true })
+        setBgStyle(t.bg_style)
+        setPageLayout(t.page_layout)
+        setFontHeading(t.font_heading)
+        setFontBody(t.font_body)
+        setHeadingColor(t.heading_color || '')
+        setTextColor(t.text_color || '')
+        setShowCountdown(t.show_countdown)
+        setShowSocialProof(t.show_social_proof)
+        toast({
+            title: `${t.name} applied`,
+            description: 'Tweak anything below, then hit Save Customizations.',
+        })
+    }
+
     const toggleVisibility = (section: string) => {
         const newHidden = new Set(hiddenSections)
         if (newHidden.has(section)) {
@@ -128,6 +150,7 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                 description_html: values.description_html || null,
                 theme_color: values.theme_color || null,
                 layout_config: {
+                    theme: pageThemeId,
                     order: layoutOrder,
                     hidden: Array.from(hiddenSections),
                     video_position: videoPosition,
@@ -177,6 +200,30 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
 
             <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+
+                    {/* 0. Design Templates */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Sparkles className="h-5 w-5" />
+                                Design Templates
+                            </CardTitle>
+                            <CardDescription>
+                                Start from a curated look — one click sets the background, layout, fonts, and colors. You can fine-tune everything below afterwards.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <EventDesignGallery
+                                current={{
+                                    theme: pageThemeId,
+                                    themeColor: form.watch('theme_color') || '#000000',
+                                    bgStyle,
+                                    pageLayout,
+                                }}
+                                onApply={applyTemplate}
+                            />
+                        </CardContent>
+                    </Card>
 
                     {/* 1. Media & Theme */}
                     <Card>

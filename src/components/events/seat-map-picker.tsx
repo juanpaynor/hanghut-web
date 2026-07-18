@@ -169,10 +169,13 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     const continuingRef = useRef(false)
     useEffect(() => () => {
         if (continuingRef.current || selectedIdsRef.current.length === 0) return
-        const supabase = createClient()
-        for (const id of selectedIdsRef.current) {
-            void supabase.rpc('release_seat_hold', { p_seat_id: id, p_session_id: sessionIdRef.current })
-        }
+        // sendBeacon reliably fires during teardown (dialog close, navigation, tab
+        // close) — a supabase-js rpc here is lazy AND can be cancelled mid-flight,
+        // which is why abandoned holds were sticking until the 12-min TTL.
+        try {
+            const payload = JSON.stringify({ sessionId: sessionIdRef.current, seatIds: selectedIdsRef.current })
+            navigator.sendBeacon('/api/seat-map/release', new Blob([payload], { type: 'application/json' }))
+        } catch { /* best-effort */ }
     }, [])
 
     // ─── Data loading: overview geometry (cached) + status + lazy seats ──
@@ -501,7 +504,9 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         // cancel would be rejected and the seat would be stuck selected.
         if (selectedSeatIds.includes(seat.id)) {
             setSelectedSeatIds(prev => prev.filter(id => id !== seat.id))
-            void supabase.rpc('release_seat_hold', { p_seat_id: seat.id, p_session_id: sid })
+            // .then() is required — the supabase builder is lazy, so `void rpc(...)`
+            // never sent the request and the hold lingered until its TTL.
+            supabase.rpc('release_seat_hold', { p_seat_id: seat.id, p_session_id: sid }).then(undefined, () => {})
             return
         }
 

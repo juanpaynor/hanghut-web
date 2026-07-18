@@ -20,6 +20,7 @@ import { MobileTicketButton, ShareButton, AddToCalendarButton } from '@/componen
 import { EventViewTracker } from '@/components/events/event-view-tracker'
 import { sanitize } from '@/lib/sanitize'
 import { EventPageBackground, type BgStyle } from '@/components/events/event-bg'
+import { getEventThemeCss } from '@/lib/event-themes'
 import { EventCountdown } from '@/components/events/event-countdown'
 import { SocialProofTicker } from '@/components/events/social-proof-ticker'
 
@@ -314,6 +315,9 @@ export default async function PublicEventPage({
     // New style config
     const bgStyle: BgStyle = event.layout_config?.bg_style || 'default'
     const pageLayout: 'default' | 'poster' | 'minimal' = event.layout_config?.page_layout || 'default'
+    // Art-directed theme: restyles cards/badges/buttons/headers via injected CSS
+    const pageTheme: string = event.layout_config?.theme || 'classic'
+    const themeCss = getEventThemeCss(pageTheme)
     const showCountdown = event.layout_config?.show_countdown ?? false
     const countdownLabel = event.layout_config?.countdown_label || 'Event starts in'
     const showSocialProof = event.layout_config?.show_social_proof ?? false
@@ -346,6 +350,7 @@ export default async function PublicEventPage({
         ...themeStyle,
         '--font-heading': headingFont.css,
         '--font-body': bodyFont.css,
+        '--hh-accent': event.theme_color || '#4E47DC',
         ...(textColor    ? { '--hh-text':    textColor }    : {}),
         ...(headingColor ? { '--hh-heading': headingColor } : {}),
     } as React.CSSProperties
@@ -426,16 +431,16 @@ export default async function PublicEventPage({
                     {/* Centered overlay content */}
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-center px-4 z-20">
                         <div className="flex gap-2 justify-center">
-                            <span className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
+                            <span data-hh-badge className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
                                 {event.event_type || 'Event'}
                             </span>
                             {event.is_featured && (
-                                <span className="bg-yellow-400/90 text-yellow-900 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
+                                <span data-hh-badge className="bg-yellow-400/90 text-yellow-900 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
                                     Featured
                                 </span>
                             )}
                         </div>
-                        <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white drop-shadow-2xl leading-[1.05] tracking-tight max-w-3xl">
+                        <h1 data-hh-title className="text-4xl md:text-6xl lg:text-7xl font-black text-white drop-shadow-2xl leading-[1.05] tracking-tight max-w-3xl">
                             {event.title}
                         </h1>
                         <div className="flex items-center gap-3 text-white/75 text-sm font-medium flex-wrap justify-center">
@@ -517,10 +522,10 @@ export default async function PublicEventPage({
     const TitleSection = () => (
         <div className="space-y-4 py-8">
             <div className="flex gap-2 mb-2">
-                <Badge variant="secondary" className="bg-background/80 backdrop-blur text-foreground border shadow-sm">
+                <Badge data-hh-badge variant="secondary" className="bg-background/80 backdrop-blur text-foreground border shadow-sm">
                     {event.event_type ? event.event_type.toUpperCase() : 'EVENT'}
                 </Badge>
-                {event.is_featured && <Badge className="bg-yellow-500 text-white hover:bg-yellow-600">Featured</Badge>}
+                {event.is_featured && <Badge data-hh-badge className="bg-yellow-500 text-white hover:bg-yellow-600">Featured</Badge>}
                 {event.status === 'hidden' && (
                     <Badge variant="outline" className="border-purple-300 text-purple-600 bg-purple-50/80 backdrop-blur">
                         🔒 Unlisted Event
@@ -585,7 +590,7 @@ export default async function PublicEventPage({
 
     const AboutSection = () => (
         <div className="prose dark:prose-invert max-w-none py-8">
-            <h2 className="text-2xl font-bold mb-4">About this Event</h2>
+            <h2 data-hh-section-title className="text-2xl font-bold mb-4">About this Event</h2>
             {event.description_html ? (
                 <div
                     dangerouslySetInnerHTML={{ __html: sanitize(event.description_html) }}
@@ -672,7 +677,7 @@ export default async function PublicEventPage({
                         <Ticket className="h-6 w-6" />
                     </div>
                     <div>
-                        <h2 className="text-2xl font-bold">
+                        <h2 data-hh-section-title className="text-2xl font-bold">
                             {event.is_external
                                 ? `Get Tickets${event.external_provider_name ? ` on ${event.external_provider_name}` : ''}`
                                 : rsvpMode
@@ -836,7 +841,7 @@ export default async function PublicEventPage({
         return (
             // Only render if we haven't already rendered details, or if user wants specific map
             <div className="py-8">
-                <h3 className="text-xl font-bold mb-4">Location</h3>
+                <h3 data-hh-section-title className="text-xl font-bold mb-4">Location</h3>
                 <Card className="h-[300px] flex items-center justify-center bg-muted">
                     {/* Embed map or placeholder */}
                     <p className="text-muted-foreground">Map View ({event.latitude}, {event.longitude})</p>
@@ -870,10 +875,11 @@ export default async function PublicEventPage({
     if (pageLayout === 'poster') {
         const formattedPosterDate = format(eventDate, 'EEEE, MMMM d · h:mm a')
         return (
-            <div className="min-h-screen bg-black text-white" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+            <div data-hh-theme={pageTheme} className="min-h-screen bg-black text-white" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
                 {googleFontUrls.map(url => (
                     <link key={url} rel="stylesheet" href={url} />
                 ))}
+                {themeCss && <style>{themeCss}</style>}
                 {/* Fixed background effect */}
                 {bgStyle !== 'default' ? (
                     <EventPageBackground
@@ -923,11 +929,11 @@ export default async function PublicEventPage({
                 <section className="relative z-10 min-h-screen flex flex-col items-center justify-center text-center px-4 pt-24 pb-16 gap-6">
                     {/* Badges */}
                     <div className="flex gap-2 justify-center">
-                        <span className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-[0.15em] px-4 py-1.5 rounded-full">
+                        <span data-hh-badge className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-[0.15em] px-4 py-1.5 rounded-full">
                             {event.event_type || 'Event'}
                         </span>
                         {event.is_featured && (
-                            <span className="bg-yellow-400/90 text-yellow-900 text-xs font-bold uppercase tracking-[0.15em] px-4 py-1.5 rounded-full">
+                            <span data-hh-badge className="bg-yellow-400/90 text-yellow-900 text-xs font-bold uppercase tracking-[0.15em] px-4 py-1.5 rounded-full">
                                 ⭐ Featured
                             </span>
                         )}
@@ -935,6 +941,7 @@ export default async function PublicEventPage({
 
                     {/* Giant title */}
                     <h1
+                        data-hh-title
                         className="font-black text-white drop-shadow-2xl leading-[0.95] tracking-[-0.03em]"
                         style={{ fontSize: 'clamp(2.8rem, 9vw, 8.5rem)', fontFamily: 'var(--font-heading)' }}
                     >
@@ -1000,10 +1007,11 @@ export default async function PublicEventPage({
     // ─── MINIMAL LAYOUT ──────────────────────────────────────────────────────
     if (pageLayout === 'minimal') {
         return (
-            <div className="min-h-screen bg-background pb-20" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+            <div data-hh-theme={pageTheme} className="min-h-screen bg-background pb-20" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
                 {googleFontUrls.map(url => (
                     <link key={url} rel="stylesheet" href={url} />
                 ))}
+                {themeCss && <style>{themeCss}</style>}
                 <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                     <div className="container mx-auto px-4 flex h-16 items-center justify-between">
                         {event.organizer ? (
@@ -1030,8 +1038,8 @@ export default async function PublicEventPage({
                     {/* Compact title block */}
                     <div className="space-y-3 mb-10">
                         <div className="flex gap-2">
-                            <Badge variant="secondary">{event.event_type || 'Event'}</Badge>
-                            {event.is_featured && <Badge className="bg-yellow-500 text-white">Featured</Badge>}
+                            <Badge data-hh-badge variant="secondary">{event.event_type || 'Event'}</Badge>
+                            {event.is_featured && <Badge data-hh-badge className="bg-yellow-500 text-white">Featured</Badge>}
                         </div>
                         <h1 className="text-4xl md:text-5xl font-black leading-tight tracking-tight">{event.title}</h1>
                         <div className="flex items-center gap-2 text-muted-foreground text-sm pt-1 flex-wrap">
@@ -1084,6 +1092,7 @@ export default async function PublicEventPage({
     return (
         <div
             data-hh-event
+            data-hh-theme={pageTheme}
             className="min-h-screen bg-background pb-20 relative"
             style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}
         >
@@ -1163,6 +1172,8 @@ export default async function PublicEventPage({
 [data-hh-event] header{background:rgba(0,0,0,0.45)!important;border-color:rgba(255,255,255,0.1)!important;backdrop-filter:blur(20px)!important;color:#fff}
 [data-hh-event] header a,[data-hh-event] header span{color:#fff!important}
 ` : ''}`}</style>
+            {/* Art-directed theme CSS — after the base styles so theme rules win ties */}
+            {themeCss && <style>{themeCss}</style>}
 
             {/* Full-page background — fixed so it covers the entire scroll */}
             {bgStyle !== 'default' && (
@@ -1213,12 +1224,12 @@ export default async function PublicEventPage({
                 {isDarkBg && (
                     <div className="w-full py-20 px-4 flex flex-col items-center justify-center text-center gap-4" style={{ minHeight: '40vh' }}>
                         <div className="flex gap-2 justify-center">
-                            <span className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
+                            <span data-hh-badge className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
                                 {event.event_type || 'Event'}
                             </span>
-                            {event.is_featured && <span className="bg-yellow-400/90 text-yellow-900 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">Featured</span>}
+                            {event.is_featured && <span data-hh-badge className="bg-yellow-400/90 text-yellow-900 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">Featured</span>}
                         </div>
-                        <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white drop-shadow-2xl leading-tight tracking-tight max-w-4xl" style={{ fontFamily: 'var(--font-heading)' }}>
+                        <h1 data-hh-title className="text-4xl md:text-6xl lg:text-7xl font-black text-white drop-shadow-2xl leading-tight tracking-tight max-w-4xl" style={{ fontFamily: 'var(--font-heading)' }}>
                             {event.title}
                         </h1>
                         <div className="flex items-center gap-3 text-white/75 text-sm font-medium flex-wrap justify-center">
