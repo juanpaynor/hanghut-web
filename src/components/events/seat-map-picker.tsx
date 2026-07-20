@@ -446,7 +446,30 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         setActiveSection(null)
     }, [mapData, stageSize])
 
-    useEffect(() => { fitOverview() }, [fitOverview])
+    // Auto-fit ONLY on the first map load and on a real resize while still in the
+    // overview — NEVER while zoomed into a section, and never on a data refresh.
+    // Three things used to fight the buyer's view:
+    //   1. lazy seat loads + the 12s status poll each mint a new mapData object
+    //      (→ "I tap a section and it zooms out"; kick-out every 12s), and
+    //   2. picking a seat grows the selection bar, which shrinks the flex map
+    //      container → a stageSize change (→ "I pick a seat and it zooms out").
+    // Keying on event_id + stage size skips (1); the activeSection guard skips (2)
+    // and any other resize once the buyer has drilled into a section.
+    const activeSectionRef = useRef<string | null>(null)
+    useEffect(() => { activeSectionRef.current = activeSection }, [activeSection])
+    const didInitialFitRef = useRef(false)
+    const lastFitKeyRef = useRef('')
+    useEffect(() => {
+        if (!mapData) return
+        const fitKey = `${mapData.event_id}:${Math.round(stageSize.width)}x${Math.round(stageSize.height)}`
+        if (didInitialFitRef.current) {
+            if (activeSectionRef.current !== null) return   // zoomed into a section → leave view alone
+            if (fitKey === lastFitKeyRef.current) return    // data-only change in overview → keep view
+        }
+        didInitialFitRef.current = true
+        lastFitKeyRef.current = fitKey
+        fitOverview()
+    }, [fitOverview, mapData, stageSize])
 
     // Zoom into a section. Fit to the SEATS' bounds, not the polygon — a section
     // outline is often far larger than its seated area (see the huge empty lower
@@ -504,6 +527,18 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         // cancel would be rejected and the seat would be stuck selected.
         if (selectedSeatIds.includes(seat.id)) {
             setSelectedSeatIds(prev => prev.filter(id => id !== seat.id))
+            // The last status poll returned this seat as 'held' (our OWN hold).
+            // While selected, selectedSeatIds masked that; once deselected it would
+            // render by its stale 'held' status = grey/taken until the next poll.
+            // Optimistically drop it from the local taken set + remerge so it shows
+            // available again instantly (we're releasing our own hold below).
+            if (statusRef.current?.taken) {
+                statusRef.current = {
+                    ...statusRef.current,
+                    taken: statusRef.current.taken.filter((t: any) => t.id !== seat.id),
+                }
+                remerge()
+            }
             // .then() is required — the supabase builder is lazy, so `void rpc(...)`
             // never sent the request and the hold lingered until its TTL.
             supabase.rpc('release_seat_hold', { p_seat_id: seat.id, p_session_id: sid }).then(undefined, () => {})
@@ -536,7 +571,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                 refreshStatus()
             }
         })
-    }, [selectedSeatIds, allSeats, toast, maxPerOrder, refreshStatus])
+    }, [selectedSeatIds, allSeats, toast, maxPerOrder, refreshStatus, remerge])
 
     const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
         e.evt.preventDefault()
@@ -626,9 +661,9 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     const showSeatLabels = activeSeatRadius * view.scale >= 11
 
     return (
-        <div className="space-y-3 min-w-0">
+        <div className="flex flex-col min-h-0 h-full gap-3 min-w-0">
             {/* Price legend */}
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 shrink-0">
                 {mapData.tiers.map(tier => (
                     <div key={tier.id} className="flex items-center gap-1.5 text-xs">
                         <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: tierColors.get(tier.id) }} />
@@ -642,10 +677,13 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                 </div>
             </div>
 
-            {/* Map canvas */}
+            {/* Map canvas — flexes to fill the modal so the selection bar below
+                stays visible without scrolling. Min height keeps it usable on
+                short screens; the ResizeObserver feeds the real px height to the
+                Konva stage. */}
             <div
                 ref={containerRef}
-                className="relative w-full h-[420px] sm:h-[480px] rounded-2xl border bg-white dark:bg-slate-100 overflow-hidden touch-none"
+                className="relative w-full flex-1 min-h-[240px] rounded-2xl border bg-white dark:bg-slate-100 overflow-hidden touch-none"
             >
                 <Stage
                     ref={stageRef}
@@ -841,7 +879,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                 const gaMax = Math.max(1, Math.min(gaSection.available_count, maxPerOrder))
                 const gaTotal = gaTier ? Number(gaTier.price) * gaQty : 0
                 return (
-                    <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3">
+                    <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3 shrink-0">
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <p className="font-semibold">{gaSection.label}</p>
@@ -884,9 +922,10 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                 )
             })()}
 
-            {/* Selection bar */}
+            {/* Selection bar — pinned (shrink-0) at the bottom of the flex column
+                so "Continue" is always in view; no scrolling to reach it. */}
             <div className={cn(
-                'rounded-2xl border p-4 transition-colors',
+                'rounded-2xl border p-4 transition-colors shrink-0',
                 selectedSeats.length > 0 ? 'bg-primary/5 border-primary/30' : 'bg-muted/20'
             )}>
                 {selectedSeats.length === 0 ? (

@@ -47,15 +47,18 @@ export function SeatPickerLauncher({ eventId, fullWidth = false, maxPerOrder }: 
             </Button>
 
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="max-w-4xl w-[95vw] max-h-[92vh] overflow-y-auto overflow-x-hidden">
-                    <DialogHeader>
+                {/* Fixed-height flex column: the header stays put and the picker
+                    fills the rest, so its pinned selection bar / Continue button
+                    is always visible without scrolling the dialog. */}
+                <DialogContent className="max-w-4xl w-[95vw] h-[92vh] flex flex-col gap-3 overflow-hidden">
+                    <DialogHeader className="shrink-0">
                         <DialogTitle>Choose Your Seats</DialogTitle>
                         <DialogDescription>
                             Tap a section, then tap seats to select them. Prices are shown per category.
                         </DialogDescription>
                     </DialogHeader>
                     {open && (
-                        <div className="min-w-0">
+                        <div className="flex-1 min-h-0 flex flex-col min-w-0">
                             <SeatMapPicker eventId={eventId} maxPerOrder={maxPerOrder} />
                         </div>
                     )}

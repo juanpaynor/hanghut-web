@@ -8,7 +8,7 @@ import { trackEventInteraction } from '@/lib/analytics/track-event'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Calendar, MapPin, Ticket, ShieldCheck, Loader2, ArrowRight, Lock, Mail, Phone, User, LogIn, Crown, Tag, Info } from 'lucide-react'
 import { format } from 'date-fns'
@@ -471,9 +471,11 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
 
     return (
         <div style={themeStyle}>
-            {/* pb-28 on mobile clears the fixed pay bar */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-28 lg:pb-0">
-            <div className="lg:col-span-2 space-y-6">
+            {/* pb-28 on mobile clears the fixed pay bar. Left = actions (fills the
+                space), right = a COMPACT sticky summary so the pay button stays
+                above the fold on desktop. */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8 pb-28 lg:pb-0">
+            <div className="lg:col-span-3 space-y-6">
 
                 {/* 1. Account / Guest Info */}
                 <Card className="border-border/50 shadow-sm">
@@ -549,44 +551,187 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                         requireApproval={requireApproval}
                     />
                 )}
+
+                {/* 2. Promo + Terms — moved out of the summary so the summary stays
+                    short and the pay button is reachable without scrolling. */}
+                <Card className="border-border/50 shadow-sm">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-primary text-lg">
+                            <ClipboardList className="w-5 h-5" />
+                            Confirm &amp; Pay
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        {/* Promo Code — collapsed behind a toggle to reduce clutter */}
+                        <div>
+                            {!appliedPromo && !showPromo ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPromo(true)}
+                                    className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+                                >
+                                    <Tag className="h-3.5 w-3.5" /> Have a promo code?
+                                </button>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <Input
+                                        placeholder="Promo Code"
+                                        value={promoCodeInput}
+                                        onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                                        disabled={!!appliedPromo || isLoading}
+                                        autoFocus
+                                    />
+                                    {appliedPromo ? (
+                                        <Button variant="outline" onClick={removePromo} disabled={isLoading}>
+                                            Remove
+                                        </Button>
+                                    ) : (
+                                        <Button variant="secondary" onClick={applyPromo} disabled={!promoCodeInput || isLoading}>
+                                            Apply
+                                        </Button>
+                                    )}
+                                </div>
+                            )}
+                            {promoError === 'APP_ONLY' ? (
+                                <div className="mt-2 flex items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                    <span className="text-lg leading-none">📱</span>
+                                    <div>
+                                        <p className="font-semibold">App-Exclusive Code</p>
+                                        <p className="text-xs text-amber-700 mt-0.5">This promo code can only be redeemed through the HangHut app. <a href="https://apps.apple.com/ph/app/hanghut-social-hangouts/id6764278827" target="_blank" rel="noopener noreferrer" className="underline font-medium">Download the app</a> to use it.</p>
+                                    </div>
+                                </div>
+                            ) : promoError ? (
+                                <p className="text-xs text-destructive mt-2">{promoError}</p>
+                            ) : null}
+                            {appliedPromo && (
+                                <div className="mt-2 flex justify-between text-sm text-green-600 bg-green-50 p-2 rounded border border-green-200">
+                                    <span>Discount applied ({appliedPromo.code})</span>
+                                    <span>-₱{discount.toLocaleString()}</span>
+                                </div>
+                            )}
+                        </div>
+
+                        <Separator />
+
+                        {/* Terms & Newsletter Checkboxes */}
+                        <div ref={termsRef} className="space-y-3 scroll-mt-24">
+                            <Label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={termsAccepted}
+                                    onChange={(e) => setTermsAccepted(e.target.checked)}
+                                    className="mt-1 h-4 w-4 rounded border-primary text-primary focus:ring-primary"
+                                />
+                                <span className="text-sm">
+                                    I accept the <a href="/terms" target="_blank" className="underline text-primary hover:text-primary/80">HangHut Terms of Service</a>
+                                    <span className="text-destructive">*</span>
+                                </span>
+                            </Label>
+
+                            {customTos && (
+                                <div className="space-y-1.5">
+                                    <Label className="flex items-start gap-3 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={organizerTermsAccepted}
+                                            onChange={(e) => setOrganizerTermsAccepted(e.target.checked)}
+                                            className="mt-1 h-4 w-4 rounded border-primary text-primary focus:ring-primary"
+                                        />
+                                        <span className="text-sm">
+                                            I accept <button type="button" onClick={() => setShowOrganizerTos(!showOrganizerTos)} className="underline text-primary hover:text-primary/80">{organizerName || 'Organizer'}&apos;s Terms &amp; Conditions</button>
+                                            <span className="text-destructive">*</span>
+                                        </span>
+                                    </Label>
+                                    {showOrganizerTos && (
+                                        <div className="ml-7 p-3 rounded-lg bg-muted/50 border border-border/50 text-xs text-muted-foreground max-h-40 overflow-y-auto whitespace-pre-wrap">
+                                            {customTos}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <Label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={newsletterSubscribed}
+                                    onChange={(e) => setNewsletterSubscribed(e.target.checked)}
+                                    className="mt-1 h-4 w-4 rounded border-primary text-primary focus:ring-primary"
+                                />
+                                <span className="text-sm text-muted-foreground">
+                                    Subscribe to news & event updates from the organizer
+                                </span>
+                            </Label>
+                        </div>
+
+                        {/* Desktop pay button lives here, right under the terms it gates */}
+                        <Button
+                            className="hidden lg:flex w-full h-12 text-lg font-semibold shadow-md hover:shadow-lg transition-all mt-1"
+                            onClick={handlePayClick}
+                            disabled={isLoading}
+                        >
+                            {isLoading ? (
+                                <>
+                                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                                    Processing...
+                                </>
+                            ) : (
+                                (total - discount) <= 0 ? (
+                                    <>
+                                        Get Free Tickets
+                                        <ArrowRight className="ml-2 h-5 w-5" />
+                                    </>
+                                ) : (
+                                    <>
+                                        Pay ₱{(total - discount).toLocaleString()}
+                                        <ArrowRight className="ml-2 h-5 w-5" />
+                                    </>
+                                )
+                            )}
+                        </Button>
+                        {(total - discount) > 0 && (
+                            <p className="hidden lg:flex text-xs text-center text-muted-foreground items-center justify-center gap-1">
+                                <ShieldCheck className="w-3 h-3" />
+                                Secure payment processed by Xendit
+                            </p>
+                        )}
+                    </CardContent>
+                </Card>
             </div>
 
-            {/* Sticky Order Summary */}
-            <div className="lg:col-span-1">
-                <div className="sticky top-24 space-y-6">
-                    <Card className="border-border/50 shadow-lg border-t-4 border-t-primary">
-                        <CardHeader className="bg-muted/20 pb-4">
-                            <CardTitle className="flex items-center gap-2">
+            {/* Compact sticky Order Summary */}
+            <div className="lg:col-span-2">
+                <div className="sticky top-24">
+                    <Card className="border-border/50 shadow-lg border-t-4 border-t-primary overflow-hidden">
+                        <CardHeader className="bg-muted/20 py-4">
+                            <CardTitle className="flex items-center gap-2 text-base">
                                 <Ticket className="w-5 h-5" />
                                 Order Summary
                             </CardTitle>
                         </CardHeader>
-                        <CardContent className="pt-6 space-y-4">
-                            {/* Portrait cover poster */}
-                            {event.cover_image_url && (
-                                <div className="relative mx-auto w-full max-w-[240px] aspect-[3/4] overflow-hidden rounded-xl border border-border/50 shadow-sm">
-                                    <Image
-                                        src={event.cover_image_url}
-                                        alt={event.title}
-                                        fill
-                                        priority
-                                        sizes="240px"
-                                        className="object-cover"
-                                    />
-                                </div>
-                            )}
-
-                            <div className="space-y-3">
-                                <h3 className="font-semibold text-lg leading-tight line-clamp-2">{event.title}</h3>
-
-                                <div className="space-y-1 text-sm text-muted-foreground">
-                                    <div className="flex items-center gap-2">
-                                        <Calendar className="w-4 h-4 text-primary" />
-                                        <span>
+                        <CardContent className="pt-5 space-y-4">
+                            {/* Compact event row: small poster thumbnail + details */}
+                            <div className="flex gap-3">
+                                {event.cover_image_url && (
+                                    <div className="relative w-20 h-24 shrink-0 overflow-hidden rounded-lg border border-border/50 shadow-sm">
+                                        <Image
+                                            src={event.cover_image_url}
+                                            alt={event.title}
+                                            fill
+                                            priority
+                                            sizes="80px"
+                                            className="object-cover"
+                                        />
+                                    </div>
+                                )}
+                                <div className="min-w-0 space-y-1.5">
+                                    <h3 className="font-semibold leading-tight line-clamp-2">{event.title}</h3>
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
+                                        <span className="line-clamp-1">
                                             {(() => {
                                                 try {
                                                     return event.start_datetime
-                                                        ? format(new Date(event.start_datetime), 'MMMM d, yyyy • h:mm a')
+                                                        ? format(new Date(event.start_datetime), 'MMM d, yyyy • h:mm a')
                                                         : 'Date TBA'
                                                 } catch (e) {
                                                     return event.start_datetime || 'Date TBA'
@@ -594,8 +739,8 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                             })()}
                                         </span>
                                     </div>
-                                    <div className="flex items-start gap-2">
-                                        <MapPin className="w-4 h-4 text-primary mt-0.5" />
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                                         <span className="line-clamp-1">{event.venue_name}</span>
                                     </div>
                                 </div>
@@ -629,160 +774,31 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                         <span>+₱{totalFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     </div>
                                 )}
+                                {/* Subscriber discount line item */}
+                                {subscriberDiscount?.has_discount && !isFree && subscriberSaving > 0 && (
+                                    <div className="flex justify-between text-sm text-primary">
+                                        <span className="flex items-center gap-1.5">
+                                            <Crown className="h-3.5 w-3.5" />
+                                            Subscriber discount
+                                        </span>
+                                        <span className="font-medium">-₱{subscriberSaving.toLocaleString()}</span>
+                                    </div>
+                                )}
+                                {appliedPromo && (
+                                    <div className="flex justify-between text-sm text-green-600">
+                                        <span>Promo ({appliedPromo.code})</span>
+                                        <span className="font-medium">-₱{appliedPromo.discountAmount.toLocaleString()}</span>
+                                    </div>
+                                )}
                             </div>
 
                             <Separator />
 
-                            <div className="flex justify-between items-center pt-2">
+                            <div className="flex justify-between items-center">
                                 <span className="font-semibold text-base">Total</span>
                                 <span className="font-bold text-2xl text-primary">₱{(total - discount).toLocaleString()}</span>
                             </div>
                         </CardContent>
-                        <CardFooter className="flex-col gap-3 bg-muted/20 pt-6">
-                            {/* Subscriber discount line item */}
-                            {subscriberDiscount?.has_discount && !isFree && subscriberSaving > 0 && (
-                                <div className="w-full flex items-center justify-between text-sm text-primary bg-primary/10 border border-primary/20 rounded-lg px-3 py-2">
-                                    <span className="flex items-center gap-1.5">
-                                        <Crown className="h-3.5 w-3.5" />
-                                        Subscriber discount
-                                        <span className="text-xs text-muted-foreground">
-                                            ({Math.min(quantity, subscriberDiscount.max_tickets ?? 1)} ticket)
-                                        </span>
-                                    </span>
-                                    <span className="font-semibold">-₱{subscriberSaving.toLocaleString()}</span>
-                                </div>
-                            )}
-
-                            {/* Promo Code — collapsed behind a toggle to reduce clutter */}
-                            {!appliedPromo && !showPromo ? (
-                                <button
-                                    type="button"
-                                    onClick={() => setShowPromo(true)}
-                                    className="w-full flex items-center gap-1.5 text-sm text-primary hover:underline mb-2"
-                                >
-                                    <Tag className="h-3.5 w-3.5" /> Have a promo code?
-                                </button>
-                            ) : (
-                                <div className="w-full flex gap-2 mb-2">
-                                    <Input
-                                        placeholder="Promo Code"
-                                        value={promoCodeInput}
-                                        onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
-                                        disabled={!!appliedPromo || isLoading}
-                                        autoFocus
-                                    />
-                                    {appliedPromo ? (
-                                        <Button variant="outline" onClick={removePromo} disabled={isLoading}>
-                                            Remove
-                                        </Button>
-                                    ) : (
-                                        <Button variant="secondary" onClick={applyPromo} disabled={!promoCodeInput || isLoading}>
-                                            Apply
-                                        </Button>
-                                    )}
-                                </div>
-                            )}
-                            {promoError === 'APP_ONLY' ? (
-                                <div className="w-full flex items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                                    <span className="text-lg leading-none">📱</span>
-                                    <div>
-                                        <p className="font-semibold">App-Exclusive Code</p>
-                                        <p className="text-xs text-amber-700 mt-0.5">This promo code can only be redeemed through the HangHut app. <a href="https://apps.apple.com/ph/app/hanghut-social-hangouts/id6764278827" target="_blank" rel="noopener noreferrer" className="underline font-medium">Download the app</a> to use it.</p>
-                                    </div>
-                                </div>
-                            ) : promoError ? (
-                                <p className="text-xs text-destructive w-full">{promoError}</p>
-                            ) : null}
-                            {appliedPromo && (
-                                <div className="w-full flex justify-between text-sm text-green-600 bg-green-50 p-2 rounded border border-green-200">
-                                    <span>Discount applied ({appliedPromo.code})</span>
-                                    <span>-₱{discount.toLocaleString()}</span>
-                                </div>
-                            )}
-
-                            <Separator className="my-2" />
-
-                            {/* [NEW] Terms & Newsletter Checkboxes */}
-                            <div ref={termsRef} className="space-y-3 mb-4 scroll-mt-24">
-                                <Label className="flex items-start gap-3 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={termsAccepted}
-                                        onChange={(e) => setTermsAccepted(e.target.checked)}
-                                        className="mt-1 h-4 w-4 rounded border-primary text-primary focus:ring-primary"
-                                    />
-                                    <span className="text-sm">
-                                        I accept the <a href="/terms" target="_blank" className="underline text-primary hover:text-primary/80">HangHut Terms of Service</a>
-                                        <span className="text-destructive">*</span>
-                                    </span>
-                                </Label>
-
-                                {customTos && (
-                                    <div className="space-y-1.5">
-                                        <Label className="flex items-start gap-3 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                checked={organizerTermsAccepted}
-                                                onChange={(e) => setOrganizerTermsAccepted(e.target.checked)}
-                                                className="mt-1 h-4 w-4 rounded border-primary text-primary focus:ring-primary"
-                                            />
-                                            <span className="text-sm">
-                                                I accept <button type="button" onClick={() => setShowOrganizerTos(!showOrganizerTos)} className="underline text-primary hover:text-primary/80">{organizerName || 'Organizer'}&apos;s Terms &amp; Conditions</button>
-                                                <span className="text-destructive">*</span>
-                                            </span>
-                                        </Label>
-                                        {showOrganizerTos && (
-                                            <div className="ml-7 p-3 rounded-lg bg-muted/50 border border-border/50 text-xs text-muted-foreground max-h-40 overflow-y-auto whitespace-pre-wrap">
-                                                {customTos}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                <Label className="flex items-start gap-3 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={newsletterSubscribed}
-                                        onChange={(e) => setNewsletterSubscribed(e.target.checked)}
-                                        className="mt-1 h-4 w-4 rounded border-primary text-primary focus:ring-primary"
-                                    />
-                                    <span className="text-sm text-muted-foreground">
-                                        Subscribe to news & event updates from the organizer
-                                    </span>
-                                </Label>
-                            </div>
-
-                            <Button
-                                className="hidden lg:flex w-full h-12 text-lg font-semibold shadow-md hover:shadow-lg transition-all"
-                                onClick={handlePayClick}
-                                disabled={isLoading}
-                            >
-                                {isLoading ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                                        Processing...
-                                    </>
-                                ) : (
-                                    (total - discount) <= 0 ? (
-                                        <>
-                                            Get Free Tickets
-                                            <ArrowRight className="ml-2 h-5 w-5" />
-                                        </>
-                                    ) : (
-                                        <>
-                                            Pay ₱{(total - discount).toLocaleString()}
-                                            <ArrowRight className="ml-2 h-5 w-5" />
-                                        </>
-                                    )
-                                )}
-                            </Button>
-                            {(total - discount) > 0 && (
-                                <p className="text-xs text-center text-muted-foreground flex items-center justify-center gap-1">
-                                    <ShieldCheck className="w-3 h-3" />
-                                    Secure payment processed by Xendit
-                                </p>
-                            )}
-                        </CardFooter>
                     </Card>
                 </div>
             </div>
