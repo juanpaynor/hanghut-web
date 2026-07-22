@@ -70,7 +70,7 @@ export function TransactionDetailDialog({
     // QRPH can't be reversed via Xendit — must be refunded off-platform and recorded manually.
     const isManualOnly = (detail?.payment_method || '').toLowerCase() === 'qrph'
     const settlement = detail ? getSettlementInfo(detail.created_at, detail.payment_method) : null
-    const totalFees = detail ? detail.platform_fee + detail.payment_processing_fee + (detail.fixed_fee || 0) : 0
+    const totalFees = detail ? detail.platform_fee + detail.payment_processing_fee + (detail.fixed_fee || 0) + (detail.vat || 0) : 0
 
     async function handleRefund() {
         if (!detail) return
@@ -125,30 +125,31 @@ export function TransactionDetailDialog({
                             <p className="text-xs text-muted-foreground mt-1">{format(new Date(detail.created_at), 'MMM d, yyyy · h:mm a')}</p>
                         </div>
 
-                        {/* Amount breakdown.
-                            Processing fee: use the value captured at sale if present, else
-                            compute it from the method + total charged (PH rates are fixed).
-                            The partner absorbs it, so the true net = organizer_payout − processing. */}
+                        {/* Amount breakdown. Start from what the customer was actually
+                            charged (total_amount) and subtract every deduction taken from
+                            the sub-wallet — platform fee, booking fee, VAT and processing —
+                            landing at the true net. Processing: use the value captured at
+                            sale if present, else compute from method + total (PH rates fixed). */}
                         {(() => {
                             const processingFee = detail.payment_processing_fee > 0
                                 ? detail.payment_processing_fee
                                 : getProcessingFee(detail.payment_method, detail.total_amount)
-                            const netToWallet = detail.organizer_payout - processingFee
+                            const vat = detail.vat || 0
+                            const netToWallet = detail.total_amount - detail.platform_fee - (detail.fixed_fee || 0) - vat - processingFee
                             return (
                         <div className="rounded-lg border p-4">
-                            <Row label={detail.pass_fees ? 'Ticket price' : 'Amount'} value={`₱${detail.gross_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
+                            <Row label="Amount charged" value={`₱${detail.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
                             <Row label="Platform fee" value={`-₱${detail.platform_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
+                            {detail.fixed_fee ? <Row label="Booking fee" value={`-₱${detail.fixed_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} /> : null}
+                            {vat > 0 ? <Row label="VAT (12%)" value={`-₱${vat.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} /> : null}
                             <Row label="Processing fee" value={`-₱${processingFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
-                            {/* Fixed fee is only a deduction when the organizer absorbs it.
-                                When passed to the customer it's not taken from the payout. */}
-                            {!detail.pass_fees && detail.fixed_fee ? <Row label="Fixed fee" value={`-₱${detail.fixed_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} /> : null}
                             <div className="border-t mt-1 pt-1">
                                 <Row label="Net to your wallet" strong value={<span className="text-emerald-600">₱{netToWallet.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>} />
                             </div>
-                            <p className="text-[11px] text-muted-foreground mt-1">Processing fee is charged by Xendit and deducted from your wallet.</p>
-                            {detail.pass_fees && detail.fixed_fee ? (
+                            <p className="text-[11px] text-muted-foreground mt-1">Processing fee and VAT are charged by Xendit and deducted from your wallet.</p>
+                            {detail.pass_fees ? (
                                 <p className="text-xs text-muted-foreground mt-2 border-t pt-2">
-                                    Customer also paid a ₱{detail.fixed_fee.toLocaleString(undefined, { minimumFractionDigits: 2 })} booking fee (collected by HangHut) — total charged ₱{detail.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}.
+                                    Your attendee covered the platform + booking fee on top of the ₱{detail.gross_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} ticket price (included in the amount charged above).
                                 </p>
                             ) : null}
                         </div>

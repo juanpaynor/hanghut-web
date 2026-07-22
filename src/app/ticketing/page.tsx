@@ -50,8 +50,8 @@ export default function TicketingPage() {
                             </div>
                             <div className="p-6 rounded-2xl bg-white/50 backdrop-blur-sm border border-border/50 hover:shadow-lg transition-shadow">
                                 <div className="text-4xl mb-3">🎯</div>
-                                <h3 className="font-bold text-lg mb-2">Only Pay When You Earn</h3>
-                                <p className="text-sm text-muted-foreground">4% per ticket sold. Zero monthly fees, zero setup costs, zero risk</p>
+                                <h3 className="font-bold text-lg mb-2">Just 2% + ₱15 Per Ticket</h3>
+                                <p className="text-sm text-muted-foreground">Or pass it to attendees and keep 100%. Zero monthly fees, zero setup, zero risk</p>
                             </div>
                             <div className="p-6 rounded-2xl bg-white/50 backdrop-blur-sm border border-border/50 hover:shadow-lg transition-shadow">
                                 <div className="text-4xl mb-3">⚡</div>
@@ -108,6 +108,7 @@ export default function TicketingPage() {
                                 </Button>
                             </Link>
                         </div>
+                        <p className="text-sm opacity-80 pt-2">Free to start · No card required · Live in minutes</p>
                     </div>
                 </section>
             </main>

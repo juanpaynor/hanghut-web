@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { PartnerFeeCalculator } from "@/components/landing/partner-fee-calculator";
 import {
     Check,
     X,
@@ -23,15 +24,19 @@ import {
 const faqs = [
     {
         q: "How much does HangHut charge per ticket?",
-        a: "We charge a flat 4% platform fee per ticket sold, deducted from your payout. There are no setup fees, monthly fees, or hidden charges. The 4% covers everything — hosting, infrastructure, support, and your free storefront.",
+        a: "Just 2% + ₱15 per ticket sold, deducted from your payout. No setup fees, no monthly fees, no hidden charges. That covers everything — hosting, infrastructure, support, and your free storefront. And free events are always 100% free.",
+    },
+    {
+        q: "Can I pass the fee on to my attendees?",
+        a: "Yes. Flip one toggle on your Payouts page and the 2% + ₱15 is added to the attendee's total at checkout instead — so you keep 100% of your ticket price. You can switch back to absorbing it anytime.",
     },
     {
         q: "Who pays the payment processing fee?",
-        a: "Xendit (our payment gateway) charges a processing fee of 1.5% to 3% per transaction, depending on the payment method used (e-wallets, cards, direct debit, etc.). This is separate from HangHut's 4% platform fee.",
+        a: "Xendit (our payment gateway) charges a processing fee of roughly 1.4%–3.2% per transaction depending on the method (QR Ph, e-wallets, cards). This is always absorbed by you and is separate from HangHut's platform fee — we never add it to your buyers' total.",
     },
     {
         q: "When do I get paid?",
-        a: "Payouts are processed after your event. Funds are transferred to your registered bank account via Xendit. You'll receive a full breakdown of gross sales, platform fees, and net payout in your organizer dashboard.",
+        a: "Payouts are processed after your event. Funds are transferred to your registered bank account via Xendit. You'll receive a full breakdown of gross sales, platform fee, VAT, processing, and net payout in your organizer dashboard.",
     },
     {
         q: "What is the free storefront?",
@@ -43,7 +48,7 @@ const faqs = [
     },
     {
         q: "Is there a contract or lock-in period?",
-        a: "None. HangHut is pay-per-event — you only pay the 4% fee when you make a sale. You can stop using the platform at any time with no penalties.",
+        a: "None. HangHut is pay-per-event — you only pay the 2% + ₱15 fee when you make a sale. You can stop using the platform at any time with no penalties.",
     },
     {
         q: "How does the free check-in app work?",
@@ -85,21 +90,24 @@ export function TicketingFeatures() {
                             ✨ One Plan. Everything Included.
                         </div>
                         <div className="mt-4 space-y-5">
-                            {/* HangHut fee */}
+                            {/* HangHut fee — lead with the low % */}
                             <div>
-                                <span className="text-7xl font-headline font-black text-primary">4%</span>
-                                <p className="text-xl text-muted-foreground mt-2 font-light">HangHut platform fee per ticket sold</p>
-                                <p className="text-sm text-muted-foreground mt-1">Deducted from your payout — buyers pay face value only</p>
+                                <div className="flex items-end justify-center gap-2">
+                                    <span className="text-7xl font-headline font-black text-primary leading-none">Just 2%</span>
+                                    <span className="text-2xl font-headline font-bold text-muted-foreground mb-1">+ ₱15</span>
+                                </div>
+                                <p className="text-xl text-muted-foreground mt-3 font-light">HangHut platform fee per ticket sold</p>
+                                <p className="text-sm text-muted-foreground mt-1">Deducted from your payout — or flip a switch to pass it to attendees and keep 100% of your ticket price.</p>
                             </div>
 
                             {/* Processing fee callout */}
                             <div className="rounded-xl bg-muted/50 border border-border px-5 py-4 text-left space-y-1">
                                 <p className="text-sm font-semibold flex items-center gap-2">
-                                    + 1.5% – 3% payment processing fee
+                                    + ~1.4% – 3.2% payment processing fee
                                     <span className="text-xs font-normal text-muted-foreground">(via Xendit)</span>
                                 </p>
                                 <p className="text-xs text-muted-foreground leading-relaxed">
-                                    Charged by Xendit per transaction — rate varies by payment method (e.g. e-wallets, cards, direct debit).
+                                    Charged by Xendit per transaction — rate varies by payment method (QR Ph, e-wallets, cards). Always absorbed by you, never added to your buyers.
                                 </p>
                             </div>
                         </div>
@@ -125,6 +133,15 @@ export function TicketingFeatures() {
                         </div>
                     </motion.div>
 
+                    {/* Interactive fee calculator */}
+                    <div className="mb-16">
+                        <div className="text-center mb-8 space-y-2">
+                            <h3 className="text-2xl md:text-3xl font-headline font-bold">Do the math</h3>
+                            <p className="text-muted-foreground">Slide the numbers and see exactly what lands in your account.</p>
+                        </div>
+                        <PartnerFeeCalculator />
+                    </div>
+
                     {/* Comparison Table */}
                     <div className="overflow-x-auto rounded-2xl border border-border">
                         <table className="w-full text-sm">
@@ -137,8 +154,8 @@ export function TicketingFeatures() {
                             </thead>
                             <tbody className="divide-y divide-border">
                                 {[
-                                    { feature: "Platform Fee", others: "7% – 15%", us: "4% flat" },
-                                    { feature: "Payment Processing Fee", others: "Included in their %", us: "1.5% – 3% (Xendit)" },
+                                    { feature: "Platform Fee", others: "7% – 15%", us: "2% + ₱15" },
+                                    { feature: "Payment Processing Fee", others: "Included in their %", us: "~1.4% – 3.2% (Xendit)" },
                                     { feature: "Monthly Subscription", others: "₱500 – ₱5,000/mo", us: "Free" },
                                     { feature: "Organizer Storefront", others: "Paid add-on", us: "Free" },
                                     { feature: "Custom Domain", others: "Not available", us: "Free" },
@@ -170,8 +187,28 @@ export function TicketingFeatures() {
                     </div>
 
                     <p className="text-center text-xs text-muted-foreground mt-4">
-                        * Xendit processing fees (1.5%–3%) vary by payment method and are separate from HangHut&apos;s 4% platform fee.
+                        * Xendit processing fees (~1.4%–3.2%) vary by payment method and are separate from HangHut&apos;s 2% + ₱15 platform fee.
                     </p>
+                </div>
+
+                {/* Trust band */}
+                <div className="max-w-5xl mx-auto -mt-16">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[
+                            { icon: ShieldCheck, title: "Secure payments", body: "Powered by Xendit — a licensed PH payment provider." },
+                            { icon: Zap, title: "Instant setup", body: "Create an event and start selling in minutes." },
+                            { icon: Repeat, title: "No lock-in", body: "Pay-per-sale only. Leave anytime, no penalties." },
+                            { icon: Store, title: "Everything included", body: "Storefront, check-in, marketing — all free." },
+                        ].map((t) => (
+                            <div key={t.title} className="rounded-2xl border border-border bg-background p-5 text-center">
+                                <div className="inline-flex p-2.5 rounded-xl bg-primary/10 text-primary mb-3">
+                                    <t.icon className="h-5 w-5" />
+                                </div>
+                                <p className="font-bold text-sm">{t.title}</p>
+                                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{t.body}</p>
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
                 {/* 2. Free Storefront + Custom Domain */}

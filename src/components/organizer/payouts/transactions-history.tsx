@@ -23,6 +23,7 @@ interface Transaction {
     platform_fee: number
     payment_processing_fee: number
     fixed_fee: number | null
+    vat?: number | null
     organizer_payout: number
     status: string
     created_at: string
@@ -48,7 +49,7 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
             'Channel',
             'Payment Method',
             'Amount',
-            'Platform Fee',
+            'Total Fees',
             'Net Payout',
             'Status',
             'Settlement Status',
@@ -65,7 +66,7 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                     `"${getPaymentChannel(t.purchase_intent?.payment_method)}"`,
                     `"${t.purchase_intent?.payment_method?.toUpperCase() || 'UNKNOWN'}"`,
                     t.gross_amount,
-                    ((t.platform_fee || 0) + (t.payment_processing_fee || 0)),
+                    ((t.platform_fee || 0) + (t.payment_processing_fee || 0) + (t.fixed_fee || 0) + (t.vat || 0)),
                     t.organizer_payout,
                     t.status,
                     settlement.status,
@@ -87,7 +88,7 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
 
     // Calculate summary stats
     const totalIncoming = transactions.reduce((sum, t) => sum + Number(t.gross_amount), 0)
-    const totalFees = transactions.reduce((sum, t) => sum + (Number(t.platform_fee) || 0) + (Number(t.payment_processing_fee) || 0) + (Number(t.fixed_fee) || 0), 0)
+    const totalFees = transactions.reduce((sum, t) => sum + (Number(t.platform_fee) || 0) + (Number(t.payment_processing_fee) || 0) + (Number(t.fixed_fee) || 0) + (Number(t.vat) || 0), 0)
     const totalNet = transactions.reduce((sum, t) => sum + Number(t.organizer_payout), 0)
 
     const getStatusConfig = (status: string) => {
@@ -224,7 +225,7 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                                     const StatusIcon = statusConfig.icon
                                     const paymentMethod = transaction.purchase_intent?.payment_method
                                     const channel = isTopUp ? 'Wallet' : getPaymentChannel(paymentMethod)
-                                    const totalFees = isTopUp ? 0 : (Number(transaction.platform_fee) || 0) + (Number(transaction.payment_processing_fee) || 0) + (Number(transaction.fixed_fee) || 0)
+                                    const totalFees = isTopUp ? 0 : (Number(transaction.platform_fee) || 0) + (Number(transaction.payment_processing_fee) || 0) + (Number(transaction.fixed_fee) || 0) + (Number(transaction.vat) || 0)
                                     const settlement = isTopUp ? null : getSettlementInfo(transaction.created_at, paymentMethod)
 
                                     return (

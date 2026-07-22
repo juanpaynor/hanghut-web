@@ -15,6 +15,7 @@ export interface TransactionDetail {
     platform_fee: number
     payment_processing_fee: number
     fixed_fee: number | null
+    vat: number
     organizer_payout: number
     total_amount: number
     payment_method: string | null
@@ -41,7 +42,7 @@ export async function getTransactionDetail(transactionId: string): Promise<{ det
     const { data: txn } = await supabase
         .from('transactions')
         .select(`
-            id, gross_amount, platform_fee, payment_processing_fee, fixed_fee, organizer_payout,
+            id, gross_amount, platform_fee, payment_processing_fee, fixed_fee, vat, organizer_payout,
             status, created_at, xendit_transaction_id, partner_id, event_id, purchase_intent_id,
             event:events ( title ),
             purchase_intent:purchase_intents ( id, guest_name, guest_email, user_id, quantity, total_amount, payment_method, status, refunded_amount, refunded_at, refund_method, metadata )
@@ -87,6 +88,7 @@ export async function getTransactionDetail(transactionId: string): Promise<{ det
             platform_fee: Number(txn.platform_fee) || 0,
             payment_processing_fee: Number(txn.payment_processing_fee) || 0,
             fixed_fee: txn.fixed_fee != null ? Number(txn.fixed_fee) : null,
+            vat: Number(txn.vat) || 0,
             organizer_payout: Number(txn.organizer_payout) || 0,
             total_amount: Number(pi?.total_amount ?? txn.gross_amount) || 0,
             payment_method: pi?.payment_method || null,

@@ -478,16 +478,27 @@ serve(async (req) => {
                         .or('payment_method.is.null,payment_method.in.(UNKNOWN,unknown,multiple)')
 
                     // The winning event may have inserted the transaction before the
-                    // method was known, leaving processing_fee at 0. Now that we have a
-                    // real method, fill it in (only when still 0, to stay idempotent).
+                    // method was known, leaving processing_fee at 0 — and organizer_payout
+                    // computed WITHOUT processing. Now that we have a real method, fill in
+                    // the fee AND subtract it from the payout so the net stays accurate
+                    // (only when still 0, to stay idempotent).
                     const backfillFee = getProcessingFee(capturedMethod, Number(intent.total_amount) || 0)
                     if (backfillFee > 0) {
-                        await supabaseClient
+                        const { data: tx } = await supabaseClient
                             .from('transactions')
-                            .update({ payment_processing_fee: backfillFee })
+                            .select('id, organizer_payout, payment_processing_fee')
                             .eq('purchase_intent_id', intent.id)
                             .eq('status', 'completed')
-                            .or('payment_processing_fee.is.null,payment_processing_fee.eq.0')
+                            .maybeSingle()
+                        if (tx && (tx.payment_processing_fee == null || Number(tx.payment_processing_fee) === 0)) {
+                            await supabaseClient
+                                .from('transactions')
+                                .update({
+                                    payment_processing_fee: backfillFee,
+                                    organizer_payout: Math.round(Number(tx.organizer_payout) - backfillFee),
+                                })
+                                .eq('id', tx.id)
+                        }
                     }
                 }
                 console.log(`⚡ Intent ${intent.id} already claimed by another execution — skipping`)
@@ -506,32 +517,35 @@ serve(async (req) => {
                 .eq('id', intent.event.organizer_id)
                 .single()
 
-            // Platform take is the SINGLE value create-purchase-intent already computed
-            // and stored on the intent (pct% of net + fixed×qty, one inline Xendit
-            // PLATFORM fee — no split rules). Read it as the source of truth so the
-            // ledger can't drift from what Xendit actually charged. `?? ` throughout so
-            // a deliberate 0% / ₱0 is respected.
+            // The whole platform take is the SINGLE value create-purchase-intent stored
+            // on the intent (pct% of net + fixed×qty, one inline Xendit PLATFORM fee —
+            // no split rules). Read it as the source of truth so the ledger can't drift
+            // from what Xendit charged. `??` throughout so a deliberate 0% / ₱0 survives.
             const platformFeePercentage = intent.fee_percentage ?? partner?.custom_percentage ?? 2.0
             const net = Math.max(Number(intent.subtotal || 0) - Number(intent.discount_amount || 0), 0)
             const fixedFeePerTicket = partner?.fixed_fee_per_ticket ?? 15.0
             const totalFixedFee = fixedFeePerTicket * (intent.quantity || 1)
-            const platformFee = intent.platform_fee != null
+            const platformTake = intent.platform_fee != null
                 ? Math.round(Number(intent.platform_fee))
                 : Math.round(net * (platformFeePercentage / 100) + totalFixedFee)
+            // Split the take into its % commission vs fixed booking-fee parts for the
+            // ledger. fixed is an integer so platformFee + fixedFee === the take exactly
+            // (no drift), and the two are shown as separate fee lines without overlap.
+            const platformFee = Math.max(platformTake - totalFixedFee, 0)
+            // Xendit charges 12% VAT on the platform take, debited from the sub-wallet
+            // (organizer-borne, goes to Xendit/BIR — not HangHut revenue).
+            const feeVat = Math.round(platformTake * 0.12)
             // Xendit processing fee (organizer-absorbed) — from the resolved method + the
             // TOTAL charged. 0 when the method is still UNKNOWN; the backfill branch fills
-            // it once resolved.
+            // it in (and adjusts organizer_payout) once resolved.
             const processingFee = getProcessingFee(capturedMethod, Number(intent.total_amount) || 0)
-            // Organizer keeps what landed in the sub-wallet minus the take: absorb →
-            // total_amount = net (take deducted from them); pass-on → total_amount =
-            // net + take (take deducted, but funded by the customer surcharge → they keep
-            // net). So payout = total_amount − take in both modes. (Xendit also deducts
-            // 12% VAT on the fee + processing from the sub-wallet; those reconcile against
-            // the actual wallet balance at payout time.)
+            // TRUE net the organizer receives = what landed in the sub-wallet
+            // (total_amount) minus the take, its VAT, and processing. Matches the actual
+            // Xendit wallet credit so the ledger and payout balance agree.
             const passFees = partner?.pass_fees_to_customer === true
-            const organizerPayout = Math.round(Number(intent.total_amount || 0) - platformFee)
+            const organizerPayout = Math.round(Number(intent.total_amount || 0) - platformTake - feeVat - processingFee)
 
-            console.log(`💰 Fee calc: net=${net}, take=${platformFee} (pct=${platformFeePercentage}%, fixed=${totalFixedFee}), total=${intent.total_amount}, passFees=${passFees}, organizerPayout=${organizerPayout}`)
+            console.log(`💰 Fee calc: net=${net}, take=${platformTake} (pct=${platformFee}, fixed=${totalFixedFee}), vat=${feeVat}, processing=${processingFee}, total=${intent.total_amount}, passFees=${passFees}, organizerPayout=${organizerPayout}`)
 
             const { error: txError } = await supabaseClient
                 .from('transactions')
@@ -544,6 +558,7 @@ serve(async (req) => {
                     platform_fee: platformFee,
                     payment_processing_fee: processingFee,
                     fixed_fee: totalFixedFee,
+                    vat: feeVat,
                     organizer_payout: organizerPayout,
                     fee_percentage: platformFeePercentage,
                     fee_basis: (partner?.custom_percentage != null && partner.custom_percentage !== 4.0) ? 'custom' : 'standard',
@@ -958,7 +973,7 @@ serve(async (req) => {
                         // Look up the original transaction for accurate reversal
                         const { data: origTx } = await supabaseClient
                             .from('transactions')
-                            .select('platform_fee, organizer_payout, fixed_fee, gross_amount')
+                            .select('platform_fee, organizer_payout, fixed_fee, vat, gross_amount')
                             .eq('purchase_intent_id', intent.id)
                             .eq('status', 'completed')
                             .single();
@@ -967,9 +982,10 @@ serve(async (req) => {
                         const ratio = origTx ? (refundAmount / origTx.gross_amount) : (refundAmount / intent.total_amount);
                         const refundPlatformFee = origTx ? Math.round(origTx.platform_fee * ratio) : Math.round((refundAmount * platformFeePercentage) / 100);
                         const refundFixedFee = origTx ? Math.round((origTx.fixed_fee || 0) * ratio) : 0;
+                        const refundVat = origTx ? Math.round((origTx.vat || 0) * ratio) : 0;
                         const refundPayout = origTx ? Math.round(origTx.organizer_payout * ratio) : (refundAmount - refundPlatformFee);
 
-                        console.log(`💰 Refund calc: amount=${refundAmount}, ratio=${ratio.toFixed(2)}, platformFee=${refundPlatformFee}, fixedFee=${refundFixedFee}, payout=${refundPayout}`);
+                        console.log(`💰 Refund calc: amount=${refundAmount}, ratio=${ratio.toFixed(2)}, platformFee=${refundPlatformFee}, fixedFee=${refundFixedFee}, vat=${refundVat}, payout=${refundPayout}`);
 
                         const { error: refundTxError } = await supabaseClient.from('transactions').insert({
                             purchase_intent_id: intent.id,
@@ -979,6 +995,7 @@ serve(async (req) => {
                             gross_amount: -refundAmount,
                             platform_fee: -refundPlatformFee,
                             fixed_fee: -refundFixedFee,
+                            vat: -refundVat,
                             organizer_payout: -refundPayout,
                             payment_processing_fee: 0,
                             fee_percentage: platformFeePercentage,
