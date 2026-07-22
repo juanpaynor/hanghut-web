@@ -88,7 +88,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
     const router = useRouter()
     const [isLoading, setIsLoading] = useState(false)
     const [pricingModel, setPricingModel] = useState(partner.pricing_model || 'standard')
-    const [customPercentage, setCustomPercentage] = useState(partner.custom_percentage?.toString() || '4')
+    const [customPercentage, setCustomPercentage] = useState(partner.custom_percentage?.toString() || '2')
     const [adminNotes, setAdminNotes] = useState('')
     const [autoApprovePayouts, setAutoApprovePayoutsState] = useState(partner.auto_approve_payouts || false)
     const [subscriptionsEnabled, setSubscriptionsEnabledState] = useState<boolean>((partner as any).subscriptions_enabled ?? false)
@@ -480,7 +480,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="standard">Standard (4%)</SelectItem>
+                                            <SelectItem value="standard">Standard (2%)</SelectItem>
                                             <SelectItem value="custom">Custom</SelectItem>
                                         </SelectContent>
                                     </Select>
@@ -518,8 +518,10 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                                 />
                                             </div>
                                             <p className="text-xs text-slate-500">
-                                                If enabled, the customer pays the Platform Fee + Processing Fee on top of the ticket price.
-                                                The organizer receives the full ticket price.
+                                                If enabled, the customer pays the Platform Fee (% + fixed) on top of the ticket price
+                                                and the organizer receives the full ticket price. The payment processing fee is always
+                                                absorbed by the organizer either way. Organizers can also flip this themselves on their
+                                                Payouts page.
                                             </p>
                                         </div>
 

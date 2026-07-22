@@ -19,7 +19,7 @@ export async function getDashboardStats(partnerId: string) {
         // 1. All completed transactions
         supabase
             .from('transactions')
-            .select('gross_amount, status, created_at, purchase_intent_id, platform_fee, event_id')
+            .select('gross_amount, status, created_at, purchase_intent_id, platform_fee, payment_processing_fee, event_id')
             .eq('partner_id', partnerId)
             .eq('status', 'completed'),
 
@@ -108,7 +108,9 @@ export async function getDashboardStats(partnerId: string) {
 
     const totalRevenue = transactions?.reduce((sum, t) => sum + (t.gross_amount || 0), 0) || 0
     const totalPlatformFees = transactions?.reduce((sum, t) => sum + (t.platform_fee || 0), 0) || 0
-    const totalPaymentFees = totalRevenue * 0.04
+    // Sum the actual per-transaction Xendit processing fee the webhook recorded
+    // (organizer-absorbed), instead of a blanket 4% estimate.
+    const totalPaymentFees = transactions?.reduce((sum, t) => sum + (t.payment_processing_fee || 0), 0) || 0
     const netRevenue = totalRevenue - totalPlatformFees - totalPaymentFees
 
     const uniqueOrders = new Set(transactions?.map(t => t.purchase_intent_id)).size

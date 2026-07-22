@@ -2,6 +2,7 @@ import { authenticateApiKey, isAuthError } from '@/lib/api/api-middleware'
 import { apiSuccess, apiError, handleCors } from '@/lib/api/api-helpers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@supabase/supabase-js'
+import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
 
 export const dynamic = 'force-dynamic'
 
@@ -101,10 +102,12 @@ export async function POST(request: Request) {
         .eq('id', auth.partnerId)
         .single()
 
-    const commissionRate = partner?.pricing_model === 'custom' && partner?.custom_percentage !== null
-        ? partner.custom_percentage / 100
-        : 0.04
-    const fixedFeePerTicket = parseFloat(partner?.fixed_fee_per_ticket?.toString() || '15.00')
+    const commissionRate = resolvePlatformPct(
+        partner?.custom_percentage != null ? Number(partner.custom_percentage) : null
+    ) / 100
+    const fixedFeePerTicket = resolveFixedFee(
+        partner?.fixed_fee_per_ticket != null ? Number(partner.fixed_fee_per_ticket) : null
+    )
     const passFees = partner?.pass_fees_to_customer || false
 
     const unitPrice = tierToUse ? tierToUse.price : event.ticket_price

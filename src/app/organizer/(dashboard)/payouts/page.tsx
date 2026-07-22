@@ -7,6 +7,8 @@ import { DollarSign, TrendingUp, Clock, Settings, Wallet, FileText } from 'lucid
 import { format } from 'date-fns'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BankSettingsForm } from '@/components/organizer/payouts/bank-settings-form'
+import { FeeSettingsCard } from '@/components/organizer/payouts/fee-settings-card'
+import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
 import { RequestPayoutCard } from '@/components/organizer/payouts/request-payout-card'
 import { PayoutHistoryItem } from '@/components/organizer/payouts/payout-history-item'
 import { TransactionsHistory } from '@/components/organizer/payouts/transactions-history'
@@ -85,6 +87,20 @@ async function getBankAccounts(partnerId: string) {
     const supabase = await createClient()
     const { data } = await supabase.from('bank_accounts').select('*').eq('partner_id', partnerId).order('is_primary', { ascending: false }).order('created_at', { ascending: false })
     return data || []
+}
+
+async function getFeeConfig(partnerId: string) {
+    const supabase = await createClient()
+    const { data } = await supabase
+        .from('partners')
+        .select('pass_fees_to_customer, custom_percentage, fixed_fee_per_ticket')
+        .eq('id', partnerId)
+        .single()
+    return {
+        passFees: data?.pass_fees_to_customer === true,
+        platformPct: resolvePlatformPct(data?.custom_percentage != null ? Number(data.custom_percentage) : null),
+        fixedFee: resolveFixedFee(data?.fixed_fee_per_ticket != null ? Number(data.fixed_fee_per_ticket) : null),
+    }
 }
 
 async function getTransactions(partnerId: string, from?: string, to?: string, search?: string, page: number = 1, pageSize: number = 10) {
@@ -254,7 +270,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
     if (!partnerId) return null
 
     // Parallel fetching
-    const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings, walletInfo, topups, experienceTxns] = await Promise.all([
+    const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings, walletInfo, topups, experienceTxns, feeConfig] = await Promise.all([
         getPayoutStats(partnerId),
         getPayoutHistory(partnerId, from, to, payoutPage, 5),
         getBankAccounts(partnerId),
@@ -263,6 +279,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
         getWalletInfo(partnerId),
         getWalletTopUps(partnerId),
         getExperienceTransactions(partnerId, from, to, search),
+        getFeeConfig(partnerId),
     ])
 
     const { payouts, count: payoutCount } = payoutsResult
@@ -422,7 +439,12 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                     </div>
                 </TabsContent>
 
-                <TabsContent value="settings">
+                <TabsContent value="settings" className="space-y-6">
+                    <FeeSettingsCard
+                        passFees={feeConfig.passFees}
+                        platformPct={feeConfig.platformPct}
+                        fixedFee={feeConfig.fixedFee}
+                    />
                     <BankSettingsForm accounts={bankAccounts} />
                 </TabsContent>
             </Tabs>

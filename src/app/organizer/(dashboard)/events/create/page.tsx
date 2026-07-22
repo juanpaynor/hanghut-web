@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { EventForm } from '@/components/organizer/event-form'
+import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
 import { getAuthUser, getUserRole } from '@/lib/auth/cached'
 
 export const dynamic = 'force-dynamic'
@@ -34,10 +35,10 @@ export default async function CreateEventPage() {
         redirect('/organizer')
     }
 
-    // Get commission rate (custom or default 4%)
-    const commissionRate = partner.pricing_model === 'custom' && partner.custom_percentage !== null
-        ? partner.custom_percentage / 100
-        : 0.04
+    // Resolve the partner's platform rate from the single source of truth.
+    const commissionRate = resolvePlatformPct(
+        partner.custom_percentage != null ? Number(partner.custom_percentage) : null
+    ) / 100
 
     return (
         <div className="p-8">
@@ -45,7 +46,9 @@ export default async function CreateEventPage() {
                 partnerId={partner.id}
                 commissionRate={commissionRate}
                 passFeesToCustomer={partner.pass_fees_to_customer || false}
-                fixedFeePerTicket={parseFloat(partner.fixed_fee_per_ticket?.toString() || '15.00')}
+                fixedFeePerTicket={resolveFixedFee(
+                    partner.fixed_fee_per_ticket != null ? Number(partner.fixed_fee_per_ticket) : null
+                )}
             />
         </div>
     )

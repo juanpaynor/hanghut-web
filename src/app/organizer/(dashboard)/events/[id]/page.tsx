@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect, notFound } from 'next/navigation'
 import { EventDashboardTabs } from '@/components/organizer/event-dashboard-tabs'
+import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
 import { getAuthUser, getPartner } from '@/lib/auth/cached'
 
 export const dynamic = 'force-dynamic'
@@ -146,9 +147,9 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         quantity_sold: tierCountMap.get(tier.id) ?? tier.quantity_sold ?? 0
     }))
 
-    const commissionRate = partnerPricing?.pricing_model === 'custom' && partnerPricing?.custom_percentage !== null
-        ? partnerPricing.custom_percentage / 100
-        : 0.04
+    const commissionRate = resolvePlatformPct(
+        partnerPricing?.custom_percentage != null ? Number(partnerPricing.custom_percentage) : null
+    ) / 100
 
     const totalRevenue = soldTickets?.reduce((sum, ticket: any) => {
         const price = ticket.purchase_intent?.unit_price || 0
@@ -200,7 +201,9 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                     checkedInCount
                 }}
                 passFeesToCustomer={partnerPricing?.pass_fees_to_customer || false}
-                fixedFeePerTicket={parseFloat(partnerPricing?.fixed_fee_per_ticket?.toString() || '15.00')}
+                fixedFeePerTicket={resolveFixedFee(
+                    partnerPricing?.fixed_fee_per_ticket != null ? Number(partnerPricing.fixed_fee_per_ticket) : null
+                )}
                 initialQuestions={registrationQuestions}
                 initialRegistrations={initialRegistrations}
                 subscriptionTiers={rawSubscriptionTiers || []}

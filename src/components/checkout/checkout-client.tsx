@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { validatePromoCode } from '@/lib/organizer/promo-actions'
 import { subscribeGuestToNewsletter } from '@/lib/marketing/actions'
 import { hexToHsl } from '@/lib/utils'
+import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
 import { CheckCircle2, ClipboardList } from 'lucide-react'
 
 // Conditionally rendered (approval/invite events or events with custom questions),
@@ -111,13 +112,17 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     const [showOrganizerTos, setShowOrganizerTos] = useState(false)
     const [newsletterSubscribed, setNewsletterSubscribed] = useState(false)
 
-    // Fee Logic
+    // Fee Logic — resolve the partner's platform rate from the single source of
+    // truth (uses `??` so a deliberate 0% / ₱0 stays 0, and ignores pricing_model
+    // so web + webhook agree on one predicate).
     const organizer = event.organizer || {}
     const passFees = organizer.pass_fees_to_customer || false
-    const commissionRate = organizer.pricing_model === 'custom' && organizer.custom_percentage !== null
-        ? organizer.custom_percentage / 100
-        : 0.04
-    const fixedFeePerTicket = parseFloat(organizer.fixed_fee_per_ticket || '15')
+    const commissionRate = resolvePlatformPct(
+        organizer.custom_percentage != null ? Number(organizer.custom_percentage) : null
+    ) / 100
+    const fixedFeePerTicket = resolveFixedFee(
+        organizer.fixed_fee_per_ticket != null ? Number(organizer.fixed_fee_per_ticket) : null
+    )
 
     const isFree = tier.price === 0
     const subtotal = tier.price * quantity
@@ -129,25 +134,22 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         : 0
 
     const discount = (appliedPromo ? appliedPromo.discountAmount : 0) + subscriberSaving
+    const net = Math.max(subtotal - discount, 0)
 
-    // Calculate Fees (if passed)
+    // Fees the customer covers when the organizer passes them on. The platform take
+    // (2% + ₱15/ticket) is computed on the post-discount net so it matches the
+    // Xendit PLATFORM fee the backend charges. Processing is NEVER passed to the
+    // customer — the organizer always absorbs it.
     let platformFee = 0
     let fixedFeeTotal = 0
-    let processingFee = 0
+    const processingFee = 0 // always absorbed by the organizer
 
-    // Calculate Fees (if passed) — never charge a booking fee on free tickets
     if (passFees && !isFree) {
-        // User Request: "15 pesos (Fixed Fee) should be paid by the customer, but the 3% processing fee is still paid by the organizer"
-        // We only add the Fixed Fee to the customer's total.
+        platformFee = Math.round(net * commissionRate)
         fixedFeeTotal = fixedFeePerTicket * quantity
-
-        // Platform Fee and Processing % are NOT added to the customer total in this model.
-        // They will be deducted from the organizer's payout on the backend.
-        platformFee = 0
-        processingFee = 0
     }
 
-    const totalFees = fixedFeeTotal // Only the fixed fee is added
+    const totalFees = platformFee + fixedFeeTotal
     const total = subtotal + totalFees
 
     const handleGuestChange = (field: string, value: string) => {

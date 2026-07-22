@@ -235,3 +235,29 @@ export async function cancelPayoutRequest(payoutId: string) {
     revalidatePath('/organizer/payouts')
     return { success: true, message: 'Payout request cancelled successfully.' }
 }
+
+/**
+ * Flip who absorbs the platform fee (2% + ₱15/ticket) for the caller's own partner.
+ * Backed by the SECURITY DEFINER `set_partner_pass_fees` RPC, which pins the write to
+ * exactly that one column for the caller's own partner row (organizers can't touch
+ * their rate or Xendit config). Processing fees are always organizer-absorbed and are
+ * unaffected by this toggle.
+ */
+export async function setPassFeesToCustomer(pass: boolean) {
+    const { user } = await getAuthUser()
+    if (!user) return { success: false, error: 'Not authenticated' }
+
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('set_partner_pass_fees', { p_pass: pass })
+
+    if (error) {
+        console.error('setPassFeesToCustomer error:', error)
+        return { success: false, error: 'Could not update fee setting.' }
+    }
+    if (data !== true) {
+        return { success: false, error: 'No partner found for this account.' }
+    }
+
+    revalidatePath('/organizer/payouts')
+    return { success: true }
+}

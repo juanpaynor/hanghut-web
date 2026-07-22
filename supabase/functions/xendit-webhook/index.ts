@@ -506,24 +506,32 @@ serve(async (req) => {
                 .eq('id', intent.event.organizer_id)
                 .single()
 
-            // Use ?? instead of || so that 0% fee partners are handled correctly
-            const platformFeePercentage = partner?.custom_percentage ?? 4.0
-            const platformFee = Math.round((intent.subtotal * platformFeePercentage) / 100)
-            // Xendit processing fee (absorbed by the partner) — computed from the
-            // resolved method + the TOTAL charged (what Xendit actually processed).
-            // 0 when the method is still UNKNOWN; the backfill branch fills it in once resolved.
-            const processingFee = getProcessingFee(capturedMethod, Number(intent.total_amount) || 0)
+            // Platform take is the SINGLE value create-purchase-intent already computed
+            // and stored on the intent (pct% of net + fixed×qty, one inline Xendit
+            // PLATFORM fee — no split rules). Read it as the source of truth so the
+            // ledger can't drift from what Xendit actually charged. `?? ` throughout so
+            // a deliberate 0% / ₱0 is respected.
+            const platformFeePercentage = intent.fee_percentage ?? partner?.custom_percentage ?? 2.0
+            const net = Math.max(Number(intent.subtotal || 0) - Number(intent.discount_amount || 0), 0)
             const fixedFeePerTicket = partner?.fixed_fee_per_ticket ?? 15.0
             const totalFixedFee = fixedFeePerTicket * (intent.quantity || 1)
-            // When pass_fees_to_customer is true, the customer already paid the fixed
-            // booking fee on top of the ticket — so it must NOT be deducted from the
-            // organizer again. Only deduct it when the organizer absorbs the fees.
+            const platformFee = intent.platform_fee != null
+                ? Math.round(Number(intent.platform_fee))
+                : Math.round(net * (platformFeePercentage / 100) + totalFixedFee)
+            // Xendit processing fee (organizer-absorbed) — from the resolved method + the
+            // TOTAL charged. 0 when the method is still UNKNOWN; the backfill branch fills
+            // it once resolved.
+            const processingFee = getProcessingFee(capturedMethod, Number(intent.total_amount) || 0)
+            // Organizer keeps what landed in the sub-wallet minus the take: absorb →
+            // total_amount = net (take deducted from them); pass-on → total_amount =
+            // net + take (take deducted, but funded by the customer surcharge → they keep
+            // net). So payout = total_amount − take in both modes. (Xendit also deducts
+            // 12% VAT on the fee + processing from the sub-wallet; those reconcile against
+            // the actual wallet balance at payout time.)
             const passFees = partner?.pass_fees_to_customer === true
-            const organizerPayout = passFees
-                ? intent.subtotal - platformFee
-                : intent.subtotal - platformFee - totalFixedFee
+            const organizerPayout = Math.round(Number(intent.total_amount || 0) - platformFee)
 
-            console.log(`💰 Fee calc: subtotal=${intent.subtotal}, pct=${platformFeePercentage}%, platformFee=${platformFee}, fixedFee=${totalFixedFee} (${fixedFeePerTicket}×${intent.quantity}), passFees=${passFees}, organizerPayout=${organizerPayout}`)
+            console.log(`💰 Fee calc: net=${net}, take=${platformFee} (pct=${platformFeePercentage}%, fixed=${totalFixedFee}), total=${intent.total_amount}, passFees=${passFees}, organizerPayout=${organizerPayout}`)
 
             const { error: txError } = await supabaseClient
                 .from('transactions')
@@ -944,7 +952,7 @@ serve(async (req) => {
                             .single();
 
                         // Use ?? for null-coalescing (0% is valid)
-                        const platformFeePercentage = partner?.custom_percentage ?? 4.0;
+                        const platformFeePercentage = partner?.custom_percentage ?? 2.0;
                         const refundAmount = data.amount || intent.total_amount;
 
                         // Look up the original transaction for accurate reversal

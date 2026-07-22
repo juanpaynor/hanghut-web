@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
+import { DEFAULT_PLATFORM_PCT, DEFAULT_FIXED_FEE } from '@/lib/payment/platform-fees'
 
 // Admin-only helper to get signed URL for private docs
 export async function getDocumentUrl(path: string) {
@@ -58,8 +59,8 @@ export async function reviewKYC(
         approved_by: action === 'approve' ? user.id : null,
         approved_at: action === 'approve' ? new Date().toISOString() : null,
         status: action === 'approve' ? 'approved' : 'pending',
-        custom_percentage: action === 'approve' ? (feePercentage ?? 4) : null,
-        fixed_fee_per_ticket: action === 'approve' ? (fixedFeePerTicket ?? 15) : null,
+        custom_percentage: action === 'approve' ? (feePercentage ?? DEFAULT_PLATFORM_PCT) : null,
+        fixed_fee_per_ticket: action === 'approve' ? (fixedFeePerTicket ?? DEFAULT_FIXED_FEE) : null,
         pass_fees_to_customer: action === 'approve' ? (passFeesToCustomer ?? true) : null,
     }
 
