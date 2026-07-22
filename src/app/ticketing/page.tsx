@@ -1,6 +1,7 @@
 import Header from "@/components/landing/header";
 import Footer from "@/components/landing/footer";
 import HowItWorks from "@/components/landing/how-it-works";
+import { PricingSection } from "@/components/landing/pricing-section";
 import { TicketingFeatures } from "@/components/landing/ticketing-features";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -64,6 +65,7 @@ export default function TicketingPage() {
 
                 {/* Main Content */}
                 <HowItWorks />
+                <PricingSection />
                 <TicketingFeatures />
 
 

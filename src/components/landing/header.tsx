@@ -26,6 +26,11 @@ export default function Header() {
               Become a Partner
             </Button>
           </Link>
+          <Link href="/pricing" className="hidden md:block">
+            <Button variant="ghost" className="font-bold text-sm tracking-widest uppercase hover:bg-white/10">
+              Pricing
+            </Button>
+          </Link>
           <Link href="/organizer/login" className="hidden md:block">
             <Button variant="ghost" className="font-bold text-sm tracking-widest uppercase hover:bg-white/10">
               Partner Login

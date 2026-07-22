@@ -8,6 +8,7 @@ const COLUMNS: { title: string; links: { label: string; href: string; external?:
     title: "Product",
     links: [
       { label: "Ticketing", href: "/ticketing" },
+      { label: "Pricing", href: "/pricing" },
       { label: "Experiences", href: "/experiences" },
       { label: "Discover Events", href: "/events" },
       { label: "Download App", href: "/download" },
