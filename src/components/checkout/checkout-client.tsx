@@ -19,7 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { validatePromoCode } from '@/lib/organizer/promo-actions'
 import { subscribeGuestToNewsletter } from '@/lib/marketing/actions'
 import { hexToHsl } from '@/lib/utils'
-import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
+import { resolvePlatformPct, resolveFixedFee, computePassedFees } from '@/lib/payment/platform-fees'
 import { CheckCircle2, ClipboardList } from 'lucide-react'
 
 // Conditionally rendered (approval/invite events or events with custom questions),
@@ -116,10 +116,13 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     // truth (uses `??` so a deliberate 0% / ₱0 stays 0, and ignores pricing_model
     // so web + webhook agree on one predicate).
     const organizer = event.organizer || {}
-    const passFees = organizer.pass_fees_to_customer || false
-    const commissionRate = resolvePlatformPct(
+    // Two independent pass-through toggles: the ₱15 booking fee and the 2% commission
+    // can each be charged to the attendee or absorbed by the organizer.
+    const passFixed = organizer.pass_fixed_to_customer === true
+    const passPercentage = organizer.pass_percentage_to_customer === true
+    const platformPct = resolvePlatformPct(
         organizer.custom_percentage != null ? Number(organizer.custom_percentage) : null
-    ) / 100
+    )
     const fixedFeePerTicket = resolveFixedFee(
         organizer.fixed_fee_per_ticket != null ? Number(organizer.fixed_fee_per_ticket) : null
     )
@@ -136,20 +139,24 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     const discount = (appliedPromo ? appliedPromo.discountAmount : 0) + subscriberSaving
     const net = Math.max(subtotal - discount, 0)
 
-    // Fees the customer covers when the organizer passes them on. The platform take
-    // (2% + ₱15/ticket) is computed on the post-discount net so it matches the
-    // Xendit PLATFORM fee the backend charges. Processing is NEVER passed to the
-    // customer — the organizer always absorbs it.
-    let platformFee = 0
-    let fixedFeeTotal = 0
+    // The portion of the platform take the customer covers, per the two toggles.
+    // Computed on the post-discount net so it matches the Xendit PLATFORM fee the
+    // backend charges. Processing is NEVER passed to the customer.
+    const passed = isFree
+        ? { pctPortion: 0, fixedPortion: 0, total: 0 }
+        : computePassedFees({
+            net,
+            quantity,
+            pct: platformPct,
+            fixedFeePerTicket,
+            passPercentage,
+            passFixed,
+        })
+    const platformFee = passed.pctPortion
+    const fixedFeeTotal = passed.fixedPortion
     const processingFee = 0 // always absorbed by the organizer
 
-    if (passFees && !isFree) {
-        platformFee = Math.round(net * commissionRate)
-        fixedFeeTotal = fixedFeePerTicket * quantity
-    }
-
-    const totalFees = platformFee + fixedFeeTotal
+    const totalFees = passed.total
     const total = subtotal + totalFees
 
     const handleGuestChange = (field: string, value: string) => {
@@ -311,8 +318,9 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 registration_id: registrationId || undefined,
                 // [NEW] Fee Metadata for Edge Function
                 metadata: {
-                    pass_fees: passFees,
-                    commission_rate: commissionRate,
+                    pass_fixed: passFixed,
+                    pass_percentage: passPercentage,
+                    commission_rate: platformPct / 100,
                     fixed_fee_per_ticket: fixedFeePerTicket,
                     calculated_fees: {
                         platform_fee: platformFee,
@@ -764,11 +772,11 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                         </span>
                                     </div>
                                 )}
-                                {passFees && !isFree && (
+                                {totalFees > 0 && !isFree && (
                                     <div className="flex justify-between text-sm text-muted-foreground">
                                         <span
                                             className="flex items-center gap-1 cursor-help"
-                                            title="A small per-ticket fee that covers secure payment processing and ticket delivery."
+                                            title="A small per-ticket fee that helps run the platform and cover secure payment processing."
                                         >
                                             Booking Fee
                                             <Info className="h-3 w-3 opacity-60" />

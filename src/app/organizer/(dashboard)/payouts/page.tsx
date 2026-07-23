@@ -93,11 +93,12 @@ async function getFeeConfig(partnerId: string) {
     const supabase = await createClient()
     const { data } = await supabase
         .from('partners')
-        .select('pass_fees_to_customer, custom_percentage, fixed_fee_per_ticket')
+        .select('pass_fixed_to_customer, pass_percentage_to_customer, custom_percentage, fixed_fee_per_ticket')
         .eq('id', partnerId)
         .single()
     return {
-        passFees: data?.pass_fees_to_customer === true,
+        passFixed: data?.pass_fixed_to_customer === true,
+        passPercentage: data?.pass_percentage_to_customer === true,
         platformPct: resolvePlatformPct(data?.custom_percentage != null ? Number(data.custom_percentage) : null),
         fixedFee: resolveFixedFee(data?.fixed_fee_per_ticket != null ? Number(data.fixed_fee_per_ticket) : null),
     }
@@ -444,7 +445,8 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
 
                 <TabsContent value="settings" className="space-y-6">
                     <FeeSettingsCard
-                        passFees={feeConfig.passFees}
+                        passFixed={feeConfig.passFixed}
+                        passPercentage={feeConfig.passPercentage}
                         platformPct={feeConfig.platformPct}
                         fixedFee={feeConfig.fixedFee}
                     />

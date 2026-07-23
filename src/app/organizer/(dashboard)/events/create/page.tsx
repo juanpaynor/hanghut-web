@@ -23,7 +23,7 @@ export default async function CreateEventPage() {
 
     const { data: partner } = await supabase
         .from('partners')
-        .select('id, custom_percentage, pricing_model, status, pass_fees_to_customer, fixed_fee_per_ticket')
+        .select('id, custom_percentage, pricing_model, status, pass_fixed_to_customer, pass_percentage_to_customer, fixed_fee_per_ticket')
         .eq('id', userRole.partnerId)
         .single()
 
@@ -45,7 +45,8 @@ export default async function CreateEventPage() {
             <EventForm
                 partnerId={partner.id}
                 commissionRate={commissionRate}
-                passFeesToCustomer={partner.pass_fees_to_customer || false}
+                passFixedToCustomer={partner.pass_fixed_to_customer ?? true}
+                passPercentageToCustomer={partner.pass_percentage_to_customer ?? false}
                 fixedFeePerTicket={resolveFixedFee(
                     partner.fixed_fee_per_ticket != null ? Number(partner.fixed_fee_per_ticket) : null
                 )}

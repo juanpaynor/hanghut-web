@@ -36,6 +36,8 @@ interface Partner {
     pricing_model: string
     custom_percentage: number | null
     pass_fees_to_customer: boolean
+    pass_fixed_to_customer: boolean
+    pass_percentage_to_customer: boolean
     fixed_fee_per_ticket: number
     auto_approve_payouts: boolean
     created_at: string
@@ -182,7 +184,8 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
         }
     }
 
-    const [passFeesToCustomer, setPassFeesToCustomer] = useState(partner.pass_fees_to_customer ?? true)
+    const [passFixedToCustomer, setPassFixedToCustomer] = useState(partner.pass_fixed_to_customer ?? true)
+    const [passPercentageToCustomer, setPassPercentageToCustomer] = useState(partner.pass_percentage_to_customer ?? false)
     const [fixedFeePerTicket, setFixedFeePerTicket] = useState(partner.fixed_fee_per_ticket?.toString() || '15.00')
 
     const handleUpdatePricing = async () => {
@@ -191,7 +194,8 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
             if (pricingModel === 'standard') {
                 await resetToStandardPricing(partner.id)
                 // Reset local state to defaults
-                setPassFeesToCustomer(true)
+                setPassFixedToCustomer(true)
+                setPassPercentageToCustomer(false)
                 setFixedFeePerTicket('15.00')
             } else {
                 const percentage = parseFloat(customPercentage)
@@ -208,7 +212,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                     return
                 }
 
-                await setCustomPricing(partner.id, percentage, passFeesToCustomer, fixedFee)
+                await setCustomPricing(partner.id, percentage, passFixedToCustomer, passPercentageToCustomer, fixedFee)
             }
             router.refresh()
             onOpenChange(false)
@@ -507,21 +511,30 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                             </p>
                                         </div>
 
-                                        <div className="space-y-2">
+                                        <div className="space-y-3">
                                             <div className="flex items-center justify-between">
-                                                <Label htmlFor="pass-fees" className="text-slate-400">Pass Fees to Customer</Label>
+                                                <Label htmlFor="pass-fixed" className="text-slate-400">Pass ₱ booking fee to customer</Label>
                                                 <Switch
-                                                    id="pass-fees"
-                                                    checked={passFeesToCustomer}
-                                                    onCheckedChange={setPassFeesToCustomer}
+                                                    id="pass-fixed"
+                                                    checked={passFixedToCustomer}
+                                                    onCheckedChange={setPassFixedToCustomer}
+                                                    disabled={partner.status !== 'approved'}
+                                                />
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <Label htmlFor="pass-pct" className="text-slate-400">Pass % commission to customer</Label>
+                                                <Switch
+                                                    id="pass-pct"
+                                                    checked={passPercentageToCustomer}
+                                                    onCheckedChange={setPassPercentageToCustomer}
                                                     disabled={partner.status !== 'approved'}
                                                 />
                                             </div>
                                             <p className="text-xs text-slate-500">
-                                                If enabled, the customer pays the Platform Fee (% + fixed) on top of the ticket price
-                                                and the organizer receives the full ticket price. The payment processing fee is always
-                                                absorbed by the organizer either way. Organizers can also flip this themselves on their
-                                                Payouts page.
+                                                Each fee that&apos;s passed is added to the customer&apos;s total on top of the ticket price;
+                                                whatever isn&apos;t passed comes out of the organizer&apos;s payout. Both are HangHut&apos;s
+                                                platform fee. The payment processing fee is always absorbed by the organizer. Organizers can
+                                                also flip these themselves on their Payouts page.
                                             </p>
                                         </div>
 

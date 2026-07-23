@@ -5,38 +5,51 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
-import { setPassFeesToCustomer } from '@/lib/organizer/payout-actions'
+import { setFeePassing } from '@/lib/organizer/payout-actions'
 import { Receipt, Loader2 } from 'lucide-react'
 
 interface FeeSettingsCardProps {
-    /** Current pass_fees_to_customer value for this partner. */
-    passFees: boolean
+    /** Whether the ₱15 booking fee is currently charged to the attendee. */
+    passFixed: boolean
+    /** Whether the 2% commission is currently charged to the attendee. */
+    passPercentage: boolean
     /** Platform commission % (e.g. 2). */
     platformPct: number
     /** Fixed booking fee per ticket (₱). */
     fixedFee: number
 }
 
-export function FeeSettingsCard({ passFees, platformPct, fixedFee }: FeeSettingsCardProps) {
-    const [enabled, setEnabled] = useState(passFees)
+export function FeeSettingsCard({ passFixed, passPercentage, platformPct, fixedFee }: FeeSettingsCardProps) {
+    const [fixedOn, setFixedOn] = useState(passFixed)
+    const [pctOn, setPctOn] = useState(passPercentage)
     const [isPending, startTransition] = useTransition()
     const { toast } = useToast()
 
-    const handleToggle = (next: boolean) => {
-        const previous = enabled
-        setEnabled(next) // optimistic
+    // Persist both flags together. `which` names the toggle the user just moved so we
+    // can roll back exactly that one if the write fails.
+    const persist = (nextFixed: boolean, nextPct: boolean, which: 'fixed' | 'pct') => {
+        const prevFixed = fixedOn
+        const prevPct = pctOn
+        setFixedOn(nextFixed)
+        setPctOn(nextPct)
         startTransition(async () => {
-            const res = await setPassFeesToCustomer(next)
+            const res = await setFeePassing(nextFixed, nextPct)
             if (!res.success) {
-                setEnabled(previous) // revert
+                setFixedOn(prevFixed)
+                setPctOn(prevPct)
                 toast({ title: 'Could not update', description: res.error, variant: 'destructive' })
                 return
             }
             toast({
-                title: next ? 'Fees now passed to attendees' : "You're now covering the fees",
-                description: next
-                    ? `Attendees pay the ${platformPct}% + ₱${fixedFee} platform fee on top of the ticket price.`
-                    : `The ${platformPct}% + ₱${fixedFee} platform fee comes out of your payout.`,
+                title: 'Fee settings updated',
+                description:
+                    which === 'fixed'
+                        ? nextFixed
+                            ? `Attendees now cover the ₱${fixedFee} booking fee.`
+                            : `You now cover the ₱${fixedFee} booking fee.`
+                        : nextPct
+                        ? `Attendees now cover the ${platformPct}% commission.`
+                        : `You now cover the ${platformPct}% commission.`,
             })
         })
     }
@@ -51,33 +64,58 @@ export function FeeSettingsCard({ passFees, platformPct, fixedFee }: FeeSettings
                     <div>
                         <CardTitle className="text-lg">Platform Fees</CardTitle>
                         <CardDescription>
-                            Choose who covers the {platformPct}% + ₱{fixedFee} per-ticket platform fee.
+                            HangHut&apos;s fee is a ₱{fixedFee} booking fee + {platformPct}% commission per ticket.
+                            Choose who covers each part.
                         </CardDescription>
                     </div>
                 </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
+                {/* Booking fee (₱15) toggle */}
                 <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
                     <div className="space-y-1">
-                        <Label htmlFor="pass-fees" className="flex items-center gap-2 text-base">
-                            Pass fees to attendees
+                        <Label htmlFor="pass-fixed" className="flex items-center gap-2 text-base">
+                            ₱{fixedFee} booking fee
                             {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                         </Label>
                         <p className="text-sm text-muted-foreground">
-                            {enabled
-                                ? `On — attendees pay the ${platformPct}% + ₱${fixedFee} on top. You receive the full ticket price.`
-                                : `Off — the ${platformPct}% + ₱${fixedFee} is deducted from your payout. Attendees pay the ticket price only.`}
+                            {fixedOn
+                                ? `Charged to the attendee — added on top of the ticket price at checkout.`
+                                : `Covered by you — deducted from your payout.`}
                         </p>
                     </div>
                     <Switch
-                        id="pass-fees"
-                        checked={enabled}
-                        onCheckedChange={handleToggle}
+                        id="pass-fixed"
+                        checked={fixedOn}
+                        onCheckedChange={(v) => persist(v, pctOn, 'fixed')}
                         disabled={isPending}
                     />
                 </div>
-                <p className="text-xs text-muted-foreground">
-                    Either way, the payment processing fee charged by our payment provider is always
+
+                {/* Commission (2%) toggle */}
+                <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+                    <div className="space-y-1">
+                        <Label htmlFor="pass-pct" className="flex items-center gap-2 text-base">
+                            {platformPct}% commission
+                            {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                            {pctOn
+                                ? `Charged to the attendee — added on top of the ticket price at checkout.`
+                                : `Covered by you — deducted from your payout.`}
+                        </p>
+                    </div>
+                    <Switch
+                        id="pass-pct"
+                        checked={pctOn}
+                        onCheckedChange={(v) => persist(fixedOn, v, 'pct')}
+                        disabled={isPending}
+                    />
+                </div>
+
+                <p className="text-xs text-muted-foreground pt-1">
+                    Both the booking fee and commission are HangHut&apos;s platform fee — these toggles only
+                    decide who pays each. The payment processing fee charged by our payment provider is always
                     covered by you and is deducted at settlement.
                 </p>
             </CardContent>

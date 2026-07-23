@@ -48,3 +48,28 @@ export function computePlatformTake(params: {
     if (net <= 0) return 0
     return Math.round(net * (pct / 100) + fixedFeePerTicket * quantity)
 }
+
+/**
+ * Split the platform take into the portion the CUSTOMER covers, based on the two
+ * independent pass-through toggles:
+ *   - `passFixed`      → the ₱15/ticket booking fee is added to the buyer's total
+ *   - `passPercentage` → the 2% commission is added to the buyer's total
+ *
+ * The organizer covers whatever is NOT passed (deducted from their payout). The
+ * full take is always HangHut revenue regardless of who fronts it; these flags
+ * only decide what shows up on the buyer's bill. Returns 0s on a free/zero net.
+ */
+export function computePassedFees(params: {
+    net: number
+    quantity: number
+    pct: number
+    fixedFeePerTicket: number
+    passPercentage: boolean
+    passFixed: boolean
+}): { pctPortion: number; fixedPortion: number; total: number } {
+    const { net, quantity, pct, fixedFeePerTicket, passPercentage, passFixed } = params
+    if (net <= 0) return { pctPortion: 0, fixedPortion: 0, total: 0 }
+    const pctPortion = passPercentage ? Math.round(net * (pct / 100)) : 0
+    const fixedPortion = passFixed ? Math.round(fixedFeePerTicket * quantity) : 0
+    return { pctPortion, fixedPortion, total: pctPortion + fixedPortion }
+}

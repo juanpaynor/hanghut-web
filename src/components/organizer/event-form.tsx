@@ -76,7 +76,8 @@ interface EventFormProps {
     commissionRate: number
     initialData?: any // Can be typed more strictly if needed
     eventId?: string
-    passFeesToCustomer: boolean
+    passFixedToCustomer: boolean
+    passPercentageToCustomer: boolean
     fixedFeePerTicket: number
     subscriptionTiers?: SubscriptionTierBasic[]
     existingDiscounts?: ExistingDiscount[]
@@ -87,7 +88,8 @@ export function EventForm({
     commissionRate,
     initialData,
     eventId,
-    passFeesToCustomer,
+    passFixedToCustomer,
+    passPercentageToCustomer,
     fixedFeePerTicket,
     subscriptionTiers = [],
     existingDiscounts = [],
@@ -200,10 +202,19 @@ export function EventForm({
         } catch { /* storage unavailable — non-fatal */ }
     }, [formData, tiers, isEditing])
 
-    // Calculate pricing preview
+    // Calculate pricing preview. The ₱15 booking fee and the % commission can each be
+    // passed to the customer or absorbed by the organizer, independently.
     const ticketPrice = parseFloat(formData.ticket_price) || 0
-    const platformFee = ticketPrice * commissionRate
-    const organizerPayout = ticketPrice - platformFee
+    const pctFee = ticketPrice * commissionRate
+    const platformFee = pctFee
+    // What the customer pays on top, and what the organizer nets, given the two toggles.
+    const customerAddOn =
+        (passFixedToCustomer ? fixedFeePerTicket : 0) + (passPercentageToCustomer ? pctFee : 0)
+    const customerPays = ticketPrice + customerAddOn
+    const organizerPayout =
+        ticketPrice -
+        (passFixedToCustomer ? 0 : fixedFeePerTicket) -
+        (passPercentageToCustomer ? 0 : pctFee)
     const priceLabel = ticketPrice === 0 ? 'Free' : `From ₱${ticketPrice.toLocaleString()}`
 
     // Wizard (create only) — groups the sections into guided steps. Editing keeps
@@ -708,7 +719,8 @@ export function EventForm({
                     eventId={createdEventId}
                     tiers={[]}
                     commissionRate={commissionRate}
-                    passFeesToCustomer={passFeesToCustomer}
+                    passFixedToCustomer={passFixedToCustomer}
+                    passPercentageToCustomer={passPercentageToCustomer}
                     fixedFeePerTicket={fixedFeePerTicket}
                 />
                 <div className="flex gap-4 sticky bottom-0 bg-background pt-4 border-t">
@@ -1279,33 +1291,40 @@ export function EventForm({
                                         <span className="font-medium">₱{ticketPrice.toFixed(2)}</span>
                                     </div>
 
-                                    {passFeesToCustomer ? (
+                                    {(passFixedToCustomer || passPercentageToCustomer) ? (
                                         <>
                                             <div className="flex justify-between text-muted-foreground border-t border-border pt-1 mt-1">
-                                                <span>Customer Pays (Price + Booking Fee):</span>
-                                                <span className="font-medium">₱{(
-                                                    ticketPrice + fixedFeePerTicket
-                                                ).toFixed(2)}</span>
+                                                <span>Customer Pays{customerAddOn > 0 ? ' (Price + Fees)' : ''}:</span>
+                                                <span className="font-medium">₱{customerPays.toFixed(2)}</span>
                                             </div>
 
                                             <div className="flex justify-between text-red-600 mt-2">
-                                                <span>Platform Fee ({(commissionRate * 100).toFixed(1)}%):</span>
-                                                <span className="font-medium">-₱{(ticketPrice * commissionRate).toFixed(2)}</span>
+                                                <span>Booking Fee (₱{fixedFeePerTicket.toFixed(2)}):</span>
+                                                <span className="font-medium">
+                                                    {passFixedToCustomer ? 'Paid by customer' : `-₱${fixedFeePerTicket.toFixed(2)}`}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between text-red-600">
+                                                <span>Commission ({(commissionRate * 100).toFixed(1)}%):</span>
+                                                <span className="font-medium">
+                                                    {passPercentageToCustomer ? 'Paid by customer' : `-₱${pctFee.toFixed(2)}`}
+                                                </span>
                                             </div>
 
                                             <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">
                                                 <span>You'll receive:*</span>
-                                                <span>₱{(
-                                                    ticketPrice -
-                                                    (ticketPrice * commissionRate)
-                                                ).toFixed(2)} per ticket</span>
+                                                <span>₱{organizerPayout.toFixed(2)} per ticket</span>
                                             </div>
                                         </>
                                     ) : (
                                         <>
                                             <div className="flex justify-between text-red-600">
-                                                <span>Platform Fee ({(commissionRate * 100).toFixed(1)}%):</span>
-                                                <span className="font-medium">-₱{platformFee.toFixed(2)}</span>
+                                                <span>Booking Fee:</span>
+                                                <span className="font-medium">-₱{fixedFeePerTicket.toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-red-600">
+                                                <span>Commission ({(commissionRate * 100).toFixed(1)}%):</span>
+                                                <span className="font-medium">-₱{pctFee.toFixed(2)}</span>
                                             </div>
                                             <div className="flex justify-between pt-2 border-t border-border font-bold text-green-600">
                                                 <span>You'll receive:*</span>

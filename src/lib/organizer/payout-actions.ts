@@ -237,21 +237,26 @@ export async function cancelPayoutRequest(payoutId: string) {
 }
 
 /**
- * Flip who absorbs the platform fee (2% + ₱15/ticket) for the caller's own partner.
- * Backed by the SECURITY DEFINER `set_partner_pass_fees` RPC, which pins the write to
- * exactly that one column for the caller's own partner row (organizers can't touch
- * their rate or Xendit config). Processing fees are always organizer-absorbed and are
- * unaffected by this toggle.
+ * Set who covers each platform-fee component for the caller's own partner:
+ *   - passFixed      → the ₱15/ticket booking fee is charged to the attendee
+ *   - passPercentage → the 2% commission is charged to the attendee
+ * Whatever isn't passed comes out of the organizer's payout. Backed by the SECURITY
+ * DEFINER `set_partner_fee_passing` RPC, which pins the write to exactly these columns
+ * on the caller's own partner row (organizers can't touch their rate or Xendit config).
+ * Processing fees are always organizer-absorbed and are unaffected by these toggles.
  */
-export async function setPassFeesToCustomer(pass: boolean) {
+export async function setFeePassing(passFixed: boolean, passPercentage: boolean) {
     const { user } = await getAuthUser()
     if (!user) return { success: false, error: 'Not authenticated' }
 
     const supabase = await createClient()
-    const { data, error } = await supabase.rpc('set_partner_pass_fees', { p_pass: pass })
+    const { data, error } = await supabase.rpc('set_partner_fee_passing', {
+        p_pass_fixed: passFixed,
+        p_pass_percentage: passPercentage,
+    })
 
     if (error) {
-        console.error('setPassFeesToCustomer error:', error)
+        console.error('setFeePassing error:', error)
         return { success: false, error: 'Could not update fee setting.' }
     }
     if (data !== true) {

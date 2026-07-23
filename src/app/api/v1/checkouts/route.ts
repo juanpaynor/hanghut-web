@@ -2,7 +2,7 @@ import { authenticateApiKey, isAuthError } from '@/lib/api/api-middleware'
 import { apiSuccess, apiError, handleCors } from '@/lib/api/api-helpers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@supabase/supabase-js'
-import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
+import { resolvePlatformPct, resolveFixedFee, computePassedFees } from '@/lib/payment/platform-fees'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,23 +98,32 @@ export async function POST(request: Request) {
     // Get partner fee settings
     const { data: partner } = await supabase
         .from('partners')
-        .select('pass_fees_to_customer, fixed_fee_per_ticket, pricing_model, custom_percentage')
+        .select('pass_fixed_to_customer, pass_percentage_to_customer, fixed_fee_per_ticket, pricing_model, custom_percentage')
         .eq('id', auth.partnerId)
         .single()
 
-    const commissionRate = resolvePlatformPct(
+    const platformPct = resolvePlatformPct(
         partner?.custom_percentage != null ? Number(partner.custom_percentage) : null
-    ) / 100
+    )
     const fixedFeePerTicket = resolveFixedFee(
         partner?.fixed_fee_per_ticket != null ? Number(partner.fixed_fee_per_ticket) : null
     )
-    const passFees = partner?.pass_fees_to_customer || false
+    const passFixed = partner?.pass_fixed_to_customer === true
+    const passPercentage = partner?.pass_percentage_to_customer === true
 
     const unitPrice = tierToUse ? tierToUse.price : event.ticket_price
     const isFree = unitPrice === 0
-    const platformFee = Math.round(unitPrice * quantity * commissionRate)
-    const fixedFeeTotal = isFree ? 0 : fixedFeePerTicket * quantity
-    const totalFees = platformFee + fixedFeeTotal
+    const passed = computePassedFees({
+        net: isFree ? 0 : unitPrice * quantity,
+        quantity,
+        pct: platformPct,
+        fixedFeePerTicket,
+        passPercentage,
+        passFixed,
+    })
+    const platformFee = passed.pctPortion
+    const fixedFeeTotal = passed.fixedPortion
+    const totalFees = passed.total
 
     // Call the create-purchase-intent edge function
     const edgeClient = createClient(
@@ -135,8 +144,9 @@ export async function POST(request: Request) {
             success_url,
             failure_url: cancel_url || success_url,
             metadata: {
-                pass_fees: passFees,
-                commission_rate: commissionRate,
+                pass_fixed: passFixed,
+                pass_percentage: passPercentage,
+                commission_rate: platformPct / 100,
                 fixed_fee_per_ticket: fixedFeePerTicket,
                 calculated_fees: {
                     platform_fee: platformFee,

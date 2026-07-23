@@ -196,20 +196,24 @@ serve(async (req) => {
         // organizer (charged on their sub-wallet), never added to the customer.
         let platformFeePercentage = DEFAULT_PLATFORM_PCT
         let fixedFeePerTicket = DEFAULT_FIXED_FEE
-        let passFeesToCustomer = false
+        // Two independent pass-through toggles. Defaults mirror a brand-new partner:
+        // the ₱15 booking fee is passed to the customer, the 2% commission is not.
+        let passFixedToCustomer = true
+        let passPercentageToCustomer = false
         let useMainWallet = false
         let organizerCardsGcashLive = false
         let partnerXenditAccountId: string | null = null
         if (organizerId) {
             const { data: partner } = await supabaseClient
                 .from('partners')
-                .select('custom_percentage, pass_fees_to_customer, fixed_fee_per_ticket, xendit_account_id, use_main_wallet, xendit_cards_gcash_live')
+                .select('custom_percentage, pass_fixed_to_customer, pass_percentage_to_customer, fixed_fee_per_ticket, xendit_account_id, use_main_wallet, xendit_cards_gcash_live')
                 .eq('id', organizerId)
                 .single()
 
             useMainWallet = partner?.use_main_wallet === true
             organizerCardsGcashLive = partner?.xendit_cards_gcash_live === true
-            passFeesToCustomer = partner?.pass_fees_to_customer === true
+            passFixedToCustomer = partner?.pass_fixed_to_customer === true
+            passPercentageToCustomer = partner?.pass_percentage_to_customer === true
             partnerXenditAccountId = partner?.xendit_account_id ?? null
             // Use ?? (not ||) so a deliberate 0% / ₱0 is respected.
             platformFeePercentage = partner?.custom_percentage ?? DEFAULT_PLATFORM_PCT
@@ -362,25 +366,35 @@ serve(async (req) => {
         const subtotal = unitPrice * quantity
         const totalDiscount = discountAmount + subscriberDiscountAmount
         const net = Math.max(subtotal - totalDiscount, 0)
-        const platformTake = net > 0
-            ? Math.round(net * (platformFeePercentage / 100) + fixedFeePerTicket * quantity)
-            : 0
+        // Split the take: pct portion (2%) + fixed portion (₱15×qty). fixed×qty is a
+        // whole number, so rounding the pct alone == rounding the two together.
+        const pctTake = net > 0 ? Math.round(net * (platformFeePercentage / 100)) : 0
+        const fixedTake = net > 0 ? Math.round(fixedFeePerTicket * quantity) : 0
+        // Full HangHut take — always our revenue and always the inline PLATFORM fee,
+        // no matter who fronts it. Stored on the intent as the source of truth.
+        const platformTake = pctTake + fixedTake
         const platformFee = platformTake
-        // Pass-on adds the take to the customer's bill; absorb charges face (net) and
-        // the take comes out of the organizer's payout via the same inline fee.
-        const totalAmount = passFeesToCustomer ? net + platformTake : net
+        // Each component is added to the buyer's bill only if its toggle is on; the
+        // rest is absorbed from the organizer's payout (webhook derives that from
+        // total_amount − take). So total = net + (whichever portions are passed).
+        const passedPortion =
+            (passPercentageToCustomer ? pctTake : 0) + (passFixedToCustomer ? fixedTake : 0)
+        const totalAmount = net + passedPortion
 
-        const feeMetadata: Record<string, unknown> = passFeesToCustomer
+        const feeMetadata: Record<string, unknown> = passedPortion > 0
             ? {
                 pass_fees: true,
+                pass_percentage: passPercentageToCustomer,
+                pass_fixed: passFixedToCustomer,
                 platform_fee: platformTake,
-                fixed_fee: fixedFeePerTicket * quantity,
+                passed_fee: passedPortion,
+                fixed_fee: fixedTake,
                 platform_pct: platformFeePercentage,
                 base_price: net,
             }
             : {}
 
-        console.log(`Updating Intent ${intentId}: Tier=${tierName}, Promo=${promo_code}, SubDiscount=${subscriberDiscountAmount}, Net=${net}, Take=${platformTake}, Total=${totalAmount}, Fee%=${platformFeePercentage}, passFees=${passFeesToCustomer}`)
+        console.log(`Updating Intent ${intentId}: Tier=${tierName}, Net=${net}, Take=${platformTake} (pct=${pctTake},fixed=${fixedTake}), Passed=${passedPortion} (pct=${passPercentageToCustomer},fixed=${passFixedToCustomer}), Total=${totalAmount}`)
 
         const combinedMetadata = {
             ...(Object.keys(feeMetadata).length > 0 ? feeMetadata : {}),

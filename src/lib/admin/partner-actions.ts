@@ -139,7 +139,8 @@ export async function reactivatePartner(partnerId: string) {
 export async function setCustomPricing(
     partnerId: string,
     percentage: number,
-    passFeesToCustomer: boolean = false,
+    passFixedToCustomer: boolean = true,
+    passPercentageToCustomer: boolean = false,
     fixedFeePerTicket: number = 15.00
 ) {
     const supabase = await createClient()
@@ -149,7 +150,9 @@ export async function setCustomPricing(
         .update({
             pricing_model: 'custom',
             custom_percentage: percentage,
-            pass_fees_to_customer: passFeesToCustomer,
+            pass_fixed_to_customer: passFixedToCustomer,
+            pass_percentage_to_customer: passPercentageToCustomer,
+            pass_fees_to_customer: passFixedToCustomer || passPercentageToCustomer,
             fixed_fee_per_ticket: fixedFeePerTicket,
         })
         .eq('id', partnerId)
@@ -207,6 +210,8 @@ export async function resetToStandardPricing(partnerId: string) {
         .update({
             pricing_model: 'standard',
             custom_percentage: null,
+            pass_fixed_to_customer: true,
+            pass_percentage_to_customer: false,
             pass_fees_to_customer: true,
             fixed_fee_per_ticket: 15.00,
         })

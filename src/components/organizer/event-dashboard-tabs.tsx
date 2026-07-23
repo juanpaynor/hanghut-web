@@ -35,7 +35,8 @@ interface EventDashboardTabsProps {
         checkedInCount: number
         refundedAmount?: number
     }
-    passFeesToCustomer: boolean
+    passFixedToCustomer: boolean
+    passPercentageToCustomer: boolean
     fixedFeePerTicket: number
     initialQuestions: RegistrationQuestion[]
     initialRegistrations: EventRegistration[]
@@ -55,7 +56,8 @@ export function EventDashboardTabs({
     initialAttendees,
     promoCodes,
     stats,
-    passFeesToCustomer,
+    passFixedToCustomer,
+    passPercentageToCustomer,
     fixedFeePerTicket,
     initialQuestions,
     initialRegistrations,
@@ -172,7 +174,8 @@ export function EventDashboardTabs({
                                 eventId={eventId}
                                 tiers={tiers}
                                 commissionRate={commissionRate}
-                                passFeesToCustomer={passFeesToCustomer}
+                                passFixedToCustomer={passFixedToCustomer}
+                                passPercentageToCustomer={passPercentageToCustomer}
                                 fixedFeePerTicket={fixedFeePerTicket}
                             />
                         </div>
@@ -190,7 +193,8 @@ export function EventDashboardTabs({
                     commissionRate={commissionRate}
                     initialData={event}
                     eventId={eventId}
-                    passFeesToCustomer={passFeesToCustomer}
+                    passFixedToCustomer={passFixedToCustomer}
+                    passPercentageToCustomer={passPercentageToCustomer}
                     fixedFeePerTicket={fixedFeePerTicket}
                     subscriptionTiers={subscriptionTiers}
                     existingDiscounts={existingDiscounts}

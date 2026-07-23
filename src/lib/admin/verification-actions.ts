@@ -27,8 +27,9 @@ export async function reviewKYC(
     action: 'approve' | 'reject',
     reason?: string,
     feePercentage?: number,
-    passFeesToCustomer?: boolean,
-    fixedFeePerTicket?: number
+    passFixedToCustomer?: boolean,
+    fixedFeePerTicket?: number,
+    passPercentageToCustomer?: boolean
 ) {
     const supabase = await createClient()
 
@@ -61,7 +62,10 @@ export async function reviewKYC(
         status: action === 'approve' ? 'approved' : 'pending',
         custom_percentage: action === 'approve' ? (feePercentage ?? DEFAULT_PLATFORM_PCT) : null,
         fixed_fee_per_ticket: action === 'approve' ? (fixedFeePerTicket ?? DEFAULT_FIXED_FEE) : null,
-        pass_fees_to_customer: action === 'approve' ? (passFeesToCustomer ?? true) : null,
+        // Default for a newly approved partner: pass the ₱15 booking fee, absorb the 2%.
+        pass_fixed_to_customer: action === 'approve' ? (passFixedToCustomer ?? true) : null,
+        pass_percentage_to_customer: action === 'approve' ? (passPercentageToCustomer ?? false) : null,
+        pass_fees_to_customer: action === 'approve' ? ((passFixedToCustomer ?? true) || (passPercentageToCustomer ?? false)) : null,
     }
 
     if (action === 'reject') {

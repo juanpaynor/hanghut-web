@@ -44,7 +44,8 @@ export default async function CheckoutPage({
                 organizer:partners (
                     id,
                     business_name,
-                    pass_fees_to_customer,
+                    pass_fixed_to_customer,
+                    pass_percentage_to_customer,
                     fixed_fee_per_ticket,
                     pricing_model,
                     custom_percentage,

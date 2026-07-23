@@ -47,7 +47,8 @@ interface TicketTiersManagerProps {
     eventId: string
     tiers: TicketTier[]
     commissionRate: number
-    passFeesToCustomer: boolean
+    passFixedToCustomer: boolean
+    passPercentageToCustomer: boolean
     fixedFeePerTicket: number
 }
 
@@ -55,7 +56,8 @@ export function TicketTiersManager({
     eventId,
     tiers: initialTiers,
     commissionRate,
-    passFeesToCustomer,
+    passFixedToCustomer,
+    passPercentageToCustomer,
     fixedFeePerTicket
 }: TicketTiersManagerProps) {
     const { toast } = useToast()
@@ -345,49 +347,34 @@ export function TicketTiersManager({
                                         setFormData({ ...formData, price: e.target.value })
                                     }
                                 />
-                                {passFeesToCustomer ? (
-                                    <div className="space-y-1">
-                                        <div className="flex justify-between text-xs text-muted-foreground">
-                                            <span>Customer Pays (Price + Booking Fee)</span>
-                                            <span>
-                                                ₱{(
-                                                    parseFloat(formData.price) + fixedFeePerTicket
-                                                ).toFixed(2)}
-                                            </span>
+                                {(() => {
+                                    const p = parseFloat(formData.price) || 0
+                                    const pct = p * commissionRate
+                                    const customerPays =
+                                        p + (passFixedToCustomer ? fixedFeePerTicket : 0) + (passPercentageToCustomer ? pct : 0)
+                                    const net =
+                                        p - (passFixedToCustomer ? 0 : fixedFeePerTicket) - (passPercentageToCustomer ? 0 : pct)
+                                    return (
+                                        <div className="space-y-1">
+                                            <div className="flex justify-between text-xs text-muted-foreground">
+                                                <span>Customer Pays</span>
+                                                <span>₱{customerPays.toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-xs text-red-600">
+                                                <span>Booking Fee (₱{fixedFeePerTicket.toFixed(2)})</span>
+                                                <span>{passFixedToCustomer ? 'Customer' : `-₱${fixedFeePerTicket.toFixed(2)}`}</span>
+                                            </div>
+                                            <div className="flex justify-between text-xs text-red-600">
+                                                <span>Commission ({(commissionRate * 100).toFixed(0)}%)</span>
+                                                <span>{passPercentageToCustomer ? 'Customer' : `-₱${pct.toFixed(2)}`}</span>
+                                            </div>
+                                            <div className="border-t border-border/50 pt-1 flex justify-between font-medium text-foreground">
+                                                <span>Net Earnings</span>
+                                                <span className="text-green-600">₱{net.toFixed(2)}</span>
+                                            </div>
                                         </div>
-                                        <div className="flex justify-between text-xs text-red-600">
-                                            <span>Platform Fee ({(commissionRate * 100).toFixed(0)}%)</span>
-                                            <span>
-                                                -₱{(parseFloat(formData.price) * commissionRate).toFixed(2)}
-                                            </span>
-                                        </div>
-                                        <div className="border-t border-border/50 pt-1 flex justify-between font-medium text-foreground">
-                                            <span>Net Earnings</span>
-                                            <span className="text-green-600">
-                                                ₱{(
-                                                    parseFloat(formData.price) -
-                                                    (parseFloat(formData.price) * commissionRate)
-                                                ).toFixed(2)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="flex justify-between">
-                                            <span>Platform Fee ({(commissionRate * 100).toFixed(0)}%)</span>
-                                            <span>-₱{(parseFloat(formData.price) * commissionRate).toFixed(2)}</span>
-                                        </div>
-                                        <div className="border-t border-border/50 pt-1 flex justify-between font-medium text-foreground">
-                                            <span>Net Earnings</span>
-                                            <span className="text-green-600">
-                                                ₱{(
-                                                    parseFloat(formData.price) -
-                                                    (parseFloat(formData.price) * commissionRate)
-                                                ).toFixed(2)}
-                                            </span>
-                                        </div>
-                                    </>
-                                )}
+                                    )
+                                })()}
                             </div>
 
                             <div className="grid gap-2">

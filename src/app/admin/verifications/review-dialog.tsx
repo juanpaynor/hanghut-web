@@ -88,7 +88,9 @@ export function ReviewDialog({ partner, documents = [], stakeholders = [] }: {
     const [rejectReason, setRejectReason] = useState('')
     const [feePercentage, setFeePercentage] = useState(4)
     const [fixedFeePerTicket, setFixedFeePerTicket] = useState(15)
-    const [passFeesToCustomer, setPassFeesToCustomer] = useState(true)
+    // Defaults for a new partner: pass the ₱15 booking fee, absorb the 2% commission.
+    const [passFixedToCustomer, setPassFixedToCustomer] = useState(true)
+    const [passPercentageToCustomer, setPassPercentageToCustomer] = useState(false)
     const [actionState, setActionState] = useState<'idle' | 'rejecting'>('idle')
 
     const useNormalized = documents.length > 0
@@ -129,7 +131,7 @@ export function ReviewDialog({ partner, documents = [], stakeholders = [] }: {
         }
 
         setLoading(true)
-        const result = await reviewKYC(partner.id, action, rejectReason, feePercentage, passFeesToCustomer, fixedFeePerTicket)
+        const result = await reviewKYC(partner.id, action, rejectReason, feePercentage, passFixedToCustomer, fixedFeePerTicket, passPercentageToCustomer)
         setLoading(false)
 
         if (result?.error) {
@@ -304,25 +306,40 @@ export function ReviewDialog({ partner, documents = [], stakeholders = [] }: {
                             </div>
                         </div>
 
-                        <div className="flex items-center space-x-2">
-                            <Checkbox
-                                id="pass-fees"
-                                checked={passFeesToCustomer}
-                                onCheckedChange={(checked) => setPassFeesToCustomer(checked === true)}
-                            />
-                            <div className="grid gap-1.5 leading-none">
-                                <label
-                                    htmlFor="pass-fees"
-                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                >
-                                    Pass fees to customer?
-                                </label>
-                                <p className="text-xs text-muted-foreground">
-                                    Expected behavior: {passFeesToCustomer
-                                        ? `Customer pays fee on top (e.g. ₱1,150 for ₱1,000 item)`
-                                        : `Host absorbs fee (e.g. earns ₱850 on ₱1,000 item)`
-                                    }
-                                </p>
+                        <div className="space-y-3">
+                            <div className="flex items-center space-x-2">
+                                <Checkbox
+                                    id="pass-fixed"
+                                    checked={passFixedToCustomer}
+                                    onCheckedChange={(checked) => setPassFixedToCustomer(checked === true)}
+                                />
+                                <div className="grid gap-1.5 leading-none">
+                                    <label htmlFor="pass-fixed" className="text-sm font-medium leading-none">
+                                        Pass ₱{fixedFeePerTicket || 15} booking fee to customer?
+                                    </label>
+                                    <p className="text-xs text-muted-foreground">
+                                        {passFixedToCustomer
+                                            ? 'Added to the buyer’s total at checkout.'
+                                            : 'Absorbed by the host (deducted from payout).'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox
+                                    id="pass-pct"
+                                    checked={passPercentageToCustomer}
+                                    onCheckedChange={(checked) => setPassPercentageToCustomer(checked === true)}
+                                />
+                                <div className="grid gap-1.5 leading-none">
+                                    <label htmlFor="pass-pct" className="text-sm font-medium leading-none">
+                                        Pass {feePercentage || 2}% commission to customer?
+                                    </label>
+                                    <p className="text-xs text-muted-foreground">
+                                        {passPercentageToCustomer
+                                            ? 'Added to the buyer’s total at checkout.'
+                                            : 'Absorbed by the host (deducted from payout).'}
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>

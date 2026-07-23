@@ -34,6 +34,8 @@ interface Partner {
     pricing_model: string
     custom_percentage: number | null
     pass_fees_to_customer: boolean
+    pass_fixed_to_customer: boolean
+    pass_percentage_to_customer: boolean
     fixed_fee_per_ticket: number
     auto_approve_payouts: boolean
     created_at: string

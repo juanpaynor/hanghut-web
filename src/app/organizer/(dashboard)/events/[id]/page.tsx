@@ -44,7 +44,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
     // Fetch partner pricing details (only the fields we need, not already in cached partner)
     const { data: partnerPricing } = await supabase
         .from('partners')
-        .select('custom_percentage, pricing_model, pass_fees_to_customer, fixed_fee_per_ticket')
+        .select('custom_percentage, pricing_model, pass_fixed_to_customer, pass_percentage_to_customer, fixed_fee_per_ticket')
         .eq('id', partner.id)
         .single()
 
@@ -200,7 +200,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                     totalCapacity: event.capacity || 0,
                     checkedInCount
                 }}
-                passFeesToCustomer={partnerPricing?.pass_fees_to_customer || false}
+                passFixedToCustomer={partnerPricing?.pass_fixed_to_customer ?? true}
+                passPercentageToCustomer={partnerPricing?.pass_percentage_to_customer ?? false}
                 fixedFeePerTicket={resolveFixedFee(
                     partnerPricing?.fixed_fee_per_ticket != null ? Number(partnerPricing.fixed_fee_per_ticket) : null
                 )}
