@@ -18,9 +18,13 @@ interface PublicEventCardProps {
         capacity?: number
         tickets_sold?: number
     }
+    // From the category layer (event_categories). Falls back to event_type when absent.
+    categoryLabel?: string
+    categoryEmoji?: string
 }
 
-export function PublicEventCard({ event }: PublicEventCardProps) {
+export function PublicEventCard({ event, categoryLabel, categoryEmoji }: PublicEventCardProps) {
+    const badgeLabel = categoryLabel ?? event.event_type
     const isSoldOut = typeof event.capacity === 'number' && typeof event.tickets_sold === 'number'
         ? event.tickets_sold >= event.capacity
         : false
@@ -60,11 +64,12 @@ export function PublicEventCard({ event }: PublicEventCardProps) {
                         </Badge>
                     </div>
 
-                    {/* Category Badge (if available) */}
-                    {event.event_type && (
+                    {/* Category Badge (from the category layer, falls back to event_type) */}
+                    {badgeLabel && (
                         <div className="absolute top-3 left-3">
-                            <Badge variant="outline" className="bg-black/20 text-white border-white/20 backdrop-blur-md font-medium uppercase tracking-wider text-[10px]">
-                                {event.event_type}
+                            <Badge variant="outline" className="bg-black/20 text-white border-white/20 backdrop-blur-md font-medium tracking-wide text-[10px] flex items-center gap-1">
+                                {categoryEmoji && <span aria-hidden>{categoryEmoji}</span>}
+                                {badgeLabel}
                             </Badge>
                         </div>
                     )}

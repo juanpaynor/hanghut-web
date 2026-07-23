@@ -21,6 +21,11 @@ export default function Header() {
         </div>
 
         <nav className="flex items-center space-x-2 md:space-x-4">
+          <Link href="/events" className="hidden md:block">
+            <Button variant="ghost" className="font-bold text-sm tracking-widest uppercase hover:bg-white/10">
+              Events
+            </Button>
+          </Link>
           <Link href="/ticketing" className="hidden md:block">
             <Button variant="ghost" className="font-bold text-sm tracking-widest uppercase hover:bg-white/10">
               Become a Partner
