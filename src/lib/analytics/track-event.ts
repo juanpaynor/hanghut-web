@@ -1,5 +1,7 @@
 'use client'
 
+import { analyticsAllowed } from '@/lib/consent'
+
 export type InteractionType =
     | 'view'
     | 'get_tickets'
@@ -31,6 +33,8 @@ function getSessionId(): string {
  */
 export function trackEventInteraction(eventId: string, type: InteractionType) {
     if (typeof window === 'undefined' || !eventId) return
+    // Respect the visitor's analytics cookie choice (opt-out honored).
+    if (!analyticsAllowed()) return
     try {
         fetch('/api/track', {
             method: 'POST',
