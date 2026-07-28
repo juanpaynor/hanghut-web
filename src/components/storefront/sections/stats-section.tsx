@@ -22,6 +22,7 @@ export function StatsSection({ config }: StatsSectionProps) {
                     {items.map((item, i) => (
                         <div
                             key={i}
+                            data-hh-card
                             className="p-6 rounded-2xl bg-card border border-border/50 shadow-sm hover:shadow-md transition-shadow"
                         >
                             <div className="text-3xl md:text-4xl font-bold text-primary mb-2 tracking-tight">

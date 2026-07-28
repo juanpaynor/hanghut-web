@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,6 +27,7 @@ import { SectionTemplates } from './section-editor/section-templates'
 import { StorefrontSection, TemplateName } from '@/lib/storefront/section-types'
 import { CustomDomainManager } from './custom-domain-manager'
 import { MembershipTabToggle } from './membership-tab-toggle'
+import { MAXIMALIST_PRESET_CSS } from '@/lib/storefront-custom-css'
 
 interface PartnerSettingsFormProps {
     initialData: {
@@ -53,7 +54,8 @@ interface PartnerSettingsFormProps {
             }
             design?: {
                 layout?: 'modern' | 'classic'
-                font?: 'sans' | 'serif' | 'mono'
+                font?: string
+                theme?: string
                 primary_mode?: 'auto' | 'events' | 'membership' | 'hybrid'
                 enable_animations?: boolean
                 show_footer?: boolean
@@ -78,6 +80,7 @@ interface PartnerSettingsFormProps {
             }
             sections?: StorefrontSection[]
             selected_template?: TemplateName | null
+            custom_css?: string | null
             ticket?: {
                 message?: string
                 banner_url?: string
@@ -121,6 +124,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             design: {
                 layout: initialData.branding?.design?.layout || 'modern',
                 font: initialData.branding?.design?.font || 'sans',
+                theme: initialData.branding?.design?.theme || 'classic',
                 primary_mode: initialData.branding?.design?.primary_mode || 'auto',
                 show_footer: initialData.branding?.design?.show_footer ?? true,
                 enable_animations: initialData.branding?.design?.enable_animations ?? true,
@@ -146,6 +150,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             },
             sections: initialData.branding?.sections || [],
             selected_template: initialData.branding?.selected_template || null,
+            custom_css: initialData.branding?.custom_css || '',
             ticket: {
                 message: initialData.branding?.ticket?.message || '',
                 banner_url: initialData.branding?.ticket?.banner_url || '',
@@ -172,6 +177,42 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
     const [ticketBannerPreview, setTicketBannerPreview] = useState<string | null>(initialData.branding?.ticket?.banner_url || null)
     const [ticketBannerFile, setTicketBannerFile] = useState<File | null>(null)
     const ticketBannerInputRef = useRef<HTMLInputElement>(null)
+
+    // ─── Live storefront preview ────────────────────────────────────────────
+    // An iframe of the public /<slug> page in preview mode (?hh_preview=1). Paint
+    // edits — brand colour, art-directed theme, custom CSS — patch in live via the
+    // shared StorefrontPreviewBridge (postMessage). Structural edits (sections,
+    // layout, announcement…) reflect after Save, when we bump the nonce to reload.
+    const previewRef = useRef<HTMLIFrameElement>(null)
+    const [previewNonce, setPreviewNonce] = useState(0)
+    const previewSlug = formData.slug || initialData.slug
+    const brandPrimary = formData.branding.colors.primary
+    const brandCustomCss = formData.branding.custom_css
+    const brandTheme = formData.branding.design.theme
+    const brandFont = formData.branding.design.font
+    const previewPayloadRef = useRef<Record<string, unknown>>({})
+    previewPayloadRef.current = {
+        theme_color: brandPrimary || null,
+        theme: brandTheme,
+        custom_css: brandCustomCss,
+    }
+    const postPreview = useCallback(() => {
+        previewRef.current?.contentWindow?.postMessage(
+            { source: 'hh-preview', type: 'apply', payload: previewPayloadRef.current }, '*'
+        )
+    }, [])
+    // Push on any paint change (debounced) and the moment the frame says it's ready.
+    useEffect(() => {
+        const t = setTimeout(postPreview, 140)
+        return () => clearTimeout(t)
+    }, [brandPrimary, brandCustomCss, brandTheme, postPreview])
+    useEffect(() => {
+        const onMsg = (e: MessageEvent) => {
+            if (e.data?.source === 'hh-preview' && e.data.type === 'ready') postPreview()
+        }
+        window.addEventListener('message', onMsg)
+        return () => window.removeEventListener('message', onMsg)
+    }, [postPreview])
 
     const handleInputChange = (field: string, value: any) => {
         setFormData(prev => ({ ...prev, [field]: value }))
@@ -297,6 +338,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             } else {
                 setSuccessMessage("Your storefront has been updated successfully!")
                 toast({ title: "Success", description: "Profile updated successfully!" })
+                setPreviewNonce(n => n + 1) // reload preview to reflect saved sections/layout
                 router.refresh()
             }
 
@@ -344,15 +386,12 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             </div>
 
             <Tabs defaultValue="general" className="space-y-8">
-                <TabsList className="grid w-full max-w-md grid-cols-3 mb-8">
+                <TabsList className="grid w-full max-w-sm grid-cols-2 mb-8">
                     <TabsTrigger value="general" className="flex items-center gap-2">
                         <Store className="h-4 w-4" /> General
                     </TabsTrigger>
                     <TabsTrigger value="appearance" className="flex items-center gap-2">
-                        <Palette className="h-4 w-4" /> Appearance
-                    </TabsTrigger>
-                    <TabsTrigger value="sections" className="flex items-center gap-2">
-                        <LayoutTemplate className="h-4 w-4" /> Sections
+                        <Palette className="h-4 w-4" /> Design &amp; Layout
                     </TabsTrigger>
                 </TabsList>
 
@@ -737,6 +776,102 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                         <div className="lg:col-span-8 space-y-8">
 
+                            {/* Live preview — brand colour, theme & custom CSS update instantly;
+                                sections/layout reflect after you Save. */}
+                            <Card className="overflow-hidden">
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4" /> Live preview</CardTitle>
+                                    <CardDescription>Colour, theme &amp; custom CSS update as you edit. Sections &amp; layout apply after you Save.</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="rounded-xl border bg-black overflow-hidden" style={{ height: 620 }}>
+                                        {previewSlug ? (
+                                            <iframe
+                                                ref={previewRef}
+                                                key={previewNonce}
+                                                src={`/${previewSlug}?hh_preview=1&hh_font=${brandFont}&n=${previewNonce}`}
+                                                title="Live preview of your storefront"
+                                                className="w-full h-full border-0 bg-white"
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
+                                                Set a storefront URL (slug) in the General tab to preview.
+                                            </div>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Page layout — the section builder (structure), moved here
+                                from the old separate "Sections" tab. */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2"><LayoutTemplate className="h-4 w-4" /> Page Layout</CardTitle>
+                                    <CardDescription>Pick a template, then reorder, show/hide and configure the sections of your page.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-8">
+                                    <SectionTemplates
+                                        currentTemplate={formData.branding.selected_template as TemplateName | null}
+                                        onApply={(sections, template) => {
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                branding: { ...prev.branding, sections, selected_template: template }
+                                            }))
+                                            setSuccessMessage(null)
+                                        }}
+                                    />
+                                    {(formData.branding.sections as StorefrontSection[])?.length > 0 ? (
+                                        <SectionList
+                                            sections={formData.branding.sections as StorefrontSection[]}
+                                            onChange={(sections) => {
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    branding: { ...prev.branding, sections }
+                                                }))
+                                                setSuccessMessage(null)
+                                            }}
+                                        />
+                                    ) : (
+                                        <div className="text-center py-12 border-2 border-dashed rounded-xl">
+                                            <p className="text-muted-foreground text-sm">Pick a template above to get started, or your current layout will be used.</p>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            {/* Custom CSS — the HelixPay-style escape hatch. */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <FileCode className="h-4 w-4" /> Custom CSS
+                                        <Badge variant="secondary" className="ml-1">Advanced</Badge>
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Paste CSS to restyle your storefront. Scope rules under <code className="text-xs bg-muted px-1 py-0.5 rounded">[data-hh-storefront]</code> so they only touch your page. <code className="text-xs bg-muted px-1 py-0.5 rounded">--hh-accent</code> holds your brand colour.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <Textarea
+                                        value={brandCustomCss}
+                                        onChange={(e) => handleBrandingRootChange('custom_css', e.target.value)}
+                                        rows={10}
+                                        spellCheck={false}
+                                        className="font-mono text-xs leading-relaxed"
+                                        placeholder={"[data-hh-storefront] {\n  /* your styles */\n}"}
+                                    />
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button type="button" variant="outline" size="sm" onClick={() => handleBrandingRootChange('custom_css', MAXIMALIST_PRESET_CSS)}>
+                                            Load Maximalist preset
+                                        </Button>
+                                        {brandCustomCss && (
+                                            <Button type="button" variant="ghost" size="sm" onClick={() => handleBrandingRootChange('custom_css', '')}>
+                                                Clear
+                                            </Button>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+
                             <Card>
                                 <CardHeader>
                                     <CardTitle>Event Display</CardTitle>
@@ -823,29 +958,66 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
 
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Typography</CardTitle>
-                                    <CardDescription>Select the font style that matches your brand.</CardDescription>
+                                    <CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4" /> Theme</CardTitle>
+                                    <CardDescription>An art-directed look that restyles your cards, titles &amp; buttons — the same themes as your event pages. Follows your brand colour.</CardDescription>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                                         {[
-                                            { value: 'sans', label: 'Modern', desc: 'Clean & Minimal', font: 'font-sans' },
-                                            { value: 'serif', label: 'Elegant', desc: 'Classic & Trustworthy', font: 'font-serif' },
-                                            { value: 'mono', label: 'Technical', desc: 'Bold & Digital', font: 'font-mono' },
+                                            { value: 'classic', label: 'Classic', accent: '#4E47DC', desc: 'Clean default' },
+                                            { value: 'neon-rave', label: 'Neon Rave', accent: '#D946EF', desc: 'Glow & electric' },
+                                            { value: 'velvet-gala', label: 'Velvet Gala', accent: '#D4AF37', desc: 'Gold, formal' },
+                                            { value: 'sunset-festival', label: 'Sunset Fest', accent: '#F97316', desc: 'Chunky & fun' },
+                                            { value: 'circuit', label: 'Circuit', accent: '#10B981', desc: 'Techy, mono' },
+                                            { value: 'broadsheet', label: 'Broadsheet', accent: '#18181B', desc: 'Print & serif' },
+                                            { value: 'fiesta', label: 'Fiesta', accent: '#E11D48', desc: 'Street party' },
+                                        ].map((th) => (
+                                            <button
+                                                type="button"
+                                                key={th.value}
+                                                onClick={() => handleBrandingChange('design', 'theme', th.value)}
+                                                className={cn(
+                                                    "cursor-pointer border-2 rounded-xl p-3 hover:border-primary/50 transition-colors text-left",
+                                                    formData.branding.design.theme === th.value ? "border-primary bg-primary/5" : "border-border"
+                                                )}
+                                            >
+                                                <div className="h-8 rounded-md mb-2" style={{ background: `linear-gradient(135deg, ${th.accent}, ${th.accent}66)` }} />
+                                                <p className="font-semibold text-sm leading-tight">{th.label}</p>
+                                                <p className="text-xs text-muted-foreground">{th.desc}</p>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Typography</CardTitle>
+                                    <CardDescription>Select the font that matches your brand.</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                        {[
+                                            { value: 'inter', label: 'Inter', desc: 'Modern & clean', font: 'font-sans' },
+                                            { value: 'outfit', label: 'Outfit', desc: 'Friendly geometric', font: 'font-sans' },
+                                            { value: 'grotesk', label: 'Space Grotesk', desc: 'Tech & editorial', font: 'font-sans' },
+                                            { value: 'playfair', label: 'Playfair', desc: 'Elegant serif', font: 'font-serif' },
+                                            { value: 'cormorant', label: 'Cormorant', desc: 'Luxury serif', font: 'font-serif' },
+                                            { value: 'dmserif', label: 'DM Serif', desc: 'Bold serif', font: 'font-serif' },
+                                            { value: 'bebas', label: 'Bebas Neue', desc: 'Ultra display', font: 'font-sans' },
+                                            { value: 'mono', label: 'JetBrains Mono', desc: 'Monospace', font: 'font-mono' },
                                         ].map((font) => (
                                             <div
                                                 key={font.value}
                                                 onClick={() => handleBrandingChange('design', 'font', font.value)}
                                                 className={cn(
-                                                    "cursor-pointer border-2 rounded-xl p-4 hover:border-primary/50 transition-colors flex flex-col gap-2 text-center",
+                                                    "cursor-pointer border-2 rounded-xl p-3 hover:border-primary/50 transition-colors flex flex-col gap-1 text-center",
                                                     formData.branding.design.font === font.value ? "border-primary bg-primary/5" : "border-border"
                                                 )}
                                             >
-                                                <div className="text-3xl font-bold mb-2">Aa</div>
-                                                <div>
-                                                    <p className={cn("font-semibold", font.font)}>{font.label}</p>
-                                                    <p className="text-xs text-muted-foreground">{font.desc}</p>
-                                                </div>
+                                                <div className={cn("text-2xl font-bold", font.font)}>Aa</div>
+                                                <p className="font-semibold text-xs leading-tight">{font.label}</p>
+                                                <p className="text-[10px] text-muted-foreground leading-tight">{font.desc}</p>
                                             </div>
                                         ))}
                                     </div>
@@ -1217,47 +1389,6 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                             </div>
                         </CardContent>
                     </Card>
-                </TabsContent>
-
-                <TabsContent value="sections">
-                    <div className="space-y-8 max-w-4xl">
-                        <SectionTemplates
-                            currentTemplate={formData.branding.selected_template as TemplateName | null}
-                            onApply={(sections, template) => {
-                                setFormData(prev => ({
-                                    ...prev,
-                                    branding: {
-                                        ...prev.branding,
-                                        sections,
-                                        selected_template: template,
-                                    }
-                                }))
-                                setSuccessMessage(null)
-                            }}
-                        />
-
-                        {(formData.branding.sections as StorefrontSection[])?.length > 0 && (
-                            <SectionList
-                                sections={formData.branding.sections as StorefrontSection[]}
-                                onChange={(sections) => {
-                                    setFormData(prev => ({
-                                        ...prev,
-                                        branding: {
-                                            ...prev.branding,
-                                            sections,
-                                        }
-                                    }))
-                                    setSuccessMessage(null)
-                                }}
-                            />
-                        )}
-
-                        {!(formData.branding.sections as StorefrontSection[])?.length && (
-                            <div className="text-center py-16 border-2 border-dashed rounded-xl">
-                                <p className="text-muted-foreground">Pick a template above to get started, or your current layout will be used.</p>
-                            </div>
-                        )}
-                    </div>
                 </TabsContent>
             </Tabs>
         </form>

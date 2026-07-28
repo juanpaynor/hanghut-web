@@ -97,7 +97,7 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
                         </div>
                     )}
                     <div className="flex items-center justify-center gap-2 mb-2">
-                        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">{partner.business_name}</h1>
+                        <h1 data-hh-title className="text-4xl md:text-5xl font-bold tracking-tight">{partner.business_name}</h1>
                         {partner.verified && <VerifiedBadge />}
                     </div>
                     {partner.slug && (
@@ -160,7 +160,7 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
                             )}
                             <div>
                                 <div className="flex items-center gap-2 mb-1">
-                                    <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-tight">
+                                    <h1 data-hh-title className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-tight">
                                         {overlayText}
                                     </h1>
                                     {partner.verified && <VerifiedBadge />}
@@ -258,7 +258,7 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
                 {/* If a custom logo is used in centered mode, hide the title for a cleaner "festival" aesthetic */}
                 {(!config.hero_logo_url || contentPos !== 'center') && (
                     <div className="flex items-center gap-2 mb-1">
-                        <h1 className={cn(
+                        <h1 data-hh-title className={cn(
                             "font-bold text-white drop-shadow-lg max-w-3xl tracking-tight leading-tight",
                             contentPos === 'center' ? "text-4xl md:text-6xl" : "text-3xl md:text-5xl"
                         )}>

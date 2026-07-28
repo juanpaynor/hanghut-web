@@ -29,7 +29,7 @@ export function CTASection({ config, primaryColor }: CTASectionProps) {
             <div className="absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-primary/10" />
 
             <div className="container mx-auto px-4 relative z-10 text-center max-w-3xl">
-                <h2 className="text-2xl md:text-3xl font-bold mb-2">{heading}</h2>
+                <h2 data-hh-section-title className="text-2xl md:text-3xl font-bold mb-2">{heading}</h2>
                 {subheading && (
                     <p className="text-base text-muted-foreground mb-6 max-w-xl mx-auto">{subheading}</p>
                 )}

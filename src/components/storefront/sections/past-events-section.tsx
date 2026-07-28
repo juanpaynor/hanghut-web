@@ -19,7 +19,7 @@ export function PastEventsSection({ config, events }: PastEventsSectionProps) {
         <section className="py-12 md:py-16 opacity-80 hover:opacity-100 transition-opacity">
             <div className="container mx-auto px-4">
                 <div className="flex items-center gap-2 mb-8">
-                    <h2 className="text-xl md:text-2xl font-bold text-muted-foreground flex items-center gap-2">
+                    <h2 data-hh-section-title className="text-xl md:text-2xl font-bold text-muted-foreground flex items-center gap-2">
                         <History className="h-5 w-5" />
                         Past Events
                     </h2>

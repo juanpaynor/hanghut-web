@@ -1,4 +1,4 @@
-import { cache } from 'react'
+import { cache, type CSSProperties } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
@@ -17,6 +17,9 @@ import { SectionRenderer } from '@/components/storefront/section-renderer'
 import { StorefrontNavbar } from '@/components/storefront/storefront-navbar'
 import { SubscriptionSection } from '@/components/storefront/subscription-section'
 import { getSubscriptionStatus } from '@/lib/subscriptions/access'
+import { sanitizeCustomCss } from '@/lib/storefront-custom-css'
+import { getEventThemeCss } from '@/lib/event-themes'
+import { StorefrontPreviewBridge } from '@/components/organizer/storefront-preview-bridge'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
@@ -140,8 +143,16 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     }
 }
 
-export default async function StorefrontPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function StorefrontPage({
+    params,
+    searchParams,
+}: {
+    params: Promise<{ slug: string }>
+    searchParams: Promise<{ hh_preview?: string; hh_theme?: string; hh_font?: string }>
+}) {
     const { slug } = await params
+    const sp = await searchParams
+    const isPreview = sp.hh_preview === '1'
     const data = await getPartnerAndEvents(slug)
 
     if (!data) notFound()
@@ -164,6 +175,18 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
     const sortBy = branding.content?.sort_by || 'upcoming'
     const hasSections = Array.isArray(branding.sections) && branding.sections.length > 0
 
+    // ── Art-directed theme + custom-CSS skin (shared engine with event pages) ──
+    // A theme id restyles the storefront's shared section hooks (data-hh-card etc.)
+    // via event-themes.ts; custom CSS is the HelixPay-style escape hatch. In the
+    // Settings live-preview iframe (?hh_preview=1) the organizer's unsaved theme
+    // arrives as a URL param so it previews on reload. Colours + custom CSS preview
+    // live via the postMessage bridge. brandAccent feeds --hh-accent so themes
+    // follow the brand colour, exactly like the event page.
+    const pageTheme: string = (isPreview && sp.hh_theme) || branding.design?.theme || 'classic'
+    const themeCss = getEventThemeCss(pageTheme)
+    const storefrontCustomCss = sanitizeCustomCss(branding.custom_css)
+    const brandAccent: string = branding.colors?.primary || '#4E47DC'
+
     // Sort Upcoming Events
     const sortedUpcoming = [...upcoming].sort((a, b) => {
         if (sortBy === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -172,13 +195,25 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
         return new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime()
     })
 
-    // Font Mapping
-    const fontMap = {
-        'sans': inter.className,
-        'serif': playfair.className,
-        'mono': spaceMono.className
+    // Font Mapping. Legacy keys (sans/serif/mono) + the new keys that alias to an
+    // already-optimised next/font face render via className (no extra webfont
+    // request). The five display faces load from Google + apply via inline
+    // font-family. In the Settings preview iframe an unsaved pick rides ?hh_font.
+    const activeFont: string = (isPreview && sp.hh_font) || fontPreference
+    const nextFontClass: Record<string, string> = {
+        sans: inter.className, inter: inter.className,
+        serif: playfair.className, playfair: playfair.className,
+        mono: spaceMono.className,
     }
-    const fontClass = fontMap[fontPreference as keyof typeof fontMap] || inter.className
+    const GOOGLE_FONTS: Record<string, { stack: string; url: string }> = {
+        outfit:    { stack: "'Outfit', sans-serif",            url: 'https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&display=swap' },
+        grotesk:   { stack: "'Space Grotesk', sans-serif",     url: 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap' },
+        cormorant: { stack: "'Cormorant Garamond', serif",     url: 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&display=swap' },
+        dmserif:   { stack: "'DM Serif Display', serif",        url: 'https://fonts.googleapis.com/css2?family=DM+Serif+Display&display=swap' },
+        bebas:     { stack: "'Bebas Neue', cursive",            url: 'https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap' },
+    }
+    const googleFont = GOOGLE_FONTS[activeFont] || null
+    const fontClass = googleFont ? '' : (nextFontClass[activeFont] || inter.className)
 
     // Animation Helpers
     const animate = (delay: string = '') => enableAnimations ? `animate-in fade-in slide-in-from-bottom-4 duration-700 ${delay} fill-mode-both` : ''
@@ -236,7 +271,19 @@ export default async function StorefrontPage({ params }: { params: Promise<{ slu
     return (
         <BrandingProvider branding={branding}>
             {/* Dynamic Font Class Wrapper */}
-            <div className={cn("min-h-screen bg-background flex flex-col", fontClass)}>
+            <div
+                data-hh-storefront
+                data-hh-theme={pageTheme}
+                className={cn("min-h-screen bg-background flex flex-col", fontClass)}
+                style={{ '--hh-accent': brandAccent, ...(googleFont ? { fontFamily: googleFont.stack } : {}) } as CSSProperties}
+            >
+                {/* Webfont for display faces (Inter/Playfair/Mono are next/font, no link). */}
+                {googleFont && <link rel="stylesheet" href={googleFont.url} />}
+                {/* Art-directed theme CSS, then the custom-CSS skin (skin wins ties),
+                    then the live-preview bridge when rendered inside the editor iframe. */}
+                {themeCss && <style>{themeCss}</style>}
+                {storefrontCustomCss && <style dangerouslySetInnerHTML={{ __html: storefrontCustomCss }} />}
+                {isPreview && <StorefrontPreviewBridge />}
 
                 {/* Announcement Bar */}
                 {announcement.enabled && announcement.text && (

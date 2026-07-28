@@ -106,7 +106,7 @@ export function NewsletterSection({ config, partnerId, partnerName }: Newsletter
                 <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
                     <Mail className="h-7 w-7 text-primary" />
                 </div>
-                <h2 className="text-2xl md:text-3xl font-bold mb-3">{heading}</h2>
+                <h2 data-hh-section-title className="text-2xl md:text-3xl font-bold mb-3">{heading}</h2>
                 <p className="text-muted-foreground mb-8 text-lg">{subheading}</p>
 
                 {status === 'success' ? (

@@ -20,7 +20,7 @@ export function AboutSection({ config, description, descriptionHtml }: AboutSect
                 'container mx-auto px-4',
                 variant === 'centered' ? 'max-w-3xl text-center' : 'max-w-5xl'
             )}>
-                <h2 className={cn(
+                <h2 data-hh-section-title className={cn(
                     'text-2xl md:text-3xl font-bold mb-6',
                     variant === 'centered'
                         ? 'bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60'

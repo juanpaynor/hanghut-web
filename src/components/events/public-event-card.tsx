@@ -31,7 +31,7 @@ export function PublicEventCard({ event, categoryLabel, categoryEmoji }: PublicE
 
     return (
         <Link href={`/events/${event.id}`} className="group block h-full">
-            <div className="h-full bg-card rounded-2xl overflow-hidden border border-border/50 shadow-sm hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 transition-all duration-300 flex flex-col">
+            <div data-hh-card className="h-full bg-card rounded-2xl overflow-hidden border border-border/50 shadow-sm hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 transition-all duration-300 flex flex-col">
                 {/* Image Container */}
                 <div className="relative aspect-[4/3] overflow-hidden">
                     {event.cover_image_url ? (

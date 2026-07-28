@@ -21,7 +21,11 @@ const profileSchema = z.object({
         }).optional(),
         design: z.object({
             layout: z.enum(['modern', 'classic']).optional(),
-            font: z.enum(['sans', 'serif', 'mono']).optional(),
+            // Legacy coarse keys (sans/serif/mono) + the shared 8-font keys used by
+            // the event pages, so the storefront can offer the same typography.
+            font: z.enum(['sans', 'serif', 'mono', 'inter', 'outfit', 'grotesk', 'playfair', 'cormorant', 'dmserif', 'bebas']).optional(),
+            // Art-directed theme id (event-themes.ts engine, shared with events).
+            theme: z.string().max(40).optional(),
             primary_mode: z.enum(['auto', 'events', 'membership', 'hybrid']).optional(),
             enable_animations: z.boolean().optional(),
             show_footer: z.boolean().optional(),
@@ -50,6 +54,8 @@ const profileSchema = z.object({
         })).optional(),
         selected_template: z.string().nullable().optional(),
         video_position: z.string().optional(),
+        // HelixPay-style custom-CSS escape hatch for the storefront (sanitized on render).
+        custom_css: z.string().max(40000).nullable().optional(),
         ticket: z.object({
             message: z.string().nullable().optional(),
             banner_url: z.string().nullable().optional(),

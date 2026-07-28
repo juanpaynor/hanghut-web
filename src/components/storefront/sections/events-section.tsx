@@ -32,7 +32,7 @@ export function EventsSection({ config, events, sortBy }: EventsSectionProps) {
         <section id="events" className="py-16 md:py-20">
             <div className="container mx-auto px-4">
                 <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
+                    <h2 data-hh-section-title className="text-2xl md:text-3xl font-bold flex items-center gap-3">
                         <Calendar className="h-6 w-6 text-primary" />
                         Upcoming Events
                     </h2>
