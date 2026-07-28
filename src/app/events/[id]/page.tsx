@@ -21,6 +21,9 @@ import { EventViewTracker } from '@/components/events/event-view-tracker'
 import { sanitize } from '@/lib/sanitize'
 import { EventPageBackground, type BgStyle } from '@/components/events/event-bg'
 import { getEventThemeCss } from '@/lib/event-themes'
+import { getEventLayoutCss } from '@/lib/event-layouts'
+import { sanitizeCustomCss } from '@/lib/storefront-custom-css'
+import { StorefrontPreviewBridge } from '@/components/organizer/storefront-preview-bridge'
 import { EventCountdown } from '@/components/events/event-countdown'
 import { SocialProofTicker } from '@/components/events/social-proof-ticker'
 
@@ -31,10 +34,10 @@ import { LoginNudge } from '@/components/shared/login-nudge'
 
 export const dynamic = 'force-dynamic' // always fresh — bg style changes show immediately
 
-const getEvent = cache(async (eventId: string) => {
+const getEvent = cache(async (eventId: string, allowAnyStatus = false) => {
     const supabase = createPublicClient()
 
-    const { data: event, error } = await supabase
+    let query = supabase
         .from('events')
         .select(`
       *,
@@ -49,8 +52,12 @@ const getEvent = cache(async (eventId: string) => {
       registration_questions(*)
     `)
         .eq('id', eventId)
-        .in('status', ['active', 'hidden'])
-        .single()
+
+    // Public visitors only see live/unlisted events. Owner preview (below) may
+    // pass allowAnyStatus to render a draft in the Design-tab preview iframe.
+    if (!allowAnyStatus) query = query.in('status', ['active', 'hidden'])
+
+    const { data: event, error } = await query.single()
 
     if (error || !event) {
         return null
@@ -124,11 +131,37 @@ export default async function PublicEventPage({
     searchParams,
 }: {
     params: Promise<{ id: string }>
-    searchParams: Promise<{ invite?: string }>
+    searchParams: Promise<{
+        invite?: string
+        hh_preview?: string
+        // Design-tab live-preview structural overrides (see storefront form). These
+        // only change how an ALREADY-PUBLIC event renders — purely cosmetic, so they
+        // need no auth gate; the draft-status relaxation below stays owner-gated.
+        hh_layout?: string; hh_bg?: string; hh_theme?: string
+        hh_fh?: string; hh_fb?: string; hh_cd?: string; hh_sp?: string; hh_bgimg?: string
+    }>
 }) {
     const { id } = await params
-    const { invite: inviteToken } = await searchParams
-    const event = await getEvent(id)
+    const sp = await searchParams
+    const { invite: inviteToken, hh_preview } = sp
+    const isPreview = hh_preview === '1'
+    let event = await getEvent(id)
+
+    // Design-tab live preview: let the OWNER preview a draft/paused event that the
+    // public fetch above hides. Verify ownership before relaxing the status gate.
+    if (!event && isPreview) {
+        const authed = await createClient()
+        const { data: { user } } = await authed.auth.getUser()
+        if (user) {
+            const anyStatus = await getEvent(id, true)
+            const ownerId = (anyStatus?.organizer as any)?.id
+            if (ownerId) {
+                const { data: owned } = await authed
+                    .from('partners').select('id').eq('id', ownerId).eq('user_id', user.id).maybeSingle()
+                if (owned) event = anyStatus
+            }
+        }
+    }
 
     if (!event) notFound()
 
@@ -322,20 +355,35 @@ export default async function PublicEventPage({
     const hiddenSections = new Set(event.layout_config?.hidden || [])
     const rawVideoPosition = event.layout_config?.video_position || 'center 50%'
 
-    // New style config
-    const bgStyle: BgStyle = event.layout_config?.bg_style || 'default'
-    const pageLayout: 'default' | 'poster' | 'minimal' = event.layout_config?.page_layout || 'default'
+    // New style config. In the Design-tab preview iframe (isPreview) the organizer's
+    // UNSAVED structural picks arrive as URL params — so layout/bg/fonts preview live
+    // (a reload, since these are server-rendered) without needing to Save first. A
+    // param wins over the saved value; absent → saved value. `?? ` keeps `''`-safe.
+    const ov = <T,>(v: T | undefined, saved: T): T => (isPreview && v !== undefined ? v : saved)
+    const bgStyle: BgStyle = ov(sp.hh_bg as BgStyle | undefined, event.layout_config?.bg_style || 'default')
+    const pageLayout: 'default' | 'poster' | 'minimal' | 'broadside' | 'editorial' | 'cinematic' | 'boutique' =
+        ov(sp.hh_layout as any, event.layout_config?.page_layout || 'default')
     // Art-directed theme: restyles cards/badges/buttons/headers via injected CSS
-    const pageTheme: string = event.layout_config?.theme || 'classic'
+    const pageTheme: string = ov(sp.hh_theme, event.layout_config?.theme || 'classic')
     const themeCss = getEventThemeCss(pageTheme)
-    const showCountdown = event.layout_config?.show_countdown ?? false
+    // Layout "bones" CSS — reshapes the shared body sections to match the chosen
+    // skeleton (see event-layouts.ts). Injected AFTER themeCss so structure wins.
+    const layoutCss = getEventLayoutCss(pageLayout)
+    // Partner/admin custom CSS skin (HelixPay-style). Scoped-by-convention under
+    // [data-hh-theme]; sanitized so it can't break out of the <style> tag.
+    const customCss = sanitizeCustomCss(event.layout_config?.custom_css)
+    const showCountdown = ov(sp.hh_cd !== undefined ? sp.hh_cd === '1' : undefined, event.layout_config?.show_countdown ?? false)
     const countdownLabel = event.layout_config?.countdown_label || 'Event starts in'
-    const showSocialProof = event.layout_config?.show_social_proof ?? false
-    const bgImageUrl: string | undefined = event.layout_config?.bg_image_url || undefined
+    const showSocialProof = ov(sp.hh_sp !== undefined ? sp.hh_sp === '1' : undefined, event.layout_config?.show_social_proof ?? false)
+    // bg image: the form always sends hh_bgimg (empty = intentionally cleared), so
+    // key-presence — not truthiness — decides whether to use the preview value.
+    const bgImageUrl: string | undefined = isPreview && sp.hh_bgimg !== undefined
+        ? (sp.hh_bgimg || undefined)
+        : (event.layout_config?.bg_image_url || undefined)
 
     // Font config
-    const fontHeading: string = event.layout_config?.font_heading || 'inter'
-    const fontBody: string = event.layout_config?.font_body || 'inter'
+    const fontHeading: string = ov(sp.hh_fh, event.layout_config?.font_heading || 'inter')
+    const fontBody: string = ov(sp.hh_fb, event.layout_config?.font_body || 'inter')
     const FONT_MAP: Record<string, { name: string; url: string; css: string }> = {
         inter:      { name: 'Inter',             url: '',                                                                                css: 'Inter, sans-serif' },
         playfair:   { name: 'Playfair Display',  url: 'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&display=swap', css: "'Playfair Display', serif" },
@@ -973,15 +1021,289 @@ export default async function PublicEventPage({
     const showHero = !hiddenSections.has('hero')
     const showTickets = !hiddenSections.has('tickets')
 
+    // Shared <head>-ish injection every layout branch renders once, in a fixed
+    // order: webfonts → theme paint → layout bones → custom skin → live-preview
+    // bridge. Centralised so a branch can never silently miss one (the custom-CSS
+    // "nothing happens on save" bug was exactly that — one branch missing a tag).
+    const PageHead = () => (
+        <>
+            {googleFontUrls.map(url => (
+                <link key={url} rel="stylesheet" href={url} />
+            ))}
+            {/* Heading font on every heading in the new layouts — the theme BASE only
+                applies it for non-classic themes, so classic would otherwise fall back. */}
+            <style>{`[data-hh-layout] h1,[data-hh-layout] h2,[data-hh-layout] h3,[data-hh-layout] h4{font-family:var(--font-heading)}${headingColor ? `[data-hh-layout] h1,[data-hh-layout] h2,[data-hh-layout] h3,[data-hh-layout] h4{color:var(--hh-heading)}` : ''}${textColor ? `[data-hh-layout]{color:var(--hh-text)}` : ''}`}</style>
+            {themeCss && <style>{themeCss}</style>}
+            {layoutCss && <style>{layoutCss}</style>}
+            {customCss && <style dangerouslySetInnerHTML={{ __html: customCss }} />}
+            {isPreview && <StorefrontPreviewBridge />}
+        </>
+    )
+
+    // Shared organizer header used by the new layout branches.
+    const OrganizerHeaderLink = ({ dark }: { dark?: boolean }) =>
+        event.organizer ? (
+            <a
+                href={`https://${event.organizer.slug}.hanghut.com`}
+                className={cn('flex items-center gap-3 font-bold transition-opacity hover:opacity-80', dark ? 'text-white/85' : 'text-foreground')}
+            >
+                {event.organizer.profile_photo_url ? (
+                    <div className={cn('relative w-8 h-8 rounded-full overflow-hidden border', dark ? 'border-white/30' : 'border-border')}>
+                        <Image src={event.organizer.profile_photo_url} alt={event.organizer.business_name} fill className="object-cover" />
+                    </div>
+                ) : (
+                    <div className="w-8 h-8 rounded-full bg-primary/80 flex items-center justify-center text-primary-foreground font-bold text-sm">
+                        {event.organizer.business_name.charAt(0)}
+                    </div>
+                )}
+                <span className="truncate max-w-[200px] text-sm">{event.organizer.business_name}</span>
+            </a>
+        ) : (
+            <Link href="/" className="font-black text-lg">HANGHUT</Link>
+        )
+
+    const formattedDate = format(eventDate, 'EEEE, MMMM d · h:mm a')
+
+    // ─── BROADSIDE LAYOUT ─ brutalist gig poster ─────────────────────────────
+    if (pageLayout === 'broadside') {
+        return (
+            <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="broadside" className="min-h-screen bg-background pb-24" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+                <PageHead />
+                <header className="border-b-2 border-foreground">
+                    <div className="container mx-auto px-4 flex h-14 items-center justify-between">
+                        <OrganizerHeaderLink />
+                        <ShareButton title={event.title} description={event.description} eventId={event.id} />
+                    </div>
+                </header>
+
+                {/* Poster hero: image band, then giant title + bordered meta strip */}
+                <section className="container mx-auto px-4">
+                    {showHero && event.cover_image_url && (
+                        <div className="relative w-full h-[38vh] min-h-[240px] overflow-hidden border-b-2 border-foreground">
+                            <Image src={event.cover_image_url} alt={event.title} fill priority sizes="100vw" className="object-cover" />
+                        </div>
+                    )}
+                    <div className="flex flex-wrap gap-2 pt-6">
+                        <span data-hh-badge className="border-2 border-foreground text-foreground text-[11px] font-black uppercase tracking-[0.14em] px-3 py-1">
+                            {event.event_type || 'Event'}
+                        </span>
+                        {event.is_featured && (
+                            <span data-hh-badge className="bg-foreground text-background text-[11px] font-black uppercase tracking-[0.14em] px-3 py-1">Featured</span>
+                        )}
+                    </div>
+                    <h1
+                        data-hh-title
+                        className="font-black uppercase tracking-[-0.03em] leading-[0.86] mt-3"
+                        style={{ fontSize: 'clamp(3rem, 11vw, 9rem)', fontFamily: 'var(--font-heading)' }}
+                    >
+                        {event.title}
+                    </h1>
+                    {/* Mono metadata strip */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 border-t-2 border-b-2 border-foreground mt-6 font-mono text-xs uppercase tracking-wider">
+                        <div className="p-3 border-r-2 border-foreground">
+                            <div className="opacity-50">Date</div>
+                            <div className="font-bold normal-case tracking-normal font-sans">{format(eventDate, 'EEE MMM d')}</div>
+                        </div>
+                        <div className="p-3 md:border-r-2 border-foreground">
+                            <div className="opacity-50">Time</div>
+                            <div className="font-bold normal-case tracking-normal font-sans">{format(eventDate, 'h:mm a')}</div>
+                        </div>
+                        <div className="p-3 border-r-2 border-t-2 md:border-t-0 border-foreground">
+                            <div className="opacity-50">Venue</div>
+                            <div className="font-bold normal-case tracking-normal font-sans truncate">{venueVisible ? (event.venue_name || event.city) : event.city}</div>
+                        </div>
+                        <div className="p-3 border-t-2 md:border-t-0 border-foreground">
+                            <div className="opacity-50">From</div>
+                            <div className="font-bold normal-case tracking-normal font-sans">{event.ticket_price === 0 ? 'Free' : `₱${event.ticket_price.toLocaleString()}`}</div>
+                        </div>
+                    </div>
+                    {showCountdown && (
+                        <div className="mt-6"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} /></div>
+                    )}
+                    {showSocialProof && recentNames.length > 0 && (
+                        <div className="mt-4"><SocialProofTicker names={recentNames} /></div>
+                    )}
+                </section>
+
+                <main className="container mx-auto px-4 max-w-3xl">
+                    {mainContentOrder.map(sectionId => (
+                        <div key={sectionId}>{renderSection(sectionId)}</div>
+                    ))}
+                    {showTickets && <TicketsSection />}
+                </main>
+
+                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : undefined} />
+            </div>
+        )
+    }
+
+    // ─── EDITORIAL LAYOUT ─ asymmetric magazine spread ───────────────────────
+    if (pageLayout === 'editorial') {
+        return (
+            <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="editorial" className="min-h-screen bg-background pb-24" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+                <PageHead />
+                <header className="border-b border-border">
+                    <div className="container mx-auto px-4 flex h-16 items-center justify-between">
+                        <OrganizerHeaderLink />
+                        <ShareButton title={event.title} description={event.description} eventId={event.id} />
+                    </div>
+                </header>
+
+                {/* Two-column spread: story left, tall poster column right */}
+                <section className="container mx-auto px-4 pt-10 md:pt-16">
+                    <div className="grid md:grid-cols-[1.1fr_0.9fr] gap-8 lg:gap-14 items-start">
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.2em] text-muted-foreground border-b border-foreground/80 pb-3 mb-6">
+                                <span>{event.organizer?.business_name || 'HangHut'}</span>
+                                <span className="ml-auto">{format(eventDate, 'MMMM yyyy')}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2 mb-4">
+                                <Badge data-hh-badge variant="secondary">{event.event_type || 'Event'}</Badge>
+                                {event.is_featured && <Badge data-hh-badge className="bg-yellow-500 text-white">Featured</Badge>}
+                            </div>
+                            <h1 data-hh-title className="font-bold leading-[1.02] tracking-[-0.01em]" style={{ fontSize: 'clamp(2.6rem, 6vw, 5rem)', fontFamily: 'var(--font-heading)' }}>
+                                {event.title}
+                            </h1>
+                            <div className="flex items-center gap-3 text-muted-foreground text-sm mt-6 flex-wrap">
+                                <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{formattedDate}</span>
+                                {event.venue_name && venueVisible && (
+                                    <><span className="w-1 h-1 rounded-full bg-muted-foreground/40" /><span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{event.venue_name}</span></>
+                                )}
+                            </div>
+                            {showCountdown && <div className="mt-6"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} /></div>}
+                        </div>
+                        {showHero && (
+                            <div className="relative w-full aspect-[3/4] overflow-hidden bg-muted md:sticky md:top-6">
+                                {event.cover_image_url ? (
+                                    <Image src={event.cover_image_url} alt={event.title} fill priority sizes="(max-width:768px) 100vw, 40vw" className="object-cover" />
+                                ) : (
+                                    <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-secondary/20" />
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    {showSocialProof && recentNames.length > 0 && <div className="mt-8"><SocialProofTicker names={recentNames} /></div>}
+                </section>
+
+                <main className="container mx-auto px-4 max-w-3xl mt-4">
+                    {mainContentOrder.map(sectionId => (
+                        <div key={sectionId}>{renderSection(sectionId)}</div>
+                    ))}
+                    {showTickets && <TicketsSection />}
+                </main>
+
+                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : undefined} />
+            </div>
+        )
+    }
+
+    // ─── CINEMATIC LAYOUT ─ immersive full-bleed poster + glass content ──────
+    if (pageLayout === 'cinematic') {
+        return (
+            <div data-hh-theme={pageTheme} data-hh-layout="cinematic" className="min-h-screen bg-black text-white" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+                <PageHead />
+                {/* Fixed full-bleed poster background */}
+                {bgStyle !== 'default' ? (
+                    <EventPageBackground bgStyle={bgStyle} themeColor={event.theme_color || '#6366f1'} coverImageUrl={event.cover_image_url || undefined} bgImageUrl={bgImageUrl} videoUrl={event.video_url ? (getYouTubeEmbedUrl(event.video_url) ? undefined : event.video_url) : undefined} className="fixed inset-0 z-0" />
+                ) : event.cover_image_url ? (
+                    <div className="fixed inset-0 z-0">
+                        <Image src={event.cover_image_url} alt="" fill priority sizes="100vw" className="object-cover" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/55 to-black/25" />
+                    </div>
+                ) : (
+                    <div className="fixed inset-0 z-0 bg-gradient-to-br from-zinc-950 via-zinc-900 to-black" />
+                )}
+
+                <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4">
+                    <OrganizerHeaderLink dark />
+                    <ShareButton title={event.title} description={event.description} eventId={event.id} />
+                </header>
+
+                {/* Hero: content floats bottom-left over the poster */}
+                <section className="relative z-10 min-h-screen flex flex-col justify-end px-6 md:px-10 pb-16 pt-24 max-w-4xl">
+                    <div className="flex flex-wrap gap-2 mb-5">
+                        <span data-hh-badge className="bg-white/12 backdrop-blur border border-white/25 text-white text-[11px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-full">{event.event_type || 'Event'}</span>
+                        {event.is_featured && <span data-hh-badge className="bg-yellow-400/90 text-yellow-900 text-[11px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-full">⭐ Featured</span>}
+                    </div>
+                    <h1 data-hh-title className="font-black text-white drop-shadow-2xl leading-[0.95] tracking-[-0.02em]" style={{ fontSize: 'clamp(2.6rem, 8vw, 7rem)', fontFamily: 'var(--font-heading)' }}>
+                        {event.title}
+                    </h1>
+                    <div className="flex items-center gap-4 text-white/80 text-sm mt-6 flex-wrap">
+                        <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{formattedDate}</span>
+                        {event.venue_name && venueVisible && <span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{event.venue_name}</span>}
+                    </div>
+                    {showCountdown && <div className="mt-6"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} /></div>}
+                    {showSocialProof && recentNames.length > 0 && <div className="mt-4"><SocialProofTicker names={recentNames} /></div>}
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 text-white/40 text-xs animate-bounce">
+                        <span>Scroll</span><span>↓</span>
+                    </div>
+                </section>
+
+                {/* Content floats over the still-fixed poster */}
+                <div className="relative z-20 px-4 md:px-6 pb-24 max-w-3xl mx-auto">
+                    {mainContentOrder.map(sectionId => (
+                        <div key={sectionId}>{renderSection(sectionId)}</div>
+                    ))}
+                    {showTickets && <TicketsSection />}
+                </div>
+
+                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : undefined} />
+            </div>
+        )
+    }
+
+    // ─── BOUTIQUE LAYOUT ─ centered invitation, all air ──────────────────────
+    if (pageLayout === 'boutique') {
+        return (
+            <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="boutique" className="min-h-screen bg-background pb-24" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+                <PageHead />
+                <header className="border-b border-border/60">
+                    <div className="container mx-auto px-4 flex h-16 items-center justify-center">
+                        <OrganizerHeaderLink />
+                    </div>
+                </header>
+
+                <main className="container mx-auto px-4 max-w-2xl">
+                    {/* Centered invitation hero */}
+                    {showHero && (
+                        <div className="text-center pt-16 pb-4">
+                            <p className="font-mono text-[11px] uppercase tracking-[0.32em] text-muted-foreground">You&apos;re invited</p>
+                            {event.cover_image_url ? (
+                                <div className="relative w-24 h-24 rounded-full overflow-hidden mx-auto my-8 shadow-lg">
+                                    <Image src={event.cover_image_url} alt={event.title} fill sizes="96px" className="object-cover" />
+                                </div>
+                            ) : <div className="h-8" />}
+                            <h1 data-hh-title className="font-medium leading-[1.1] tracking-[0.005em] max-w-xl mx-auto" style={{ fontSize: 'clamp(2.2rem, 5vw, 3.6rem)', fontFamily: 'var(--font-heading)' }}>
+                                {event.title}
+                            </h1>
+                            <div className="w-10 h-px bg-border mx-auto my-7" />
+                            <div className="text-muted-foreground leading-loose" style={{ fontFamily: 'var(--font-heading)' }}>
+                                <p>{format(eventDate, 'EEEE, MMMM d')}</p>
+                                <p>{format(eventDate, 'h:mm a')}</p>
+                                {venueVisible && event.venue_name && <p>{event.venue_name}{event.city ? ` · ${event.city}` : ''}</p>}
+                            </div>
+                            {showCountdown && <div className="mt-8 flex justify-center"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} /></div>}
+                            {showSocialProof && recentNames.length > 0 && <div className="mt-6 flex justify-center"><SocialProofTicker names={recentNames} /></div>}
+                        </div>
+                    )}
+
+                    {mainContentOrder.map(sectionId => (
+                        <div key={sectionId}>{renderSection(sectionId)}</div>
+                    ))}
+                    {showTickets && <TicketsSection />}
+                </main>
+
+                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : undefined} />
+            </div>
+        )
+    }
+
     // ─── POSTER LAYOUT ───────────────────────────────────────────────────────
     if (pageLayout === 'poster') {
         const formattedPosterDate = format(eventDate, 'EEEE, MMMM d · h:mm a')
         return (
             <div data-hh-theme={pageTheme} className="min-h-screen bg-black text-white" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
-                {googleFontUrls.map(url => (
-                    <link key={url} rel="stylesheet" href={url} />
-                ))}
-                {themeCss && <style>{themeCss}</style>}
+                <PageHead />
                 {/* Fixed background effect */}
                 {bgStyle !== 'default' ? (
                     <EventPageBackground
@@ -1110,10 +1432,7 @@ export default async function PublicEventPage({
     if (pageLayout === 'minimal') {
         return (
             <div data-hh-theme={pageTheme} className="min-h-screen bg-background pb-20" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
-                {googleFontUrls.map(url => (
-                    <link key={url} rel="stylesheet" href={url} />
-                ))}
-                {themeCss && <style>{themeCss}</style>}
+                <PageHead />
                 <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                     <div className="container mx-auto px-4 flex h-16 items-center justify-between">
                         {event.organizer ? (
@@ -1276,6 +1595,8 @@ export default async function PublicEventPage({
 ` : ''}`}</style>
             {/* Art-directed theme CSS — after the base styles so theme rules win ties */}
             {themeCss && <style>{themeCss}</style>}
+            {customCss && <style dangerouslySetInnerHTML={{ __html: customCss }} />}
+            {isPreview && <StorefrontPreviewBridge />}
 
             {/* Full-page background — fixed so it covers the entire scroll */}
             {bgStyle !== 'default' && (

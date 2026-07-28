@@ -24,7 +24,7 @@ export type EventDesignTemplate = {
     theme: EventThemeId
     theme_color: string
     bg_style: 'default' | 'particles' | 'gradient-mesh' | 'noise' | 'parallax' | 'cover-blur'
-    page_layout: 'default' | 'poster' | 'minimal'
+    page_layout: 'default' | 'poster' | 'minimal' | 'broadside' | 'editorial' | 'cinematic' | 'boutique'
     font_heading: string
     font_body: string
     heading_color: string | null
@@ -156,6 +156,74 @@ export const EVENT_DESIGN_TEMPLATES: EventDesignTemplate[] = [
         bg_style: 'default',
         page_layout: 'minimal',
         font_heading: 'dmserif',
+        font_body: 'inter',
+        heading_color: null,
+        text_color: null,
+        show_countdown: false,
+        show_social_proof: false,
+    },
+    // ── New "bones" layouts (event-layouts.ts). These change the page's whole
+    //    composition, not just its paint — the fix for "templates all look the
+    //    same in different colours". Each pairs its skeleton with a theme that
+    //    complements it (no card chrome the layout would strip). ──────────────
+    {
+        id: 'broadside',
+        name: 'Broadside',
+        tagline: 'No cards. Giant condensed type. A gig poster, not a webpage.',
+        vibe: 'Concerts & club nights',
+        theme: 'classic',
+        theme_color: '#F5333F',
+        bg_style: 'default',
+        page_layout: 'broadside',
+        font_heading: 'bebas',
+        font_body: 'grotesk',
+        heading_color: null,
+        text_color: null,
+        show_countdown: false,
+        show_social_proof: true,
+    },
+    {
+        id: 'editorial',
+        name: 'Editorial',
+        tagline: 'A magazine spread — poster beside the story, hairline rules',
+        vibe: 'Galas, art & dinners',
+        theme: 'classic',
+        theme_color: '#1E3A8A',
+        bg_style: 'default',
+        page_layout: 'editorial',
+        font_heading: 'playfair',
+        font_body: 'inter',
+        heading_color: null,
+        text_color: null,
+        show_countdown: false,
+        show_social_proof: false,
+    },
+    {
+        id: 'cinematic',
+        name: 'Cinematic',
+        tagline: 'Your poster fills the screen; details float in glass',
+        vibe: 'Premieres & showcases',
+        theme: 'classic',
+        theme_color: '#8B5CF6',
+        bg_style: 'cover-blur',
+        page_layout: 'cinematic',
+        font_heading: 'playfair',
+        font_body: 'inter',
+        heading_color: '#FFFFFF',
+        text_color: null,
+        show_countdown: true,
+        show_social_proof: true,
+    },
+    {
+        id: 'boutique',
+        name: 'Boutique',
+        tagline: 'A centered invitation — serif, whitespace, quiet luxury',
+        vibe: 'Weddings & intimate',
+        theme: 'classic',
+        theme_color: '#B98A5E',
+        bg_style: 'default',
+        page_layout: 'boutique',
+        font_heading: 'cormorant',
         font_body: 'inter',
         heading_color: null,
         text_color: null,

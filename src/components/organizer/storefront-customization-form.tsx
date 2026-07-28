@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -14,12 +14,25 @@ import { Switch } from "@/components/ui/switch"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { updateEventStorefront, uploadEventBgImage } from "@/lib/organizer/event-actions"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, ArrowUp, ArrowDown, LayoutDashboard, Palette, FileCode, Sparkles, Timer, Upload, Type, X, Plus, ListMusic } from "lucide-react"
+import { Loader2, ArrowUp, ArrowDown, LayoutDashboard, Palette, FileCode, Sparkles, Timer, Upload, Type, X, Plus, ListMusic, RefreshCw, Monitor, Smartphone } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { VideoUploader } from "@/components/ui/video-uploader"
 import { DraggableVideoCropper } from "@/components/ui/draggable-video-cropper"
 import { EventDesignGallery } from "@/components/organizer/event-design-gallery"
 import type { EventDesignTemplate } from "@/lib/event-design-templates"
+import { MAXIMALIST_PRESET_CSS } from "@/lib/storefront-custom-css"
+import { cn } from "@/lib/utils"
+
+// Two-pane section nav — one calm screen at a time instead of a 7-card scroll.
+const DESIGN_SECTIONS = [
+    { id: 'templates', label: 'Templates', icon: Sparkles },
+    { id: 'theme', label: 'Theme', icon: Palette },
+    { id: 'content', label: 'Content', icon: ListMusic },
+    { id: 'layout', label: 'Layout & order', icon: LayoutDashboard },
+    { id: 'style', label: 'Visual style', icon: Type },
+    { id: 'css', label: 'Custom CSS', icon: FileCode, adv: true },
+] as const
+type DesignSectionId = typeof DESIGN_SECTIONS[number]['id']
 
 const formSchema = z.object({
     video_url: z.string().url("Must be a valid URL").optional().or(z.literal('')).or(z.null()).transform(v => v ?? ''),
@@ -171,6 +184,8 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
     const [fontBody, setFontBody] = useState<string>(initialData.layout_config?.font_body || 'inter')
     const [textColor, setTextColor] = useState<string>(initialData.layout_config?.text_color || '')
     const [headingColor, setHeadingColor] = useState<string>(initialData.layout_config?.heading_color || '')
+    const [customCss, setCustomCss] = useState<string>(initialData.layout_config?.custom_css || '')
+    const [designSection, setDesignSection] = useState<DesignSectionId>('templates')
     const bgImageInputRef = useRef<HTMLInputElement>(null)
 
     const FONT_OPTIONS = [
@@ -192,6 +207,94 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
             theme_color: initialData.theme_color || "#000000",
         },
     })
+
+    // ─── Live preview wiring ────────────────────────────────────────────
+    // An iframe of the public event page (?hh_preview=1) that a bridge script
+    // listens on. Two channels: (1) paint edits (accent/theme/custom CSS/colors)
+    // are patched in live via postMessage — no reload; (2) structural edits
+    // (layout/bg/fonts/toggles) can't be patched into server-rendered HTML, so
+    // they ride the iframe URL as params and reload the frame (see below). Both
+    // work WITHOUT a Save; Save just persists + reloads to pick up sections/order.
+    const previewRef = useRef<HTMLIFrameElement>(null)
+    const [previewNonce, setPreviewNonce] = useState(0)
+    const watchedThemeColor = form.watch('theme_color')
+    const previewPayloadRef = useRef<Record<string, unknown>>({})
+    previewPayloadRef.current = {
+        theme_color: watchedThemeColor || null,
+        theme: pageThemeId,
+        custom_css: customCss,
+        font_heading: fontHeading,
+        font_body: fontBody,
+        text_color: textColor,
+        heading_color: headingColor,
+    }
+    const postPreview = useCallback(() => {
+        previewRef.current?.contentWindow?.postMessage(
+            { source: 'hh-preview', type: 'apply', payload: previewPayloadRef.current },
+            '*'
+        )
+    }, [])
+    // Push on any design change (debounced so typing CSS stays smooth).
+    useEffect(() => {
+        const t = setTimeout(postPreview, 140)
+        return () => clearTimeout(t)
+    }, [watchedThemeColor, pageThemeId, customCss, fontHeading, fontBody, textColor, headingColor, postPreview])
+    // Push the current state the moment the iframe says it's ready.
+    useEffect(() => {
+        const onMsg = (e: MessageEvent) => {
+            if (e.data?.source === 'hh-preview' && e.data.type === 'ready') postPreview()
+        }
+        window.addEventListener('message', onMsg)
+        return () => window.removeEventListener('message', onMsg)
+    }, [postPreview])
+
+    // ── Structural edits preview WITHOUT a Save ──────────────────────────────
+    // Layout / background / fonts / engagement toggles are server-rendered, so
+    // they can't be patched into the loaded iframe like CSS. Instead we pass the
+    // unsaved picks to the preview page as URL params (it reads them in preview
+    // mode) and reload the frame. The paint edits (accent/theme/custom CSS) get
+    // re-applied automatically right after, via the 'ready' handshake above.
+    // NOTE: theme / accent / custom CSS are deliberately NOT here — they're the
+    // live-patched set (re-applied via the 'ready' handshake), and putting them in
+    // the src would force a reload on every colour tweak. Only reload-only props.
+    const structuralPreviewQuery = useMemo(() => {
+        const p = new URLSearchParams()
+        p.set('hh_layout', pageLayout)
+        p.set('hh_bg', bgStyle)
+        p.set('hh_fh', fontHeading)
+        p.set('hh_fb', fontBody)
+        p.set('hh_cd', showCountdown ? '1' : '0')
+        p.set('hh_sp', showSocialProof ? '1' : '0')
+        p.set('hh_bgimg', bgImageUrl || '')
+        return p.toString()
+    }, [pageLayout, bgStyle, fontHeading, fontBody, showCountdown, showSocialProof, bgImageUrl])
+    // Reload the frame when a structural pick changes (debounced; skip first run
+    // so we don't double-load on mount).
+    const structuralFirstRun = useRef(true)
+    useEffect(() => {
+        if (structuralFirstRun.current) { structuralFirstRun.current = false; return }
+        const t = setTimeout(() => setPreviewNonce(n => n + 1), 350)
+        return () => clearTimeout(t)
+    }, [structuralPreviewQuery])
+
+    // Preview device: "desktop" renders the page at a real 1280px viewport and
+    // scales it down to fit the narrow pane (so you see the desktop layout, not
+    // the mobile one); "mobile" lets the page fill the pane at phone width.
+    const previewWrapRef = useRef<HTMLDivElement>(null)
+    const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop')
+    const [previewWrap, setPreviewWrap] = useState({ w: 400, h: 720 })
+    useEffect(() => {
+        const el = previewWrapRef.current
+        if (!el) return
+        const measure = () => setPreviewWrap({ w: el.clientWidth, h: el.clientHeight })
+        measure()
+        const ro = new ResizeObserver(measure)
+        ro.observe(el)
+        return () => ro.disconnect()
+    }, [])
+    const previewIsDesktop = previewDevice === 'desktop'
+    const previewBaseW = 1280
+    const previewScale = previewIsDesktop ? Math.max(0.15, previewWrap.w / previewBaseW) : 1
 
     const moveSection = (index: number, direction: 'up' | 'down') => {
         const newOrder = [...layoutOrder]
@@ -254,6 +357,7 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                     font_body: fontBody,
                     text_color: textColor || null,
                     heading_color: headingColor || null,
+                    custom_css: customCss || null,
                     sections: {
                         lineup: lineup.filter(a => a.name.trim()),
                         schedule: schedule.filter(s => s.title.trim()),
@@ -275,6 +379,8 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                     description: "Storefront customization saved.",
                 })
                 router.refresh()
+                // Reload the preview so structural/bg/font edits show too.
+                setPreviewNonce(Date.now())
             }
         } catch (error) {
             toast({
@@ -288,17 +394,41 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
     }
 
     return (
-        <div className="max-w-4xl mx-auto pb-20">
+        <div className="max-w-[1700px] mx-auto pb-20">
             <div className="mb-6">
                 <h1 className="text-2xl font-bold">Storefront Customization</h1>
                 <p className="text-muted-foreground">Customize how your event page looks and feels.</p>
             </div>
 
             <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+                <form onSubmit={form.handleSubmit(onSubmit)}>
+                    <div className="flex flex-col xl:flex-row gap-6 items-stretch xl:items-start">
+                        {/* Left section nav */}
+                        <nav className="xl:sticky xl:top-4 shrink-0 xl:w-52 flex xl:flex-col gap-1 overflow-x-auto rounded-xl border bg-card p-2">
+                            {DESIGN_SECTIONS.map((s) => (
+                                <button
+                                    key={s.id}
+                                    type="button"
+                                    onClick={() => setDesignSection(s.id)}
+                                    className={cn(
+                                        "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-left whitespace-nowrap transition-colors",
+                                        designSection === s.id ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted"
+                                    )}
+                                >
+                                    <s.icon className="h-4 w-4 shrink-0" />
+                                    {s.label}
+                                    {'adv' in s && s.adv && (
+                                        <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground border rounded-full px-1.5 py-0.5">Adv</span>
+                                    )}
+                                </button>
+                            ))}
+                        </nav>
+
+                        {/* Active section */}
+                        <div className="flex-1 min-w-0 space-y-8">
 
                     {/* 0. Design Templates */}
-                    <Card>
+                    <Card className={cn(designSection !== 'templates' && 'hidden')}>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <Sparkles className="h-5 w-5" />
@@ -322,7 +452,7 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                     </Card>
 
                     {/* 1. Media & Theme */}
-                    <Card>
+                    <Card className={cn(designSection !== 'theme' && 'hidden')}>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <Palette className="h-5 w-5" />
@@ -415,7 +545,7 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                     </Card>
 
                     {/* 2. Content */}
-                    <Card>
+                    <Card className={cn(designSection !== 'content' && 'hidden')}>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <FileCode className="h-5 w-5" />
@@ -450,7 +580,7 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                     </Card>
 
                     {/* 2.5 Rich Sections — lineup / schedule / FAQ / sponsors */}
-                    <Card>
+                    <Card className={cn(designSection !== 'content' && 'hidden')}>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <ListMusic className="h-5 w-5" />
@@ -575,7 +705,7 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                     </Card>
 
                     {/* 3. Layout Arrangement */}
-                    <Card>
+                    <Card className={cn(designSection !== 'layout' && 'hidden')}>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <LayoutDashboard className="h-5 w-5" />
@@ -646,7 +776,7 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                     </Card>
 
                     {/* 4. Visual Style */}
-                    <Card>
+                    <Card className={cn(designSection !== 'style' && 'hidden')}>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <Sparkles className="h-5 w-5" />
@@ -747,9 +877,13 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                                 <Label className="text-sm font-semibold">Page Layout</Label>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                     {[
-                                        { value: 'default', label: 'Default', emoji: '📄', desc: 'Two-column with sticky sidebar' },
-                                        { value: 'poster',  label: 'Poster',  emoji: '🎭', desc: 'Full-screen immersive hero' },
-                                        { value: 'minimal', label: 'Minimal', emoji: '🔲', desc: 'Single column, no clutter' },
+                                        { value: 'default',   label: 'Default',   emoji: '📄', desc: 'Classic cards, works for anything' },
+                                        { value: 'broadside', label: 'Broadside', emoji: '🅱️', desc: 'Brutalist gig poster — no cards, giant type' },
+                                        { value: 'editorial', label: 'Editorial', emoji: '📰', desc: 'Magazine spread — poster beside the story' },
+                                        { value: 'cinematic', label: 'Cinematic', emoji: '🎬', desc: 'Full-bleed poster, content floats in glass' },
+                                        { value: 'boutique',  label: 'Boutique',  emoji: '✉️', desc: 'Centered invitation, all whitespace' },
+                                        { value: 'poster',    label: 'Poster',    emoji: '🎭', desc: 'Full-screen centered hero' },
+                                        { value: 'minimal',   label: 'Minimal',   emoji: '🔲', desc: 'Single column, no clutter' },
                                     ].map(opt => (
                                         <button
                                             key={opt.value}
@@ -864,10 +998,119 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                         </CardContent>
                     </Card>
 
-                    <Button type="submit" disabled={isLoading} className="w-full md:w-auto" size="lg">
-                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Save Customizations
-                    </Button>
+                    {/* Custom CSS — full art-direction escape hatch (HelixPay-style skin) */}
+                    <Card className={cn(designSection !== 'css' && 'hidden')}>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <FileCode className="h-5 w-5" />
+                                Custom CSS
+                                <span className="text-xs font-normal text-muted-foreground border rounded-full px-2 py-0.5">Advanced</span>
+                            </CardTitle>
+                            <CardDescription>
+                                Total control over your page&apos;s look. Scope rules under <code className="text-xs bg-muted px-1 py-0.5 rounded">[data-hh-theme]</code> so they only skin
+                                this storefront. Leave empty to keep the theme above.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCustomCss(MAXIMALIST_PRESET_CSS)}
+                                >
+                                    <Sparkles className="mr-2 h-4 w-4" />
+                                    Load Maximalist preset
+                                </Button>
+                                {customCss && (
+                                    <Button type="button" variant="ghost" size="sm" onClick={() => setCustomCss('')}>
+                                        <X className="mr-2 h-4 w-4" />
+                                        Clear
+                                    </Button>
+                                )}
+                            </div>
+                            <Textarea
+                                value={customCss}
+                                onChange={(e) => setCustomCss(e.target.value)}
+                                placeholder={"[data-hh-theme] h1 {\n  color: #ff5e8a;\n}"}
+                                spellCheck={false}
+                                className="font-mono text-xs min-h-[220px] leading-relaxed"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                CSS only — scripts and <code className="text-xs bg-muted px-1 py-0.5 rounded">&lt;style&gt;</code> tags are stripped for safety. Save, then open your live event page to see it.
+                            </p>
+                        </CardContent>
+                    </Card>
+
+                            <Button type="submit" disabled={isLoading} className="w-full md:w-auto" size="lg">
+                                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                Save Customizations
+                            </Button>
+                        </div>
+
+                        {/* Live preview (xl and up) */}
+                        <aside className="hidden xl:flex shrink-0 w-[380px] 2xl:w-[440px] flex-col gap-2 sticky top-4 h-[calc(100vh-7rem)]">
+                            <div className="flex items-center justify-between gap-2 px-1">
+                                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                    Live preview
+                                </span>
+                                <div className="flex items-center gap-1">
+                                    {/* Desktop / Mobile toggle */}
+                                    <div className="inline-flex rounded-lg border bg-muted/40 p-0.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => setPreviewDevice('desktop')}
+                                            aria-pressed={previewIsDesktop}
+                                            title="Desktop"
+                                            className={cn("rounded-md p-1.5", previewIsDesktop ? "bg-background shadow-sm text-foreground" : "text-muted-foreground")}
+                                        >
+                                            <Monitor className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPreviewDevice('mobile')}
+                                            aria-pressed={!previewIsDesktop}
+                                            title="Mobile"
+                                            className={cn("rounded-md p-1.5", !previewIsDesktop ? "bg-background shadow-sm text-foreground" : "text-muted-foreground")}
+                                        >
+                                            <Smartphone className="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPreviewNonce(Date.now())}
+                                        title="Refresh preview"
+                                        className="text-muted-foreground hover:text-foreground inline-flex items-center rounded-md p-1.5"
+                                    >
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
+                            </div>
+                            <div ref={previewWrapRef} className="relative flex-1 overflow-hidden rounded-xl border bg-black">
+                                <iframe
+                                    ref={previewRef}
+                                    key={previewNonce}
+                                    src={`/events/${eventId}?hh_preview=1&${structuralPreviewQuery}&n=${previewNonce}`}
+                                    title="Live preview of your event page"
+                                    className="border-0 bg-black"
+                                    style={
+                                        previewIsDesktop
+                                            ? {
+                                                width: previewBaseW,
+                                                height: Math.max(320, previewWrap.h / previewScale),
+                                                transform: `scale(${previewScale})`,
+                                                transformOrigin: 'top left',
+                                            }
+                                            : { width: '100%', height: '100%' }
+                                    }
+                                />
+                            </div>
+                            <p className="text-[11px] leading-relaxed text-muted-foreground px-1">
+                                Colors, fonts, theme &amp; custom CSS update as you edit. Sections, background &amp; layout apply after you <b>Save</b>.
+                            </p>
+                        </aside>
+                    </div>
                 </form>
             </Form>
         </div>

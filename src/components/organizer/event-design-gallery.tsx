@@ -213,6 +213,62 @@ function PreviewContent({ t }: { t: EventDesignTemplate }) {
     )
     const button = <div style={buttonStyle}>{t.theme === 'neon-rave' || t.theme === 'circuit' ? 'GET TICKETS' : 'Get Tickets'}</div>
 
+    if (t.page_layout === 'broadside') {
+        return (
+            <div className="absolute inset-0 flex flex-col" style={{ color: headingColor }}>
+                <div style={{ height: '32%', background: `linear-gradient(135deg, ${accent}, ${accent}55)`, borderBottom: `2px solid ${headingColor}` }} />
+                <div className="px-3 pt-2 flex flex-col gap-1">
+                    <div style={{ ...titleStyle, fontSize: 17, textTransform: 'uppercase', fontWeight: 900, lineHeight: 0.85 }}>YOUR EVENT</div>
+                    <div style={{ display: 'flex', borderTop: `1.5px solid ${headingColor}`, borderBottom: `1.5px solid ${headingColor}`, fontFamily: 'ui-monospace, monospace', fontSize: 6, marginTop: 2 }}>
+                        <div style={{ flex: 1, padding: '2px 4px', borderRight: `1px solid ${headingColor}55` }}>SAT AUG 15</div>
+                        <div style={{ flex: 1, padding: '2px 4px', borderRight: `1px solid ${headingColor}55` }}>7:00 PM</div>
+                        <div style={{ flex: 1, padding: '2px 4px' }}>MANILA</div>
+                    </div>
+                    <div style={{ ...buttonStyle, borderRadius: 0, textTransform: 'uppercase', width: '100%', textAlign: 'center', marginTop: 2 }}>Get Tickets</div>
+                </div>
+            </div>
+        )
+    }
+    if (t.page_layout === 'editorial') {
+        return (
+            <div className="absolute inset-0 flex gap-2 px-3 py-2">
+                <div className="flex-1 flex flex-col gap-1 min-w-0">
+                    <div style={{ fontSize: 6, letterSpacing: '0.16em', textTransform: 'uppercase', color: bodyColor, borderBottom: `1px solid ${headingColor}`, paddingBottom: 2 }}>The Series · No.03</div>
+                    <div style={badgeStyle}>{t.vibe.split(' ')[0]}</div>
+                    <div style={{ ...titleStyle, fontSize: 15, lineHeight: 1 }}>Your Event Name</div>
+                    {date}
+                    <div style={{ marginTop: 'auto', borderTop: `1.5px solid ${accent}`, paddingTop: 3 }}>{button}</div>
+                </div>
+                <div className="w-[34%] shrink-0 rounded-sm" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}44)` }} />
+            </div>
+        )
+    }
+    if (t.page_layout === 'cinematic') {
+        return (
+            <div className="absolute inset-0">
+                <div className="absolute inset-0" style={{ background: `radial-gradient(120% 90% at 20% 10%, ${accent}, transparent 55%), linear-gradient(160deg, #1a1130, #08060f)` }} />
+                <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(5,3,10,0.92), transparent 62%)' }} />
+                <div className="absolute left-0 right-0 bottom-0 p-3 flex flex-col gap-1">
+                    <div style={{ ...badgeStyle, color: '#fff', border: '1px solid rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)' }}>{t.vibe.split(' ')[0]}</div>
+                    <div style={{ fontFamily: headingFont, color: '#fff', fontSize: 16, fontWeight: 700, lineHeight: 1 }}>Your Event Name</div>
+                    <div style={{ fontFamily: bodyFont, color: 'rgba(255,255,255,0.7)', fontSize: 7 }}>Sat, Aug 15 · Manila</div>
+                    <div style={{ ...buttonStyle, borderRadius: 999, width: 'fit-content', marginTop: 2 }}>Get Tickets</div>
+                </div>
+            </div>
+        )
+    }
+    if (t.page_layout === 'boutique') {
+        return (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-center px-4">
+                <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 5.5, letterSpacing: '0.3em', textTransform: 'uppercase', color: bodyColor }}>You&apos;re invited</div>
+                <div style={{ width: 22, height: 22, borderRadius: 999, background: `radial-gradient(circle at 35% 30%, ${accent}cc, ${accent})`, margin: '3px 0' }} />
+                <div style={{ fontFamily: headingFont, color: headingColor, fontSize: 14, fontWeight: 500, lineHeight: 1.05 }}>Your Event Name</div>
+                <div style={{ width: 16, height: 1, background: `${headingColor}40`, margin: '2px 0' }} />
+                <div style={{ fontFamily: headingFont, color: bodyColor, fontSize: 7, lineHeight: 1.6 }}>Saturday, August 15<br />7:00 in the evening</div>
+                <div style={{ ...buttonStyle, borderRadius: 999, marginTop: 3 }}>Reserve</div>
+            </div>
+        )
+    }
     if (t.page_layout === 'poster') {
         return (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-center px-3">
