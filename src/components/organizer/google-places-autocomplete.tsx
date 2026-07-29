@@ -18,168 +18,145 @@ interface GooglePlacesAutocompleteProps {
     error?: string
 }
 
+// A prediction as we render it. Built from the NEW Places API
+// (google.maps.places.AutocompleteSuggestion) — the classic AutocompleteService
+// + PlacesService are deprecated and unavailable to new Google customers.
+type Suggestion = {
+    placeId: string
+    mainText: string
+    secondaryText: string
+    prediction: google.maps.places.PlacePrediction
+}
+
 export function GooglePlacesAutocomplete({ onPlaceSelected, error }: GooglePlacesAutocompleteProps) {
     const [query, setQuery] = useState('')
-    const [predictions, setPredictions] = useState<google.maps.places.AutocompletePrediction[]>([])
+    const [predictions, setPredictions] = useState<Suggestion[]>([])
     const [isLoading, setIsLoading] = useState(false)
     const [showPredictions, setShowPredictions] = useState(false)
-    const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null)
-    const placesService = useRef<google.maps.places.PlacesService | null>(null)
+    const ready = useRef(false)
+    // A session token groups the keystrokes of one search + the details fetch into
+    // a single billable session (Google best practice); refreshed after each pick.
+    const sessionToken = useRef<google.maps.places.AutocompleteSessionToken | null>(null)
     const debounceTimer = useRef<NodeJS.Timeout | null>(null)
 
-    // Initialize Google Places services
+    // Load the Maps JS API + the Places library once, then mark ready.
     useEffect(() => {
         let isMounted = true
 
         const initService = async () => {
             try {
-                // Dynamic import of the Places library
-                // This is the modern way to load the library and might bypass the strict "script tag" checks
-                // or at least properly initialize the new environment.
-                const placesLib = await google.maps.importLibrary("places") as google.maps.PlacesLibrary
-
+                await google.maps.importLibrary('places')
                 if (isMounted) {
-                    // Try to instantiate the service. If it fails due to deprecation, we'll catch it.
-                    // Note: AutocompleteService is technically deprecated for new customers, 
-                    // but often works via importLibrary during the transition period better than script tags.
-                    // If this fails, we would need to switch to the class-based Place API completely.
-                    autocompleteService.current = new placesLib.AutocompleteService()
-
-                    const dummyDiv = document.createElement('div')
-                    placesService.current = new placesLib.PlacesService(dummyDiv)
+                    ready.current = true
+                    sessionToken.current = new google.maps.places.AutocompleteSessionToken()
                 }
-            } catch (error) {
-                console.error("Google Maps Places Library Init Error:", error)
+            } catch (err) {
+                console.error('Google Maps Places library init error:', err)
             }
         }
 
-        // We need the main Google Maps API loader. 
-        // Since we removed the script tag, we need to inject the loader or use a loader package.
-        // Wait, standard practice is to have the loader. We removed the script tag.
-        // We should use @googlemaps/js-api-loader if installed, or just inject the script dynamically here 
-        // with the correct parameters for the NEW API version.
+        const scriptId = 'google-maps-script'
+        const callbackName = 'initGoogleMaps'
+        ;(window as unknown as Record<string, () => void>)[callbackName] = () => { void initService() }
 
-        const loadScript = () => {
-            const scriptId = 'google-maps-script'
-            const callbackName = 'initGoogleMaps'
-
-            // Define global callback
-            window[callbackName as any] = () => {
-                initService()
-            }
-
-            if (document.getElementById(scriptId)) {
-                if (window.google?.maps && window.google.maps.importLibrary) {
-                    initService()
-                }
-                return
-            }
-
+        if (document.getElementById(scriptId)) {
+            // Script already present (e.g. remounted) — init directly once loaded.
+            if (window.google?.maps) void initService()
+        } else {
             const script = document.createElement('script')
             script.id = scriptId
-            // Use 'loading=async' and 'callback=initGoogleMaps'
-            // We removed v=weekly hoping default is stable, but can add back if needed.
-            // Added v=weekly to force newer version which has importLibrary
             script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}&libraries=places&v=weekly&loading=async&callback=${callbackName}`
             script.async = true
             script.defer = true
             document.head.appendChild(script)
         }
 
-        loadScript()
-
-        return () => {
-            isMounted = false
-        }
+        return () => { isMounted = false }
     }, [])
 
-    // Debounced search function
-    const searchPlaces = useCallback((searchQuery: string) => {
-        if (!searchQuery || !autocompleteService.current) {
+    // Debounced autocomplete via the new AutocompleteSuggestion API.
+    const searchPlaces = useCallback(async (searchQuery: string) => {
+        if (!searchQuery || !ready.current) {
             setPredictions([])
             return
         }
-
         setIsLoading(true)
-
-        const request = {
-            input: searchQuery,
-            componentRestrictions: { country: 'ph' },
-            types: ['establishment', 'geocode'],
-        }
-
-        autocompleteService.current.getPlacePredictions(request, (results: google.maps.places.AutocompletePrediction[] | null, status: google.maps.places.PlacesServiceStatus) => {
+        try {
+            const { suggestions } = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+                input: searchQuery,
+                includedRegionCodes: ['ph'],
+                sessionToken: sessionToken.current ?? undefined,
+            })
+            const mapped: Suggestion[] = suggestions
+                .map((s) => s.placePrediction)
+                .filter((p): p is google.maps.places.PlacePrediction => p != null)
+                .map((p) => ({
+                    placeId: p.placeId,
+                    mainText: p.mainText?.text ?? p.text.text,
+                    secondaryText: p.secondaryText?.text ?? '',
+                    prediction: p,
+                }))
+            setPredictions(mapped)
+            setShowPredictions(mapped.length > 0)
+        } catch (err) {
+            console.error('Autocomplete error:', err)
+            setPredictions([])
+        } finally {
             setIsLoading(false)
-            if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-                setPredictions(results)
-                setShowPredictions(true)
-            } else {
-                setPredictions([])
-            }
-        })
+        }
     }, [])
 
-    // Handle input change with debounce
+    // Handle input change with a 400ms debounce.
     const handleInputChange = (value: string) => {
         setQuery(value)
-
-        // Clear previous timer
-        if (debounceTimer.current) {
-            clearTimeout(debounceTimer.current)
-        }
-
-        // Set new timer (500ms debounce)
-        debounceTimer.current = setTimeout(() => {
-            searchPlaces(value)
-        }, 500)
+        if (debounceTimer.current) clearTimeout(debounceTimer.current)
+        debounceTimer.current = setTimeout(() => { void searchPlaces(value) }, 400)
     }
 
-    const handlePlaceSelect = (placeId: string, description: string) => {
-        if (!placesService.current) return
-
-        setQuery(description)
+    const handlePlaceSelect = async (suggestion: Suggestion) => {
+        setQuery(suggestion.mainText)
         setShowPredictions(false)
         setIsLoading(true)
+        try {
+            const place = suggestion.prediction.toPlace()
+            await place.fetchFields({
+                fields: ['displayName', 'formattedAddress', 'location', 'addressComponents'],
+            })
 
-        placesService.current.getDetails(
-            {
-                placeId,
-                fields: ['name', 'formatted_address', 'geometry', 'address_components'],
-            },
-            (place: google.maps.places.PlaceResult | null, status: google.maps.places.PlacesServiceStatus) => {
-                setIsLoading(false)
-                if (status === google.maps.places.PlacesServiceStatus.OK && place) {
-                    // Extract city...
-                    let city = ''
-                    const cityComponent = place.address_components?.find(
-                        (component) =>
-                            component.types.includes('locality') ||
-                            component.types.includes('administrative_area_level_2')
-                    )
-                    if (cityComponent) {
-                        city = cityComponent.long_name
-                    }
+            let city = ''
+            const cityComponent = place.addressComponents?.find(
+                (c) => c.types.includes('locality') || c.types.includes('administrative_area_level_2')
+            )
+            if (cityComponent?.longText) city = cityComponent.longText
 
-                    const result: PlaceResult = {
-                        address: place.formatted_address || description,
-                        city: city || 'Manila',
-                        latitude: place.geometry?.location?.lat() || 0,
-                        longitude: place.geometry?.location?.lng() || 0,
-                        venue_name: place.name,
-                    }
+            // location may be a LatLng (methods) or a LatLngLiteral (plain numbers).
+            const toNum = (v: number | (() => number) | undefined | null) =>
+                typeof v === 'function' ? v() : (v ?? 0)
+            const loc = place.location
+            const latitude = toNum(loc?.lat)
+            const longitude = toNum(loc?.lng)
 
-                    onPlaceSelected(result)
-                }
+            const result: PlaceResult = {
+                address: place.formattedAddress || suggestion.mainText,
+                city: city || 'Manila',
+                latitude,
+                longitude,
+                venue_name: place.displayName ?? undefined,
             }
-        )
+            onPlaceSelected(result)
+        } catch (err) {
+            console.error('Place details error:', err)
+        } finally {
+            setIsLoading(false)
+            // Fresh token starts a new billable session for the next search.
+            sessionToken.current = new google.maps.places.AutocompleteSessionToken()
+        }
     }
 
     // Cleanup timer on unmount
     useEffect(() => {
         return () => {
-            if (debounceTimer.current) {
-                clearTimeout(debounceTimer.current)
-            }
+            if (debounceTimer.current) clearTimeout(debounceTimer.current)
         }
     }, [])
 
@@ -205,18 +182,18 @@ export function GooglePlacesAutocomplete({ onPlaceSelected, error }: GooglePlace
                 <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-auto">
                     {predictions.map((prediction) => (
                         <button
-                            key={prediction.place_id}
+                            key={prediction.placeId}
                             type="button"
                             className="w-full px-4 py-3 text-left hover:bg-muted transition-colors flex items-start gap-3"
-                            onClick={() => handlePlaceSelect(prediction.place_id, prediction.description)}
+                            onClick={() => handlePlaceSelect(prediction)}
                         >
                             <MapPin className="h-5 w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
                                 <p className="font-medium text-sm truncate">
-                                    {prediction.structured_formatting.main_text}
+                                    {prediction.mainText}
                                 </p>
                                 <p className="text-xs text-muted-foreground truncate">
-                                    {prediction.structured_formatting.secondary_text}
+                                    {prediction.secondaryText}
                                 </p>
                             </div>
                         </button>
