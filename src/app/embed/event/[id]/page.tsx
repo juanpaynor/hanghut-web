@@ -45,10 +45,16 @@ export default async function EmbedEventPage({
             ticket_tiers(
                 id,
                 name,
+                description,
                 price,
                 quantity_total,
                 quantity_sold,
-                is_active
+                is_active,
+                sort_order,
+                perks,
+                highlight,
+                badge_label,
+                accent_color
             )
         `)
         .eq('id', id)

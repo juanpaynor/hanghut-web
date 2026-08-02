@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 export interface SeatInfo { section?: string; row?: string; seat?: number; label?: string }
@@ -36,20 +37,45 @@ export interface Attendee {
     refunded_at: string | null
 }
 
-export async function getEventAttendees(
-    eventId: string,
-    page: number = 1,
-    limit: number = 20,
-    search: string = '',
-    statusFilter: string = 'all',
-    paymentFilter: string = 'all'
-) {
+export type AttendeeFilters = {
+    page?: number
+    limit?: number
+    search?: string
+    /** Ticket lifecycle axis: all | active (valid+used) | refunded */
+    status?: 'all' | 'active' | 'refunded'
+    /** Payment method (e.g. GCASH, QRPH, CARDS) or 'all' */
+    payment?: string
+    /** Ticket tier id or 'all' */
+    tierId?: string
+    /** Check-in axis (orthogonal to status): any | in (scanned) | out (not scanned) */
+    checkin?: 'any' | 'in' | 'out'
+    /** ISO date bounds on purchase date (inclusive) */
+    dateFrom?: string
+    dateTo?: string
+    /** Sort order */
+    sort?: 'newest' | 'oldest' | 'checkin'
+}
+
+export async function getEventAttendees(eventId: string, filters: AttendeeFilters = {}) {
+    const {
+        page = 1,
+        limit = 20,
+        search = '',
+        status = 'all',
+        payment = 'all',
+        tierId = 'all',
+        checkin = 'any',
+        dateFrom,
+        dateTo,
+        sort = 'newest',
+    } = filters
+
     const supabase = await createClient()
 
     // When filtering by payment method, the embed must be !inner so the filter
     // narrows the ticket rows (payment_method lives on the joined purchase_intent),
     // not just the embedded object.
-    const intentInner = paymentFilter && paymentFilter !== 'all' ? '!inner' : ''
+    const intentInner = payment && payment !== 'all' ? '!inner' : ''
 
     // Base Query
     let query = supabase
@@ -92,34 +118,79 @@ export async function getEventAttendees(
         .neq('status', 'available') // Filter out pre-minted inventory
         .neq('status', 'reserved') // Filter out abandoned/incomplete checkouts
 
-    // Status filter (tabs): valid = issued, checked_in = scanned, refunded = voided
-    if (statusFilter === 'valid') {
-        query = query.eq('status', 'valid')
-    } else if (statusFilter === 'checked_in') {
-        query = query.eq('status', 'used')
-    } else if (statusFilter === 'refunded') {
+    // Status axis: active = attending (valid or checked-in), refunded = voided.
+    // Check-in state is a SEPARATE axis (checked_in_at), so 'active' spans both.
+    if (status === 'active') {
+        query = query.in('status', ['valid', 'used'])
+    } else if (status === 'refunded') {
         query = query.eq('status', 'refunded')
+    }
+
+    // Check-in axis (orthogonal): scanned tickets have checked_in_at set.
+    if (checkin === 'in') {
+        query = query.not('checked_in_at', 'is', null)
+    } else if (checkin === 'out') {
+        query = query.is('checked_in_at', null)
+    }
+
+    // Tier filter
+    if (tierId && tierId !== 'all') {
+        query = query.eq('tier_id', tierId)
     }
 
     // Payment-method filter (e.g. find QRPH attendees who need a manual refund).
     // Relies on the !inner embed above to filter ticket rows by the joined method.
-    if (paymentFilter && paymentFilter !== 'all') {
-        query = query.eq('purchase_intent.payment_method', paymentFilter)
+    if (payment && payment !== 'all') {
+        query = query.eq('purchase_intent.payment_method', payment)
     }
 
-    // Search Filter
+    // Purchase-date range (inclusive). dateTo is treated as end-of-day.
+    if (dateFrom) query = query.gte('created_at', dateFrom)
+    if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999Z`)
+
+    // Search: ticket # + guest name/email live on the tickets row, but a
+    // LOGGED-IN buyer's name/email live on the joined users row — a plain .or()
+    // over ticket columns misses them (the old bug). Resolve matching user ids
+    // first (admin client, scoped by the search term) and fold them into the OR.
     if (search) {
-        // ... (Keep existing search logic)
-        query = query.or(`ticket_number.ilike.%${search}%,guest_name.ilike.%${search}%,guest_email.ilike.%${search}%`)
+        const safe = search.replace(/[,()*]/g, ' ').trim()
+        if (safe) {
+            const clauses = [
+                `ticket_number.ilike.%${safe}%`,
+                `guest_name.ilike.%${safe}%`,
+                `guest_email.ilike.%${safe}%`,
+            ]
+            try {
+                const admin = createAdminClient()
+                const { data: users } = await admin
+                    .from('users')
+                    .select('id')
+                    .or(`display_name.ilike.%${safe}%,email.ilike.%${safe}%`)
+                    .limit(100)
+                const ids = (users || []).map((u: any) => u.id)
+                if (ids.length) clauses.push(`user_id.in.(${ids.join(',')})`)
+            } catch {
+                // Non-fatal — fall back to ticket-column search only.
+            }
+            query = query.or(clauses.join(','))
+        }
     }
 
     // Pagination
     const from = (page - 1) * limit
     const to = from + limit - 1
 
-    const { data: tickets, error, count } = await query
-        .order('created_at', { ascending: false })
-        .range(from, to)
+    // Sort
+    if (sort === 'oldest') {
+        query = query.order('created_at', { ascending: true })
+    } else if (sort === 'checkin') {
+        query = query.order('checked_in_at', { ascending: false, nullsFirst: false })
+            .order('created_at', { ascending: false })
+    } else {
+        query = query.order('created_at', { ascending: false })
+    }
+
+    const { data: tickets, error, count } = await query.range(from, to)
 
     if (error) {
         console.error('Error fetching attendees:', error)
@@ -181,6 +252,17 @@ export async function getEventPaymentMethods(eventId: string): Promise<string[]>
         if (m && m !== 'MULTIPLE') set.add(m)
     }
     return Array.from(set).sort()
+}
+
+/** Ticket tiers for this event — drives the tier filter dropdown. */
+export async function getEventTiers(eventId: string): Promise<{ id: string; name: string }[]> {
+    const supabase = await createClient()
+    const { data } = await supabase
+        .from('ticket_tiers')
+        .select('id, name, display_order')
+        .eq('event_id', eventId)
+        .order('display_order', { ascending: true })
+    return (data || []).map((t: any) => ({ id: t.id, name: t.name }))
 }
 
 /** Top-of-page attendee stats (independent of the current filter/page). */

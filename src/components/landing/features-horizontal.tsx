@@ -12,37 +12,25 @@ const features = [
     {
         icon: Ticket,
         title: "Buy Event Tickets",
-        description: "Discover and buy tickets to curated events happening near you — from pop-ups to parties.",
-        gradient: "from-orange-500 to-orange-700",
-        bg: "bg-orange-50",
-        iconColor: "text-orange-600",
+        description: "Discover and buy tickets to curated events near you — from pop-ups to parties.",
         image: "/features/feature-tickets.png",
     },
     {
         icon: Compass,
         title: "Join Curated Experiences",
-        description: "Hand-picked, verified experiences run by local hosts. No guesswork — just show up and enjoy.",
-        gradient: "from-indigo-500 to-indigo-700",
-        bg: "bg-indigo-50",
-        iconColor: "text-indigo-600",
+        description: "Hand-picked, verified experiences run by local hosts. Just show up and enjoy.",
         image: "/features/feature-experiences.png",
     },
     {
         icon: MapPin,
         title: "Plan a Trip Together",
-        description: "Heading somewhere new? Plan your trip and connect with others going to the same place.",
-        gradient: "from-emerald-500 to-emerald-700",
-        bg: "bg-emerald-50",
-        iconColor: "text-emerald-600",
+        description: "Heading somewhere new? Plan your trip and connect with others going too.",
         image: "/features/feature-trips.png",
     },
     {
         icon: Users,
         title: "Create or Join Activities",
-        description: "Start your own hangout or join one nearby. Coffee, hiking, gaming — whatever you're into.",
-        gradient: "from-purple-500 to-purple-700",
-        bg: "bg-purple-50",
-        iconColor: "text-purple-600",
+        description: "Start your own hangout or join one nearby. Coffee, hiking, gaming — anything.",
         image: "/features/feature-activities.png",
     },
 ];
@@ -53,31 +41,22 @@ export default function FeaturesHorizontal() {
     const headingRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        // Respect reduced motion — skip pinning/scrub; the track just stacks/scrolls.
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
         const ctx = gsap.context(() => {
             const section = sectionRef.current;
             const track = trackRef.current;
             if (!section || !track) return;
 
-            // Calculate scroll distance
             const totalWidth = track.scrollWidth - window.innerWidth;
 
-            // Heading entrance
             gsap.fromTo(
                 headingRef.current,
                 { opacity: 0, y: 30 },
-                {
-                    opacity: 1,
-                    y: 0,
-                    scrollTrigger: {
-                        trigger: section,
-                        start: "top 80%",
-                        end: "top 40%",
-                        scrub: 1,
-                    },
-                }
+                { opacity: 1, y: 0, scrollTrigger: { trigger: section, start: "top 80%", end: "top 40%", scrub: 1 } }
             );
 
-            // Horizontal scroll
             gsap.to(track, {
                 x: -totalWidth,
                 ease: "none",
@@ -96,76 +75,53 @@ export default function FeaturesHorizontal() {
     }, []);
 
     return (
-        <section
-            ref={sectionRef}
-            className="relative w-full h-screen overflow-hidden"
-            style={{ backgroundColor: "#FAFAF8" }}
-        >
-            {/* Heading - fixed at top */}
-            <div ref={headingRef} className="absolute top-16 left-0 right-0 z-10 text-center px-4">
-                <p className="text-sm font-bold uppercase tracking-[0.2em] text-primary mb-3">
-                    Features
-                </p>
-                <h2 className="text-4xl md:text-5xl font-headline font-bold tracking-tighter text-slate-900">
-                    Everything you need
+        <section ref={sectionRef} className="relative h-screen w-full overflow-hidden bg-kinetic-ink">
+            {/* Heading */}
+            <div ref={headingRef} className="absolute left-0 right-0 top-16 z-10 px-6 text-center md:px-12">
+                <div className="flex items-center justify-center gap-3">
+                    <span className="h-2 w-2 rounded-full bg-kinetic-brand" />
+                    <span className="font-mono text-xs uppercase tracking-[0.3em] text-kinetic-brand">Go out</span>
+                </div>
+                <h2 className="mt-4 font-display text-4xl font-extrabold tracking-tight text-kinetic-text md:text-5xl">
+                    Find your next <span className="text-kinetic-brand">night out</span>
                 </h2>
             </div>
 
-            {/* Horizontal Track */}
+            {/* Horizontal track */}
             <div
                 ref={trackRef}
-                className="absolute top-0 left-0 h-full flex items-center gap-8 px-8 pt-20"
+                className="absolute left-0 top-0 flex h-full items-center gap-8 px-8 pt-20"
                 style={{ width: `${features.length * 85 + 15}vw` }}
             >
-                {/* Spacer for heading */}
-                <div className="shrink-0 w-[10vw]" />
-
+                <div className="w-[10vw] shrink-0" />
                 {features.map((feature, i) => {
                     const Icon = feature.icon;
                     return (
                         <div
                             key={i}
-                            className="shrink-0 w-[80vw] md:w-[70vw] lg:w-[55vw] h-[70vh] rounded-[40px] border border-slate-200/80 shadow-sm flex flex-row items-center p-10 md:p-14 relative overflow-hidden group hover:shadow-xl transition-shadow duration-500"
-                            style={{ backgroundColor: "#FFFFFF" }}
+                            className="group relative flex h-[70vh] w-[80vw] shrink-0 flex-row items-center overflow-hidden rounded-[40px] border border-kinetic-line bg-kinetic-panel p-10 md:w-[70vw] md:p-14 lg:w-[55vw]"
                         >
-                            {/* Subtle gradient accent */}
-                            <div className={`absolute top-0 right-0 w-64 h-64 bg-gradient-to-br ${feature.gradient} opacity-[0.04] rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:opacity-[0.08] transition-opacity duration-500`} />
+                            <div className="absolute right-0 top-0 h-64 w-64 -translate-y-1/2 translate-x-1/2 rounded-full bg-kinetic-brand opacity-[0.06] blur-3xl transition-opacity duration-500 group-hover:opacity-[0.12]" />
 
-                            {/* Text side */}
-                            <div className="flex-1 flex flex-col justify-center pr-8">
-                                <div className={`w-14 h-14 rounded-2xl ${feature.bg} flex items-center justify-center mb-6`}>
-                                    <Icon className={`w-7 h-7 ${feature.iconColor}`} />
+                            <div className="flex flex-1 flex-col justify-center pr-8">
+                                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-kinetic-brand/10">
+                                    <Icon className="h-7 w-7 text-kinetic-brand" />
                                 </div>
-                                <h3 className="text-2xl md:text-3xl lg:text-4xl font-bold text-slate-900 mb-4">
-                                    {feature.title}
-                                </h3>
-                                <p className="text-base md:text-lg text-slate-500 font-light leading-relaxed max-w-sm">
-                                    {feature.description}
-                                </p>
+                                <h3 className="mb-4 text-2xl font-bold text-kinetic-text md:text-3xl lg:text-4xl">{feature.title}</h3>
+                                <p className="max-w-sm text-base font-light leading-relaxed text-kinetic-muted md:text-lg">{feature.description}</p>
                             </div>
 
-                            {/* Image side */}
-                            <div className="hidden md:flex flex-1 items-center justify-center relative h-full">
-                                <div className="relative w-full h-[80%] rounded-3xl overflow-hidden">
-                                    <Image
-                                        src={feature.image}
-                                        alt={feature.title}
-                                        fill
-                                        className="object-contain"
-                                    />
+                            <div className="relative hidden h-full flex-1 items-center justify-center md:flex">
+                                <div className="relative h-[80%] w-full overflow-hidden rounded-3xl">
+                                    <Image src={feature.image} alt={feature.title} fill className="object-contain" />
                                 </div>
                             </div>
 
-                            {/* Card number */}
-                            <span className="absolute bottom-6 left-12 text-7xl font-bold text-slate-100/80 font-headline">
-                                0{i + 1}
-                            </span>
+                            <span className="absolute bottom-6 left-12 font-display text-7xl font-bold text-white/[0.04]">0{i + 1}</span>
                         </div>
                     );
                 })}
-
-                {/* Trailing spacer */}
-                <div className="shrink-0 w-[10vw]" />
+                <div className="w-[10vw] shrink-0" />
             </div>
         </section>
     );

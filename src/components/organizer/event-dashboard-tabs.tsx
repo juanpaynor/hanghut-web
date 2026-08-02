@@ -177,6 +177,7 @@ export function EventDashboardTabs({
                                 passFixedToCustomer={passFixedToCustomer}
                                 passPercentageToCustomer={passPercentageToCustomer}
                                 fixedFeePerTicket={fixedFeePerTicket}
+                                initialDisplay={event?.layout_config?.tiers}
                             />
                         </div>
                         <div className="border-t pt-8">

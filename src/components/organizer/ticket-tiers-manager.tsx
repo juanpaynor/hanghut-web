@@ -23,10 +23,11 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { Plus, Edit, Trash2, Ticket, DollarSign, Users } from 'lucide-react'
+import { Plus, Edit, Trash2, Ticket, DollarSign, Users, Star, X, Check, Sparkles } from 'lucide-react'
 import { createTicketTier, updateTicketTier, deleteTicketTier } from '@/lib/organizer/tier-actions'
+import { updateEventTierDisplay } from '@/lib/organizer/event-actions'
 import { useToast } from '@/hooks/use-toast'
-import { useRouter } from 'next/navigation'
+import { cn } from '@/lib/utils'
 
 interface TicketTier {
     id: string
@@ -41,7 +42,29 @@ interface TicketTier {
     sales_end: string | null
     is_active: boolean
     sort_order: number
+    perks?: string[] | null
+    highlight?: boolean | null
+    badge_label?: string | null
+    accent_color?: string | null
 }
+
+/** How tiers are presented on the public event page (stored in layout_config.tiers). */
+export interface TierDisplayConfig {
+    inline?: boolean
+    display?: 'cards' | 'list'
+    show_remaining?: boolean
+    show_sold_out?: boolean
+}
+
+const DISPLAY_DEFAULTS: Required<TierDisplayConfig> = {
+    inline: true,
+    display: 'cards',
+    show_remaining: false,
+    show_sold_out: true,
+}
+
+/** Preset accent swatches offered in the tier editor. */
+const ACCENT_PRESETS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#8b5cf6', '#0ea5e9']
 
 interface TicketTiersManagerProps {
     eventId: string
@@ -50,6 +73,8 @@ interface TicketTiersManagerProps {
     passFixedToCustomer: boolean
     passPercentageToCustomer: boolean
     fixedFeePerTicket: number
+    /** Current display config from event.layout_config.tiers. */
+    initialDisplay?: TierDisplayConfig
 }
 
 export function TicketTiersManager({
@@ -58,10 +83,10 @@ export function TicketTiersManager({
     commissionRate,
     passFixedToCustomer,
     passPercentageToCustomer,
-    fixedFeePerTicket
+    fixedFeePerTicket,
+    initialDisplay,
 }: TicketTiersManagerProps) {
     const { toast } = useToast()
-    const router = useRouter()
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     const [editingTier, setEditingTier] = useState<TicketTier | null>(null)
     const [isLoading, setIsLoading] = useState(false)
@@ -69,6 +94,28 @@ export function TicketTiersManager({
     // router.refresh() that re-fetches the whole event dashboard (felt like a
     // full reload). The server actions still revalidate for the next load.
     const [tiers, setTiers] = useState<TicketTier[]>(initialTiers)
+
+    // ── Display settings (how tiers show on the public page) ──────────────────
+    const [display, setDisplay] = useState<Required<TierDisplayConfig>>({ ...DISPLAY_DEFAULTS, ...(initialDisplay || {}) })
+    const [displayDirty, setDisplayDirty] = useState(false)
+    const [savingDisplay, setSavingDisplay] = useState(false)
+
+    const patchDisplay = (patch: Partial<TierDisplayConfig>) => {
+        setDisplay(prev => ({ ...prev, ...patch }))
+        setDisplayDirty(true)
+    }
+
+    const saveDisplay = async () => {
+        setSavingDisplay(true)
+        const result = await updateEventTierDisplay(eventId, display)
+        setSavingDisplay(false)
+        if (result.error) {
+            toast({ title: 'Error', description: result.error, variant: 'destructive' })
+        } else {
+            setDisplayDirty(false)
+            toast({ title: 'Saved', description: 'Ticket display settings updated.' })
+        }
+    }
 
     const [formData, setFormData] = useState({
         name: '',
@@ -78,7 +125,12 @@ export function TicketTiersManager({
         min_per_order: '1',
         max_per_order: '10',
         is_active: true,
+        perks: [] as string[],
+        highlight: false,
+        badge_label: '',
+        accent_color: '' as string,
     })
+    const [perkDraft, setPerkDraft] = useState('')
 
     const resetForm = () => {
         setFormData({
@@ -89,7 +141,12 @@ export function TicketTiersManager({
             min_per_order: '1',
             max_per_order: '10',
             is_active: true,
+            perks: [],
+            highlight: false,
+            badge_label: '',
+            accent_color: '',
         })
+        setPerkDraft('')
         setEditingTier(null)
     }
 
@@ -108,8 +165,24 @@ export function TicketTiersManager({
             min_per_order: tier.min_per_order.toString(),
             max_per_order: tier.max_per_order.toString(),
             is_active: tier.is_active,
+            perks: Array.isArray(tier.perks) ? tier.perks : [],
+            highlight: !!tier.highlight,
+            badge_label: tier.badge_label || '',
+            accent_color: tier.accent_color || '',
         })
+        setPerkDraft('')
         setIsDialogOpen(true)
+    }
+
+    const addPerk = () => {
+        const v = perkDraft.trim()
+        if (!v) return
+        setFormData(prev => ({ ...prev, perks: [...prev.perks, v] }))
+        setPerkDraft('')
+    }
+
+    const removePerk = (idx: number) => {
+        setFormData(prev => ({ ...prev, perks: prev.perks.filter((_, i) => i !== idx) }))
     }
 
     const handleSubmit = async () => {
@@ -134,6 +207,11 @@ export function TicketTiersManager({
                 max_per_order: parseInt(formData.max_per_order),
                 is_active: formData.is_active,
                 sort_order: editingTier ? editingTier.sort_order : tiers.length,
+                // Presentation
+                perks: formData.perks,
+                highlight: formData.highlight,
+                badge_label: formData.badge_label.trim() || null,
+                accent_color: formData.accent_color || null,
             }
 
             let result
@@ -214,6 +292,77 @@ export function TicketTiersManager({
                 </Button>
             </div>
 
+            {/* Display settings — how tiers appear on the public event page */}
+            <Card>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary" /> Display on event page
+                    </CardTitle>
+                    <CardDescription>Control how buyers see your tiers before checkout.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                            <Label>Show tiers inline</Label>
+                            <p className="text-sm text-muted-foreground">
+                                List every tier on the page. Off = one “Get Tickets” button opens a popup.
+                            </p>
+                        </div>
+                        <Switch checked={display.inline} onCheckedChange={(v) => patchDisplay({ inline: v })} />
+                    </div>
+
+                    <Separator />
+
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-0.5">
+                            <Label>Layout</Label>
+                            <p className="text-sm text-muted-foreground">Card grid or compact rows.</p>
+                        </div>
+                        <div className="flex rounded-lg border p-0.5">
+                            {(['cards', 'list'] as const).map(opt => (
+                                <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => patchDisplay({ display: opt })}
+                                    className={cn(
+                                        'px-3 py-1.5 text-sm rounded-md capitalize transition-colors',
+                                        display.display === opt ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                                    )}
+                                >
+                                    {opt}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                            <Label>Show remaining count</Label>
+                            <p className="text-sm text-muted-foreground">Display “N left” to create urgency.</p>
+                        </div>
+                        <Switch checked={display.show_remaining} onCheckedChange={(v) => patchDisplay({ show_remaining: v })} />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                            <Label>Keep sold-out tiers visible</Label>
+                            <p className="text-sm text-muted-foreground">Show them greyed out instead of hiding.</p>
+                        </div>
+                        <Switch checked={display.show_sold_out} onCheckedChange={(v) => patchDisplay({ show_sold_out: v })} />
+                    </div>
+
+                    {displayDirty && (
+                        <div className="flex justify-end pt-1">
+                            <Button size="sm" onClick={saveDisplay} disabled={savingDisplay}>
+                                {savingDisplay ? 'Saving…' : 'Save display settings'}
+                            </Button>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
             <div className="grid gap-4">
                 {tiers.length === 0 ? (
                     <Card>
@@ -226,12 +375,25 @@ export function TicketTiersManager({
                     </Card>
                 ) : (
                     tiers.map((tier) => (
-                        <Card key={tier.id}>
+                        <Card
+                            key={tier.id}
+                            style={tier.accent_color ? { borderColor: tier.accent_color } : undefined}
+                            className={cn(tier.highlight && 'ring-1 ring-primary/40')}
+                        >
                             <CardHeader>
                                 <div className="flex items-start justify-between">
                                     <div className="space-y-1">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            {tier.accent_color && (
+                                                <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: tier.accent_color }} />
+                                            )}
                                             <CardTitle>{tier.name}</CardTitle>
+                                            {tier.highlight && (
+                                                <Badge className="text-[10px] h-5 gap-1"><Star className="h-3 w-3" />Featured</Badge>
+                                            )}
+                                            {tier.badge_label && (
+                                                <Badge variant="outline" className="text-[10px] h-5">{tier.badge_label}</Badge>
+                                            )}
                                             {!tier.is_active && (
                                                 <Badge variant="secondary">Inactive</Badge>
                                             )}
@@ -290,6 +452,16 @@ export function TicketTiersManager({
                                         </div>
                                     </div>
                                 </div>
+                                {Array.isArray(tier.perks) && tier.perks.length > 0 && (
+                                    <ul className="mt-4 grid gap-1.5 sm:grid-cols-2">
+                                        {tier.perks.map((perk, i) => (
+                                            <li key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                                <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                                                {perk}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
                             </CardContent>
                         </Card>
                     ))
@@ -297,7 +469,7 @@ export function TicketTiersManager({
             </div>
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="max-w-2xl">
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>
                             {editingTier ? 'Edit Ticket Tier' : 'Create Ticket Tier'}
@@ -419,11 +591,103 @@ export function TicketTiersManager({
 
                         <Separator />
 
+                        {/* ── Presentation ─────────────────────────────────────── */}
+                        <div className="space-y-1">
+                            <Label className="text-base">Presentation</Label>
+                            <p className="text-sm text-muted-foreground">How this tier looks to buyers on the event page.</p>
+                        </div>
+
+                        {/* Perks */}
+                        <div className="grid gap-2">
+                            <Label>What&apos;s included</Label>
+                            <p className="text-xs text-muted-foreground">Short bullets shown on the tier card.</p>
+                            {formData.perks.length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                    {formData.perks.map((perk, i) => (
+                                        <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-sm">
+                                            <Check className="h-3 w-3 text-green-600" />
+                                            {perk}
+                                            <button type="button" onClick={() => removePerk(i)} className="text-muted-foreground hover:text-foreground">
+                                                <X className="h-3 w-3" />
+                                            </button>
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="flex gap-2">
+                                <Input
+                                    placeholder="e.g., Front-row seating"
+                                    value={perkDraft}
+                                    onChange={(e) => setPerkDraft(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPerk() } }}
+                                />
+                                <Button type="button" variant="outline" onClick={addPerk}>Add</Button>
+                            </div>
+                        </div>
+
+                        {/* Featured + badge */}
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label htmlFor="highlight">Feature this tier</Label>
+                                <p className="text-sm text-muted-foreground">Visually emphasize it on the page.</p>
+                            </div>
+                            <Switch
+                                id="highlight"
+                                checked={formData.highlight}
+                                onCheckedChange={(checked) => setFormData({ ...formData, highlight: checked })}
+                            />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="badge">Badge label</Label>
+                            <Input
+                                id="badge"
+                                placeholder="e.g., Most Popular, Best Value"
+                                value={formData.badge_label}
+                                maxLength={24}
+                                onChange={(e) => setFormData({ ...formData, badge_label: e.target.value })}
+                            />
+                        </div>
+
+                        {/* Accent color */}
+                        <div className="grid gap-2">
+                            <Label>Accent color</Label>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {ACCENT_PRESETS.map(c => (
+                                    <button
+                                        key={c}
+                                        type="button"
+                                        onClick={() => setFormData({ ...formData, accent_color: c })}
+                                        className={cn(
+                                            'h-7 w-7 rounded-full border-2 transition-transform hover:scale-110',
+                                            formData.accent_color === c ? 'border-foreground' : 'border-transparent'
+                                        )}
+                                        style={{ backgroundColor: c }}
+                                        aria-label={`Accent ${c}`}
+                                    />
+                                ))}
+                                <input
+                                    type="color"
+                                    value={formData.accent_color || '#000000'}
+                                    onChange={(e) => setFormData({ ...formData, accent_color: e.target.value })}
+                                    className="h-7 w-9 rounded border bg-transparent p-0.5 cursor-pointer"
+                                    aria-label="Custom accent color"
+                                />
+                                {formData.accent_color && (
+                                    <Button type="button" variant="ghost" size="sm" onClick={() => setFormData({ ...formData, accent_color: '' })}>
+                                        Clear
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+
+                        <Separator />
+
                         <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
                                 <Label htmlFor="active">Active</Label>
                                 <p className="text-sm text-muted-foreground">
-                                    Inactive tiers won't be available for purchase
+                                    Inactive tiers won&apos;t be available for purchase
                                 </p>
                             </div>
                             <Switch

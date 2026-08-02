@@ -17,6 +17,7 @@ import { getEventSeatMap, saveEventSeatMap, getUsableVenueTemplates, getVenueTem
 import { createTicketTier } from '@/lib/organizer/tier-actions'
 import type { CanvasData, TierInfo } from '@/components/seat-map/types'
 import { TIER_PALETTE } from '@/components/seat-map/types'
+import { regenerateCanvasIds } from '@/components/seat-map/canvas-state'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
 
@@ -224,7 +225,10 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                 toast({ title: 'Empty template', description: 'This template has no layout.', variant: 'destructive' })
                 return
             }
-            setCanvasData(canvas as CanvasData)
+            // Fresh ids for THIS event — a template carries its source event's
+            // section/seat ids, and reusing them collides with that event's rows
+            // on save (RLS "USING expression" error / cross-event overwrite).
+            setCanvasData(regenerateCanvasIds(canvas as CanvasData))
             setView('builder')
         } catch (err: any) {
             console.error('Failed to load template:', err)

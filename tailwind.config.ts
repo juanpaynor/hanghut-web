@@ -18,6 +18,18 @@ export default {
         code: ['monospace'],
       },
       colors: {
+        // Landing palette — aliases onto the app's LIGHT theme tokens so the
+        // landing is uniform with the rest of the app, with the single brand
+        // accent (indigo = --primary). Names kept for the landing components.
+        kinetic: {
+          ink: 'hsl(var(--background))',        // page ground (white)
+          panel: 'hsl(var(--secondary))',       // subtle lifted panel (near-white)
+          line: 'hsl(var(--border))',           // hairline
+          text: 'hsl(var(--foreground))',       // near-black text
+          muted: 'hsl(var(--muted-foreground))',
+          brand: 'hsl(var(--primary))',         // indigo brand, single accent
+          'brand-fg': 'hsl(var(--primary-foreground))',
+        },
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
@@ -99,12 +111,19 @@ export default {
           '0%': { transform: 'scaleY(0.1)', transformOrigin: 'bottom' },
           '100%': { transform: 'scaleY(1)', transformOrigin: 'bottom' },
         },
+        // Landing marquee bands (translate one copy fully off; second copy fills).
+        // Named uniquely — globals.css already defines a different `marquee`.
+        'marquee-loop': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         'float': 'float 6s ease-in-out infinite',
         'grow': 'grow 1.5s ease-out forwards',
+        'marquee-loop': 'marquee-loop var(--marquee-duration, 40s) linear infinite',
       },
       boxShadow: {
         'glow': '0 0 20px -5px var(--primary)',

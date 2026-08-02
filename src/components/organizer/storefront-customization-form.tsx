@@ -115,6 +115,7 @@ const SECTION_LABELS: Record<string, string> = {
     organizer: "Organizer Info",
     faq: "FAQ",
     sponsors: "Sponsors & Partners",
+    pricing: "Pricing Table (all tiers)",
     tickets: "Ticket Selector"
 }
 
@@ -134,9 +135,10 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
     // Layout State
     // Ensure we have a valid array even if DB is null or empty; merge in any
     // section ids added after this event's order was saved (before tickets).
+    const savedOrderRaw: string[] | undefined = initialData.layout_config?.order
     const initialOrder: string[] = (() => {
-        const saved: string[] = (initialData.layout_config?.order && initialData.layout_config.order.length > 0
-            ? [...initialData.layout_config.order]
+        const saved: string[] = (savedOrderRaw && savedOrderRaw.length > 0
+            ? [...savedOrderRaw]
             : [...DEFAULT_LAYOUT]
         ).filter((s: string) => s in SECTION_LABELS) // drop retired sections (e.g. 'location')
         const missing = DEFAULT_LAYOUT.filter(s => !saved.includes(s))
@@ -144,10 +146,19 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
             const ti = saved.indexOf('tickets')
             saved.splice(ti === -1 ? saved.length : ti, 0, ...missing)
         }
+        // 'pricing' is opt-in (not in DEFAULT_LAYOUT): always surface it in the
+        // list so it can be toggled/positioned, placing it just before tickets.
+        if (!saved.includes('pricing')) {
+            const ti = saved.indexOf('tickets')
+            saved.splice(ti === -1 ? saved.length : ti, 0, 'pricing')
+        }
         return saved
     })()
 
     const initialHidden = new Set((initialData.layout_config?.hidden || []) as string[])
+    // Pricing table defaults OFF until the organizer turns it on — so it never
+    // appears (duplicating the buy box) on events that predate this feature.
+    if (!savedOrderRaw || !savedOrderRaw.includes('pricing')) initialHidden.add('pricing')
     const initialVideoPosition = initialData.layout_config?.video_position || 'center 50%'
 
     const [layoutOrder, setLayoutOrder] = useState<string[]>(initialOrder)
@@ -343,6 +354,10 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
                 description_html: values.description_html || null,
                 theme_color: values.theme_color || null,
                 layout_config: {
+                    // Preserve keys this form doesn't own (e.g. tiers display config
+                    // set in the Ticket Tiers editor) — updateEventStorefront replaces
+                    // layout_config wholesale, so spread the existing config first.
+                    ...(initialData.layout_config || {}),
                     theme: pageThemeId,
                     order: layoutOrder,
                     hidden: Array.from(hiddenSections),

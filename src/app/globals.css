@@ -121,6 +121,15 @@
   animation: marquee2 25s linear infinite;
 }
 
+/* Respect reduced-motion for all marquee bands (incl. the landing marquee-loop). */
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee,
+  .animate-marquee2,
+  .animate-marquee-loop {
+    animation: none !important;
+  }
+}
+
 .bg-noise {
   position: fixed;
   top: 0;

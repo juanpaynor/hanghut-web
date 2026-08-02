@@ -63,6 +63,28 @@ export async function getWalletInfo(partnerId: string) {
 }
 
 /**
+ * Refresh real Xendit settlement status onto this partner's recent intents.
+ * Best-effort + non-blocking: on any failure the UI simply keeps showing the
+ * honest T+N estimate. Returns how many transactions got real data written.
+ */
+export async function syncSettlements(partnerId: string): Promise<{ updated: number }> {
+    const supabase = await createClient()
+    try {
+        const { data, error } = await supabase.functions.invoke('sync-settlements', {
+            body: { partner_id: partnerId },
+        })
+        if (error) {
+            console.error('[Settlement] sync failed:', error)
+            return { updated: 0 }
+        }
+        return { updated: Number(data?.updated) || 0 }
+    } catch (err) {
+        console.error('[Settlement] sync error:', err)
+        return { updated: 0 }
+    }
+}
+
+/**
  * Initiate a wallet top-up by invoking the topup-wallet edge function.
  * Returns a payment URL that the organizer can use to pay.
  */

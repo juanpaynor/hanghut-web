@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { Check, X, Store, Zap, Repeat, ShieldCheck } from "lucide-react";
 import { PartnerFeeCalculator } from "@/components/landing/partner-fee-calculator";
 

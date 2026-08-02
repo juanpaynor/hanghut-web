@@ -5,10 +5,16 @@ import { useState } from 'react'
 interface Tier {
     id: string
     name: string
+    description?: string | null
     price: number
     quantity_total: number
     quantity_sold: number
     is_active: boolean
+    sort_order?: number | null
+    perks?: string[] | null
+    highlight?: boolean | null
+    badge_label?: string | null
+    accent_color?: string | null
 }
 
 interface Props {
@@ -20,7 +26,9 @@ interface Props {
 const avail = (t: Tier) => Math.max(0, (t.quantity_total ?? 0) - (t.quantity_sold ?? 0))
 
 export function EmbedTierSelector({ eventId, tiers, maxPerOrder = 10 }: Props) {
-    const active = tiers.filter((t) => t.is_active)
+    const active = tiers
+        .filter((t) => t.is_active)
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.price - b.price)
     const firstAvailable = active.find((t) => avail(t) > 0)
 
     const [selectedId, setSelectedId] = useState<string | null>(firstAvailable?.id ?? null)
@@ -57,6 +65,9 @@ export function EmbedTierSelector({ eventId, tiers, maxPerOrder = 10 }: Props) {
                     const soldOut = remaining <= 0
                     const isSelected = t.id === selectedId
                     const lowStock = !soldOut && remaining <= 10
+                    const accent = t.accent_color || undefined
+                    const selColor = accent || 'var(--embed-primary, #000)'
+                    const perks = Array.isArray(t.perks) ? t.perks : []
 
                     return (
                         <button
@@ -68,27 +79,54 @@ export function EmbedTierSelector({ eventId, tiers, maxPerOrder = 10 }: Props) {
                                 width: '100%',
                                 textAlign: 'left',
                                 display: 'flex',
-                                alignItems: 'center',
+                                alignItems: 'flex-start',
                                 justifyContent: 'space-between',
                                 gap: '12px',
                                 padding: '12px 14px',
                                 borderRadius: '10px',
                                 cursor: soldOut ? 'not-allowed' : 'pointer',
                                 background: 'var(--embed-bg, #fff)',
-                                border: isSelected
-                                    ? '2px solid var(--embed-primary, #000)'
-                                    : '1px solid rgba(128,128,128,0.25)',
+                                border: isSelected ? `2px solid ${selColor}` : '1px solid rgba(128,128,128,0.25)',
                                 opacity: soldOut ? 0.5 : 1,
                                 transition: 'border-color 0.15s',
                                 font: 'inherit',
                                 color: 'var(--embed-text, inherit)',
                             }}
                         >
-                            <span style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-                                <span style={{ fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {t.name}
+                            <span style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0 }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    {accent && (
+                                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: accent, flexShrink: 0 }} />
+                                    )}
+                                    <span style={{ fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {t.name}
+                                    </span>
+                                    {(t.highlight || t.badge_label) && (
+                                        <span style={{
+                                            fontSize: '9px', fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase',
+                                            padding: '2px 6px', borderRadius: '999px', flexShrink: 0,
+                                            ...(t.highlight
+                                                ? { background: selColor, color: '#fff' }
+                                                : { border: `1px solid ${accent || 'rgba(128,128,128,0.4)'}`, color: accent || 'var(--embed-text, #666)' }),
+                                        }}>
+                                            {t.badge_label || 'Featured'}
+                                        </span>
+                                    )}
                                 </span>
-                                <span style={{ fontSize: '11px', color: soldOut ? '#ef4444' : (lowStock ? '#f59e0b' : 'var(--embed-text, #888)'), fontWeight: soldOut || lowStock ? 600 : 400 }}>
+                                {t.description && (
+                                    <span style={{ fontSize: '12px', color: 'var(--embed-text, #777)', opacity: 0.85 }}>{t.description}</span>
+                                )}
+                                {perks.length > 0 && (
+                                    <span style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>
+                                        {perks.map((perk, i) => (
+                                            <span key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '5px', fontSize: '11.5px', color: 'var(--embed-text, #666)' }}>
+                                                <span style={{ color: accent || 'var(--embed-primary, #16a34a)', flexShrink: 0, lineHeight: 1.3 }}>✓</span>
+                                                {perk}
+                                            </span>
+                                        ))}
+                                    </span>
+                                )}
+                                <span style={{ fontSize: '11px', color: soldOut ? '#ef4444' : (lowStock ? '#f59e0b' : 'var(--embed-text, #888)'), fontWeight: soldOut || lowStock ? 600 : 400, marginTop: '1px' }}>
                                     {soldOut ? 'Sold out' : lowStock ? `Only ${remaining} left` : 'Available'}
                                 </span>
                             </span>
@@ -99,7 +137,7 @@ export function EmbedTierSelector({ eventId, tiers, maxPerOrder = 10 }: Props) {
                                 {/* Radio indicator */}
                                 <span style={{
                                     width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
-                                    border: isSelected ? '5px solid var(--embed-primary, #000)' : '2px solid rgba(128,128,128,0.4)',
+                                    border: isSelected ? `5px solid ${selColor}` : '2px solid rgba(128,128,128,0.4)',
                                     boxSizing: 'border-box',
                                 }} />
                             </span>

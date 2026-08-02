@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { Compass, ShieldCheck, HeartPulse, MapPin, Users, MessageCircle, BadgeCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 

@@ -440,6 +440,56 @@ export async function updateEventStorefront(eventId: string, data: {
     }
 }
 
+/**
+ * Save the ticket-tier DISPLAY settings (how tiers are presented on the event
+ * page) into layout_config.tiers. Merges into the existing layout_config so it
+ * never clobbers the page's theme/layout/section design.
+ */
+export async function updateEventTierDisplay(eventId: string, tiersConfig: {
+    inline?: boolean          // show tiers inline on the page (vs behind the modal)
+    display?: 'cards' | 'list'
+    show_remaining?: boolean  // show "N left" per tier
+    show_sold_out?: boolean   // keep sold-out tiers visible (greyed) vs hide them
+}) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const partner = await resolveManagerPartner(supabase)
+    if (!partner) return { error: 'Partner account not found' }
+
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    if (!serviceRoleKey || !supabaseUrl) return { error: 'Server configuration error' }
+    const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey, {
+        auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+    })
+
+    // Read current layout_config so we merge rather than overwrite.
+    const { data: existingEvent } = await adminSupabase
+        .from('events')
+        .select('organizer_id, layout_config')
+        .eq('id', eventId)
+        .single()
+
+    if (!existingEvent || existingEvent.organizer_id !== partner.id) {
+        return { error: 'Event not found or unauthorized' }
+    }
+
+    const nextLayout = { ...(existingEvent.layout_config || {}), tiers: tiersConfig }
+
+    const { error: updateError } = await adminSupabase
+        .from('events')
+        .update({ layout_config: nextLayout, updated_at: new Date().toISOString() })
+        .eq('id', eventId)
+
+    if (updateError) return { error: 'Failed to save display settings: ' + updateError.message }
+
+    revalidatePath(`/organizer/events/${eventId}`)
+    revalidatePath(`/events/${eventId}`)
+    return { success: true }
+}
+
 export async function uploadEventBgImage(eventId: string, formData: FormData) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()

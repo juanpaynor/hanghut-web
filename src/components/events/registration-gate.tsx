@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { TicketSelector } from '@/components/events/ticket-selector'
+import { InlineTierList, type TierDisplayConfig } from '@/components/events/inline-tier-list'
 import { RegisterModal } from '@/components/events/register-modal'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
@@ -36,6 +37,8 @@ interface RegistrationGateProps {
     /** RSVP mode (free events): single custom-labeled button, no quantity/checkout. */
     rsvpMode?: boolean
     rsvpLabel?: string
+    /** How tiers are presented (from event.layout_config.tiers). inline defaults on. */
+    tierDisplay?: TierDisplayConfig
 }
 
 /**
@@ -67,6 +70,7 @@ export function RegistrationGate({
     ticketToken,
     rsvpMode,
     rsvpLabel,
+    tierDisplay,
 }: RegistrationGateProps) {
     const activeTiers = (tiers || []).filter((t: any) => t.is_active !== false)
     const isFree = activeTiers.length > 0
@@ -137,6 +141,26 @@ export function RegistrationGate({
         />
     )
 
+    // Inline tier list is the default presentation; organizers can switch back to
+    // the "Get Tickets" popup by turning inline off in the tier display settings.
+    const inline = tierDisplay?.inline ?? true
+    const ticketUI = (autoOpenModal: boolean) =>
+        inline ? (
+            <InlineTierList
+                eventId={eventId}
+                ticketPrice={ticketPrice}
+                minTickets={minTickets}
+                maxTickets={maxTickets}
+                isSoldOut={isSoldOut}
+                tiers={tiers}
+                fullWidth={fullWidth}
+                subscriberDiscount={subscriberDiscount}
+                display={tierDisplay}
+            />
+        ) : (
+            selector(autoOpenModal)
+        )
+
     // ── Already going (has a ticket, or just claimed a free one) ──────────────
     if (hasTicket || claimed) {
         return (
@@ -178,7 +202,7 @@ export function RegistrationGate({
             )
         }
         // Paid (or free claim failed → let them retry via checkout).
-        return selector(true)
+        return ticketUI(true)
     }
 
     // ── RSVP mode (free events): single custom-labeled button, no quantity ─────
@@ -251,7 +275,7 @@ export function RegistrationGate({
     }
 
     // ── No registration questions → normal ticket flow ───────────────────────
-    if (questions.length === 0) return selector(false)
+    if (questions.length === 0) return ticketUI(false)
 
     // ── Not registered yet → Register CTA + modal ────────────────────────────
     const cta = isSoldOut ? 'Sold Out' : requireApproval || inviteOnly ? 'Request to Register' : 'Register'

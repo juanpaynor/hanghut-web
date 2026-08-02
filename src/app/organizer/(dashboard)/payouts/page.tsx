@@ -14,6 +14,7 @@ import { PayoutHistoryItem } from '@/components/organizer/payouts/payout-history
 import { TransactionsHistory } from '@/components/organizer/payouts/transactions-history'
 import { PayoutsDateFilter } from '@/components/organizer/payouts/payouts-date-filter'
 import { WalletCard } from '@/components/organizer/payouts/wallet-card'
+import { SettlementSync } from '@/components/organizer/payouts/settlement-sync'
 import { getWalletInfo } from '@/lib/organizer/wallet-actions'
 import Link from 'next/link'
 import { SearchInput } from '@/components/ui/search-input'
@@ -124,7 +125,10 @@ async function getTransactions(partnerId: string, from?: string, to?: string, se
                 title
             ),
             purchase_intent:purchase_intents (
-                payment_method
+                payment_method,
+                settlement_status,
+                estimated_settlement_time,
+                settled_at
             )
         `, { count: 'exact' })
         .eq('partner_id', partnerId)
@@ -298,6 +302,8 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
 
     return (
         <div className="space-y-8">
+            {/* Best-effort: refresh real Xendit settlement status on load */}
+            <SettlementSync partnerId={partnerId} />
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-4xl font-bold mb-2">Payouts</h1>

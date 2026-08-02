@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { Attendee, getEventAttendees, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getRegistrationAnswers, type RegistrationAnswerView } from '@/lib/organizer/attendee-actions'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { Attendee, getEventAttendees, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getEventTiers, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters } from '@/lib/organizer/attendee-actions'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/hooks/use-debounce'
@@ -25,7 +25,9 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users } from 'lucide-react'
+import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users, SlidersHorizontal, X } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -63,12 +65,49 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
     const debouncedSearch = useDebounce(search, 500)
     const totalPages = Math.ceil(total / 20)
 
-    // Status filter tab
-    const [statusFilter, setStatusFilter] = useState<'all' | 'valid' | 'checked_in' | 'refunded'>('all')
+    // ── Filters ──────────────────────────────────────────────────────────
+    // Orthogonal axes: status (lifecycle) is separate from check-in state, so
+    // e.g. "Active + Not checked in" = live door / no-show list.
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'refunded'>('all')
+    const [checkinFilter, setCheckinFilter] = useState<'any' | 'in' | 'out'>('any')
+    const [tierFilter, setTierFilter] = useState('all')
     // Payment-method filter (e.g. isolate QRPH attendees for manual refunds).
-    // Options are derived from the methods actually used in this event.
     const [paymentFilter, setPaymentFilter] = useState('all')
+    const [dateFrom, setDateFrom] = useState('')
+    const [dateTo, setDateTo] = useState('')
+    const [sort, setSort] = useState<'newest' | 'oldest' | 'checkin'>('newest')
+    // Options derived from the event's real data.
     const [paymentMethods, setPaymentMethods] = useState<string[]>([])
+    const [tiers, setTiers] = useState<{ id: string; name: string }[]>([])
+
+    // Single source of truth for the current query — used by the effect, the
+    // Refresh button and the post-refund reload, so they can never drift apart.
+    const filters = useMemo<AttendeeFilters>(() => ({
+        page,
+        limit: 20,
+        search: debouncedSearch,
+        status: statusFilter,
+        payment: paymentFilter,
+        tierId: tierFilter,
+        checkin: checkinFilter,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+        sort,
+    }), [page, debouncedSearch, statusFilter, paymentFilter, tierFilter, checkinFilter, dateFrom, dateTo, sort])
+
+    // Reset every filter to its default (Clear all).
+    const clearAllFilters = () => {
+        setSearch(''); setStatusFilter('all'); setCheckinFilter('any')
+        setTierFilter('all'); setPaymentFilter('all'); setDateFrom(''); setDateTo('')
+        setSort('newest'); setPage(1)
+    }
+    // Count of filters set inside the Filters popover (drives the trigger badge).
+    // Payment method lives on the main bar (refund workflow), so it's excluded.
+    const popoverActiveCount =
+        (tierFilter !== 'all' ? 1 : 0) +
+        (checkinFilter !== 'any' ? 1 : 0) +
+        (dateFrom || dateTo ? 1 : 0) +
+        (sort !== 'newest' ? 1 : 0)
 
     // Top-of-page stats (filter-independent)
     const [stats, setStats] = useState<{ attendees: number; checkedIn: number; revenue: number } | null>(null)
@@ -89,7 +128,7 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
         ;(async () => {
             setLoading(true)
             try {
-                const result = await getEventAttendees(eventId, page, 20, debouncedSearch, statusFilter, paymentFilter)
+                const result = await getEventAttendees(eventId, filters)
                 if (!cancelled) { setAttendees(result.attendees); setTotal(result.total) }
             } catch {
                 if (!cancelled) toast({ title: 'Error', description: 'Failed to load attendees', variant: 'destructive' })
@@ -98,12 +137,13 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
             }
         })()
         return () => { cancelled = true }
-    }, [eventId, page, debouncedSearch, statusFilter, paymentFilter, toast])
+    }, [eventId, filters, toast])
 
-    // Load stats once
+    // Load stats + filter options once
     useEffect(() => {
         getAttendeeStats(eventId).then(setStats).catch(() => {})
         getEventPaymentMethods(eventId).then(setPaymentMethods).catch(() => {})
+        getEventTiers(eventId).then(setTiers).catch(() => {})
     }, [eventId])
 
     async function openAnswers(attendee: Attendee, name: string) {
@@ -278,7 +318,7 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
         setRefundModalOpen(false)
 
         // Refresh Data (preserve active filters)
-        const result = await getEventAttendees(eventId, page, 20, debouncedSearch, statusFilter, paymentFilter)
+        const result = await getEventAttendees(eventId, filters)
         setAttendees(result.attendees)
         setTotal(result.total)
 
@@ -400,128 +440,201 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                 </div>
             </div>
 
-            {/* Status filter tabs + payment-method filter */}
-            <div className="flex flex-wrap items-center gap-2">
-                {([
-                    { key: 'all', label: 'All' },
-                    { key: 'valid', label: 'Valid' },
-                    { key: 'checked_in', label: 'Checked in' },
-                    { key: 'refunded', label: 'Refunded' },
-                ] as const).map((t) => (
-                    <button
-                        key={t.key}
-                        type="button"
-                        onClick={() => { setStatusFilter(t.key); setPage(1) }}
-                        className={cn(
-                            'rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors',
-                            statusFilter === t.key
-                                ? 'border-primary bg-primary text-primary-foreground'
-                                : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground'
-                        )}
-                    >
-                        {t.label}
-                    </button>
-                ))}
-
-                {/* Payment-method filter */}
-                <select
-                    value={paymentFilter}
-                    onChange={(e) => { setPaymentFilter(e.target.value); setPage(1) }}
-                    className={cn(
-                        'ml-auto rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors cursor-pointer',
-                        paymentFilter !== 'all'
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground'
-                    )}
-                >
-                    <option value="all">All payments</option>
-                    {paymentMethods.map((m) => (
-                        <option key={m} value={m}>{m === 'UNKNOWN' ? 'Unknown' : getPaymentMethodLabel(m)}</option>
-                    ))}
-                </select>
-            </div>
-
-            <div className="flex items-center justify-between">
-                <div className="relative w-72">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Search ticket #, guest name/email..."
-                        value={search}
-                        onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-                        className="pl-8"
-                    />
-                </div>
-                <div className="flex items-center gap-3">
-                    {selectedAttendees.size > 0 && (
-                        <>
-                            <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => {
-                                    const selected = attendees.filter(a => selectedAttendees.has(a.id))
-                                    initiateRefund(selected)
-                                }}
+            {/* ── Filter bar ── */}
+            <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                    {/* Status pills (lifecycle axis) */}
+                    <div className="flex items-center gap-1.5">
+                        {([
+                            { key: 'all', label: 'All' },
+                            { key: 'active', label: 'Active' },
+                            { key: 'refunded', label: 'Refunded' },
+                        ] as const).map((t) => (
+                            <button
+                                key={t.key}
+                                type="button"
+                                onClick={() => { setStatusFilter(t.key); setPage(1) }}
+                                className={cn(
+                                    'rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors',
+                                    statusFilter === t.key
+                                        ? 'border-primary bg-primary text-primary-foreground'
+                                        : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground'
+                                )}
                             >
-                                <RefreshCw className="w-4 h-4 mr-2" />
-                                Refund Selected ({selectedAttendees.size})
-                            </Button>
-                            <TicketPrintModal
-                                attendees={selectedAttendeesData}
-                                eventTitle={eventTitle}
-                                eventDate={eventDate}
-                                eventVenue={eventVenue}
-                            />
-                        </>
-                    )}
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
 
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm">
-                                <Download className="w-4 h-4 mr-2" />
-                                Export
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                            <DropdownMenuItem onClick={downloadCSV}>
-                                <FileText className="w-4 h-4 mr-2" />
-                                Export as CSV
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={downloadPDF}>
-                                <Sheet className="w-4 h-4 mr-2" />
-                                Export as PDF
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                    {/* Search */}
+                    <div className="relative w-full sm:w-64">
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            placeholder="Search name, email, ticket #..."
+                            value={search}
+                            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+                            className="pl-8"
+                        />
+                    </div>
 
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                            const fetchData = async () => {
-                                setLoading(true)
-                                try {
-                                    const result = await getEventAttendees(eventId, page, 20, debouncedSearch, statusFilter, paymentFilter)
-                                    setAttendees(result.attendees)
-                                    setTotal(result.total)
-                                    toast({ title: "Refreshed", description: "Attendee list updated" })
-                                } catch (error) {
-                                    console.error("Failed to fetch attendees", error)
-                                    toast({ title: "Error", description: "Failed to refresh", variant: "destructive" })
-                                } finally {
-                                    setLoading(false)
+                    {/* Payment method — visible on the bar (drives the refund workflow:
+                        isolate e.g. QRPH/GCash purchases, then bulk-refund the set). */}
+                    <Select value={paymentFilter} onValueChange={(v) => { setPaymentFilter(v); setPage(1) }}>
+                        <SelectTrigger className={cn('h-9 w-[150px]', paymentFilter !== 'all' && 'border-primary text-primary')}>
+                            <SelectValue placeholder="All payments" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All payments</SelectItem>
+                            {paymentMethods.map((m) => <SelectItem key={m} value={m}>{m === 'UNKNOWN' ? 'Unknown' : getPaymentMethodLabel(m)}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+
+                    {/* Filters popover (tier / check-in / date / sort) */}
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant="outline" size="sm" className="gap-2">
+                                <SlidersHorizontal className="h-4 w-4" />
+                                Filters
+                                {popoverActiveCount > 0 && (
+                                    <Badge variant="secondary" className="ml-0.5 h-5 min-w-5 justify-center px-1.5">{popoverActiveCount}</Badge>
+                                )}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-80 space-y-4">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-muted-foreground">Ticket type</label>
+                                <Select value={tierFilter} onValueChange={(v) => { setTierFilter(v); setPage(1) }}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All ticket types</SelectItem>
+                                        {tiers.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-muted-foreground">Check-in</label>
+                                <Select value={checkinFilter} onValueChange={(v) => { setCheckinFilter(v as 'any' | 'in' | 'out'); setPage(1) }}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="any">Any</SelectItem>
+                                        <SelectItem value="in">Checked in</SelectItem>
+                                        <SelectItem value="out">Not checked in</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-muted-foreground">Purchased between</label>
+                                <div className="flex items-center gap-2">
+                                    <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1) }} className="h-9" />
+                                    <span className="text-muted-foreground text-xs">to</span>
+                                    <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1) }} className="h-9" />
+                                </div>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-muted-foreground">Sort by</label>
+                                <Select value={sort} onValueChange={(v) => { setSort(v as 'newest' | 'oldest' | 'checkin'); setPage(1) }}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="newest">Newest first</SelectItem>
+                                        <SelectItem value="oldest">Oldest first</SelectItem>
+                                        <SelectItem value="checkin">Recently checked in</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            {popoverActiveCount > 0 && (
+                                <Button variant="ghost" size="sm" className="w-full" onClick={clearAllFilters}>Clear all filters</Button>
+                            )}
+                        </PopoverContent>
+                    </Popover>
+
+                    {/* Right-side actions */}
+                    <div className="ml-auto flex items-center gap-2 flex-wrap">
+                        {selectedAttendees.size > 0 && (
+                            <>
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                        const selected = attendees.filter(a => selectedAttendees.has(a.id))
+                                        initiateRefund(selected)
+                                    }}
+                                >
+                                    <RefreshCw className="w-4 h-4 mr-2" />
+                                    Refund ({selectedAttendees.size})
+                                </Button>
+                                <TicketPrintModal
+                                    attendees={selectedAttendeesData}
+                                    eventTitle={eventTitle}
+                                    eventDate={eventDate}
+                                    eventVenue={eventVenue}
+                                />
+                            </>
+                        )}
+
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                    <Download className="w-4 h-4 mr-2" />
+                                    Export
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                                <DropdownMenuItem onClick={downloadCSV}>
+                                    <FileText className="w-4 h-4 mr-2" />
+                                    Export as CSV
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={downloadPDF}>
+                                    <Sheet className="w-4 h-4 mr-2" />
+                                    Export as PDF
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                                const fetchData = async () => {
+                                    setLoading(true)
+                                    try {
+                                        const result = await getEventAttendees(eventId, filters)
+                                        setAttendees(result.attendees)
+                                        setTotal(result.total)
+                                        toast({ title: "Refreshed", description: "Attendee list updated" })
+                                    } catch (error) {
+                                        console.error("Failed to fetch attendees", error)
+                                        toast({ title: "Error", description: "Failed to refresh", variant: "destructive" })
+                                    } finally {
+                                        setLoading(false)
+                                    }
                                 }
-                            }
-                            fetchData()
-                        }}
-                        disabled={loading}
-                    >
-                        <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                        Refresh
-                    </Button>
-                    <div className="text-sm text-muted-foreground">
-                        Total: <span className="font-medium text-foreground">{total}</span>
+                                fetchData()
+                            }}
+                            disabled={loading}
+                        >
+                            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                            Refresh
+                        </Button>
+                        <div className="text-sm text-muted-foreground whitespace-nowrap">
+                            Total: <span className="font-medium text-foreground">{total}</span>
+                        </div>
                     </div>
                 </div>
+
+                {/* Active-filter chips */}
+                {(statusFilter !== 'all' || checkinFilter !== 'any' || tierFilter !== 'all' || paymentFilter !== 'all' || dateFrom || dateTo || sort !== 'newest' || debouncedSearch) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">Filters:</span>
+                        {debouncedSearch && <FilterChip label={`Search: "${debouncedSearch}"`} onClear={() => setSearch('')} />}
+                        {statusFilter !== 'all' && <FilterChip label={statusFilter === 'active' ? 'Active' : 'Refunded'} onClear={() => setStatusFilter('all')} />}
+                        {checkinFilter !== 'any' && <FilterChip label={checkinFilter === 'in' ? 'Checked in' : 'Not checked in'} onClear={() => setCheckinFilter('any')} />}
+                        {tierFilter !== 'all' && <FilterChip label={tiers.find(t => t.id === tierFilter)?.name || 'Ticket type'} onClear={() => setTierFilter('all')} />}
+                        {paymentFilter !== 'all' && <FilterChip label={paymentFilter === 'UNKNOWN' ? 'Unknown payment' : getPaymentMethodLabel(paymentFilter)} onClear={() => setPaymentFilter('all')} />}
+                        {(dateFrom || dateTo) && <FilterChip label={`${dateFrom || '…'} → ${dateTo || '…'}`} onClear={() => { setDateFrom(''); setDateTo('') }} />}
+                        {sort !== 'newest' && <FilterChip label={sort === 'oldest' ? 'Oldest first' : 'Recently checked in'} onClear={() => setSort('newest')} />}
+                        <button type="button" onClick={clearAllFilters} className="text-xs font-medium text-primary hover:underline">Clear all</button>
+                    </div>
+                )}
             </div>
 
             <div className="rounded-md border">
@@ -811,6 +924,22 @@ function StatusBadge({ status }: { status: string }) {
     return (
         <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${variants[status] || 'bg-gray-100 text-gray-800'}`}>
             {status}
+        </span>
+    )
+}
+
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+    return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 pl-2.5 pr-1 py-0.5 text-xs font-medium text-primary">
+            {label}
+            <button
+                type="button"
+                onClick={onClear}
+                className="rounded-full p-0.5 hover:bg-primary/20 transition-colors"
+                aria-label={`Remove ${label} filter`}
+            >
+                <X className="h-3 w-3" />
+            </button>
         </span>
     )
 }

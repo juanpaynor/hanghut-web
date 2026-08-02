@@ -14,6 +14,11 @@ export async function createTicketTier(eventId: string, tierData: {
     sales_end?: string
     is_active: boolean
     sort_order: number
+    // Presentation fields (inline tier showcase)
+    perks?: string[]
+    highlight?: boolean
+    badge_label?: string | null
+    accent_color?: string | null
 }) {
     const supabase = await createClient()
 
@@ -89,6 +94,11 @@ export async function updateTicketTier(tierId: string, tierData: {
     sales_end?: string
     is_active?: boolean
     sort_order?: number
+    // Presentation fields (inline tier showcase)
+    perks?: string[]
+    highlight?: boolean
+    badge_label?: string | null
+    accent_color?: string | null
 }) {
     const supabase = await createClient()
 

@@ -11,6 +11,7 @@ import type { Metadata } from 'next'
 import { SeatPickerLauncher } from '@/components/events/seat-picker-launcher'
 import { EventGallery } from '@/components/events/event-gallery'
 import { RegistrationGate } from '@/components/events/registration-gate'
+import { Reveal } from '@/components/events/reveal'
 import { EventInviteResponse } from '@/components/events/event-invite-response'
 import { getEventInviteByToken } from '@/lib/organizer/event-invite-actions'
 import type { QuestionForForm } from '@/components/events/registration-questions-form'
@@ -874,6 +875,7 @@ export default async function PublicEventPage({
                             ticketToken={viewerTicketToken}
                             rsvpMode={rsvpMode}
                             rsvpLabel={rsvpLabel}
+                            tierDisplay={event.layout_config?.tiers}
                         />
                         {!isLoggedIn && (
                             <LoginNudge
@@ -995,25 +997,111 @@ export default async function PublicEventPage({
         )
     }
 
+    // Read-only pricing table for the page body — a scannable "menu" of every
+    // tier (name · what's included · availability · price). Purpose-built for
+    // events with many tiers, where the buy box would be a wall of cards. It
+    // does NOT sell — the Ticket Selector remains the single checkout path. Opt-in:
+    // only renders when the organizer adds 'pricing' to their section order.
+    const PricingSection = () => {
+        const cfg = event.layout_config?.tiers || {}
+        const showRemaining: boolean = cfg.show_remaining ?? false
+        const showSoldOut: boolean = cfg.show_sold_out ?? true
+        const soldOutOf = (t: any) => Number(t.quantity_sold) >= Number(t.quantity_total)
+        let list = (event.ticket_tiers || []).filter((t: any) => t.is_active !== false)
+        if (!showSoldOut) list = list.filter((t: any) => !soldOutOf(t))
+        list = list.sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0) || a.price - b.price)
+        if (list.length === 0) return null
+        const money = (n: number) => (Number(n) === 0 ? 'Free' : `₱${Number(n).toLocaleString()}`)
+        return (
+            <div className="py-8">
+                <h2 data-hh-section-title className="text-2xl font-bold mb-6">Ticket Options</h2>
+                <div data-hh-card className="overflow-hidden rounded-2xl border border-border/50 bg-card/50 divide-y divide-border/50">
+                    {list.map((tier: any) => {
+                        const tSoldOut = soldOutOf(tier)
+                        const accent = tier.accent_color as string | undefined
+                        const remaining = Math.max(Number(tier.quantity_total) - Number(tier.quantity_sold), 0)
+                        const perks: string[] = Array.isArray(tier.perks) ? tier.perks : []
+                        return (
+                            <div key={tier.id} className={`flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-6 p-4 sm:p-5 ${tSoldOut ? 'opacity-55' : ''}`}>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        {accent && <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />}
+                                        <span className="font-bold text-lg">{tier.name}</span>
+                                        {tier.highlight && (
+                                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: accent || 'var(--primary, #6366f1)' }}>
+                                                {tier.badge_label || 'Featured'}
+                                            </span>
+                                        )}
+                                        {!tier.highlight && tier.badge_label && (
+                                            <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold" style={accent ? { borderColor: accent, color: accent } : undefined}>
+                                                {tier.badge_label}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {tier.description && <p className="mt-1 text-sm text-muted-foreground">{tier.description}</p>}
+                                    {perks.length > 0 && (
+                                        <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+                                            {perks.map((perk, i) => (
+                                                <li key={i} className="flex items-start gap-1.5 text-sm text-muted-foreground">
+                                                    <span className="mt-1 h-1 w-1 rounded-full bg-current shrink-0" />{perk}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                                <div className="flex items-center justify-between sm:flex-col sm:items-end sm:text-right shrink-0">
+                                    <span className="text-xl font-extrabold">{money(tier.price)}</span>
+                                    {tSoldOut ? (
+                                        <span className="text-xs font-semibold text-destructive">Sold out</span>
+                                    ) : showRemaining && remaining <= 20 ? (
+                                        <span className="text-xs font-medium text-amber-600">Only {remaining} left</span>
+                                    ) : null}
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
+                {showTickets && (
+                    <a href="#tickets" className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">
+                        Choose your tickets ↓
+                    </a>
+                )}
+            </div>
+        )
+    }
+
+    // Body sections that scroll-reveal (fade + lift into view once). Hero,
+    // title, details and the ticket box are excluded — they're above the fold
+    // or the primary CTA, where an entrance animation would just add latency.
+    const REVEAL_SECTIONS = new Set(['about', 'lineup', 'schedule', 'faq', 'sponsors', 'pricing', 'gallery', 'organizer'])
+
     const renderSection = (sectionId: string) => {
         if (hiddenSections.has(sectionId)) return null
 
-        switch (sectionId) {
-            case 'hero': return <HeroSection key="hero" />
-            case 'title': return <TitleSection key="title" />
-            case 'details': return <DetailsSection key="details" />
-            case 'about': return <AboutSection key="about" />
-            case 'lineup': return <LineupSection key="lineup" />
-            case 'schedule': return <ScheduleSection key="schedule" />
-            case 'faq': return <FaqSection key="faq" />
-            case 'sponsors': return <SponsorsSection key="sponsors" />
-            case 'organizer': return <OrganizerSection key="organizer" />
-            case 'gallery': return <GallerySection key="gallery" />
-            case 'tickets': return <TicketsSection key="tickets" />
-            // 'location' (Map & Directions) removed — the Details card already
-            // covers venue + Get Directions; old saved orders fall through to null
-            default: return null
+        const el = (() => {
+            switch (sectionId) {
+                case 'hero': return <HeroSection key="hero" />
+                case 'title': return <TitleSection key="title" />
+                case 'details': return <DetailsSection key="details" />
+                case 'about': return <AboutSection key="about" />
+                case 'lineup': return <LineupSection key="lineup" />
+                case 'schedule': return <ScheduleSection key="schedule" />
+                case 'faq': return <FaqSection key="faq" />
+                case 'sponsors': return <SponsorsSection key="sponsors" />
+                case 'pricing': return <PricingSection key="pricing" />
+                case 'organizer': return <OrganizerSection key="organizer" />
+                case 'gallery': return <GallerySection key="gallery" />
+                case 'tickets': return <TicketsSection key="tickets" />
+                // 'location' (Map & Directions) removed — the Details card already
+                // covers venue + Get Directions; old saved orders fall through to null
+                default: return null
+            }
+        })()
+
+        if (el && REVEAL_SECTIONS.has(sectionId)) {
+            return <Reveal key={sectionId}>{el}</Reveal>
         }
+        return el
     }
 
     // Separate special sections

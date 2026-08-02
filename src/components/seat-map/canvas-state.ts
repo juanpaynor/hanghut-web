@@ -4,6 +4,7 @@ import { useReducer, useCallback, useRef, useEffect } from 'react'
 import type {
   CanvasState,
   CanvasTool,
+  CanvasData,
   SectionData,
   SeatData,
   SeatStatus,
@@ -11,6 +12,36 @@ import type {
   HistoryEntry,
   SeatShape,
 } from './types'
+
+/**
+ * Give every section and seat a FRESH id (and reset seat statuses to available).
+ *
+ * Templates and copied maps store their source event's section/seat ids inside
+ * canvas_data. Applying one verbatim would upsert event_sections/seats rows with
+ * ids that already belong to another event — which trips that table's owner-only
+ * RLS ("new row violates row-level security policy (USING expression)") or, for
+ * same-owner ids, silently overwrites the other event's rows. Regenerating ids on
+ * apply makes the applied layout brand-new geometry for THIS event. Geometry,
+ * labels, tiers, colours and layout prefs are preserved; only ids/status change.
+ */
+export function regenerateCanvasIds(canvas: CanvasData): CanvasData {
+  return {
+    ...canvas,
+    backgroundShapes: (canvas.backgroundShapes ?? []).map((shape) => ({
+      ...shape,
+      id: crypto.randomUUID(),
+    })),
+    sections: (canvas.sections ?? []).map((section) => ({
+      ...section,
+      id: crypto.randomUUID(),
+      seats: (section.seats ?? []).map((seat) => ({
+        ...seat,
+        id: crypto.randomUUID(),
+        status: 'available' as SeatStatus,
+      })),
+    })),
+  }
+}
 
 // ─── Geometry helpers ─────────────────────────────────────────────────────────
 

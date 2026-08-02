@@ -253,6 +253,38 @@ export async function saveEventSeatMap(
     }
   }
 
+  // ── Guard against cross-event id collisions ───────────────────────────────
+  // Sections/seats are upserted by the ids inside canvas_data. A map applied from
+  // a template (or otherwise copied) carries the SOURCE event's section/seat ids;
+  // upserting those (onConflict:'id') tries to UPDATE another event's rows and
+  // trips their owner-only RLS ("new row violates row-level security policy
+  // (USING expression)") — or, same-owner, silently overwrites that event.
+  //
+  // Rule: keep only ids that already belong to THIS event (so a re-save preserves
+  // sold/held seats via the id-matched upsert); regenerate every other incoming
+  // id. A genuinely new seat doesn't care about its id, and a foreign one MUST
+  // change. This also heals a canvas_data that a prior failed save left poisoned.
+  const { data: ownSections } = await supabase
+    .from('event_sections')
+    .select('id')
+    .eq('event_id', eventId)
+  const ownSectionIds = new Set((ownSections ?? []).map((s) => s.id))
+
+  const { data: existingSeats } = await supabase
+    .from('seats')
+    .select('id, status')
+    .eq('event_id', eventId)
+  const existingStatus = new Map((existingSeats ?? []).map((s) => [s.id, s.status]))
+
+  for (const section of canvasData.sections) {
+    if (!ownSectionIds.has(section.id)) section.id = crypto.randomUUID()
+    for (const seat of section.seats) {
+      // seat.section_id is derived from the parent section at record-build time,
+      // so a regenerated section id is picked up automatically.
+      if (!existingStatus.has(seat.id)) seat.id = crypto.randomUUID()
+    }
+  }
+
   // Upsert event_seat_maps
   const { data: seatMap, error: mapError } = await supabase
     .from('event_seat_maps')
@@ -273,13 +305,8 @@ export async function saveEventSeatMap(
 
   if (mapError) throw new Error(mapError.message)
 
-  // Snapshot existing seats: preserve sold/held status across saves and
-  // protect booked seats from deletion
-  const { data: existingSeats } = await supabase
-    .from('seats')
-    .select('id, status')
-    .eq('event_id', eventId)
-  const existingStatus = new Map((existingSeats ?? []).map((s) => [s.id, s.status]))
+  // (existing seat status snapshotted above, before the id-collision guard, so we
+  // can both remap foreign ids and preserve sold/held status from one read.)
 
   // ── Upsert sections (canvas ID = DB ID) ───────────────────────────────
   const sectionRecords = canvasData.sections.map((section) => ({

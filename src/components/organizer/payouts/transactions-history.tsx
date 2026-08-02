@@ -28,7 +28,12 @@ interface Transaction {
     status: string
     created_at: string
     event: { title: string } | null
-    purchase_intent?: { payment_method: string | null } | null
+    purchase_intent?: {
+        payment_method: string | null
+        settlement_status?: string | null
+        estimated_settlement_time?: string | null
+        settled_at?: string | null
+    } | null
     _type?: 'ticket' | 'topup' | 'experience'
 }
 
@@ -59,7 +64,11 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
         const csvContent = [
             headers.join(','),
             ...transactions.map(t => {
-                const settlement = getSettlementInfo(t.created_at, t.purchase_intent?.payment_method)
+                const settlement = getSettlementInfo(t.created_at, t.purchase_intent?.payment_method, {
+                    status: t.purchase_intent?.settlement_status,
+                    etaTime: t.purchase_intent?.estimated_settlement_time,
+                    settledAt: t.purchase_intent?.settled_at,
+                })
                 return [
                     `"${format(new Date(t.created_at), 'yyyy-MM-dd HH:mm:ss')}"`,
                     `"${t.event?.title || 'Unknown'}"`,
@@ -226,7 +235,11 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                                     const paymentMethod = transaction.purchase_intent?.payment_method
                                     const channel = isTopUp ? 'Wallet' : getPaymentChannel(paymentMethod)
                                     const totalFees = isTopUp ? 0 : (Number(transaction.platform_fee) || 0) + (Number(transaction.payment_processing_fee) || 0) + (Number(transaction.fixed_fee) || 0) + (Number(transaction.vat) || 0)
-                                    const settlement = isTopUp ? null : getSettlementInfo(transaction.created_at, paymentMethod)
+                                    const settlement = isTopUp ? null : getSettlementInfo(transaction.created_at, paymentMethod, {
+                                        status: transaction.purchase_intent?.settlement_status,
+                                        etaTime: transaction.purchase_intent?.estimated_settlement_time,
+                                        settledAt: transaction.purchase_intent?.settled_at,
+                                    })
 
                                     return (
                                         <TableRow
@@ -323,14 +336,21 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                                                 {isTopUp ? (
                                                     <span className="text-sm text-purple-600 font-medium">Instant</span>
                                                 ) : settlement ? (
-                                                    <div>
-                                                        {settlement.status === 'settled' ? (
+                                                    <div title={settlement.estimated ? 'Estimated from the payment method’s typical settlement time — confirm the exact date in Xendit.' : 'From Xendit settlement data.'}>
+                                                        {settlement.status === 'settled' && !settlement.estimated ? (
+                                                            // Confirmed by Xendit
                                                             <span className="text-sm text-emerald-600 font-medium">Settled</span>
+                                                        ) : settlement.status === 'settled' && settlement.estimated ? (
+                                                            // Our guess only — never present as confirmed
+                                                            <>
+                                                                <span className="text-sm text-muted-foreground font-medium">Est. settled</span>
+                                                                <span className="block text-[11px] text-muted-foreground">~{format(settlement.etaDate, 'MMM d, yyyy')} · estimate</span>
+                                                            </>
                                                         ) : (
                                                             <>
                                                                 <span className="text-sm text-amber-600 font-medium">Pending</span>
                                                                 <span className="block text-[11px] text-muted-foreground">
-                                                                    ETA {format(settlement.etaDate, 'MMM d, yyyy')}
+                                                                    {settlement.estimated ? 'Est. ' : 'ETA '}{format(settlement.etaDate, 'MMM d, yyyy')}
                                                                 </span>
                                                             </>
                                                         )}

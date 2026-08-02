@@ -9,6 +9,8 @@ export default function PhysicsActivities() {
 
     useEffect(() => {
         if (!sceneRef.current) return;
+        // Respect reduced-motion: don't run the physics sim at all.
+        if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
         // Module aliases
         const Engine = Matter.Engine,
@@ -20,8 +22,8 @@ export default function PhysicsActivities() {
             MouseConstraint = Matter.MouseConstraint,
             Common = Matter.Common;
 
-        // Create engine
-        const engine = Engine.create();
+        // Create engine — enableSleeping lets a settled pile go idle (no solver cost when full).
+        const engine = Engine.create({ enableSleeping: true });
         engineRef.current = engine;
         const world = engine.world;
 
@@ -38,7 +40,9 @@ export default function PhysicsActivities() {
             }
         });
 
-        // Add borders (walls)
+        engine.gravity.y = 0.9;
+
+        // Floor + side walls — cards fall and PILE UP at the hero's bottom edge, filling it.
         const wallThickness = 100;
         const width = window.innerWidth;
         const height = window.innerHeight;
@@ -99,16 +103,23 @@ export default function PhysicsActivities() {
 
         const colors = ['#e0e7ff', '#fce7f3', '#ccfbf1', '#ffedd5', '#fef3c7', '#dbeafe'];
 
-        const addBody = () => {
-            if (!engineRef.current) return;
+        const nonStatic = () => Composite.allBodies(world).filter(b => !b.isStatic);
 
-            const x = Math.random() * width;
-            const y = -100 - Math.random() * 500;
+        // Density scales with viewport; HARD_CAP is the perf ceiling that guarantees
+        // the sim can never spiral no matter how fast we top up.
+        const TARGET = width < 768 ? 14 : 32;
+        const HARD_CAP = 42;
+
+        const addBody = (yMin: number, yMax: number) => {
+            if (!engineRef.current) return;
+            if (nonStatic().length >= HARD_CAP) return;
+
+            const x = 60 + Math.random() * Math.max(1, width - 120);
+            const y = yMin + Math.random() * (yMax - yMin);
 
             const req = Common.choose(requests);
             const color = Common.choose(colors);
             const textureURL = createCardTexture(req.text, req.emoji, color);
-
 
             // Dimensions
             const w = 340;
@@ -117,7 +128,8 @@ export default function PhysicsActivities() {
 
             const body = Bodies.rectangle(x, y, w * scale, h * scale, {
                 chamfer: { radius: 30 }, // Fully rounded capsule look
-                restitution: 0.5,
+                restitution: 0.2, // low bounce so the pile settles fast (then sleeps)
+                friction: 0.4,
                 angle: (Math.random() - 0.5) * 0.4,
                 render: {
                     sprite: {
@@ -131,38 +143,6 @@ export default function PhysicsActivities() {
             Composite.add(world, body);
         };
 
-        // Add initial bodies
-        for (let i = 0; i < 12; i++) {
-            setTimeout(addBody, i * 150);
-        }
-
-        // Track visibility — stop adding when hero is off-screen
-        let isVisible = true;
-        const observer = new IntersectionObserver(
-            ([entry]) => { isVisible = entry.isIntersecting; },
-            { threshold: 0.1 }
-        );
-        if (sceneRef.current) observer.observe(sceneRef.current);
-
-        const MAX_BODIES = 20;
-
-        const interval = setInterval(() => {
-            if (!isVisible) return;
-
-            // Remove bodies that have fallen way below
-            const allBodies = Composite.allBodies(world).filter(b => !b.isStatic);
-            allBodies.forEach(b => {
-                if (b.position.y > height + 200) {
-                    Composite.remove(world, b);
-                }
-            });
-
-            // Only add if under the cap
-            const currentCount = Composite.allBodies(world).filter(b => !b.isStatic).length;
-            if (currentCount < MAX_BODIES) {
-                addBody();
-            }
-        }, 1200);
 
         // Add mouse control
         const mouse = Mouse.create(render.canvas);
@@ -183,13 +163,41 @@ export default function PhysicsActivities() {
         Render.run(render);
         const runner = Runner.create();
         Runner.run(runner, engine);
+        let running = true;
+
+        // Pause the whole sim (runner + render) when the hero is off-screen — zero CPU when scrolled away.
+        let isVisible = true;
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                isVisible = entry.isIntersecting;
+                if (isVisible && !running) { Runner.run(runner, engine); Render.run(render); running = true; }
+                else if (!isVisible && running) { Runner.stop(runner); Render.stop(render); running = false; }
+            },
+            { threshold: 0 }
+        );
+        if (sceneRef.current) observer.observe(sceneRef.current);
+
+        // Keep dropping cards from the top until the hero is FULL, then idle.
+        // (Only tops up if a card gets knocked out of bounds — never past TARGET.)
+        const interval = setInterval(() => {
+            if (!isVisible) return;
+
+            // Safety: replace any card thrown clean out of the play area.
+            nonStatic().forEach(b => {
+                if (b.position.y > height + 400 || b.position.x < -400 || b.position.x > width + 400) {
+                    Composite.remove(world, b);
+                }
+            });
+
+            if (nonStatic().length < TARGET) addBody(-450, -100);
+        }, 150);
 
         // Resize
         const handleResize = () => {
             render.canvas.width = window.innerWidth;
             render.canvas.height = window.innerHeight;
-            Matter.Body.setPosition(walls[0], { x: window.innerWidth / 2, y: window.innerHeight + 50 });
-            Matter.Body.setPosition(walls[2], { x: window.innerWidth + 50, y: window.innerHeight / 2 });
+            Matter.Body.setPosition(walls[0], { x: window.innerWidth / 2, y: window.innerHeight + wallThickness / 2 });
+            Matter.Body.setPosition(walls[2], { x: window.innerWidth + wallThickness / 2, y: window.innerHeight / 2 });
         };
 
         window.addEventListener('resize', handleResize);
