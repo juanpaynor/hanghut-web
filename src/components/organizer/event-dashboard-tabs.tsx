@@ -42,6 +42,7 @@ interface EventDashboardTabsProps {
     initialRegistrations: EventRegistration[]
     subscriptionTiers?: SubscriptionTierBasic[]
     existingDiscounts?: ExistingDiscount[]
+    subscriptionsEnabled?: boolean
     analytics?: any
     customers?: any
     emailCampaigns?: any[]
@@ -63,6 +64,7 @@ export function EventDashboardTabs({
     initialRegistrations,
     subscriptionTiers = [],
     existingDiscounts = [],
+    subscriptionsEnabled = false,
     analytics = null,
     customers = null,
     emailCampaigns = [],
@@ -199,6 +201,7 @@ export function EventDashboardTabs({
                     fixedFeePerTicket={fixedFeePerTicket}
                     subscriptionTiers={subscriptionTiers}
                     existingDiscounts={existingDiscounts}
+                    subscriptionsEnabled={subscriptionsEnabled}
                 />
             </TabsContent>
 

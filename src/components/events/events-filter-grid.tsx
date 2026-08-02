@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { PublicEventCard } from '@/components/events/public-event-card'
+import { useDebounce } from '@/hooks/use-debounce'
 import { Input } from '@/components/ui/input'
 import { Search, Ticket, User, CalendarDays, ArrowDownUp } from 'lucide-react'
 
@@ -66,7 +67,8 @@ function dateWindow(key: DateKey): [Date, Date] | null {
 export function EventsFilterGrid({ events, categories }: EventsFilterGridProps) {
     const [activeCategory, setActiveCategory] = useState('all')
     const [activeOrganizer, setActiveOrganizer] = useState<string | null>(null)
-    const [searchQuery, setSearchQuery] = useState('')
+    const [searchInput, setSearchInput] = useState('') // instant, bound to the input
+    const searchQuery = useDebounce(searchInput, 250) // debounced, drives filtering
     const [sort, setSort] = useState<SortKey>('soon')
     const [dateKey, setDateKey] = useState<DateKey>('any')
 
@@ -162,7 +164,7 @@ export function EventsFilterGrid({ events, categories }: EventsFilterGridProps) 
     const clearFilters = () => {
         setActiveCategory('all')
         setActiveOrganizer(null)
-        setSearchQuery('')
+        setSearchInput('')
         setDateKey('any')
     }
 
@@ -195,8 +197,8 @@ export function EventsFilterGrid({ events, categories }: EventsFilterGridProps) 
                     <div className="relative max-w-lg">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+                            value={searchInput}
+                            onChange={(e) => setSearchInput(e.target.value)}
                             placeholder="Search events, venues, cities..."
                             className="pl-10 h-11 bg-background"
                         />

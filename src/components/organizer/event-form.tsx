@@ -81,6 +81,7 @@ interface EventFormProps {
     fixedFeePerTicket: number
     subscriptionTiers?: SubscriptionTierBasic[]
     existingDiscounts?: ExistingDiscount[]
+    subscriptionsEnabled?: boolean
 }
 
 export function EventForm({
@@ -93,6 +94,7 @@ export function EventForm({
     fixedFeePerTicket,
     subscriptionTiers = [],
     existingDiscounts = [],
+    subscriptionsEnabled = false,
 }: EventFormProps) {
     const router = useRouter()
     const { toast } = useToast()
@@ -1798,8 +1800,9 @@ export function EventForm({
                     </div>
                 </Card>
 
-                {/* Subscriber Discounts — edit only (requires an eventId) */}
-                {eventId && (
+                {/* Subscriber Discounts — edit only (requires an eventId), and only when
+                    the partner has subscriptions enabled (otherwise we'd push a disabled feature). */}
+                {eventId && subscriptionsEnabled && (
                     <SubscriberDiscountsSection
                         eventId={eventId}
                         subscriptionTiers={subscriptionTiers}
