@@ -52,28 +52,27 @@ export default function VideoBanner() {
   };
 
   return (
-    <section ref={sectionRef} className="relative w-full overflow-hidden bg-[#FAFAF8] px-4 py-12 md:py-16">
-      {/* Ambient brand glows */}
+    <section ref={sectionRef} className="relative w-full overflow-hidden bg-kinetic-ink px-4 py-20 md:py-28">
+      {/* Single brand glow */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-0">
-        <div className="absolute left-1/4 top-8 h-72 w-72 -translate-x-1/2 rounded-full bg-indigo-300/40 blur-[100px]" />
-        <div className="absolute right-1/4 top-24 h-72 w-72 translate-x-1/2 rounded-full bg-orange-300/40 blur-[100px]" />
-        <div className="absolute bottom-8 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-emerald-300/30 blur-[110px]" />
+        <div className="absolute left-1/2 top-10 h-80 w-[560px] -translate-x-1/2 rounded-full bg-kinetic-brand/10 blur-[130px]" />
       </div>
 
       <div className="relative mx-auto max-w-5xl">
         {/* Context heading */}
         <div
-          className={`mx-auto mb-8 max-w-2xl text-center transition-all duration-700 ${
+          className={`mx-auto mb-10 max-w-2xl text-center transition-all duration-700 ${
             revealed ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
           }`}
         >
-          <span className="inline-block rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-indigo-600">
-            See it in action
-          </span>
-          <h2 className="mt-4 text-3xl font-bold tracking-tight text-gray-900 md:text-4xl">
+          <div className="flex items-center justify-center gap-3">
+            <span className="h-2 w-2 rounded-full bg-kinetic-brand" />
+            <span className="text-xs font-semibold uppercase tracking-[0.3em] text-kinetic-brand">See it in action</span>
+          </div>
+          <h2 className="mt-4 font-headline text-4xl font-bold tracking-tight text-kinetic-text md:text-6xl">
             This is HangHut
           </h2>
-          <p className="mt-3 text-base text-gray-600 md:text-lg">
+          <p className="mt-4 text-lg text-kinetic-muted">
             From discovering activities near you to selling out your next event — watch how it all comes together.
           </p>
         </div>
@@ -84,9 +83,9 @@ export default function VideoBanner() {
             revealed ? "translate-y-0 scale-100 opacity-100" : "translate-y-10 scale-[0.97] opacity-0"
           }`}
         >
-          {/* Gradient frame */}
-          <div className="rounded-[28px] bg-gradient-to-br from-indigo-500/30 via-transparent to-orange-500/30 p-[1.5px] shadow-2xl">
-            <div className="relative overflow-hidden rounded-[26px] bg-black ring-1 ring-black/5">
+          {/* Clean brand frame */}
+          <div className="rounded-[28px] border border-kinetic-line bg-kinetic-panel p-2 shadow-[0_30px_80px_-30px_rgba(79,70,229,0.35)]">
+            <div className="relative overflow-hidden rounded-[22px] bg-black ring-1 ring-black/5">
               <video
                 ref={videoRef}
                 src={VIDEO_SRC}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import Header from "@/components/landing/header";
 import Footer from "@/components/landing/footer";
 import Hero from "@/components/landing/hero";
+import VideoBanner from "@/components/landing/video-banner";
 import AttendeeTrack from "@/components/landing/attendee-track";
 import OrganizerTrack from "@/components/landing/organizer-track";
 import TrustBand from "@/components/landing/trust-band";
@@ -41,6 +42,7 @@ export default function LandingPage() {
             <Header />
             <main className="flex-1">
                 <SectionErrorBoundary><Hero /></SectionErrorBoundary>
+                <SectionErrorBoundary><VideoBanner /></SectionErrorBoundary>
                 <SectionErrorBoundary><AttendeeTrack /></SectionErrorBoundary>
                 <SectionErrorBoundary><OrganizerTrack /></SectionErrorBoundary>
                 <SectionErrorBoundary><PricingTeaser /></SectionErrorBoundary>
