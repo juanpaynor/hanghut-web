@@ -17,7 +17,6 @@ function PricingTeaser() {
     return (
         <section className="border-y border-kinetic-line bg-kinetic-panel px-6 py-20 md:px-12">
             <Reveal className="mx-auto flex max-w-5xl flex-col items-center gap-6 text-center">
-                <span className="text-xs font-semibold uppercase tracking-[0.3em] text-kinetic-muted">Pricing</span>
                 <h2 className="font-headline text-4xl font-bold tracking-tight text-kinetic-text md:text-6xl">
                     Just <span className="text-kinetic-brand">2% + ₱15</span> per ticket.
                 </h2>

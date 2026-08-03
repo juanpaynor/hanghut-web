@@ -5,15 +5,9 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { ArrowRight, ArrowDown } from "lucide-react";
-import { LiveMarquee } from "@/components/landing/live-marquee";
 
 // Physics sim is client-only (matter-js touches window/canvas).
 const PhysicsActivities = dynamic(() => import("@/components/landing/physics-activities"), { ssr: false });
-
-const MARQUEE = [
-    "MANILA", "CEBU CITY", "DAVAO", "ILOILO", "BAGUIO", "BORACAY",
-    "PALAWAN", "SIARGAO", "TAGAYTAY", "CLARK", "SUBIC", "VIGAN",
-];
 
 // The kinetic centerpiece: the sentence stays, the verb changes.
 const VERBS = ["goes out.", "shows up.", "links up.", "dances.", "gathers."];
@@ -112,13 +106,8 @@ export default function Hero() {
                 </motion.div>
             </div>
 
-            {/* Live marquee band */}
-            <div className="relative z-10 border-y border-kinetic-line bg-kinetic-panel py-4">
-                <LiveMarquee items={MARQUEE} duration={45} />
-            </div>
-
             {/* Scroll cue */}
-            <div className="pointer-events-none absolute bottom-24 left-1/2 z-10 hidden -translate-x-1/2 md:block">
+            <div className="pointer-events-none absolute bottom-10 left-1/2 z-10 hidden -translate-x-1/2 md:block">
                 <ArrowDown className="h-5 w-5 animate-bounce text-kinetic-muted" />
             </div>
         </section>

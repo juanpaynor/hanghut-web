@@ -65,11 +65,7 @@ export default function VideoBanner() {
             revealed ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
           }`}
         >
-          <div className="flex items-center justify-center gap-3">
-            <span className="h-2 w-2 rounded-full bg-kinetic-brand" />
-            <span className="text-xs font-semibold uppercase tracking-[0.3em] text-kinetic-brand">See it in action</span>
-          </div>
-          <h2 className="mt-4 font-headline text-4xl font-bold tracking-tight text-kinetic-text md:text-6xl">
+          <h2 className="font-headline text-4xl font-bold tracking-tight text-kinetic-text md:text-6xl">
             This is HangHut
           </h2>
           <p className="mt-4 text-lg text-kinetic-muted">

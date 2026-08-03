@@ -26,11 +26,7 @@ export default function OrganizerTrack() {
         <section className="relative bg-kinetic-ink py-24 md:py-32">
             <div className="mx-auto max-w-7xl px-6 md:px-12">
                 <Reveal>
-                    <div className="flex items-center gap-3">
-                        <span className="h-2 w-2 rounded-full bg-kinetic-brand" />
-                        <span className="font-body text-xs uppercase tracking-[0.3em] text-kinetic-brand">Sell out</span>
-                    </div>
-                    <h2 className="mt-4 max-w-3xl font-headline text-4xl font-extrabold leading-[0.95] tracking-tight text-kinetic-text md:text-6xl">
+                    <h2 className="max-w-3xl font-headline text-4xl font-extrabold leading-[0.95] tracking-tight text-kinetic-text md:text-6xl">
                         Everything you need to <span className="text-kinetic-brand">run the show.</span>
                     </h2>
                     <p className="mt-5 max-w-xl text-lg text-kinetic-muted">
