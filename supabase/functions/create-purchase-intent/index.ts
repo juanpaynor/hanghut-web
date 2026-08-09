@@ -36,7 +36,7 @@ serve(async (req) => {
         )
 
         // Parse request body
-        const { event_id, quantity, tier_id, seat_ids, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata } = await req.json()
+        const { event_id, quantity, tier_id, seat_ids, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution } = await req.json()
 
         // Get authenticated user (if any)
         const {
@@ -414,6 +414,7 @@ serve(async (req) => {
                 pricing_note: `Tier: ${tierName}${promo_code ? ' | Promo: ' + promo_code : ''}${subscriberDiscountAmount > 0 ? ' | Subscriber discount: -' + subscriberDiscountAmount : ''}`,
                 fee_percentage: platformFeePercentage,
                 subscribed_to_newsletter: subscribed_to_newsletter ?? false,
+                attribution: attribution && typeof attribution === 'object' ? attribution : null,
                 metadata: Object.keys(combinedMetadata).length > 0 ? combinedMetadata : null
             })
             .eq('id', intentId)

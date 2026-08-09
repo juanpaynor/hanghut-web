@@ -31,6 +31,14 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'invalid' }, { status: 400 })
         }
 
+        // Acquisition attribution (best-effort; capped so a hostile client can't bloat rows).
+        const cap = (v: unknown, n = 120) => (typeof v === 'string' ? v.slice(0, n) : null)
+        const channel = cap(body?.channel, 32)
+        const utm_source = cap(body?.utm_source)
+        const utm_medium = cap(body?.utm_medium)
+        const utm_campaign = cap(body?.utm_campaign)
+        const referrer = cap(body?.referrer, 500)
+
         // Derive the user server-side from the session cookie (if logged in).
         let userId: string | null = null
         try {
@@ -48,6 +56,11 @@ export async function POST(req: Request) {
             session_id: typeof session_id === 'string' ? session_id.slice(0, 64) : null,
             user_id: userId,
             source: 'web',
+            channel,
+            utm_source,
+            utm_medium,
+            utm_campaign,
+            referrer,
         })
 
         return NextResponse.json({ ok: true })

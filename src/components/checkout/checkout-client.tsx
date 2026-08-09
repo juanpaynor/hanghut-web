@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { trackEventInteraction } from '@/lib/analytics/track-event'
+import { getStoredAttribution } from '@/lib/tracking'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -316,6 +317,9 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 promo_code: appliedPromo ? appliedPromo.code : undefined,
                 subscribed_to_newsletter: newsletterSubscribed,
                 registration_id: registrationId || undefined,
+                // First-touch acquisition attribution → stored on the intent, then
+                // copied to the transaction on payment (revenue-by-channel).
+                attribution: getStoredAttribution() || undefined,
                 // [NEW] Fee Metadata for Edge Function
                 metadata: {
                     pass_fixed: passFixed,

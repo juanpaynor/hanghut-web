@@ -564,6 +564,7 @@ serve(async (req) => {
                     fee_basis: (partner?.custom_percentage != null && partner.custom_percentage !== 4.0) ? 'custom' : 'standard',
                     xendit_transaction_id: payment_request_id || payment_id || data.id,
                     status: 'completed',
+                    attribution: (intent as any).attribution ?? null,
                 })
 
             if (txError) {
