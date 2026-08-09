@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect, notFound } from 'next/navigation'
 import { EventDashboardTabs } from '@/components/organizer/event-dashboard-tabs'
 import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
@@ -41,97 +40,82 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         notFound()
     }
 
-    // Fetch partner pricing details (only the fields we need, not already in cached partner)
-    const { data: partnerPricing } = await supabase
-        .from('partners')
-        .select('custom_percentage, pricing_model, pass_fixed_to_customer, pass_percentage_to_customer, fixed_fee_per_ticket')
-        .eq('id', partner.id)
-        .single()
-
-    // ─── PARALLEL: All event-dependent queries at once ─────────────────
+    // ─── PARALLEL: partner pricing + all event-dependent queries in ONE round-trip ─────
+    // (partnerPricing was a separate await; folded in here. Analytics/customers/email
+    // are no longer fetched here — they load lazily when the Analytics tab is opened.)
     const { getEventAttendees } = await import('@/lib/organizer/attendee-actions')
     const { getPromoCodes } = await import('@/lib/organizer/promo-actions')
     const { getRegistrationQuestions } = await import('@/lib/organizer/registration-actions')
     const { getEventRegistrations } = await import('@/lib/organizer/registration-management-actions')
 
     const [
+        { data: partnerPricing },
         { data: rawTiers },
         { data: tierTickets },
         { attendees },
         { data: promoCodes },
-        { count: ticketsSold, data: soldTickets },
-        { data: refundedTickets },
+        { data: statsRows },
         registrationQuestions,
         initialRegistrations,
         { data: rawSubscriptionTiers },
         { data: rawExistingDiscounts },
     ] = await Promise.all([
-        // 1. Ticket tiers
+        // Partner pricing (fields not already on the cached partner)
+        supabase
+            .from('partners')
+            .select('custom_percentage, pricing_model, pass_fixed_to_customer, pass_percentage_to_customer, fixed_fee_per_ticket')
+            .eq('id', partner.id)
+            .single(),
+
+        // Ticket tiers
         supabase
             .from('ticket_tiers')
             .select('*')
             .eq('event_id', id)
             .order('sort_order', { ascending: true }),
 
-        // 2. Per-tier sold counts
+        // Per-tier sold counts
         supabase
             .from('tickets')
             .select('tier_id')
             .eq('event_id', id)
             .not('status', 'in', '("available","refunded","reserved")'),
 
-        // 3. Attendees
+        // Attendees
         getEventAttendees(id),
 
-        // 4. Promo codes
+        // Promo codes
         getPromoCodes(id),
 
-        // 5. Sold tickets stats
-        supabase
-            .from('tickets')
-            .select(`
-                checked_in_at,
-                status,
-                purchase_intent:purchase_intents (
-                    unit_price
-                )
-            `, { count: 'exact' })
-            .eq('event_id', id)
-            .neq('status', 'cancelled')
-            .neq('status', 'refunded')
-            .neq('status', 'available')
-            .neq('status', 'reserved'),
+        // Ticket stats (sold / checked-in / revenue / refunded) — one aggregate RPC
+        // instead of fetching every ticket row (+ intent join) and summing in JS.
+        supabase.rpc('get_event_ticket_stats', { p_event_id: id }),
 
-        // 6. Refunded tickets stats
-        supabase
-            .from('tickets')
-            .select(`
-                purchase_intent:purchase_intents (
-                    unit_price
-                )
-            `)
-            .eq('event_id', id)
-            .eq('status', 'refunded'),
-
-        // 7. Registration questions
+        // Registration questions
         getRegistrationQuestions(id),
 
-        // 8. Registration requests
+        // Registration requests
         getEventRegistrations(id),
 
-        // 9. Partner's subscription tiers (for subscriber discounts section)
+        // Partner's subscription tiers (for subscriber discounts section)
         supabase
             .from('subscription_tiers')
             .select('id, name, price_monthly, is_active')
             .eq('partner_id', partner.id)
             .order('price_monthly', { ascending: true }),
 
-        // 10. Existing subscriber discounts for this event
+        // Existing subscriber discounts for this event
         supabase
             .from('event_subscription_discounts')
             .select('subscription_tier_id, discount_type, discount_value, max_tickets')
             .eq('event_id', id),
     ])
+
+    const stats = statsRows?.[0] ?? { sold_count: 0, checked_in_count: 0, gross_revenue: 0, refunded_amount: 0 }
+    const ticketsSold = Number(stats.sold_count) || 0
+    const checkedInCount = Number(stats.checked_in_count) || 0
+    const totalRevenue = Number(stats.gross_revenue) || 0
+    const refundedAmount = Number(stats.refunded_amount) || 0
 
     // ─── COMPUTE from parallel results ────────────────────────────────
 
@@ -151,30 +135,6 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         partnerPricing?.custom_percentage != null ? Number(partnerPricing.custom_percentage) : null
     ) / 100
 
-    const totalRevenue = soldTickets?.reduce((sum, ticket: any) => {
-        const price = ticket.purchase_intent?.unit_price || 0
-        return sum + price
-    }, 0) || 0
-    const checkedInCount = soldTickets?.filter(t => t.checked_in_at).length || 0
-
-    const refundedAmount = refundedTickets?.reduce((sum, ticket: any) => {
-        const price = ticket.purchase_intent?.unit_price || 0
-        return sum + price
-    }, 0) || 0
-
-    // --- Analytics (page views / presses funnel, repeat customers, email) ---
-    // RPCs are SECURITY DEFINER + organizer-scoped (use the user client for auth.uid()).
-    // email_campaign_stats is read via admin scoped to this already-authorized event.
-    const [analyticsRes, customersRes] = await Promise.all([
-        supabase.rpc('get_event_analytics', { p_event_id: event.id }),
-        supabase.rpc('get_event_customer_breakdown', { p_event_id: event.id }),
-    ])
-    const { data: emailCampaigns } = await createAdminClient()
-        .from('email_campaign_stats')
-        .select('id, subject, sent_at, recipient_count, sent_count, delivered_count, opened_count, clicked_count')
-        .eq('event_id', event.id)
-        .order('sent_at', { ascending: false })
-
     return (
         <div className="p-8 pb-20">
             <div className="mb-6">
@@ -183,9 +143,6 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
             </div>
 
             <EventDashboardTabs
-                analytics={analyticsRes.data ?? null}
-                customers={customersRes.data ?? null}
-                emailCampaigns={emailCampaigns ?? []}
                 partnerId={partner.id}
                 commissionRate={commissionRate}
                 event={event}

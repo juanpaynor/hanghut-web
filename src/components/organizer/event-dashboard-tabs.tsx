@@ -10,7 +10,7 @@ import { CheckInStats } from '@/components/organizer/check-in-stats'
 import { EventDashboardOverview } from '@/components/organizer/event-dashboard-overview'
 import { StorefrontCustomizationForm } from '@/components/organizer/storefront-customization-form'
 import { SeatMapTab } from '@/components/organizer/seat-map-tab'
-import { EventAnalytics } from '@/components/organizer/event-analytics'
+import { AnalyticsTabLazy } from '@/components/organizer/analytics-tab-lazy'
 import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair, ExternalLink, ClipboardList, UserCheck, Mail, BarChart2 } from 'lucide-react'
 import { EventInvitesManager } from '@/components/organizer/event-invites-manager'
 import { Attendee } from '@/lib/organizer/attendee-actions'
@@ -43,9 +43,6 @@ interface EventDashboardTabsProps {
     subscriptionTiers?: SubscriptionTierBasic[]
     existingDiscounts?: ExistingDiscount[]
     subscriptionsEnabled?: boolean
-    analytics?: any
-    customers?: any
-    emailCampaigns?: any[]
 }
 
 export function EventDashboardTabs({
@@ -65,9 +62,6 @@ export function EventDashboardTabs({
     subscriptionTiers = [],
     existingDiscounts = [],
     subscriptionsEnabled = false,
-    analytics = null,
-    customers = null,
-    emailCampaigns = [],
 }: EventDashboardTabsProps) {
     const [activeTab, setActiveTab] = useState('overview')
 
@@ -140,7 +134,7 @@ export function EventDashboardTabs({
             </TabsContent>
 
             <TabsContent value="analytics" className="mt-6 animate-in fade-in-50 duration-300">
-                <EventAnalytics analytics={analytics} customers={customers} emailCampaigns={emailCampaigns} />
+                <AnalyticsTabLazy eventId={eventId} />
             </TabsContent>
 
             <TabsContent value="attendees" className="mt-6 animate-in fade-in-50 duration-300 space-y-8">

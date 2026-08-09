@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EventSearchSelect } from '@/components/organizer/event-search-select'
 import { Copy, Check, Code2, Globe, Palette, Eye, LayoutGrid, SunMoon } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
@@ -163,18 +163,11 @@ export default function EmbedPage() {
                                 <TabsContent value="event" className="pt-4">
                                     <div className="space-y-3">
                                         <Label>Select Event</Label>
-                                        <Select value={selectedEventId} onValueChange={setSelectedEventId}>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Choose an event..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {events.map((evt) => (
-                                                    <SelectItem key={evt.id} value={evt.id}>
-                                                        {evt.title}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                        <EventSearchSelect
+                                            events={events}
+                                            value={selectedEventId}
+                                            onChange={setSelectedEventId}
+                                        />
                                         <p className="text-xs text-muted-foreground">
                                             This will show the event cover photo, details, and a "Buy Tickets" button.
                                         </p>
@@ -183,18 +176,11 @@ export default function EmbedPage() {
                                 <TabsContent value="button" className="pt-4">
                                     <div className="space-y-3">
                                         <Label>Select Event</Label>
-                                        <Select value={selectedEventId} onValueChange={setSelectedEventId}>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Choose an event..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {events.map((evt) => (
-                                                    <SelectItem key={evt.id} value={evt.id}>
-                                                        {evt.title}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                        <EventSearchSelect
+                                            events={events}
+                                            value={selectedEventId}
+                                            onChange={setSelectedEventId}
+                                        />
                                         <div className="space-y-2">
                                             <Label className="text-xs font-medium">Button Text</Label>
                                             <Input
