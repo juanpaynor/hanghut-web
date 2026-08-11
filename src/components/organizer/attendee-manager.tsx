@@ -178,58 +178,29 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
     const [ticketsToRefund, setTicketsToRefund] = useState<Attendee[]>([])
     const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(new Set())
 
-    // Computed Refund Details
+    // Computed Refund Details. Refunding ANY ticket refunds the WHOLE order, so we
+    // group the selected tickets by order and sum each order's total ONCE (net of
+    // anything already refunded). order_total now comes from the intent, so this is
+    // the real amount returned to customers — no more placeholder estimate.
     const refundDetails = (() => {
-        const uniqueOrders = new Map<string, { id: string, amount: number, fee: number, tickets: number }>()
-
+        const orders = new Map<string, { remaining: number; qrph: boolean }>()
         ticketsToRefund.forEach(t => {
-            if (!t.purchase_intent_id) return
-
-            // If we haven't seen this order yet, initialize it
-            // NOTE: We assume 'purchase_intent.unit_price' is for ONE ticket. 
-            // The backend refunds the ENTIRE order.
-            // So we need to know the TOTAL order amount. 
-            // Limitation: We only have 'unit_price' * 'quantity' if we had the order object.
-            // But here we rely on the Backend 'request-refund' to handle the actual refund.
-            // FOR UI ESTIMATION: We sum up the unit prices of *selected* tickets as a baseline, 
-            // BUT strict correctness requires fetching the order total.
-            // However, since refunding ANY ticket refunds the WHOLE order, we should warn the user.
-
-            // Improved Logic: We count unique Orders.
-            if (!uniqueOrders.has(t.purchase_intent_id)) {
-                // We don't have the full order total here unfortunately, only the ticket's price.
-                // We will display a GENERIC warning that it refunds the "Full Order".
-                // Best effort estimation: unit_price of this ticket * (something?).
-                // Let's just sum the prices of the tickets we know about for the 'Fee' estimate?
-                // No, that's dangerous.
-                // Valid Approach: The Fee is 5% of the REFUNDED Amount.
-                // If we refund the whole order, the fee is 5% of the whole order.
-                // We should probably Fetch the Order Details before showing the modal to be accurate.
-                // OR, just show "5% of the Total Order Amount" as text.
-                // User said: "calculate & display 5% fee".
-                // Result: I will attempt to calculate based on the ticket price, but add a disclaimer.
-
-                // Let's rely on the `purchase_intent` data if available.
-                // The `t.purchase_intent` object (from attendee-actions) has `unit_price`.
-                // It does NOT seem to have `quantity` or `total_amount`.
-                // I will add a "Fetch Order Details" step if needed, or just show estimated warning.
-
-                uniqueOrders.set(t.purchase_intent_id, {
-                    id: t.purchase_intent_id,
-                    amount: 0, // Unknown total order amount
-                    fee: 0,
-                    tickets: 1
-                })
-            } else {
-                const order = uniqueOrders.get(t.purchase_intent_id)!
-                order.tickets++
-                uniqueOrders.set(t.purchase_intent_id, order)
-            }
+            if (!t.purchase_intent_id || orders.has(t.purchase_intent_id)) return
+            orders.set(t.purchase_intent_id, {
+                remaining: Math.max(0, (t.order_total || 0) - (t.refunded_amount || 0)),
+                qrph: (t.payment_method || '').toLowerCase() === 'qrph',
+            })
         })
-
+        // QRPH orders can't be auto-reversed here, so exclude them from the amount
+        // that will actually be refunded by this action.
+        let totalRefund = 0, qrphCount = 0, autoCount = 0
+        orders.forEach(o => { if (o.qrph) qrphCount++; else { autoCount++; totalRefund += o.remaining } })
         return {
-            orderCount: uniqueOrders.size,
-            ticketCount: ticketsToRefund.length
+            orderCount: orders.size,
+            ticketCount: ticketsToRefund.length,
+            totalRefund,
+            qrphCount,
+            autoCount,
         }
     })()
 
@@ -242,62 +213,38 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
         setIsRefunding(true)
         const supabase = createClient()
 
-        // Get Unique Intent IDs
-        const uniqueIntentIds = Array.from(new Set(ticketsToRefund.map(t => t.purchase_intent_id).filter(Boolean))) as string[]
+        // Unique orders, plus each order's payment method (QRPH can't be auto-reversed).
+        const intentMethod = new Map<string, string>()
+        ticketsToRefund.forEach(t => {
+            if (t.purchase_intent_id) intentMethod.set(t.purchase_intent_id, (t.payment_method || '').toLowerCase())
+        })
+        const uniqueIntentIds = Array.from(intentMethod.keys())
 
         let successCount = 0
         let failCount = 0
+        let qrphCount = 0
         let insufficientFunds = false
 
         for (const intentId of uniqueIntentIds) {
+            // QRPH refunds cannot be reversed via Xendit — they must be sent as a
+            // bank/e-wallet transfer (or recorded manually) from Payouts → the
+            // transaction. Skip them here with a clear pointer instead of failing.
+            if (intentMethod.get(intentId) === 'qrph') {
+                qrphCount++
+                continue
+            }
+
             try {
-                // 1. Call Edge Function
-                const requestBody = {
-                    intent_id: intentId,
-                    reason: 'Requested by Organizer via Dashboard'
-                }
+                // Single path: markIntentAsRefunded calls request-refund (money) AND
+                // voids the tickets + releases tier inventory. Calling request-refund
+                // separately here caused a double call that blocked the ticket voiding.
+                const res = await markIntentAsRefunded(intentId, eventId, 'Requested by Organizer via Dashboard')
+                if (!res?.success) throw new Error('Refund failed')
 
-                const { data, error } = await supabase.functions.invoke('request-refund', {
-                    body: requestBody
-                })
-
-                if (error) {
-                    // Extract the real message if it's hidden in context
-                    let errorMessage = error.message
-                    if ((error as any).context && (error as any).context.error) {
-                        errorMessage = (error as any).context.error
-                    } else if ((error as any).context) {
-                        errorMessage = JSON.stringify((error as any).context)
-                    }
-
-                    throw new Error(errorMessage)
-                }
-
-                if (data && data.error) {
-                    // Check for specific backend error codes if available
-                    // Assuming 402 or specific message for balance
-                    if (data.error.code === 'INSUFFICIENT_BALANCE' || data.error.message?.toLowerCase().includes('balance')) {
-                        insufficientFunds = true
-                        throw new Error('Insufficient Balance')
-                    }
-                    throw new Error(data.error.message || 'Refund failed')
-                }
-
-                // 2. Mark Tickets as Refunded in DB
-                try {
-                    await markIntentAsRefunded(intentId, eventId)
-                } catch (dbError) {
-                    console.error('Failed to update DB status for refund', dbError)
-                }
-
-                // 3. Trigger Email (Fire and Forget)
-                // We wrap this in a catch so it doesn't block the UI success flow
+                // Notify the customer (fire-and-forget — never block the success flow).
                 try {
                     await supabase.functions.invoke('send-transaction-email', {
-                        body: {
-                            type: 'refund_initiated',
-                            intent_id: intentId
-                        }
+                        body: { type: 'refund_initiated', intent_id: intentId },
                     })
                 } catch (emailErr) {
                     console.warn('Failed to send refund email', emailErr)
@@ -306,11 +253,12 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                 successCount++
             } catch (err: any) {
                 console.error(`Refund failed for intent ${intentId}:`, err)
-                failCount++
-                if (err.message === 'Insufficient Balance') {
+                if (/balance/i.test(String(err?.message || ''))) {
                     insufficientFunds = true
-                    break // Stop processing on balance error
+                    failCount++
+                    break // Stop on a wallet-balance problem — the rest will fail too.
                 }
+                failCount++
             }
         }
 
@@ -322,19 +270,28 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
         setAttendees(result.attendees)
         setTotal(result.total)
 
-        // Show Results
+        // Show Results — honest about what actually happened.
+        const qrphNote = qrphCount > 0
+            ? ` ${qrphCount} QRPH order${qrphCount === 1 ? '' : 's'} skipped — refund ${qrphCount === 1 ? 'it' : 'them'} from Payouts (bank/e-wallet transfer).`
+            : ''
         if (insufficientFunds) {
             setRefundErrorModalOpen(true)
         } else if (failCount > 0) {
             toast({
-                title: 'Refund Process Completed',
-                description: `Successfully refunded ${successCount} orders. Failed: ${failCount}`,
-                variant: 'destructive'
+                title: 'Some refunds failed',
+                description: `Refunded ${successCount}. Failed: ${failCount}.${qrphNote}`,
+                variant: 'destructive',
+            })
+        } else if (successCount === 0 && qrphCount > 0) {
+            toast({
+                title: 'Use Payouts for QRPH refunds',
+                description: `${qrphCount} QRPH order${qrphCount === 1 ? '' : 's'} can’t be refunded here. Open ${qrphCount === 1 ? 'it' : 'them'} in Payouts to send a GCash/bank transfer.`,
+                variant: 'destructive',
             })
         } else {
             toast({
-                title: 'Refund Successful',
-                description: `Successfully processed ${successCount} refunds. Customers have been notified.`
+                title: 'Refund successful',
+                description: `Refunded ${successCount} order${successCount === 1 ? '' : 's'}. Customers have been notified.${qrphNote}`,
             })
         }
 
@@ -370,7 +327,7 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
             a.user?.display_name || a.guest_info?.name || 'Guest',
             a.user?.email || a.guest_info?.email || '-',
             a.tier?.name || 'General',
-            a.tier?.price?.toString() || '0',
+            a.amount_paid.toString(),
             seatLine(a.seat_info) || '-',
             a.status,
             a.created_at ? new Date(a.created_at).toLocaleString() : '-',
@@ -435,7 +392,7 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                     </p>
                 </div>
                 <div className="rounded-xl border bg-card p-4 col-span-2 sm:col-span-1">
-                    <p className="text-xs text-muted-foreground">Gross sales</p>
+                    <p className="text-xs text-muted-foreground">Net sales <span className="opacity-60">(after refunds)</span></p>
                     <p className="text-2xl font-bold mt-1">{stats ? `₱${stats.revenue.toLocaleString()}` : '—'}</p>
                 </div>
             </div>
@@ -700,7 +657,7 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                                         <TableCell>
                                             <Badge variant="secondary">{attendee.tier?.name || 'General Admission'}</Badge>
                                             <div className="text-xs text-muted-foreground mt-1">
-                                                ₱{attendee.tier?.price?.toLocaleString() ?? '0'}
+                                                ₱{attendee.amount_paid.toLocaleString()}
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-sm">
@@ -832,14 +789,20 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                                     <span className="font-medium">{refundDetails.orderCount}</span>
                                 </div>
                                 <div className="flex justify-between border-t pt-2 mt-2">
-                                    <span>Processing Fee (Charged to You):</span>
-                                    <span className="font-bold text-destructive">5% of Order Total</span>
+                                    <span>Refunded to Customers:</span>
+                                    <span className="font-bold text-destructive">₱{refundDetails.totalRefund.toLocaleString()}</span>
                                 </div>
                             </div>
 
+                            {refundDetails.qrphCount > 0 && (
+                                <div className="rounded-md border border-orange-300 bg-orange-50 dark:bg-orange-900/20 p-3 text-sm text-orange-800 dark:text-orange-200">
+                                    <span className="font-semibold">{refundDetails.qrphCount} QRPH order{refundDetails.qrphCount === 1 ? '' : 's'} will be skipped.</span> QRPH can’t be reversed automatically — refund {refundDetails.qrphCount === 1 ? 'it' : 'them'} from <span className="font-medium">Payouts</span> as a GCash/bank transfer.
+                                </div>
+                            )}
+
                             <p className="text-xs text-muted-foreground mt-4">
-                                By confirming, you agree that a 5% processing fee will be deducted from your account balance.
-                                The full order amount will be returned to the customer.
+                                The full order amount is returned to the customer and deducted from your
+                                wallet balance. HangHut&apos;s service fee is non-refundable.
                             </p>
                         </AlertDialogDescription>
                     </AlertDialogHeader>
@@ -865,7 +828,7 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
                             Refund Failed: Insufficient Balance
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                            We could not process this refund because your account balance is too low to cover the refund amount plus the 5% processing fee.
+                            We could not process this refund because your wallet balance is too low to cover the refund amount.
                             <br /><br />
                             Please contact support to top up your balance or resolve this issue.
                         </AlertDialogDescription>

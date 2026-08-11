@@ -10,6 +10,7 @@ export interface TransactionDetail {
     event_title: string
     buyer_name: string | null
     buyer_email: string | null
+    buyer_phone: string | null
     quantity: number
     gross_amount: number
     platform_fee: number
@@ -45,7 +46,7 @@ export async function getTransactionDetail(transactionId: string): Promise<{ det
             id, gross_amount, platform_fee, payment_processing_fee, fixed_fee, vat, organizer_payout,
             status, created_at, xendit_transaction_id, partner_id, event_id, purchase_intent_id,
             event:events ( title ),
-            purchase_intent:purchase_intents ( id, guest_name, guest_email, user_id, quantity, total_amount, payment_method, status, refunded_amount, refunded_at, refund_method, metadata )
+            purchase_intent:purchase_intents ( id, guest_name, guest_email, guest_phone, user_id, quantity, total_amount, payment_method, status, refunded_amount, refunded_at, refund_method, metadata )
         `)
         .eq('id', transactionId)
         .maybeSingle()
@@ -57,10 +58,12 @@ export async function getTransactionDetail(transactionId: string): Promise<{ det
 
     let buyerName: string | null = pi?.guest_name || null
     let buyerEmail: string | null = pi?.guest_email || null
-    if (!buyerEmail && pi?.user_id) {
-        const { data: u } = await supabase.from('users').select('email, display_name').eq('id', pi.user_id).maybeSingle()
-        buyerEmail = u?.email || null
+    let buyerPhone: string | null = pi?.guest_phone || null
+    if ((!buyerEmail || !buyerPhone) && pi?.user_id) {
+        const { data: u } = await supabase.from('users').select('email, display_name, phone').eq('id', pi.user_id).maybeSingle()
+        buyerEmail = buyerEmail || u?.email || null
         buyerName = buyerName || u?.display_name || null
+        buyerPhone = buyerPhone || (u as any)?.phone || null
     }
 
     let tickets: TransactionDetail['tickets'] = []
@@ -83,6 +86,7 @@ export async function getTransactionDetail(transactionId: string): Promise<{ det
             event_title: (txn.event as any)?.title || 'Event',
             buyer_name: buyerName,
             buyer_email: buyerEmail,
+            buyer_phone: buyerPhone,
             quantity: pi?.quantity ?? tickets.length,
             gross_amount: Number(txn.gross_amount) || 0,
             platform_fee: Number(txn.platform_fee) || 0,
@@ -115,7 +119,7 @@ export async function refundTransaction(
     transactionId: string,
     amount: number,
     reason: string,
-): Promise<{ success?: boolean; error?: string }> {
+): Promise<RefundActionResult> {
     const { user } = await getAuthUser()
     if (!user) return { error: 'Unauthorized' }
     const partnerId = await getPartnerId(user.id)
@@ -153,13 +157,19 @@ export async function refundTransaction(
             })
             const result = await res.json()
             if (!res.ok || !result.success) {
-                return { error: result.error || result.message || 'Refund failed' }
+                return {
+                    error: result.error || result.message || 'Refund failed',
+                    code: result.code,
+                    available_balance: result.available_balance,
+                    required: result.required,
+                    shortfall: result.shortfall,
+                }
             }
         }
         revalidatePath('/organizer/payouts')
         return { success: true }
     } catch (e: any) {
-        return { error: e?.message || 'Refund failed' }
+        return { error: e?.message || 'Refund failed', code: 'NETWORK' }
     }
 }
 
@@ -205,4 +215,63 @@ export async function recordManualRefund(
 
     revalidatePath('/organizer/payouts')
     return { success: true }
+}
+
+/**
+ * Send a refund to the customer via a Xendit Direct Disbursement (Payouts v2) — the
+ * automated alternative to recordManualRefund for QRPH orders the Refund API can't
+ * reverse. Fires the payout (organizer's sub-wallet pays amount + transfer fee); the
+ * ledger reversal + ticket voiding happen when the payout webhook confirms COMPLETED.
+ * Returns pending:true on success (the money is on its way, not yet settled).
+ */
+export interface RefundActionResult {
+    success?: boolean
+    pending?: boolean
+    fee?: number
+    error?: string
+    /** Machine-readable failure code so the UI can show a specific, actionable message. */
+    code?: string
+    available_balance?: number
+    required?: number
+    shortfall?: number
+}
+
+export async function sendDisbursementRefund(
+    intentId: string,
+    amount: number,
+    channel: string,
+    accountNumber: string,
+    accountName: string,
+    reason: string,
+): Promise<RefundActionResult> {
+    const supabase = await createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/create-disbursement`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+            body: JSON.stringify({
+                intent_id: intentId,
+                amount,
+                channel,
+                account_number: accountNumber,
+                account_name: accountName,
+                reason,
+            }),
+        })
+        const result = await res.json()
+        if (!res.ok || !result.success) {
+            return {
+                error: result.error || result.message || 'Refund transfer failed',
+                code: result.code,
+                available_balance: result.available_balance,
+                required: result.required,
+                shortfall: result.shortfall,
+            }
+        }
+        revalidatePath('/organizer/payouts')
+        return { success: true, pending: true, fee: result.fee }
+    } catch (e: any) {
+        return { error: e?.message || 'Refund transfer failed', code: 'NETWORK' }
+    }
 }

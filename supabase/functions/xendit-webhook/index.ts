@@ -769,6 +769,57 @@ serve(async (req) => {
 
             console.log(`Processing Payout Event: ${eventType} for ${reference_id}`);
 
+            // --- Refund disbursements (QRPH/bank-transfer REFUNDS) take precedence ---
+            // These reuse the same payout webhook. Match by Xendit disbursement id, then
+            // by our reference_id (external_id). On COMPLETED we do the ledger reversal +
+            // void tickets; on FAILED we release the pending lock so the organizer retries.
+            const disbFilters: string[] = [];
+            if (data.id) disbFilters.push(`xendit_disbursement_id.eq.${data.id}`);
+            if (reference_id) disbFilters.push(`external_id.eq.${reference_id}`);
+            if (disbFilters.length) {
+                const { data: refundDisb } = await supabaseClient
+                    .from('refund_disbursements')
+                    .select('id, status, purchase_intent_id')
+                    .or(disbFilters.join(','))
+                    .maybeSingle();
+
+                if (refundDisb) {
+                    const succeeded = eventType === 'payout.succeeded' || data.status === 'COMPLETED';
+                    const failed = eventType === 'payout.failed' || data.status === 'FAILED';
+
+                    if (succeeded) {
+                        const { data: rpcRes, error: rpcErr } = await supabaseClient
+                            .rpc('complete_disbursement_refund', { p_disbursement_id: refundDisb.id });
+                        if (rpcErr) {
+                            console.error(`❌ complete_disbursement_refund failed for ${refundDisb.id}:`, rpcErr);
+                            return new Response(JSON.stringify({ error: rpcErr.message }), { status: 500, headers: corsHeaders });
+                        }
+                        console.log(`✅ Refund disbursement ${refundDisb.id} completed:`, rpcRes);
+                        // Notify the customer their refund is on the way (best-effort — never fail the webhook).
+                        try {
+                            await supabaseClient.functions.invoke('send-transaction-email', {
+                                body: { type: 'refund_initiated', intent_id: refundDisb.purchase_intent_id },
+                            });
+                        } catch (emailErr) {
+                            console.warn('Refund disbursement email failed:', emailErr);
+                        }
+                    } else if (failed) {
+                        await supabaseClient.rpc('fail_disbursement_refund', {
+                            p_disbursement_id: refundDisb.id,
+                            p_reason: data.failure_code || data.failure_reason || 'Payout failed',
+                        });
+                        console.log(`↩️ Refund disbursement ${refundDisb.id} failed — lock released`);
+                    } else {
+                        console.log(`Refund disbursement ${refundDisb.id} event ${eventType} (status ${data.status}) — no-op`);
+                    }
+
+                    return new Response(
+                        JSON.stringify({ success: true, refund_disbursement: refundDisb.id }),
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                    );
+                }
+            }
+
             // Map status
             let newStatus = 'processing';
             if (eventType === 'payout.succeeded' || data.status === 'COMPLETED') {

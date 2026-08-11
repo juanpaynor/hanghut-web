@@ -29,6 +29,13 @@ export interface Attendee {
         name: string
         price: number
     } | null
+    /** What this ticket ACTUALLY cost at purchase (reflects the price paid + any
+     * discount), not the tier's current list price. Falls back to order/qty, then list. */
+    amount_paid: number
+    /** Total amount captured for the whole order this ticket belongs to. */
+    order_total: number
+    /** Number of tickets in this ticket's order. */
+    order_quantity: number
     payment_id: string | null
     purchase_intent_id: string | null
     payment_status: string | null
@@ -96,6 +103,9 @@ export async function getEventAttendees(eventId: string, filters: AttendeeFilter
             purchase_intent:purchase_intents${intentInner} (
                 xendit_invoice_id,
                 unit_price,
+                total_amount,
+                quantity,
+                discount_amount,
                 guest_name,
                 guest_email,
                 guest_phone,
@@ -198,36 +208,51 @@ export async function getEventAttendees(eventId: string, filters: AttendeeFilter
     }
 
     // Map to Attendee Interface
-    const attendees: Attendee[] = tickets.map((t: any) => ({
+    const attendees: Attendee[] = tickets.map((t: any) => {
+        const pi = t.purchase_intent || {}
+        const orderQty = Number(pi.quantity) || 1
+        const orderTotal = Number(pi.total_amount) || 0
+        // What this single ticket actually cost. Prefer the unit_price captured at
+        // purchase (survives later tier price edits), fall back to splitting the
+        // order total across its tickets, and only then to the tier's list price.
+        const amountPaid =
+            Number(pi.unit_price) > 0 ? Number(pi.unit_price)
+            : orderTotal > 0 ? orderTotal / orderQty
+            : (t.tier?.price ?? 0)
+        return {
         id: t.id,
         status: t.status,
-        created_at: t.purchase_intent?.paid_at || t.created_at,
+        created_at: pi.paid_at || t.created_at,
         user_id: t.user_id,
         ticket_number: t.ticket_number || null,
         seat_info: t.seat_info || null,
         checked_in_at: t.checked_in_at || null,
         registration_id: t.registration_id || null,
-        payment_id: t.purchase_intent?.xendit_invoice_id || null,
+        payment_id: pi.xendit_invoice_id || null,
         purchase_intent_id: t.purchase_intent_id,
-        payment_status: t.purchase_intent?.status || null,
-        payment_method: t.purchase_intent?.payment_method || null,
-        refunded_amount: t.purchase_intent?.refunded_amount || 0,
-        refunded_at: t.purchase_intent?.refunded_at || null,
+        payment_status: pi.status || null,
+        payment_method: pi.payment_method || null,
+        refunded_amount: pi.refunded_amount || 0,
+        refunded_at: pi.refunded_at || null,
+        amount_paid: amountPaid,
+        order_total: orderTotal,
+        order_quantity: orderQty,
         // Prefer explicit tier relation, fallback to legacy text column
         tier: t.tier ? t.tier : {
             name: t.legacy_tier_name || 'General Admission',
-            price: t.purchase_intent?.unit_price || 0
+            price: pi.unit_price || 0
         },
         user: t.user ? {
             email: t.user.email,
             display_name: t.user.display_name,
         } : null,
-        guest_info: (t.guest_name || t.guest_email || t.purchase_intent?.guest_email) ? {
-            name: t.guest_name || t.purchase_intent?.guest_name,
-            email: t.guest_email || t.purchase_intent?.guest_email,
-            phone: t.purchase_intent?.guest_phone
+        guest_info: (t.guest_name || t.guest_email || pi.guest_email) ? {
+            name: t.guest_name || pi.guest_name,
+            email: t.guest_email || pi.guest_email,
+            phone: pi.guest_phone
         } : null
-    }))
+        }
+    })
 
     return { attendees, total: count || 0 }
 }
@@ -271,9 +296,15 @@ export async function getAttendeeStats(eventId: string) {
     const [attendeeRes, checkedInRes, paidRes] = await Promise.all([
         supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('event_id', eventId).in('status', ['valid', 'used']),
         supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('event_id', eventId).eq('status', 'used'),
-        supabase.from('purchase_intents').select('total_amount').eq('event_id', eventId).eq('status', 'completed'),
+        supabase.from('purchase_intents').select('total_amount, refunded_amount').eq('event_id', eventId).in('status', ['completed', 'refunded']),
     ])
-    const revenue = (paidRes.data || []).reduce((s: number, p: any) => s + Number(p.total_amount || 0), 0)
+    // Net revenue: refunds set refunded_amount on the intent but never flip its
+    // status, so a plain sum of total_amount double-counts refunded orders. Subtract
+    // what was actually returned to keep this in step with the event-overview figure.
+    const revenue = (paidRes.data || []).reduce(
+        (s: number, p: any) => s + Number(p.total_amount || 0) - Number(p.refunded_amount || 0),
+        0,
+    )
     return {
         attendees: attendeeRes.count || 0,
         checkedIn: checkedInRes.count || 0,
@@ -413,7 +444,7 @@ export async function markIntentAsRefunded(intentId: string, eventId: string, re
     // 1. Get intent details
     const { data: intent } = await supabase
         .from('purchase_intents')
-        .select('id, total_amount, quantity, status, xendit_invoice_id')
+        .select('id, status')
         .eq('id', intentId)
         .single()
 
@@ -422,21 +453,13 @@ export async function markIntentAsRefunded(intentId: string, eventId: string, re
     }
 
     if (intent.status === 'refunded') {
-        return { success: true }
+        return { success: true, finalized: true }
     }
 
-    // 2. Get all non-refunded tickets for this intent
-    const { data: tickets } = await supabase
-        .from('tickets')
-        .select('id, tier_id, status')
-        .eq('purchase_intent_id', intentId)
-
-    if (!tickets || tickets.length === 0) return { success: true }
-
-    const ticketsToRefund = tickets.filter(t => t.status !== 'refunded')
-    if (ticketsToRefund.length === 0) return { success: true }
-
-    // 3. Call the request-refund edge function (full refund — no amount means full)
+    // 2. Money: request-refund edge fn (full order — no amount). This also sets
+    //    refunded_amount/refunded_at on the intent. NOTE: this is the ONLY call to
+    //    request-refund on this path — callers must not invoke it separately (doing so
+    //    trips the idempotency guard and blocks the DB finalize below).
     const { data: { session } } = await supabase.auth.getSession()
 
     const response = await fetch(
@@ -462,41 +485,22 @@ export async function markIntentAsRefunded(intentId: string, eventId: string, re
         const errorCode = result.code || 'UNKNOWN'
         console.error('[Refund] Edge function error:', errorCode, errorMsg)
 
-        if (errorCode === 'INSUFFICIENT_BALANCE') {
+        if (errorCode === 'INSUFFICIENT_BALANCE' || errorCode === 'INSUFFICIENT_SUBWALLET_BALANCE') {
             throw new Error('Insufficient balance in organizer wallet. Please top up first.')
         }
         throw new Error(`Refund failed: ${errorMsg}`)
     }
 
-    // 4. Mark all tickets as refunded
-    const { error: updateError } = await supabase
-        .from('tickets')
-        .update({ status: 'refunded', updated_at: new Date().toISOString() })
-        .eq('purchase_intent_id', intentId)
-
-    if (updateError) {
-        console.error('[Refund] Failed to update ticket statuses:', updateError)
-    }
-
-    // 5. Decrement tier inventory
-    const tierCounts = new Map<string, number>()
-    for (const t of ticketsToRefund) {
-        if (t.tier_id) {
-            tierCounts.set(t.tier_id, (tierCounts.get(t.tier_id) || 0) + 1)
-        }
-    }
-
-    for (const [tierId, count] of Array.from(tierCounts.entries())) {
-        try {
-            await supabase.rpc('decrement_tier_sold', {
-                row_id: tierId,
-                amount: count
-            })
-        } catch (e) {
-            console.error('[Refund] Failed to decrement tier sold:', e)
-        }
+    // 3. Finalize atomically: reversal ledger row, void tickets, free seats, decrement
+    //    tier + events.tickets_sold, status → refunded. If this fails the money has
+    //    already moved, so we return a soft flag rather than throwing (reconcilable).
+    const { data: fin, error: finErr } = await supabase.rpc('finalize_event_refund', { p_intent_id: intentId })
+    if (finErr || !fin?.success) {
+        console.error('[Refund] finalize_event_refund failed (money already refunded):', finErr?.message || fin?.error)
+        revalidatePath(`/organizer/events/${eventId}`)
+        return { success: true, finalized: false, refundId: result.data?.id }
     }
 
     revalidatePath(`/organizer/events/${eventId}`)
-    return { success: true, refundId: result.data?.id }
+    return { success: true, finalized: true, refundId: result.data?.id }
 }
