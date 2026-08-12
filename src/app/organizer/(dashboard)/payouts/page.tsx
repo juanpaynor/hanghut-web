@@ -27,7 +27,7 @@ async function getPayoutStats(partnerId: string) {
 
     // Get all completed earnings (Lifetime for Balance) — event tickets AND
     // experience bookings (separate ledger, partner's host_payout).
-    const [{ data: transactions }, { data: expTransactions }] = await Promise.all([
+    const [{ data: transactions }, { data: expTransactions }, { data: refundedIntents }] = await Promise.all([
         supabase
             .from('transactions')
             .select('organizer_payout')
@@ -40,11 +40,25 @@ async function getPayoutStats(partnerId: string) {
             // App-team contract: count completed AND refunded — refund rows carry a
             // negative host_payout so they net the earnings down.
             .in('status', ['completed', 'refunded']),
+        // EVENT refunds. Unlike experiences, event refunds don't reliably write a
+        // negative reversal row (the bare request-refund path writes none, and the
+        // reversal row that finalize_event_refund does write is status='refunded', which
+        // the completed-only filter above excludes). The organizer shoulders the full
+        // refunded amount, so subtract it here from `refunded_amount` — the one field
+        // every refund path sets — to keep the balance from reading too high.
+        supabase
+            .from('purchase_intents')
+            .select('refunded_amount, event:events!inner(organizer_id)')
+            .eq('event.organizer_id', partnerId)
+            .gt('refunded_amount', 0),
     ])
+
+    const eventRefunds = (refundedIntents?.reduce((sum, r: any) => sum + Number(r.refunded_amount || 0), 0) || 0)
 
     const totalEarnings =
         (transactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0) +
-        (expTransactions?.reduce((sum, t) => sum + Number(t.host_payout), 0) || 0)
+        (expTransactions?.reduce((sum, t) => sum + Number(t.host_payout), 0) || 0) -
+        eventRefunds
 
     // Get all payouts (Lifetime for Balance)
     const { data: payouts } = await supabase
@@ -128,7 +142,9 @@ async function getTransactions(partnerId: string, from?: string, to?: string, se
                 payment_method,
                 settlement_status,
                 estimated_settlement_time,
-                settled_at
+                settled_at,
+                refunded_amount,
+                refunded_at
             )
         `, { count: 'exact' })
         .eq('partner_id', partnerId)

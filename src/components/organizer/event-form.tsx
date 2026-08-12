@@ -33,6 +33,9 @@ const CATEGORY_TO_EVENT_TYPE: Record<string, string> = {
     fitness_sports: 'sports', talks_discussions: 'conference', business_networking: 'conference',
     tech: 'conference', games_social: 'social', family_kids: 'social', community: 'social',
     outdoors_adventure: 'sports', markets_popups: 'other', nightlife: 'nightlife', other: 'other',
+    // Comedy has no legacy enum value — map to 'art' (a performing art) for the old app
+    // until it adopts `category`. team_comms note sent to the app team.
+    comedy: 'art',
 }
 
 interface EventFormData {

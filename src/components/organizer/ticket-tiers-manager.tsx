@@ -23,8 +23,8 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { Plus, Edit, Trash2, Ticket, DollarSign, Users, Star, X, Check, Sparkles } from 'lucide-react'
-import { createTicketTier, updateTicketTier, deleteTicketTier } from '@/lib/organizer/tier-actions'
+import { Plus, Edit, Trash2, Ticket, DollarSign, Users, Star, X, Check, Sparkles, Loader2, Upload } from 'lucide-react'
+import { createTicketTier, updateTicketTier, deleteTicketTier, uploadTierImage } from '@/lib/organizer/tier-actions'
 import { updateEventTierDisplay } from '@/lib/organizer/event-actions'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
@@ -46,6 +46,7 @@ interface TicketTier {
     highlight?: boolean | null
     badge_label?: string | null
     accent_color?: string | null
+    image_url?: string | null
 }
 
 /** How tiers are presented on the public event page (stored in layout_config.tiers). */
@@ -129,8 +130,10 @@ export function TicketTiersManager({
         highlight: false,
         badge_label: '',
         accent_color: '' as string,
+        image_url: '' as string,
     })
     const [perkDraft, setPerkDraft] = useState('')
+    const [uploadingImage, setUploadingImage] = useState(false)
 
     const resetForm = () => {
         setFormData({
@@ -145,6 +148,7 @@ export function TicketTiersManager({
             highlight: false,
             badge_label: '',
             accent_color: '',
+            image_url: '',
         })
         setPerkDraft('')
         setEditingTier(null)
@@ -169,9 +173,27 @@ export function TicketTiersManager({
             highlight: !!tier.highlight,
             badge_label: tier.badge_label || '',
             accent_color: tier.accent_color || '',
+            image_url: tier.image_url || '',
         })
         setPerkDraft('')
         setIsDialogOpen(true)
+    }
+
+    const handleImageUpload = async (file: File) => {
+        setUploadingImage(true)
+        try {
+            const fd = new FormData()
+            fd.append('file', file)
+            fd.append('eventId', eventId)
+            const res = await uploadTierImage(fd)
+            if (res.error || !res.url) {
+                toast({ title: 'Upload failed', description: res.error || 'Could not upload image', variant: 'destructive' })
+            } else {
+                setFormData(prev => ({ ...prev, image_url: res.url as string }))
+            }
+        } finally {
+            setUploadingImage(false)
+        }
     }
 
     const addPerk = () => {
@@ -212,6 +234,7 @@ export function TicketTiersManager({
                 highlight: formData.highlight,
                 badge_label: formData.badge_label.trim() || null,
                 accent_color: formData.accent_color || null,
+                image_url: formData.image_url || null,
             }
 
             let result
@@ -382,6 +405,11 @@ export function TicketTiersManager({
                         >
                             <CardHeader>
                                 <div className="flex items-start justify-between">
+                                    <div className="flex items-start gap-3">
+                                        {tier.image_url && (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={tier.image_url} alt="" className="h-12 w-12 rounded-md object-cover border shrink-0" />
+                                        )}
                                     <div className="space-y-1">
                                         <div className="flex items-center gap-2 flex-wrap">
                                             {tier.accent_color && (
@@ -404,6 +432,7 @@ export function TicketTiersManager({
                                         {tier.description && (
                                             <CardDescription>{tier.description}</CardDescription>
                                         )}
+                                    </div>
                                     </div>
                                     <div className="flex gap-2">
                                         <Button
@@ -595,6 +624,39 @@ export function TicketTiersManager({
                         <div className="space-y-1">
                             <Label className="text-base">Presentation</Label>
                             <p className="text-sm text-muted-foreground">How this tier looks to buyers on the event page.</p>
+                        </div>
+
+                        {/* Tier image */}
+                        <div className="grid gap-2">
+                            <Label>Tier image</Label>
+                            <p className="text-xs text-muted-foreground">Optional. Shown on the tier card — e.g. a seating view, artist photo, or what the tier includes.</p>
+                            {formData.image_url ? (
+                                <div className="relative w-full max-w-xs overflow-hidden rounded-lg border">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={formData.image_url} alt="Tier" className="h-36 w-full object-cover" />
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData(prev => ({ ...prev, image_url: '' }))}
+                                        className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white transition-colors hover:bg-black/80"
+                                        aria-label="Remove image"
+                                    >
+                                        <X className="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
+                            ) : (
+                                <label className="flex h-28 w-full max-w-xs cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-muted-foreground transition-colors hover:bg-muted/40">
+                                    {uploadingImage ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+                                    <span className="text-xs">{uploadingImage ? 'Uploading…' : 'Upload image'}</span>
+                                    <span className="text-[10px] text-muted-foreground/70">PNG or JPG, up to 5MB</span>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        disabled={uploadingImage}
+                                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = '' }}
+                                    />
+                                </label>
+                            )}
                         </div>
 
                         {/* Perks */}

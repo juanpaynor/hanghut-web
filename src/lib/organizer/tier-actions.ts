@@ -19,6 +19,7 @@ export async function createTicketTier(eventId: string, tierData: {
     highlight?: boolean
     badge_label?: string | null
     accent_color?: string | null
+    image_url?: string | null
 }) {
     const supabase = await createClient()
 
@@ -99,6 +100,7 @@ export async function updateTicketTier(tierId: string, tierData: {
     highlight?: boolean
     badge_label?: string | null
     accent_color?: string | null
+    image_url?: string | null
 }) {
     const supabase = await createClient()
 
@@ -215,4 +217,49 @@ export async function deleteTicketTier(tierId: string) {
     }
 
     return { success: true }
+}
+
+/**
+ * Upload an image for a ticket tier (stored in the shared event-covers bucket under
+ * a tiers/ prefix). Returns a public URL to save on ticket_tiers.image_url. Verifies
+ * the caller owns the event before writing.
+ */
+export async function uploadTierImage(formData: FormData): Promise<{ url?: string; error?: string }> {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const file = formData.get('file') as File | null
+    const eventId = formData.get('eventId') as string | null
+    if (!file || !eventId) return { error: 'Missing file or event' }
+    if (!file.type.startsWith('image/')) return { error: 'File must be an image' }
+    if (file.size > 5 * 1024 * 1024) return { error: 'Image must be under 5MB' }
+
+    // Ownership: the caller must own (or manage) the event this tier belongs to.
+    const { data: event } = await supabase.from('events').select('organizer_id').eq('id', eventId).single()
+    if (!event) return { error: 'Event not found' }
+    const { data: partner } = await supabase
+        .from('partners').select('id').eq('user_id', user.id).eq('id', event.organizer_id).maybeSingle()
+    if (!partner) {
+        const { data: teamMember } = await supabase
+            .from('partner_team_members').select('role')
+            .eq('user_id', user.id).eq('partner_id', event.organizer_id).in('role', ['owner', 'manager']).maybeSingle()
+        if (!teamMember) return { error: 'Permission denied' }
+    }
+
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+    const fileName = `tiers/${eventId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+
+    const { data, error } = await supabase.storage
+        .from('event-covers')
+        .upload(fileName, file, { contentType: file.type, upsert: false })
+
+    if (error) {
+        console.error('Tier image upload error:', error)
+        return { error: 'Upload failed' }
+    }
+
+    const { data: pub } = supabase.storage.from('event-covers').getPublicUrl(data.path)
+    return { url: pub.publicUrl }
 }

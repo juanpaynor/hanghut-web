@@ -33,6 +33,8 @@ interface Transaction {
         settlement_status?: string | null
         estimated_settlement_time?: string | null
         settled_at?: string | null
+        refunded_amount?: number | null
+        refunded_at?: string | null
     } | null
     _type?: 'ticket' | 'topup' | 'experience'
 }
@@ -75,7 +77,7 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                     `"${getPaymentChannel(t.purchase_intent?.payment_method)}"`,
                     `"${t.purchase_intent?.payment_method?.toUpperCase() || 'UNKNOWN'}"`,
                     t.gross_amount,
-                    ((t.platform_fee || 0) + (t.payment_processing_fee || 0) + (t.fixed_fee || 0) + (t.vat || 0)),
+                    (Number(t.gross_amount) - Number(t.organizer_payout)),
                     t.organizer_payout,
                     t.status,
                     settlement.status,
@@ -95,10 +97,22 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
         document.body.removeChild(link)
     }
 
-    // Calculate summary stats
-    const totalIncoming = transactions.reduce((sum, t) => sum + Number(t.gross_amount), 0)
-    const totalFees = transactions.reduce((sum, t) => sum + (Number(t.platform_fee) || 0) + (Number(t.payment_processing_fee) || 0) + (Number(t.fixed_fee) || 0) + (Number(t.vat) || 0), 0)
-    const totalNet = transactions.reduce((sum, t) => sum + Number(t.organizer_payout), 0)
+    // Exclude internal refund reversal rows (negative gross) from the sales view — the
+    // refund is surfaced from the intent's refunded_amount instead, so nothing double-counts.
+    const salesTx = transactions.filter(t => Number(t.gross_amount) >= 0)
+
+    // Summary stats.
+    //  - Incoming = gross sales (what customers paid).
+    //  - Fees = Incoming − gross payout (what platform/processing took on the sale). Derived
+    //    this way because organizer_payout used different fee rules across eras, so summing
+    //    the raw fee columns didn't equal the real deduction.
+    //  - Refunds = amounts returned to customers (organizer shoulders the full amount).
+    //  - Net Earnings = gross payout − refunds (what the organizer actually nets).
+    const totalIncoming = salesTx.reduce((sum, t) => sum + Number(t.gross_amount), 0)
+    const grossPayout = salesTx.reduce((sum, t) => sum + Number(t.organizer_payout), 0)
+    const totalRefunds = salesTx.reduce((sum, t) => sum + Number(t.purchase_intent?.refunded_amount || 0), 0)
+    const totalFees = totalIncoming - grossPayout
+    const totalNet = grossPayout - totalRefunds
 
     const getStatusConfig = (status: string) => {
         switch (status) {
@@ -174,6 +188,9 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                                 <div>
                                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Net Earnings</p>
                                     <p className="text-2xl font-bold">₱{totalNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                    {totalRefunds > 0 && (
+                                        <p className="text-[11px] text-muted-foreground">incl. −₱{totalRefunds.toLocaleString(undefined, { minimumFractionDigits: 2 })} refunded</p>
+                                    )}
                                 </div>
                             </div>
                             <div className="text-right">
@@ -215,7 +232,7 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {transactions.length === 0 ? (
+                            {salesTx.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={8} className="text-center py-16 text-muted-foreground">
                                         <div className="flex flex-col items-center gap-2">
@@ -227,14 +244,21 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                transactions.map((transaction) => {
+                                salesTx.map((transaction) => {
                                     const isTopUp = transaction._type === 'topup'
                                     const isEventTxn = !isTopUp && transaction._type !== 'experience'
-                                    const statusConfig = getStatusConfig(transaction.status)
+                                    // A refund lives on the purchase_intent (refunded_amount), not on the
+                                    // original sale row — surface it here so refunds are visible on the
+                                    // transaction regardless of which refund path wrote them.
+                                    const refundedAmt = isTopUp ? 0 : Number(transaction.purchase_intent?.refunded_amount || 0)
+                                    const isRefunded = refundedAmt > 0
+                                    const statusConfig = getStatusConfig(isRefunded ? 'refunded' : transaction.status)
                                     const StatusIcon = statusConfig.icon
                                     const paymentMethod = transaction.purchase_intent?.payment_method
                                     const channel = isTopUp ? 'Wallet' : getPaymentChannel(paymentMethod)
-                                    const totalFees = isTopUp ? 0 : (Number(transaction.platform_fee) || 0) + (Number(transaction.payment_processing_fee) || 0) + (Number(transaction.fixed_fee) || 0) + (Number(transaction.vat) || 0)
+                                    // Fees = what was actually taken (Amount − Net Payout), so the
+                                    // row reconciles even where the fee columns are historically off.
+                                    const totalFees = isTopUp ? 0 : Number(transaction.gross_amount) - Number(transaction.organizer_payout)
                                     const settlement = isTopUp ? null : getSettlementInfo(transaction.created_at, paymentMethod, {
                                         status: transaction.purchase_intent?.settlement_status,
                                         etaTime: transaction.purchase_intent?.estimated_settlement_time,
@@ -325,9 +349,16 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
                                                         +₱{Number(transaction.organizer_payout).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                     </span>
                                                 ) : (
-                                                    <span className="text-sm font-semibold text-emerald-600">
-                                                        ₱{Number(transaction.organizer_payout).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                                    </span>
+                                                    <div>
+                                                        <span className={`text-sm font-semibold ${isRefunded ? 'text-muted-foreground line-through' : 'text-emerald-600'}`}>
+                                                            ₱{Number(transaction.organizer_payout).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                        </span>
+                                                        {isRefunded && (
+                                                            <span className="block text-[11px] font-medium text-slate-500">
+                                                                −₱{refundedAmt.toLocaleString(undefined, { minimumFractionDigits: 2 })} refunded
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </TableCell>
 

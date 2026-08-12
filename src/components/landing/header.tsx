@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import Image from "next/image";
+import { LogIn } from "lucide-react";
 
 
 export default function Header() {
@@ -36,9 +37,18 @@ export default function Header() {
               Pricing
             </Button>
           </Link>
-          <Link href="/organizer/login" className="hidden md:block">
-            <Button variant="ghost" className="font-bold text-sm tracking-widest uppercase hover:bg-white/10">
-              Partner Login
+
+          {/* Divider separating browse links from account actions */}
+          <div className="hidden md:block h-6 w-px bg-white/15 mx-1" aria-hidden="true" />
+
+          {/* Account action — outlined pill + icon so it reads as "sign in", not a nav link */}
+          <Link href="/organizer/login">
+            <Button
+              variant="outline"
+              className="gap-2 rounded-full border-white/25 bg-transparent px-4 font-semibold text-sm hover:bg-white/10 hover:text-foreground"
+            >
+              <LogIn className="h-4 w-4" />
+              <span className="hidden sm:inline">Log In</span>
             </Button>
           </Link>
           <a

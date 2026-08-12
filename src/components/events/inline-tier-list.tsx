@@ -167,8 +167,18 @@ export function InlineTierList({
                                     </div>
                                 )}
 
+                                {/* Tier image — full-width banner in card mode */}
+                                {tier.image_url && !asList && (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={tier.image_url} alt="" className="mb-3 h-32 w-full rounded-lg object-cover" />
+                                )}
+
                                 <div className={cn(asList && 'flex-1 order-1')}>
                                     <div className="flex items-center gap-2">
+                                        {tier.image_url && asList && (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={tier.image_url} alt="" className="h-9 w-9 rounded-md object-cover shrink-0" />
+                                        )}
                                         {accent && <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />}
                                         <span className="font-bold">{tier.name}</span>
                                         {tSoldOut && <Badge variant="destructive" className="text-[10px] h-5">Sold Out</Badge>}
