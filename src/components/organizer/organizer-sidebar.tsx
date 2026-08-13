@@ -7,7 +7,7 @@ import {
     LayoutDashboard, CalendarDays, Wallet, Mail, Users, ScanLine,
     Settings, Code2, ShieldCheck, ExternalLink, LogOut, Megaphone,
     MousePointerClick, Crown, Compass, BookOpen, CalendarClock, UserSearch,
-    Puzzle, Link2,
+    Puzzle, Link2, Shirt,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/auth/cached'
@@ -26,6 +26,7 @@ const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
         items: [
             { label: 'Dashboard',    href: '/organizer',               icon: LayoutDashboard, section: 'dashboard' },
             { label: 'My Events',    href: '/organizer/events',        icon: CalendarDays,    section: 'events',       capability: 'organizer' },
+            { label: 'Merch',        href: '/organizer/merch',         icon: Shirt,           section: 'merch',        capability: 'organizer' },
         ],
     },
     {
@@ -73,6 +74,7 @@ const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
 const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
     dashboard:     ['owner', 'manager', 'finance', 'marketing'],
     events:        ['owner', 'manager'],
+    merch:         ['owner', 'manager'],
     experiences:   ['owner', 'manager'],
     exp_bookings:  ['owner', 'manager'],
     exp_calendar:  ['owner', 'manager'],
@@ -98,9 +100,10 @@ interface Props {
     storefrontUrl?: string | null
     capabilities?: string[]
     subscriptionsEnabled?: boolean
+    merchEnabled?: boolean
 }
 
-export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, storefrontUrl, capabilities = ['organizer'], subscriptionsEnabled = false }: Props) {
+export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, storefrontUrl, capabilities = ['organizer'], subscriptionsEnabled = false, merchEnabled = false }: Props) {
     const pathname = usePathname()
     const router = useRouter()
     const supabase = createClient()
@@ -135,7 +138,9 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, 
                         (isVerified || item.section === 'verification') &&
                         (!item.capability || capabilities.includes(item.capability)) &&
                         // Subscriptions are feature-gated per partner while recurring is finalized
-                        (item.section !== 'subscriptions' || subscriptionsEnabled)
+                        (item.section !== 'subscriptions' || subscriptionsEnabled) &&
+                        // Merch is admin-enabled per partner (controlled rollout)
+                        (item.section !== 'merch' || merchEnabled)
                     )
                     if (visibleItems.length === 0) return null
 

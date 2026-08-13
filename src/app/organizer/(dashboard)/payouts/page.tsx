@@ -27,7 +27,7 @@ async function getPayoutStats(partnerId: string) {
 
     // Get all completed earnings (Lifetime for Balance) — event tickets AND
     // experience bookings (separate ledger, partner's host_payout).
-    const [{ data: transactions }, { data: expTransactions }, { data: refundedIntents }] = await Promise.all([
+    const [{ data: transactions }, { data: expTransactions }, { data: merchTransactions }, { data: refundedIntents }] = await Promise.all([
         supabase
             .from('transactions')
             .select('organizer_payout')
@@ -39,6 +39,12 @@ async function getPayoutStats(partnerId: string) {
             .eq('partner_id', partnerId)
             // App-team contract: count completed AND refunded — refund rows carry a
             // negative host_payout so they net the earnings down.
+            .in('status', ['completed', 'refunded']),
+        // Merch — separate ledger keyed by organizer_id; same completed/refunded rule.
+        supabase
+            .from('merch_transactions')
+            .select('organizer_payout')
+            .eq('organizer_id', partnerId)
             .in('status', ['completed', 'refunded']),
         // EVENT refunds. Unlike experiences, event refunds don't reliably write a
         // negative reversal row (the bare request-refund path writes none, and the
@@ -57,7 +63,8 @@ async function getPayoutStats(partnerId: string) {
 
     const totalEarnings =
         (transactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0) +
-        (expTransactions?.reduce((sum, t) => sum + Number(t.host_payout), 0) || 0) -
+        (expTransactions?.reduce((sum, t) => sum + Number(t.host_payout), 0) || 0) +
+        (merchTransactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0) -
         eventRefunds
 
     // Get all payouts (Lifetime for Balance)
@@ -240,11 +247,52 @@ async function getExperienceTransactions(partnerId: string, from?: string, to?: 
     return rows
 }
 
+// Merch sales live in merch_transactions (keyed by organizer_id + organizer_payout).
+// Normalize into the unified transaction shape like experiences.
+async function getMerchTransactions(partnerId: string, from?: string, to?: string, search?: string) {
+    const supabase = await createClient()
+
+    let query = supabase
+        .from('merch_transactions')
+        .select('id, gross_amount, platform_fee, organizer_payout, status, created_at, payout_id, event:events(title)')
+        .eq('organizer_id', partnerId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+    if (from) query = query.gte('created_at', from)
+    if (to) query = query.lte('created_at', `${to}T23:59:59`)
+
+    const { data } = await query
+
+    let rows = (data || []).map((t: any) => ({
+        id: t.id,
+        gross_amount: t.gross_amount,
+        organizer_payout: t.organizer_payout,
+        platform_fee: t.platform_fee,
+        payment_processing_fee: 0,
+        fixed_fee: null,
+        vat: 0,
+        status: t.status,
+        created_at: t.created_at,
+        payout_id: t.payout_id,
+        event: { title: t.event?.title ? `Merch · ${t.event.title}` : 'Merch' },
+        purchase_intent: { payment_method: null },
+        _type: 'merch' as const,
+    }))
+
+    if (search) {
+        const s = search.toLowerCase()
+        rows = rows.filter((r) => r.event.title.toLowerCase().includes(s))
+    }
+
+    return rows
+}
+
 // Helper to get Period Earnings
 async function getPeriodEarnings(partnerId: string, from?: string, to?: string) {
     if (!from || !to) return null
     const supabase = await createClient()
-    const [{ data: transactions }, { data: expTransactions }] = await Promise.all([
+    const [{ data: transactions }, { data: expTransactions }, { data: merchTx }] = await Promise.all([
         supabase
             .from('transactions')
             .select('organizer_payout')
@@ -260,11 +308,19 @@ async function getPeriodEarnings(partnerId: string, from?: string, to?: string) 
             .in('status', ['completed', 'refunded'])
             .gte('created_at', from)
             .lte('created_at', `${to}T23:59:59`),
+        supabase
+            .from('merch_transactions')
+            .select('organizer_payout')
+            .eq('organizer_id', partnerId)
+            .in('status', ['completed', 'refunded'])
+            .gte('created_at', from)
+            .lte('created_at', `${to}T23:59:59`),
     ])
 
     return (
         (transactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0) +
-        (expTransactions?.reduce((sum, t) => sum + Number(t.host_payout), 0) || 0)
+        (expTransactions?.reduce((sum, t) => sum + Number(t.host_payout), 0) || 0) +
+        (merchTx?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0)
     )
 }
 
@@ -294,7 +350,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
     if (!partnerId) return null
 
     // Parallel fetching
-    const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings, walletInfo, topups, experienceTxns, feeConfig] = await Promise.all([
+    const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings, walletInfo, topups, experienceTxns, merchTxns, feeConfig] = await Promise.all([
         getPayoutStats(partnerId),
         getPayoutHistory(partnerId, from, to, payoutPage, 5),
         getBankAccounts(partnerId),
@@ -303,16 +359,18 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
         getWalletInfo(partnerId),
         getWalletTopUps(partnerId),
         getExperienceTransactions(partnerId, from, to, search),
+        getMerchTransactions(partnerId, from, to, search),
         getFeeConfig(partnerId),
     ])
 
     const { payouts, count: payoutCount } = payoutsResult
     const { transactions: ticketTransactions, count: transactionCount } = transactionsResult
 
-    // Merge ticket sales + experience bookings + wallet top-ups, sorted by date
+    // Merge ticket sales + experience bookings + merch + wallet top-ups, sorted by date
     const transactions = [
         ...ticketTransactions.map((t: any) => ({ ...t, _type: 'ticket' })),
         ...experienceTxns,
+        ...merchTxns,
         ...topups,
     ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 

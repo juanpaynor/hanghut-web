@@ -86,6 +86,7 @@ export default async function OrganizerLayout({
                 storefrontUrl={storefrontUrl}
                 capabilities={capabilities}
                 subscriptionsEnabled={pf.subscriptions_enabled === true}
+                merchEnabled={pf.merch_enabled === true}
             />
 
             {/* Main content — offset by sidebar width on md+ */}

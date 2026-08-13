@@ -22,7 +22,7 @@ export const getPartner = cache(async (userId: string) => {
     // Check direct ownership first
     const { data: partner } = await supabase
         .from('partners')
-        .select('id, business_name, kyc_status, slug, profile_photo_url, capabilities, custom_domain, custom_domain_verified, subscriptions_enabled')
+        .select('id, business_name, kyc_status, slug, profile_photo_url, capabilities, custom_domain, custom_domain_verified, subscriptions_enabled, merch_enabled')
         .eq('user_id', userId)
         .single()
 
@@ -31,7 +31,7 @@ export const getPartner = cache(async (userId: string) => {
     // Fallback: check team membership
     const { data: teamMember } = await supabase
         .from('partner_team_members')
-        .select('partner_id, partners(id, business_name, kyc_status, slug, profile_photo_url, capabilities, custom_domain, custom_domain_verified, subscriptions_enabled)')
+        .select('partner_id, partners(id, business_name, kyc_status, slug, profile_photo_url, capabilities, custom_domain, custom_domain_verified, subscriptions_enabled, merch_enabled)')
         .eq('user_id', userId)
         .single()
 
@@ -47,6 +47,7 @@ export const getPartner = cache(async (userId: string) => {
             custom_domain: p.custom_domain,
             custom_domain_verified: p.custom_domain_verified,
             subscriptions_enabled: p.subscriptions_enabled,
+            merch_enabled: p.merch_enabled,
         }
     }
 

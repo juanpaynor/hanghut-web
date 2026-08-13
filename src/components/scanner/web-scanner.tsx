@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState, useRef } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
-import { processScan, ScanResult, getEventCheckInStats } from '@/lib/scanner/scan-actions'
+import { processScan, processMerchScan, ScanResult, getEventCheckInStats } from '@/lib/scanner/scan-actions'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Camera, Keyboard, XCircle, CheckCircle, Search, QrCode, Users } from 'lucide-react'
+import { Loader2, Camera, Keyboard, XCircle, CheckCircle, Search, QrCode, Users, ShoppingBag } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -32,6 +32,8 @@ export function WebScanner({ events }: WebScannerProps) {
     // Actually typically upcoming events are sorted asc, past desc. 
     // Assuming the passed list is relevant.
     const [selectedEventId, setSelectedEventId] = useState<string>(events[0]?.id || '')
+    // Scan mode: entry tickets vs merch pickup (same camera, different backend).
+    const [mode, setMode] = useState<'tickets' | 'merch'>('tickets')
 
     const [isCameraActive, setIsCameraActive] = useState(false)
     const [lastResult, setLastResult] = useState<ScanResult | null>(null)
@@ -56,6 +58,8 @@ export function WebScanner({ events }: WebScannerProps) {
 
     const eventIdRef = useRef(selectedEventId)
     useEffect(() => { eventIdRef.current = selectedEventId }, [selectedEventId])
+    const modeRef = useRef(mode)
+    useEffect(() => { modeRef.current = mode }, [mode])
 
     // Initialize Camera
     useEffect(() => {
@@ -162,19 +166,21 @@ export function WebScanner({ events }: WebScannerProps) {
         lastScanTimeRef.current = now
 
         try {
-            // Optimistic UI?
-            const result = await processScan(code, targetEventId)
+            const isMerch = modeRef.current === 'merch'
+            const result = isMerch
+                ? await processMerchScan(code, targetEventId)
+                : await processScan(code, targetEventId)
             setLastResult(result)
             isResultDisplayedRef.current = true // Pause!
 
             if (result.success) {
                 toast({
-                    title: "Valid Ticket!",
-                    description: result.ticket?.guestName ? `Welcome, ${result.ticket.guestName}` : "Entry Approved",
+                    title: isMerch ? "Merch handed over!" : "Valid Ticket!",
+                    description: result.ticket?.guestName ? `${isMerch ? 'For' : 'Welcome,'} ${result.ticket.guestName}` : (isMerch ? "Fulfilled" : "Entry Approved"),
                     className: "bg-green-500 text-white border-none"
                 })
-                // Refresh stats after successful scan
-                fetchStats()
+                // Refresh stats after successful scan (ticket mode only)
+                if (!isMerch) fetchStats()
             } else {
                 toast({
                     title: result.message,
@@ -238,6 +244,22 @@ export function WebScanner({ events }: WebScannerProps) {
 
     return (
         <div className="max-w-md mx-auto p-4 space-y-6">
+
+            {/* Mode toggle: entry tickets vs merch pickup */}
+            <div className="grid grid-cols-2 gap-2">
+                <button
+                    onClick={() => setMode('tickets')}
+                    className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors ${mode === 'tickets' ? 'border-primary bg-primary/10 text-primary' : 'border-slate-200 bg-white text-slate-500'}`}
+                >
+                    <QrCode className="h-4 w-4" /> Tickets
+                </button>
+                <button
+                    onClick={() => setMode('merch')}
+                    className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors ${mode === 'merch' ? 'border-primary bg-primary/10 text-primary' : 'border-slate-200 bg-white text-slate-500'}`}
+                >
+                    <ShoppingBag className="h-4 w-4" /> Merch pickup
+                </button>
+            </div>
 
             {/* Event Selector */}
             <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">

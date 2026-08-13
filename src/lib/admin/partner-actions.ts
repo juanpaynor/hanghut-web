@@ -312,3 +312,21 @@ export async function setSubscriptionsEnabled(partnerId: string, enabled: boolea
 
     return { success: true }
 }
+
+// Feature-gate merch selling per partner (controlled rollout). Off by default;
+// admins enable it per organizer. Gates the organizer merch tools + buyer surfaces.
+export async function setMerchEnabled(partnerId: string, enabled: boolean) {
+    const supabase = await createClient()
+
+    const { error } = await supabase
+        .from('partners')
+        .update({ merch_enabled: enabled })
+        .eq('id', partnerId)
+
+    if (error) {
+        console.error('Error setting merch_enabled:', error)
+        throw new Error('Failed to update merch access')
+    }
+
+    return { success: true }
+}

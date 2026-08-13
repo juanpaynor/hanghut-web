@@ -15,7 +15,9 @@ import {
     Crown, Ticket, Settings, LogOut, Calendar, MapPin,
     CheckCircle2, Clock, XCircle, Download, Link2,
     Package, Megaphone, Zap, Star, Gift, QrCode, User,
+    ShoppingBag, PackageCheck, Truck,
 } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { format } from 'date-fns'
 import { createClient } from '@/lib/supabase/client'
 import { TicketQR } from '@/components/tickets/ticket-qr'
@@ -67,12 +69,24 @@ interface Claim {
     partner_id: string
 }
 
+interface MerchClaim {
+    id: string
+    claim_token: string
+    status: 'unclaimed' | 'claimed' | 'shipped' | 'cancelled'
+    fulfillment_mode: 'claim' | 'ship'
+    created_at: string
+    buyer_name: string | null
+    events: { title: string } | null
+    items: { name_snapshot: string; quantity: number }[]
+}
+
 interface Props {
     user: { id: string; email: string }
     profile: { display_name: string | null; email: string | null; profile_photo_url: string | null } | null
     subscriptions: Subscription[]
     tickets: TicketRow[]
     claims: Claim[]
+    merchClaims?: MerchClaim[]
 }
 
 const SUB_STATUS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
@@ -83,7 +97,7 @@ const SUB_STATUS: Record<string, { label: string; variant: 'default' | 'secondar
 }
 
 // ─── Main component ───────────────────────────────────────────
-export function AccountDashboard({ user, profile, subscriptions, tickets, claims }: Props) {
+export function AccountDashboard({ user, profile, subscriptions, tickets, claims, merchClaims = [] }: Props) {
     const router = useRouter()
     const { toast } = useToast()
     const supabase = createClient()
@@ -274,7 +288,16 @@ export function AccountDashboard({ user, profile, subscriptions, tickets, claims
 
                     {/* ── TICKETS ── */}
                     <TabsContent value="tickets" className="space-y-6">
-                        {tickets.length === 0 ? (
+                        {/* Merch pickups — show the claim QR at the venue merch table */}
+                        {merchClaims.length > 0 && (
+                            <div className="space-y-3">
+                                <h3 className="font-semibold text-sm text-muted-foreground flex items-center gap-1.5">
+                                    <ShoppingBag className="h-4 w-4" /> Merch
+                                </h3>
+                                {merchClaims.map(mc => <MerchClaimCard key={mc.id} claim={mc} />)}
+                            </div>
+                        )}
+                        {tickets.length === 0 && merchClaims.length === 0 ? (
                             <Card className="p-12 flex flex-col items-center text-center border-dashed">
                                 <Ticket className="h-10 w-10 text-muted-foreground/30 mb-3" />
                                 <p className="font-semibold">No tickets yet</p>
@@ -461,5 +484,47 @@ function AccountSettings({ userId, email, displayName: initial }: { userId: stri
                 </p>
             </Card>
         </div>
+    )
+}
+
+// A merch claim voucher: show the QR at the venue merch table (claim-at-event)
+// or track shipping. The QR encodes the claim_token that the scanner reads in
+// "Merch pickup" mode.
+function MerchClaimCard({ claim }: { claim: MerchClaim }) {
+    const claimed = claim.status === 'claimed'
+    const isShip = claim.fulfillment_mode === 'ship'
+    return (
+        <Card className="p-4">
+            <div className="flex items-start gap-4">
+                {!isShip && (
+                    <div className={`shrink-0 rounded-lg bg-white p-2 border ${claimed ? 'opacity-40' : ''}`}>
+                        <QRCodeSVG value={claim.claim_token} size={88} />
+                    </div>
+                )}
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm">{claim.events?.title || 'Merch order'}</span>
+                        {claimed ? (
+                            <Badge variant="secondary" className="text-[10px] h-5 gap-1"><CheckCircle2 className="h-3 w-3" /> Claimed</Badge>
+                        ) : isShip ? (
+                            <Badge variant="outline" className="text-[10px] h-5 gap-1"><Truck className="h-3 w-3" /> Shipping</Badge>
+                        ) : (
+                            <Badge variant="outline" className="text-[10px] h-5 gap-1"><PackageCheck className="h-3 w-3" /> Claim at event</Badge>
+                        )}
+                    </div>
+                    <ul className="mt-1.5 space-y-0.5">
+                        {claim.items.map((it, i) => (
+                            <li key={i} className="text-sm text-muted-foreground">{it.quantity}× {it.name_snapshot}</li>
+                        ))}
+                    </ul>
+                    {!claimed && !isShip && (
+                        <p className="text-xs text-muted-foreground mt-2">Show this QR at the merch table to collect your items.</p>
+                    )}
+                    {isShip && (
+                        <p className="text-xs text-muted-foreground mt-2">We&apos;ll ship this to your address. You&apos;ll get an update by email.</p>
+                    )}
+                </div>
+            </div>
+        </Card>
     )
 }

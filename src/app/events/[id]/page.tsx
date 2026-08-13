@@ -20,6 +20,8 @@ import { cn, hexToHsl, getYouTubeEmbedUrl } from '@/lib/utils'
 import { MobileTicketButton, ShareButton, AddToCalendarButton } from '@/components/events/event-actions'
 import { EventViewTracker } from '@/components/events/event-view-tracker'
 import { CaptureAttribution } from '@/components/tracking/track-view'
+import { MerchSection } from '@/components/merch/merch-section'
+import { getPublicMerch } from '@/lib/merch/public-actions'
 import { sanitize } from '@/lib/sanitize'
 import { EventPageBackground, type BgStyle } from '@/components/events/event-bg'
 import { getEventThemeCss } from '@/lib/event-themes'
@@ -1092,6 +1094,9 @@ export default async function PublicEventPage({
                 case 'pricing': return <PricingSection key="pricing" />
                 case 'organizer': return <OrganizerSection key="organizer" />
                 case 'gallery': return <GallerySection key="gallery" />
+                case 'merch': return event.organizer?.id
+                    ? <MerchSection key="merch" organizerId={event.organizer.id} eventId={event.id} products={eventMerch} />
+                    : null
                 case 'tickets': return <TicketsSection key="tickets" />
                 // 'location' (Map & Directions) removed — the Details card already
                 // covers venue + Get Directions; old saved orders fall through to null
@@ -1105,8 +1110,15 @@ export default async function PublicEventPage({
         return el
     }
 
-    // Separate special sections
-    const mainContentOrder = layoutOrder.filter(id => id !== 'hero' && id !== 'tickets')
+    // Buyer-facing merch for this event + the organizer's storefront-wide items.
+    const eventMerch = event.organizer?.id ? await getPublicMerch(event.organizer.id, event.id) : []
+
+    // Separate special sections. Merch is appended to the main content (existing
+    // saved layouts don't include it) whenever the organizer has sellable merch.
+    const mainContentOrder = [
+        ...layoutOrder.filter((id: string) => id !== 'hero' && id !== 'tickets' && id !== 'merch'),
+        ...(eventMerch.length > 0 ? ['merch'] : []),
+    ]
     const showHero = !hiddenSections.has('hero')
     const showTickets = !hiddenSections.has('tickets')
 

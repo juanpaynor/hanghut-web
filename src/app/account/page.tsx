@@ -46,6 +46,14 @@ export default async function AccountPage() {
         .select('perk_type, claim_period, status, partner_id')
         .eq('fan_id', user.id)
 
+    // My merch — claim vouchers to show at the venue (RLS scopes to this user).
+    const { data: merchClaims } = await supabase
+        .from('merch_claims')
+        .select('id, claim_token, status, fulfillment_mode, created_at, buyer_name, events(title), items:merch_claim_items(name_snapshot, quantity)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
     return (
         <AccountDashboard
             user={{ id: user.id, email: user.email ?? '' }}
@@ -53,6 +61,7 @@ export default async function AccountPage() {
             subscriptions={(subscriptions || []) as any}
             tickets={(tickets || []) as any}
             claims={(claims || []) as any}
+            merchClaims={(merchClaims || []) as any}
         />
     )
 }

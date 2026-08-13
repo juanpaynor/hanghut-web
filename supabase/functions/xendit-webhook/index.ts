@@ -431,6 +431,41 @@ serve(async (req) => {
                     }
                 }
 
+                // Not a ticket or experience. Check if it's a standalone merch order!
+                // (mer_-prefixed reference_id — never collides with events/experiences.)
+                if (lookupId && lookupId.startsWith('mer_')) {
+                    console.log(`🔍 Checking if ${lookupId} is a Merch Order...`)
+                    const { data: merchOrder } = await supabaseClient
+                        .from('merch_orders')
+                        .select('id, status')
+                        .eq('xendit_external_id', lookupId)
+                        .single()
+
+                    if (merchOrder) {
+                        // Idempotency: Xendit retries + fires concurrent events.
+                        if (merchOrder.status === 'completed' || merchOrder.status === 'refunded') {
+                            console.log(`⚡ Merch order ${merchOrder.id} already ${merchOrder.status}, skipping duplicate webhook`)
+                            return new Response(JSON.stringify({ success: true, message: `Already ${merchOrder.status}` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+                        }
+
+                        const merchMethod = extractPaymentMethod(data)
+                        console.log(`💳 Merch Payment Method: ${merchMethod}`)
+
+                        const { data: merchResult, error: merchError } = await supabaseClient.rpc('confirm_merch_order', {
+                            p_order_id: merchOrder.id,
+                            p_payment_method: merchMethod,
+                            p_xendit_id: data.id || data.payment_id || lookupId,
+                        })
+                        if (merchError) {
+                            console.error('❌ Merch RPC Error:', merchError)
+                            throw new Error(merchError.message)
+                        }
+
+                        console.log('🎉 Merch Order Confirmed:', merchResult)
+                        return new Response(JSON.stringify({ success: true, message: 'Merch order confirmed' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+                    }
+                }
+
                 console.log('Purchase intent not found (likely a test webhook):', lookupId)
                 // Return 200 to satisfy Xendit "Test and save" verification
                 return new Response(JSON.stringify({ message: 'Webhook received but intent not found (Test passed)' }), {

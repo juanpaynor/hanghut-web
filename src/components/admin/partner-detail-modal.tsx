@@ -23,7 +23,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
 import { CheckCircle, XCircle, Ban, DollarSign, ExternalLink, Phone, MapPin, FileText } from 'lucide-react'
-import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities, setSubscriptionsEnabled } from '@/lib/admin/partner-actions'
+import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities, setSubscriptionsEnabled, setMerchEnabled } from '@/lib/admin/partner-actions'
 import { useRouter } from 'next/navigation'
 
 interface Partner {
@@ -94,6 +94,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
     const [adminNotes, setAdminNotes] = useState('')
     const [autoApprovePayouts, setAutoApprovePayoutsState] = useState(partner.auto_approve_payouts || false)
     const [subscriptionsEnabled, setSubscriptionsEnabledState] = useState<boolean>((partner as any).subscriptions_enabled ?? false)
+    const [merchEnabled, setMerchEnabledState] = useState<boolean>((partner as any).merch_enabled ?? false)
 
     const handleApprove = async () => {
         setIsLoading(true)
@@ -639,6 +640,36 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                         console.error('Error updating subscriptions access:', error)
                                         alert('Failed to update subscriptions access')
                                         setSubscriptionsEnabledState(!checked)
+                                    } finally {
+                                        setIsLoading(false)
+                                    }
+                                }}
+                                disabled={isLoading}
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between border border-slate-700 rounded-md p-4 bg-slate-800/50">
+                            <div className="space-y-1">
+                                <Label htmlFor="merch-enabled" className="text-white font-medium">
+                                    Merch selling
+                                </Label>
+                                <p className="text-xs text-slate-400 max-w-md">
+                                    Off by default (controlled rollout). Turn on to let this org create merch products and sell them on their event pages, with claim-at-event or shipped fulfillment.
+                                </p>
+                            </div>
+                            <Switch
+                                id="merch-enabled"
+                                checked={merchEnabled}
+                                onCheckedChange={async (checked) => {
+                                    setIsLoading(true)
+                                    setMerchEnabledState(checked)
+                                    try {
+                                        await setMerchEnabled(partner.id, checked)
+                                        router.refresh()
+                                    } catch (error) {
+                                        console.error('Error updating merch access:', error)
+                                        alert('Failed to update merch access')
+                                        setMerchEnabledState(!checked)
                                     } finally {
                                         setIsLoading(false)
                                     }

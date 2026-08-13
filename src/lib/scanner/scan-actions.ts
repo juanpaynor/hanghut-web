@@ -223,6 +223,36 @@ async function handleTicketValidation(ticket: any, activeEventId: string | undef
     }
 }
 
+/**
+ * Merch pickup scan. Scans a merch claim_token and marks it claimed via scan_merch
+ * (authz + ship/wrong-event/double-claim guards live in the RPC). Returns the same
+ * ScanResult shape as ticket scans — buyer name + items summary map onto ticket
+ * fields so the scanner's result card renders without changes.
+ */
+export async function processMerchScan(code: string, eventId?: string): Promise<ScanResult> {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { success: false, message: 'Unauthorized. Please login.' }
+
+    const admin = createAdminClient()
+    const { data, error } = await admin.rpc('scan_merch', {
+        p_claim_token: code.trim(),
+        p_user_id: user.id,
+        p_event_id: eventId || null,
+    })
+    if (error) return { success: false, message: 'Scan failed', details: error.message }
+
+    const r = data as any
+    const items: string = (r?.claim?.items ?? []).map((i: any) => `${i.quantity}× ${i.name}`).join(', ')
+    const asTicket = r?.claim ? { guestName: r.claim.buyer_name || 'Buyer', tier_name: items } : undefined
+
+    if (!r?.success) {
+        return { success: false, message: r?.message || 'Invalid merch code', ticket: asTicket }
+    }
+    if (eventId) revalidatePath('/scan')
+    return { success: true, message: 'Merch handed over ✓', ticket: asTicket }
+}
+
 function formatTicket(ticket: any) {
     // Priority: user display_name > ticket guest_name > purchase_intent guest_name > 'Guest'
     const displayName = ticket.user?.display_name
