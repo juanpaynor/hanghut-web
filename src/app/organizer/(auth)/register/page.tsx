@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { registerPartner, completePartnerApplication } from '@/lib/organizer/auth-actions'
+import { getStoredAttribution } from '@/lib/tracking'
 import { ENTITY_TYPES } from '@/lib/organizer/kyc-constants'
 import { createClient } from '@/lib/supabase/client'
 import { OAuthButtons } from '@/components/auth/oauth-buttons'
@@ -65,6 +66,11 @@ export default function OrganizerRegisterPage() {
         formData.append('businessType', businessType)
         formData.append('representativeName', representativeName)
         formData.append('phoneNumber', `${countryCode}${phoneNumber}`)
+
+        // Referral attribution: an influencer /r/<code> link stamps ?ref (last-touch)
+        // into stored attribution; a direct register?ref=<code> link works too.
+        const ref = new URLSearchParams(window.location.search).get('ref') || getStoredAttribution()?.ref || ''
+        if (ref) formData.append('referralCode', ref)
 
         setLoading(true)
 

@@ -18,6 +18,7 @@ export async function registerPartner(formData: FormData) {
     const businessType = formData.get('businessType') as string
     const representativeName = formData.get('representativeName') as string
     const phoneNumber = formData.get('phoneNumber') as string
+    const referralCode = (formData.get('referralCode') as string | null)?.trim() || null
 
     if (!email || !password || !businessName || !businessType) {
         return { error: 'Please complete all required fields.' }
@@ -97,6 +98,7 @@ export async function registerPartner(formData: FormData) {
             representative_name: representativeName || null,
             contact_number: phoneNumber || null,
             kyc_status: 'not_started',
+            referral_code: referralCode,
         })
 
     if (partnerError) {
@@ -119,6 +121,7 @@ export async function completePartnerApplication(formData: FormData) {
     const businessType = formData.get('businessType') as string
     const representativeName = formData.get('representativeName') as string
     const phoneNumber = formData.get('phoneNumber') as string
+    const referralCode = (formData.get('referralCode') as string | null)?.trim() || null
 
     if (!businessName || !businessType) {
         return { error: 'Please complete all required fields.' }
@@ -166,6 +169,7 @@ export async function completePartnerApplication(formData: FormData) {
             representative_name: representativeName || null,
             contact_number: phoneNumber || null,
             kyc_status: 'not_started',
+            referral_code: referralCode,
         })
 
     if (partnerError) {

@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Users, UsersRound, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet, Sparkles, Mail, Megaphone, Smartphone, Bell, Armchair, Receipt } from 'lucide-react'
+import { LayoutDashboard, Users, UsersRound, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet, Sparkles, Mail, Megaphone, Smartphone, Bell, Armchair, Receipt, Link2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -28,6 +28,7 @@ const NAV_PERMISSIONS: Record<string, AdminRole[]> = {
     '/admin/popups':      ['super_admin', 'admin'],
     '/admin/releases':    ['super_admin', 'admin'],
     '/admin/broadcasts':  ['super_admin', 'admin'],
+    '/admin/referrals':   ['super_admin', 'admin'],
     '/admin/team':        ['super_admin'],
     '/admin/ad-invoices': ['super_admin', 'admin', 'finance_admin'],
 }
@@ -112,6 +113,11 @@ const navItems = [
         title: 'Push Broadcasts',
         href: '/admin/broadcasts',
         icon: Bell,
+    },
+    {
+        title: 'Referrals',
+        href: '/admin/referrals',
+        icon: Link2,
     },
     {
         title: 'Ad Invoices',

@@ -19,6 +19,7 @@ import { cn, hexToHsl, getYouTubeEmbedUrl } from '@/lib/utils'
 
 import { MobileTicketButton, ShareButton, AddToCalendarButton } from '@/components/events/event-actions'
 import { EventViewTracker } from '@/components/events/event-view-tracker'
+import { CaptureAttribution } from '@/components/tracking/track-view'
 import { sanitize } from '@/lib/sanitize'
 import { EventPageBackground, type BgStyle } from '@/components/events/event-bg'
 import { getEventThemeCss } from '@/lib/event-themes'
@@ -1607,6 +1608,10 @@ export default async function PublicEventPage({
         >
             {/* Analytics: log a page view (once per session per event) */}
             <EventViewTracker eventId={event.id} />
+            {/* Attribution: unconditionally (re-)capture channel/ref on every visit,
+                so an influencer /r/<code> ?ref link stamps even for returning viewers
+                that EventViewTracker's session-dedup would otherwise skip. */}
+            <CaptureAttribution surface="event" />
             {/* SEO: Event structured data for rich search results (skipped for private/unlisted) */}
             {!(event.status === 'hidden' || event.is_subscriber_only || event.invite_only) && (
                 <script

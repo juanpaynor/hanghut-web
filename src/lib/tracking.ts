@@ -11,7 +11,7 @@
  * them in. Respects nothing here (consent is enforced by the callers that send).
  */
 
-export type Surface = 'discover' | 'storefront' | 'embed' | 'event'
+export type Surface = 'discover' | 'storefront' | 'embed' | 'event' | 'landing'
 
 export interface Attribution {
     channel: string
@@ -19,6 +19,13 @@ export interface Attribution {
     utm_medium: string | null
     utm_campaign: string | null
     referrer: string | null
+    /**
+     * Influencer / referral code from a /r/<code> link (?ref=). Unlike the rest
+     * of attribution (first-touch), ref is LAST-TOUCH: an explicit influencer
+     * click always (re-)stamps it, because it's a strong, intentional signal and
+     * that influencer should get credit for the sale that follows.
+     */
+    ref?: string | null
 }
 
 const ATTR_KEY = 'hh_attribution_v1'
@@ -46,16 +53,27 @@ function deriveChannel(surface: Surface | undefined, p: URLSearchParams): string
  * write wins). Returns the attribution to use for this visit.
  */
 export function captureAttribution(surface?: Surface): Attribution {
+    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+    const refParam = params.get('ref')
     const ls = safeLocal()
+
+    // First-touch: reuse existing attribution — but ref is LAST-TOUCH, so an
+    // explicit ?ref click still (re-)stamps the influencer code on top.
     if (ls) {
         const existing = ls.getItem(ATTR_KEY)
         if (existing) {
-            try { return JSON.parse(existing) as Attribution } catch { /* recapture below */ }
+            try {
+                const attr = JSON.parse(existing) as Attribution
+                if (refParam && attr.ref !== refParam) {
+                    attr.ref = refParam
+                    try { ls.setItem(ATTR_KEY, JSON.stringify(attr)) } catch { /* ignore */ }
+                }
+                return attr
+            } catch { /* recapture below */ }
         }
     }
 
-    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
-    const ref = (() => {
+    const referrer = (() => {
         try {
             const r = document.referrer
             return r && !r.includes(window.location.host) ? r : null
@@ -67,7 +85,8 @@ export function captureAttribution(surface?: Surface): Attribution {
         utm_source: params.get('utm_source'),
         utm_medium: params.get('utm_medium'),
         utm_campaign: params.get('utm_campaign'),
-        referrer: ref,
+        referrer,
+        ref: refParam,
     }
 
     if (ls) { try { ls.setItem(ATTR_KEY, JSON.stringify(attr)) } catch { /* ignore */ } }

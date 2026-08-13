@@ -7,7 +7,7 @@ import {
     LayoutDashboard, CalendarDays, Wallet, Mail, Users, ScanLine,
     Settings, Code2, ShieldCheck, ExternalLink, LogOut, Megaphone,
     MousePointerClick, Crown, Compass, BookOpen, CalendarClock, UserSearch,
-    Puzzle,
+    Puzzle, Link2,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/auth/cached'
@@ -48,6 +48,7 @@ const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
         items: [
             { label: 'Customers',      href: '/organizer/customers',      icon: UserSearch, section: 'customers',     capability: 'organizer' },
             { label: 'Email',          href: '/organizer/marketing',      icon: Mail,  section: 'email',          capability: 'organizer' },
+            { label: 'Referrals',      href: '/organizer/referrals',      icon: Link2, section: 'referrals',      capability: 'organizer' },
             { label: 'Subscriptions',  href: '/organizer/subscriptions',  icon: Crown, section: 'subscriptions',  capability: 'organizer' },
         ],
     },
@@ -79,6 +80,7 @@ const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
     advertising:   ['owner', 'finance'],
     customers:     ['owner', 'manager', 'marketing'],
     email:         ['owner', 'marketing'],
+    referrals:     ['owner', 'manager', 'marketing'],
     subscriptions: ['owner', 'manager'],
     team:          ['owner'],
     scanner:       ['owner', 'manager', 'scanner'],

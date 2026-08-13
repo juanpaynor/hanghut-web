@@ -1,9 +1,31 @@
 "use client";
 
+import { getStoredAttribution } from "@/lib/tracking";
+
 interface StoreButtonsProps {
   /** "dark" = black buttons (on light bg), "light" = white buttons (on dark bg) */
   variant?: "dark" | "light";
   className?: string;
+}
+
+/**
+ * If the visitor arrived via a platform referral link (ref in stored attribution),
+ * log an app-download-button tap as a proxy for the install we can't see on web.
+ * Fire-and-forget with keepalive so it survives the navigation to the store.
+ */
+function beaconAppClick() {
+  try {
+    const ref = getStoredAttribution()?.ref;
+    if (!ref) return;
+    fetch("/api/referral/app-click", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: ref }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* ignore */
+  }
 }
 
 export function StoreButtons({ variant = "dark", className = "" }: StoreButtonsProps) {
@@ -17,6 +39,7 @@ export function StoreButtons({ variant = "dark", className = "" }: StoreButtonsP
         href="https://apps.apple.com/ph/app/hanghut-social-hangouts/id6764278827"
         target="_blank"
         rel="noopener noreferrer"
+        onClick={beaconAppClick}
         className={`flex items-center gap-3 px-5 py-3 rounded-xl transition-all hover:scale-105 ${bg} ${border}`}
       >
         {/* Apple logo */}
@@ -34,6 +57,7 @@ export function StoreButtons({ variant = "dark", className = "" }: StoreButtonsP
         href="https://play.google.com/store/apps/details?id=com.hanghut.hanghut&pcampaignid=web_share"
         target="_blank"
         rel="noopener noreferrer"
+        onClick={beaconAppClick}
         className={`flex items-center gap-3 px-5 py-3 rounded-xl transition-all hover:scale-105 ${bg} ${border}`}
       >
         {/* Play Store icon */}
