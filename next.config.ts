@@ -4,7 +4,8 @@ const nextConfig: NextConfig = {
   /* config options here */
   experimental: {
     serverActions: {
-      bodySizeLimit: '5mb',
+      // Headroom for settings saves that carry logo + cover + ticket banner at once.
+      bodySizeLimit: '12mb',
     },
   },
   typescript: {

@@ -273,8 +273,8 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
         const file = e.target.files?.[0]
         if (!file) return
 
-        const maxSize = type === 'logo' ? 2 * 1024 * 1024 : 5 * 1024 * 1024
-        const maxSizeLabel = type === 'logo' ? '2MB' : '5MB'
+        const maxSize = 5 * 1024 * 1024
+        const maxSizeLabel = '5MB'
 
         if (file.size > maxSize) {
             toast({

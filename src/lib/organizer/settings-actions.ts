@@ -166,22 +166,29 @@ export async function updatePartnerProfile(
 
     const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey)
 
-    // Handle Profile Photo (Logo)
+    // Storage keys: keep only safe chars from the original filename so an odd name
+    // (spaces, unicode, parens) can't make the upload fail.
+    const safeName = (n: string) => (n || 'file').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80)
+
+    // Handle Profile Photo (Logo). Surface upload failures instead of silently
+    // keeping the old URL and reporting success (the "saved but logo didn't change" bug).
     let profilePhotoUrl = data.profile_photo_url // Keep existing by default
     const profilePhotoFile = formData.get('profile_photo') as File
 
     if (profilePhotoFile && profilePhotoFile.size > 0) {
-        const fileName = `${partner.id}/avatar-${Date.now()}-${profilePhotoFile.name}`
+        const fileName = `${partner.id}/avatar-${Date.now()}-${safeName(profilePhotoFile.name)}`
         const { data: uploadData, error: uploadError } = await adminSupabase.storage
             .from('partner-assets')
             .upload(fileName, profilePhotoFile, { upsert: true, contentType: profilePhotoFile.type })
 
-        if (!uploadError && uploadData) {
-            const { data: { publicUrl } } = adminSupabase.storage
-                .from('partner-assets')
-                .getPublicUrl(uploadData.path)
-            profilePhotoUrl = publicUrl
+        if (uploadError || !uploadData) {
+            console.error('[updatePartnerProfile] Logo upload failed:', uploadError)
+            return { message: `Couldn't upload your logo: ${uploadError?.message || 'unknown error'}. Please try again.` }
         }
+        const { data: { publicUrl } } = adminSupabase.storage
+            .from('partner-assets')
+            .getPublicUrl(uploadData.path)
+        profilePhotoUrl = publicUrl
     }
 
     // Handle Cover Image
@@ -189,33 +196,37 @@ export async function updatePartnerProfile(
     const coverImageFile = formData.get('cover_image') as File
 
     if (coverImageFile && coverImageFile.size > 0) {
-        const fileName = `${partner.id}/cover-${Date.now()}-${coverImageFile.name}`
+        const fileName = `${partner.id}/cover-${Date.now()}-${safeName(coverImageFile.name)}`
         const { data: uploadData, error: uploadError } = await adminSupabase.storage
             .from('partner-assets')
             .upload(fileName, coverImageFile, { upsert: true, contentType: coverImageFile.type })
 
-        if (!uploadError && uploadData) {
-            const { data: { publicUrl } } = adminSupabase.storage
-                .from('partner-assets')
-                .getPublicUrl(uploadData.path)
-            coverImageUrl = publicUrl
+        if (uploadError || !uploadData) {
+            console.error('[updatePartnerProfile] Cover upload failed:', uploadError)
+            return { message: `Couldn't upload your cover image: ${uploadError?.message || 'unknown error'}. Please try again.` }
         }
+        const { data: { publicUrl } } = adminSupabase.storage
+            .from('partner-assets')
+            .getPublicUrl(uploadData.path)
+        coverImageUrl = publicUrl
     }
 
     // Handle Ticket Banner (custom header image for the hosted ticket page)
     let ticketBannerUrl: string | null = (data.branding as any)?.ticket?.banner_url ?? null
     const ticketBannerFile = formData.get('ticket_banner') as File
     if (ticketBannerFile && ticketBannerFile.size > 0) {
-        const fileName = `${partner.id}/ticket-banner-${Date.now()}-${ticketBannerFile.name}`
+        const fileName = `${partner.id}/ticket-banner-${Date.now()}-${safeName(ticketBannerFile.name)}`
         const { data: uploadData, error: uploadError } = await adminSupabase.storage
             .from('partner-assets')
             .upload(fileName, ticketBannerFile, { upsert: true, contentType: ticketBannerFile.type })
-        if (!uploadError && uploadData) {
-            const { data: { publicUrl } } = adminSupabase.storage
-                .from('partner-assets')
-                .getPublicUrl(uploadData.path)
-            ticketBannerUrl = publicUrl
+        if (uploadError || !uploadData) {
+            console.error('[updatePartnerProfile] Ticket banner upload failed:', uploadError)
+            return { message: `Couldn't upload your ticket banner: ${uploadError?.message || 'unknown error'}. Please try again.` }
         }
+        const { data: { publicUrl } } = adminSupabase.storage
+            .from('partner-assets')
+            .getPublicUrl(uploadData.path)
+        ticketBannerUrl = publicUrl
     }
 
     // Fold the resolved banner URL back into branding.ticket (message is already
