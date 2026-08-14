@@ -24,6 +24,7 @@ import {
 import { format } from 'date-fns'
 import { Search, Eye, MapPin, Calendar, Users, Star } from 'lucide-react'
 import Link from 'next/link'
+import { formatInManila, formatEventTime } from '@/lib/datetime'
 
 interface Event {
     id: string
@@ -271,10 +272,10 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                                         </div>
                                     </TableCell>
                                     <TableCell className="text-muted-foreground text-sm">
-                                        {format(new Date(event.start_datetime), 'MMM d, yyyy')}
+                                        {formatInManila(event.start_datetime, { month: 'short', day: 'numeric', year: 'numeric' })}
                                         <br />
                                         <span className="text-xs text-muted-foreground">
-                                            {format(new Date(event.start_datetime), 'h:mm a')}
+                                            {formatEventTime(event.start_datetime)}
                                         </span>
                                     </TableCell>
                                     <TableCell>

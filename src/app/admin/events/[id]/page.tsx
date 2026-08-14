@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { AdminTicketList } from './admin-ticket-list'
+import { formatInManila, formatEventTime } from '@/lib/datetime'
 
 export const dynamic = 'force-dynamic'
 
@@ -212,8 +213,8 @@ async function EventDetailsContent({ event }: { event: any }) {
                         <p className="text-muted-foreground text-sm mb-1">Date & Time</p>
                         <p className="text-foreground flex items-center gap-2">
                             <Calendar className="h-4 w-4" />
-                            {format(new Date(event.start_datetime), 'MMMM d, yyyy')} at{' '}
-                            {format(new Date(event.start_datetime), 'h:mm a')}
+                            {formatInManila(event.start_datetime, { month: 'long', day: 'numeric', year: 'numeric' })} at{' '}
+                            {formatEventTime(event.start_datetime)}
                         </p>
                     </div>
 

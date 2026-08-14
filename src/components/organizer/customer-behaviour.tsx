@@ -16,6 +16,7 @@ import {
     Wallet, TrendingUp, Receipt, Download, Copy, ArrowDownWideNarrow, Mail,
 } from 'lucide-react'
 import { format } from 'date-fns'
+import { formatInManila } from '@/lib/datetime'
 
 interface Summary {
     total_customers: number; repeat: number; first_timers: number
@@ -434,7 +435,7 @@ export function CustomerBehaviour({ partnerId }: { partnerId: string }) {
                                             <li key={i} className="flex items-center justify-between gap-3 text-sm border-b last:border-0 pb-2">
                                                 <div className="min-w-0">
                                                     <p className="font-medium truncate">{r.title}</p>
-                                                    {r.start_datetime && <p className="text-xs text-muted-foreground">{format(new Date(r.start_datetime), 'MMM d, yyyy')}</p>}
+                                                    {r.start_datetime && <p className="text-xs text-muted-foreground">{formatInManila(r.start_datetime, { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
                                                 </div>
                                                 <span className="shrink-0">
                                                     {r.attended ? <span className="inline-flex items-center gap-1 text-emerald-600 text-xs"><CheckCircle2 className="h-3.5 w-3.5" /> Attended</span>

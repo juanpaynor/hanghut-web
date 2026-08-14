@@ -19,6 +19,7 @@ import { RegistrationQuestionsManager, RegistrationQuestion } from '@/components
 import { RegistrationsManager } from '@/components/organizer/registrations-manager'
 import { EventRegistration } from '@/lib/organizer/registration-management-actions'
 import { type SubscriptionTierBasic, type ExistingDiscount } from '@/components/organizer/subscriber-discounts-section'
+import { formatInManila } from '@/lib/datetime'
 
 interface EventDashboardTabsProps {
     partnerId: string
@@ -145,7 +146,7 @@ export function EventDashboardTabs({
                         eventId={eventId}
                         initialAttendees={initialAttendees}
                         eventTitle={event.title}
-                        eventDate={new Date(event.start_datetime).toLocaleDateString('en-US', {
+                        eventDate={formatInManila(event.start_datetime, {
                             year: 'numeric',
                             month: 'long',
                             day: 'numeric'

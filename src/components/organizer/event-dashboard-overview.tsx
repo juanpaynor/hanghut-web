@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { Progress } from "@/components/ui/progress"
+import { formatInManila } from '@/lib/datetime'
 
 interface DashboardOverviewProps {
     event: any
@@ -33,7 +34,7 @@ export function EventDashboardOverview({ event, stats }: DashboardOverviewProps)
         ? Math.round((stats.checkedInCount / stats.ticketsSold) * 100)
         : 0
 
-    const eventDate = new Date(event.start_datetime).toLocaleDateString("en-US", {
+    const eventDate = formatInManila(event.start_datetime, {
         weekday: "long",
         year: "numeric",
         month: "long",

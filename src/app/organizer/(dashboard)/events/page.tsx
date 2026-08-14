@@ -8,6 +8,7 @@ import Image from 'next/image'
 import { Plus, Calendar, Users, Ticket } from 'lucide-react'
 import { format } from 'date-fns'
 import { EventsControls } from '@/components/organizer/events-controls'
+import { formatEventShort } from '@/lib/datetime'
 
 export const dynamic = 'force-dynamic'
 
@@ -215,7 +216,7 @@ export default async function OrganizerEventsPage(props: Props) {
                                     <div>
                                         <h3 className="font-bold text-lg mb-1 line-clamp-1">{event.title}</h3>
                                         <p className="text-sm text-muted-foreground">
-                                            {format(new Date(event.start_datetime), 'MMM d, yyyy • h:mm a')}
+                                            {formatEventShort(event.start_datetime)}
                                         </p>
                                     </div>
                                     <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">

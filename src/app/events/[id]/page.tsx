@@ -847,7 +847,7 @@ export default async function PublicEventPage({
                                     Subscribers of {event.organizer?.business_name} get early access.
                                     Public sale opens{' '}
                                     <span className="font-medium text-foreground">
-                                        {publicSaleOpen ? publicSaleOpen.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                                        {publicSaleOpen ? formatInManila(publicSaleOpen.toISOString(), { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
                                     </span>.
                                 </p>
                                 {event.organizer?.slug && (

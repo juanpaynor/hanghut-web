@@ -3,6 +3,7 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { formatInManila } from '@/lib/datetime'
 
 interface UnsubscribeResult {
     success: boolean
@@ -376,7 +377,7 @@ export async function buildEventEmailBlock(eventId: string): Promise<{ html?: st
     const price = tiers.length ? Math.min(...tiers.map((t) => Number(t.price))) : Number(event.ticket_price || 0)
     const priceLabel = price === 0 ? 'Free' : `From ₱${price.toLocaleString()}`
     const dateStr = event.start_datetime
-        ? new Date(event.start_datetime).toLocaleString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        ? formatInManila(event.start_datetime, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
         : ''
     const venue = [event.venue_name, event.city].filter(Boolean).join(', ')
     const url = `https://hanghut.com/events/${event.id}`

@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { format } from 'date-fns'
 import { getAudienceCount, getEventAttendeeRecipients, getSegmentRecipients, saveDraft, getDrafts, getDraft, deleteDraft, scheduleCampaign, getScheduledCampaigns, cancelScheduledCampaign, getTemplates, saveAsTemplate, deleteTemplate, buildEventEmailBlock, type EmailTemplate } from '@/lib/marketing/actions'
+import { formatInManila } from '@/lib/datetime'
 
 /** datetime-local value (yyyy-MM-ddTHH:mm) in the user's local timezone. */
 function toLocalInputValue(d: Date): string {
@@ -1151,7 +1152,7 @@ export function CampaignComposer() {
                             >
                                 <div className="min-w-0">
                                     <p className="font-medium text-sm truncate">{e.title}</p>
-                                    <p className="text-xs text-muted-foreground">{format(new Date(e.start_datetime), 'MMM d, yyyy')}</p>
+                                    <p className="text-xs text-muted-foreground">{formatInManila(e.start_datetime, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                                 </div>
                                 {inserting ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : <Plus className="h-4 w-4 text-primary shrink-0" />}
                             </button>

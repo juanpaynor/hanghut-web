@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { formatInManila } from '@/lib/datetime'
 
 // Edge functions must be called via the raw Supabase project URL, not the custom domain
 const SUPABASE_FUNCTIONS_URL = 'https://rahhezqtkpvkialnduft.supabase.co/functions/v1'
@@ -277,7 +278,7 @@ export async function approveRegistration(
         if (recipientEmail) {
             const recipientName = regForEmail?.guest_name || 'there'
             const eventDate = event.start_datetime
-                ? new Date(event.start_datetime).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                ? formatInManila(event.start_datetime, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
                 : ''
 
             const resolveTags = (str: string) =>
@@ -426,7 +427,7 @@ export async function rejectRegistration(
         if (recipientEmail && event?.rejection_email_body) {
             const recipientName = regForEmail?.guest_name || 'there'
             const eventDate = event.start_datetime
-                ? new Date(event.start_datetime).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                ? formatInManila(event.start_datetime, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
                 : ''
 
             const resolveTags = (str: string) =>

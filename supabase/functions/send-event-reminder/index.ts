@@ -67,9 +67,9 @@ serve(async (req) => {
 
         for (const event of events) {
             const organizerName = (event.partners as any)?.name || 'HangHut'
-            const eventDate = new Date(event.start_datetime).toLocaleDateString('en-PH', {
+            const eventDate = new Date(event.start_datetime).toLocaleString('en-PH', {
                 weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-                hour: '2-digit', minute: '2-digit',
+                hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Manila',
             })
 
             // Fetch all active ticket holders for this event

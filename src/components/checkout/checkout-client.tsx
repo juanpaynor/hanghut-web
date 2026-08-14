@@ -22,6 +22,7 @@ import { subscribeGuestToNewsletter } from '@/lib/marketing/actions'
 import { hexToHsl } from '@/lib/utils'
 import { resolvePlatformPct, resolveFixedFee, computePassedFees } from '@/lib/payment/platform-fees'
 import { CheckCircle2, ClipboardList } from 'lucide-react'
+import { formatEventShort } from '@/lib/datetime'
 
 // Conditionally rendered (approval/invite events or events with custom questions),
 // so it's code-split: normal checkouts never load this chunk. Default SSR keeps
@@ -745,7 +746,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                             {(() => {
                                                 try {
                                                     return event.start_datetime
-                                                        ? format(new Date(event.start_datetime), 'MMM d, yyyy • h:mm a')
+                                                        ? formatEventShort(event.start_datetime)
                                                         : 'Date TBA'
                                                 } catch (e) {
                                                     return event.start_datetime || 'Date TBA'

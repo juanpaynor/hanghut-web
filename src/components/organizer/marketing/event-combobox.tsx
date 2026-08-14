@@ -7,6 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Check, ChevronsUpDown, Search } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
+import { formatInManila } from '@/lib/datetime'
 
 export interface EventComboboxItem {
     id: string
@@ -74,7 +75,7 @@ export function EventCombobox({
             <span className="flex-1 min-w-0">
                 <span className="block truncate font-medium">{e.title}</span>
                 <span className="block text-xs text-muted-foreground">
-                    {format(new Date(e.start_datetime), 'MMM d, yyyy')} · {e.tickets_sold} sold
+                    {formatInManila(e.start_datetime, { month: 'short', day: 'numeric', year: 'numeric' })} · {e.tickets_sold} sold
                 </span>
             </span>
         </button>
@@ -92,7 +93,7 @@ export function EventCombobox({
                         {loading
                             ? 'Loading events…'
                             : selected
-                                ? `${selected.title} — ${format(new Date(selected.start_datetime), 'MMM d, yyyy')}`
+                                ? `${selected.title} — ${formatInManila(selected.start_datetime, { month: 'short', day: 'numeric', year: 'numeric' })}`
                                 : placeholder}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />

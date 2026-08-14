@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { CheckCircle2, Home, Mail, Armchair, CalendarClock, MapPin } from 'lucide-react'
 import type { Metadata } from 'next'
+import { formatEventDateTime } from '@/lib/datetime'
 
 export const dynamic = 'force-dynamic'
 
@@ -83,10 +84,7 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
                         {startTime && (
                             <p className="text-sm flex items-center gap-2">
                                 <CalendarClock className="h-4 w-4 text-primary shrink-0" />
-                                {new Date(startTime).toLocaleString('en-PH', {
-                                    weekday: 'long', month: 'long', day: 'numeric',
-                                    hour: 'numeric', minute: '2-digit',
-                                })}
+                                {formatEventDateTime(startTime)}
                             </p>
                         )}
                         {venueName && (

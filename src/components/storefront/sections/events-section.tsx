@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import Image from 'next/image'
 import { format } from 'date-fns'
+import { formatInManila, formatEventTime } from '@/lib/datetime'
 
 interface EventsSectionProps {
     config: {
@@ -141,10 +142,10 @@ function ListEventCard({ event }: { event: any }) {
                         <span className="flex items-center gap-1.5">
                             <Calendar className="h-3.5 w-3.5 text-primary/70" />
                             <span className="font-medium text-foreground">
-                                {format(new Date(event.start_datetime), 'MMM d')}
+                                {formatInManila(event.start_datetime, { month: 'short', day: 'numeric' })}
                             </span>
                             <span className="text-xs">
-                                {format(new Date(event.start_datetime), 'h:mm a')}
+                                {formatEventTime(event.start_datetime)}
                             </span>
                         </span>
                         <span className="flex items-center gap-1.5">

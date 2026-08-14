@@ -90,7 +90,7 @@ serve(async (req) => {
 
         const businessName = (event.partners as any)?.business_name || 'HangHut'
         const eventDate = event.start_datetime
-            ? new Date(event.start_datetime).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+            ? new Date(event.start_datetime).toLocaleString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Manila' })
             : ''
 
         // Resolve recipient email (guest or account)

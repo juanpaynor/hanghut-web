@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/select'
 import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair, Plus, Trash2, Check, Copy, ExternalLink, Code2, Send } from 'lucide-react'
 import { createEvent, updateEvent } from '@/lib/organizer/event-actions'
-import { isoToManilaLocal } from '@/lib/datetime'
+import { isoToManilaLocal, manilaLocalToISO, formatInManila } from '@/lib/datetime'
 import { GooglePlacesAutocomplete } from '@/components/organizer/google-places-autocomplete'
 import { useToast } from '@/hooks/use-toast'
 import { TicketTiersManager } from '@/components/organizer/ticket-tiers-manager'
@@ -2006,7 +2006,7 @@ function EventPreviewPane({
     let dateStr = ''
     try {
         if (startDatetime) {
-            dateStr = new Date(startDatetime).toLocaleString('en-PH', {
+            dateStr = formatInManila(manilaLocalToISO(startDatetime), {
                 weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
             })
         }

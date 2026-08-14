@@ -5,6 +5,7 @@ import { Calendar, MapPin, Ticket, ArrowUpRight } from 'lucide-react'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { formatEventDate, formatEventTime } from '@/lib/datetime'
 
 interface PublicEventCardProps {
     event: {
@@ -95,10 +96,10 @@ export function PublicEventCard({ event, categoryLabel, categoryEmoji }: PublicE
                             <Calendar className="h-4 w-4 shrink-0 mt-0.5 text-primary/70" />
                             <div className="flex flex-col">
                                 <span className="font-medium text-foreground">
-                                    {format(new Date(event.start_datetime), 'EEEE, MMMM d')}
+                                    {formatEventDate(event.start_datetime)}
                                 </span>
                                 <span className="text-xs">
-                                    {format(new Date(event.start_datetime), 'h:mm a')}
+                                    {formatEventTime(event.start_datetime)}
                                 </span>
                             </div>
                         </div>

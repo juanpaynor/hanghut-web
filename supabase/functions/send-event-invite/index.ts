@@ -33,8 +33,9 @@ serve(async (req) => {
 
         const inviteUrl = `${SITE_URL}/events/${event_id}?invite=${invite_token}`
         const dateLine = event_date
-            ? new Date(event_date).toLocaleDateString('en-PH', {
+            ? new Date(event_date).toLocaleString('en-PH', {
                 weekday: 'long', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                timeZone: 'Asia/Manila',
               })
             : ''
 
