@@ -23,7 +23,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
 import { CheckCircle, XCircle, Ban, DollarSign, ExternalLink, Phone, MapPin, FileText, ShieldCheck } from 'lucide-react'
-import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities, setSubscriptionsEnabled, setMerchEnabled, getXenditAccountStatus, submitPartnerKycToXendit, updatePartnerKycDetails, getPartnerKycDocuments, type XenditStatusReport, type PartnerKycDoc } from '@/lib/admin/partner-actions'
+import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities, setSubscriptionsEnabled, setMerchEnabled, setPartnerWalletMode, getXenditAccountStatus, submitPartnerKycToXendit, updatePartnerKycDetails, getPartnerKycDocuments, type XenditStatusReport, type PartnerKycDoc } from '@/lib/admin/partner-actions'
 import { useRouter } from 'next/navigation'
 
 interface Partner {
@@ -96,6 +96,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
     const [autoApprovePayouts, setAutoApprovePayoutsState] = useState(partner.auto_approve_payouts || false)
     const [subscriptionsEnabled, setSubscriptionsEnabledState] = useState<boolean>((partner as any).subscriptions_enabled ?? false)
     const [merchEnabled, setMerchEnabledState] = useState<boolean>((partner as any).merch_enabled ?? false)
+    const [useMainWallet, setUseMainWalletState] = useState<boolean>((partner as any).use_main_wallet ?? false)
     const [xenditReport, setXenditReport] = useState<XenditStatusReport | null>(null)
     const [xenditChecking, setXenditChecking] = useState(false)
     const [xenditSubmitting, setXenditSubmitting] = useState(false)
@@ -951,6 +952,55 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                         console.error('Error updating merch access:', error)
                                         alert('Failed to update merch access')
                                         setMerchEnabledState(!checked)
+                                    } finally {
+                                        setIsLoading(false)
+                                    }
+                                }}
+                                disabled={isLoading}
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between border border-border rounded-md p-4 bg-muted/50">
+                            <div className="space-y-1">
+                                <Label htmlFor="main-wallet" className="text-foreground font-medium">
+                                    Settle to HangHut main wallet
+                                </Label>
+                                <p className="text-xs text-muted-foreground max-w-md">
+                                    Their sales land in the platform account instead of their own Xendit
+                                    sub-wallet. Balance is tracked in the transactions ledger and paid out
+                                    by disbursement. Also unlocks Cards/GCash without per-sub-account
+                                    capability onboarding.
+                                    {partner.xendit_account_id && (
+                                        <span className="mt-1 block font-medium text-amber-600">
+                                            This partner has a sub-account — switching strands any balance held in it.
+                                        </span>
+                                    )}
+                                </p>
+                            </div>
+                            <Switch
+                                id="main-wallet"
+                                checked={useMainWallet}
+                                onCheckedChange={async (checked) => {
+                                    setIsLoading(true)
+                                    setUseMainWalletState(checked)
+                                    try {
+                                        let res = await setPartnerWalletMode(partner.id, checked)
+                                        if (!res.success) {
+                                            // Sub-account present — make the consequence explicit
+                                            // before overriding.
+                                            if (confirm(`${res.reason}\n\nSwitch anyway?`)) {
+                                                res = await setPartnerWalletMode(partner.id, checked, true)
+                                            }
+                                        }
+                                        if (res.success) {
+                                            router.refresh()
+                                        } else {
+                                            setUseMainWalletState(!checked)
+                                        }
+                                    } catch (error) {
+                                        console.error('Error updating wallet mode:', error)
+                                        alert('Failed to update wallet mode')
+                                        setUseMainWalletState(!checked)
                                     } finally {
                                         setIsLoading(false)
                                     }

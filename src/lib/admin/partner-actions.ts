@@ -496,6 +496,57 @@ export async function setSubscriptionsEnabled(partnerId: string, enabled: boolea
 
 // Feature-gate merch selling per partner (controlled rollout). Off by default;
 // admins enable it per organizer. Gates the organizer merch tools + buyer surfaces.
+/**
+ * Switch a partner between settling into their own Xendit sub-wallet and settling
+ * into the HangHut main account (ledger-tracked, paid out by disbursement).
+ *
+ * Main-wallet mode also unlocks Cards/GCash at checkout without per-sub-account
+ * capability onboarding — see create-purchase-intent's channel list.
+ *
+ * The dangerous move is switching a partner that HAS a sub-account: their earnings
+ * physically sit in that wallet, but the main-wallet path computes balance from the
+ * transactions ledger and disburses from the platform account — so we'd pay them
+ * from our own funds while their money stays stranded. Blocked unless forced.
+ */
+export async function setPartnerWalletMode(
+    partnerId: string,
+    useMainWallet: boolean,
+    force = false
+): Promise<{ success: true } | { success: false; reason: string }> {
+    const supabase = await createClient()
+
+    const { data: partner, error: readError } = await supabase
+        .from('partners')
+        .select('xendit_account_id, business_name')
+        .eq('id', partnerId)
+        .single()
+
+    if (readError || !partner) throw new Error('Partner not found')
+
+    if (useMainWallet && partner.xendit_account_id && !force) {
+        return {
+            success: false,
+            reason:
+                `${partner.business_name} has a Xendit sub-account (${partner.xendit_account_id}). ` +
+                `Any balance sitting in it becomes unreachable from the payouts page once switched, ` +
+                `and payouts would be disbursed from the platform account instead. ` +
+                `Drain the sub-wallet first, or confirm to override.`,
+        }
+    }
+
+    const { error } = await supabase
+        .from('partners')
+        .update({ use_main_wallet: useMainWallet })
+        .eq('id', partnerId)
+
+    if (error) {
+        console.error('Error setting use_main_wallet:', error)
+        throw new Error('Failed to update wallet mode')
+    }
+
+    return { success: true }
+}
+
 export async function setMerchEnabled(partnerId: string, enabled: boolean) {
     const supabase = await createClient()
 
