@@ -39,6 +39,7 @@ interface PartnerSettingsFormProps {
         custom_tos?: string | null
         custom_domain?: string | null
         custom_domain_verified?: boolean
+        contact_number?: string | null
         social_links?: {
             facebook?: string
             instagram?: string
@@ -227,7 +228,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
         setSuccessMessage(null)
     }
 
-    const handleBrandingChange = (category: 'colors' | 'design' | 'announcement' | 'content' | 'ticket', field: string, value: any) => {
+    const handleBrandingChange = (category: 'colors' | 'design' | 'announcement' | 'content' | 'ticket' | 'contact_display', field: string, value: any) => {
         setFormData(prev => {
             const currentCategory = (prev.branding[category] || {}) as Record<string, any>
             return {
@@ -1049,6 +1050,46 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                                 <p className="text-xs text-muted-foreground">{mode.desc}</p>
                                             </div>
                                         ))}
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Contact visibility. These two flags already existed in
+                                branding.contact_display but had no control anywhere, so
+                                every save silently persisted the defaults and no organizer
+                                could ever turn their phone on. */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Contact Details</CardTitle>
+                                    <CardDescription>Choose what attendees can see on your event pages.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-6">
+                                    <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-base flex items-center gap-2"><Phone className="h-4 w-4" /> Show phone number</Label>
+                                            <p className="text-sm text-muted-foreground">
+                                                {initialData.contact_number
+                                                    ? <>Attendees will see <span className="font-medium text-foreground">{initialData.contact_number}</span> on your event pages.</>
+                                                    : 'No contact number on file — add one during verification first.'}
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            disabled={!initialData.contact_number}
+                                            checked={formData.branding.contact_display?.phone === true}
+                                            onCheckedChange={(checked) => handleBrandingChange('contact_display', 'phone', checked)}
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-base flex items-center gap-2"><Mail className="h-4 w-4" /> Show email address</Label>
+                                            <p className="text-sm text-muted-foreground">
+                                                Let attendees contact you by email from your storefront.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={formData.branding.contact_display?.email === true}
+                                            onCheckedChange={(checked) => handleBrandingChange('contact_display', 'email', checked)}
+                                        />
                                     </div>
                                 </CardContent>
                             </Card>

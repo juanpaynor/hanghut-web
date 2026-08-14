@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { BrandingProvider } from '@/components/storefront/branding-provider'
 import { StorefrontHeroVideo } from '@/components/storefront/storefront-hero-video'
 import { ProfileActions } from '@/components/storefront/profile-actions'
-import { cn } from '@/lib/utils'
+import { cn, hexToHsl } from '@/lib/utils'
 import { sanitize } from '@/lib/sanitize'
 import { SectionRenderer } from '@/components/storefront/section-renderer'
 import { StorefrontNavbar } from '@/components/storefront/storefront-navbar'
@@ -215,6 +215,20 @@ export default async function StorefrontPage({
     }
     const googleFont = GOOGLE_FONTS[activeFont] || null
     const fontClass = googleFont ? '' : (nextFontClass[activeFont] || inter.className)
+    // The shared theme CSS (event-themes.ts) styles headings with var(--font-heading),
+    // and the Settings live-preview bridge sets --font-heading/--font-body directly —
+    // but this page never defined them, so the preview and the live page disagreed.
+    // Define both from the storefront's single font pick.
+    const fontStack = googleFont
+        ? googleFont.stack
+        : (activeFont === 'serif' || activeFont === 'playfair') ? playfair.style.fontFamily
+        : (activeFont === 'mono') ? spaceMono.style.fontFamily
+        : inter.style.fontFamily
+    // Brand colour must drive the PRIMARY token, not just --hh-accent: every
+    // bg-primary / text-primary element paints from --primary, so without this the
+    // saved page kept the app's default indigo while the preview (which does set it)
+    // showed the organizer's colour.
+    const brandHsl = hexToHsl(brandAccent)
 
     // Animation Helpers
     const animate = (delay: string = '') => enableAnimations ? `animate-in fade-in slide-in-from-bottom-4 duration-700 ${delay} fill-mode-both` : ''
@@ -278,7 +292,13 @@ export default async function StorefrontPage({
                 data-hh-storefront
                 data-hh-theme={pageTheme}
                 className={cn("min-h-screen bg-background flex flex-col", fontClass)}
-                style={{ '--hh-accent': brandAccent, ...(googleFont ? { fontFamily: googleFont.stack } : {}) } as CSSProperties}
+                style={{
+                    '--hh-accent': brandAccent,
+                    '--font-heading': fontStack,
+                    '--font-body': fontStack,
+                    ...(brandHsl ? { '--primary': brandHsl, '--ring': brandHsl } : {}),
+                    ...(googleFont ? { fontFamily: googleFont.stack } : {}),
+                } as CSSProperties}
             >
                 {/* Webfont for display faces (Inter/Playfair/Mono are next/font, no link). */}
                 {googleFont && <link rel="stylesheet" href={googleFont.url} />}

@@ -50,7 +50,9 @@ const getEvent = cache(async (eventId: string, allowAnyStatus = false) => {
         business_name,
         verified,
         profile_photo_url,
-        slug
+        slug,
+        contact_number,
+        branding
       ),
       ticket_tiers(*),
       registration_questions(*)
@@ -408,6 +410,20 @@ export default async function PublicEventPage({
     // Whether a dark bg is active — drives glass card mode
     const isDarkBg = bgStyle !== 'default'
 
+    // A text colour set only as `color` on the root reaches nothing: every element
+    // carrying a Tailwind colour class (text-foreground, text-muted-foreground, …)
+    // beats an INHERITED value no matter the specificity. So map the pick onto the
+    // design TOKENS those classes paint from — then the whole page follows.
+    const textHsl = textColor ? hexToHsl(textColor) : null
+    /** Recessive companion for --muted-foreground: pushes lightness toward mid so
+     *  secondary text still reads as secondary, whichever way the pick leans. */
+    const softenHsl = (hsl: string) => {
+        const m = /^([\d.]+) ([\d.]+)% ([\d.]+)%$/.exec(hsl)
+        if (!m) return hsl
+        const l = parseFloat(m[3])
+        return `${m[1]} ${m[2]}% ${(l > 50 ? Math.max(0, l - 24) : Math.min(100, l + 24)).toFixed(1)}%`
+    }
+
     const fontStyle = {
         ...themeStyle,
         '--font-heading': headingFont.css,
@@ -415,6 +431,12 @@ export default async function PublicEventPage({
         '--hh-accent': event.theme_color || '#4E47DC',
         ...(textColor    ? { '--hh-text':    textColor }    : {}),
         ...(headingColor ? { '--hh-heading': headingColor } : {}),
+        ...(textHsl ? {
+            '--foreground': textHsl,
+            '--card-foreground': textHsl,
+            '--popover-foreground': textHsl,
+            '--muted-foreground': softenHsl(textHsl),
+        } : {}),
     } as React.CSSProperties
 
     // Fetch anonymised recent registrations for social proof ticker
@@ -690,10 +712,17 @@ export default async function PublicEventPage({
                         View Profile
                     </a>
                 )}
-                <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                    <Phone className="h-3 w-3" />
-                    <a href="tel:+639618478642" className="hover:underline">+63 961 847 8642</a>
-                </p>
+                {/* The organizer's own number, shown only when they've opted in via
+                    Settings → Contact Details. This slot used to print a single
+                    hard-coded number on every event page, for every organizer. */}
+                {event.organizer?.contact_number && event.organizer?.branding?.contact_display?.phone === true && (
+                    <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                        <Phone className="h-3 w-3" />
+                        <a href={`tel:${event.organizer.contact_number.replace(/[^\d+]/g, '')}`} className="hover:underline">
+                            {event.organizer.contact_number}
+                        </a>
+                    </p>
+                )}
             </div>
         </div>
     )
@@ -1132,10 +1161,22 @@ export default async function PublicEventPage({
                 <link key={url} rel="stylesheet" href={url} />
             ))}
             {/* Heading font on every heading in the new layouts — the theme BASE only
-                applies it for non-classic themes, so classic would otherwise fall back. */}
-            <style>{`[data-hh-layout] h1,[data-hh-layout] h2,[data-hh-layout] h3,[data-hh-layout] h4{font-family:var(--font-heading)}${headingColor ? `[data-hh-layout] h1,[data-hh-layout] h2,[data-hh-layout] h3,[data-hh-layout] h4{color:var(--hh-heading)}` : ''}${textColor ? `[data-hh-layout]{color:var(--hh-text)}` : ''}`}</style>
+                applies it for non-classic themes, so classic would otherwise fall back.
+                Keyed on [data-hh-event] (every layout root carries it); the old
+                [data-hh-layout] key silently matched nothing on poster/minimal, so
+                their heading font + colour picks never applied. Heading colour is
+                !important because headings often carry their own text-* class, which
+                an explicit organizer override should still win against. */}
+            <style>{`[data-hh-event] h1,[data-hh-event] h2,[data-hh-event] h3,[data-hh-event] h4{font-family:var(--font-heading)}`}</style>
             {themeCss && <style>{themeCss}</style>}
             {layoutCss && <style>{layoutCss}</style>}
+            {/* Organizer colour picks land AFTER the layout bones: cinematic (and the
+                dark-bg block) pin .text-foreground/.text-muted-foreground to fixed
+                slate values, which would otherwise outrank an explicit pick. Custom
+                CSS still ships last so it remains the final escape hatch. */}
+            {(textColor || headingColor) && (
+                <style>{`${textColor ? `[data-hh-event]{color:var(--hh-text)}[data-hh-event] .text-foreground{color:var(--hh-text)}[data-hh-event] .text-muted-foreground{color:color-mix(in srgb,var(--hh-text) 70%,transparent)}` : ''}${headingColor ? `[data-hh-event] h1,[data-hh-event] h2,[data-hh-event] h3,[data-hh-event] h4{color:var(--hh-heading)!important}` : ''}`}</style>
+            )}
             {customCss && <style dangerouslySetInnerHTML={{ __html: customCss }} />}
             {isPreview && <StorefrontPreviewBridge />}
         </>
@@ -1301,7 +1342,7 @@ export default async function PublicEventPage({
     // ─── CINEMATIC LAYOUT ─ immersive full-bleed poster + glass content ──────
     if (pageLayout === 'cinematic') {
         return (
-            <div data-hh-theme={pageTheme} data-hh-layout="cinematic" className="min-h-screen bg-black text-white" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+            <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="cinematic" className={cn("min-h-screen bg-black", !textColor && "text-white")} style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
                 <PageHead />
                 {/* Fixed full-bleed poster background */}
                 {bgStyle !== 'default' ? (
@@ -1403,7 +1444,7 @@ export default async function PublicEventPage({
     if (pageLayout === 'poster') {
         const formattedPosterDate = format(eventDate, 'EEEE, MMMM d · h:mm a')
         return (
-            <div data-hh-theme={pageTheme} className="min-h-screen bg-black text-white" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+            <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="poster" className={cn("min-h-screen bg-black", !textColor && "text-white")} style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
                 <PageHead />
                 {/* Fixed background effect */}
                 {bgStyle !== 'default' ? (
@@ -1532,7 +1573,7 @@ export default async function PublicEventPage({
     // ─── MINIMAL LAYOUT ──────────────────────────────────────────────────────
     if (pageLayout === 'minimal') {
         return (
-            <div data-hh-theme={pageTheme} className="min-h-screen bg-background pb-20" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+            <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="minimal" className="min-h-screen bg-background pb-20" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
                 <PageHead />
                 <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                     <div className="container mx-auto px-4 flex h-16 items-center justify-between">
@@ -1685,21 +1726,30 @@ export default async function PublicEventPage({
             {googleFontUrls.map(url => (
                 <link key={url} rel="stylesheet" href={url} />
             ))}
-            {/* Apply heading font to all headings within this page */}
-            <style>{`[data-hh-event] h1,[data-hh-event] h2,[data-hh-event] h3,[data-hh-event] h4{font-family:var(--font-heading)}${textColor ? `[data-hh-event]{color:var(--hh-text)}` : ''}${headingColor ? `[data-hh-event] h1,[data-hh-event] h2,[data-hh-event] h3,[data-hh-event] h4{color:var(--hh-heading)}` : ''}${isDarkBg ? `
+            {/* Apply heading font to all headings within this page. The dark-bg block
+                is split in two: the TEXT rules stand down when the organizer picked a
+                text colour (they'd otherwise outrank it), while the structural glass/
+                border/header rules always apply — a dark background still needs them. */}
+            <style>{`[data-hh-event] h1,[data-hh-event] h2,[data-hh-event] h3,[data-hh-event] h4{font-family:var(--font-heading)}${isDarkBg && !textColor ? `
 [data-hh-event]{color:#f1f5f9}
 [data-hh-event] .text-foreground,[data-hh-event] .text-muted-foreground{color:rgba(248,250,252,0.9)}
 [data-hh-event] [class*=prose] p,[data-hh-event] [class*=prose] li{color:rgba(226,232,240,0.9)}
-[data-hh-event] .border-border\/50{border-color:rgba(255,255,255,0.12)}
-[data-hh-event] .divide-x>*,[data-hh-event] .divide-y>*{border-color:rgba(255,255,255,0.1)}
-[data-hh-event] [data-hh-card]{background:rgba(255,255,255,0.08);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.15);color:#f1f5f9}
 [data-hh-event] [data-hh-card] p,[data-hh-event] [data-hh-card] span{color:rgba(248,250,252,0.85)}
 [data-hh-event] [data-hh-card] .text-muted-foreground{color:rgba(203,213,225,0.8)}
+` : ''}${isDarkBg ? `
+[data-hh-event] .border-border\/50{border-color:rgba(255,255,255,0.12)}
+[data-hh-event] .divide-x>*,[data-hh-event] .divide-y>*{border-color:rgba(255,255,255,0.1)}
+[data-hh-event] [data-hh-card]{background:rgba(255,255,255,0.08);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.15)${textColor ? '' : ';color:#f1f5f9'}}
 [data-hh-event] header{background:rgba(0,0,0,0.45)!important;border-color:rgba(255,255,255,0.1)!important;backdrop-filter:blur(20px)!important;color:#fff}
 [data-hh-event] header a,[data-hh-event] header span{color:#fff!important}
 ` : ''}`}</style>
             {/* Art-directed theme CSS — after the base styles so theme rules win ties */}
             {themeCss && <style>{themeCss}</style>}
+            {/* Organizer colour picks last (before custom CSS) so they outrank the
+                theme + dark-bg rules that pin .text-foreground/.text-muted-foreground. */}
+            {(textColor || headingColor) && (
+                <style>{`${textColor ? `[data-hh-event]{color:var(--hh-text)}[data-hh-event] .text-foreground{color:var(--hh-text)}[data-hh-event] .text-muted-foreground{color:color-mix(in srgb,var(--hh-text) 70%,transparent)}` : ''}${headingColor ? `[data-hh-event] h1,[data-hh-event] h2,[data-hh-event] h3,[data-hh-event] h4{color:var(--hh-heading)!important}` : ''}`}</style>
+            )}
             {customCss && <style dangerouslySetInnerHTML={{ __html: customCss }} />}
             {isPreview && <StorefrontPreviewBridge />}
 
