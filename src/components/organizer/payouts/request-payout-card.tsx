@@ -18,21 +18,6 @@ interface RequestPayoutCardProps {
 }
 
 export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet = false }: RequestPayoutCardProps) {
-    if (useMainWallet) {
-        return (
-            <Card className="border-emerald-500/30 bg-emerald-500/5">
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <Building2 className="h-5 w-5 text-emerald-600" />
-                        <CardTitle className="text-emerald-700">Payouts Managed by HangHut</CardTitle>
-                    </div>
-                    <CardDescription className="text-emerald-600/80">
-                        Your earnings settle directly into the HangHut platform account. Payout disbursements are handled by the HangHut team — no action needed on your end.
-                    </CardDescription>
-                </CardHeader>
-            </Card>
-        )
-    }
     const { toast } = useToast()
     const [amount, setAmount] = useState('')
     const [isLoading, setIsLoading] = useState(false)
@@ -238,6 +223,16 @@ export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet =
                     <span className="text-xs text-muted-foreground">
                         A ₱{DISBURSEMENT_FEE_TOTAL.toLocaleString()} transfer fee (₱{DISBURSEMENT_FEE_PHP} + 12% VAT) is charged by Xendit per payout, on top of your amount. Payouts over ₱{PAYOUT_OTP_THRESHOLD.toLocaleString()} require email verification.
                     </span>
+                    {useMainWallet && (
+                        <>
+                            <br />
+                            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <Building2 className="h-3 w-3 shrink-0" />
+                                Your balance is held in the HangHut platform account and is calculated
+                                from completed sales minus previous payouts.
+                            </span>
+                        </>
+                    )}
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
