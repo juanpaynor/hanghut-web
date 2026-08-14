@@ -1,5 +1,5 @@
 import { createPublicClient } from '@/lib/supabase/public'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Card } from '@/components/ui/card'
@@ -34,12 +34,27 @@ import { SocialProofTicker } from '@/components/events/social-proof-ticker'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
+import { isUuid } from '@/lib/slug'
 import { cache } from 'react'
 import { LoginNudge } from '@/components/shared/login-nudge'
 
 export const dynamic = 'force-dynamic' // always fresh — bg style changes show immediately
 
-const getEvent = cache(async (eventId: string, allowAnyStatus = false) => {
+/**
+ * Resolve a retired slug to its event, so renamed events redirect instead of 404.
+ */
+const getEventIdByRetiredSlug = cache(async (slug: string) => {
+    const supabase = createPublicClient()
+    const { data } = await supabase
+        .from('event_slug_history')
+        .select('event_id')
+        .eq('slug', slug)
+        .maybeSingle()
+
+    return data?.event_id ?? null
+})
+
+const getEvent = cache(async (idOrSlug: string, allowAnyStatus = false) => {
     const supabase = createPublicClient()
 
     let query = supabase
@@ -58,7 +73,11 @@ const getEvent = cache(async (eventId: string, allowAnyStatus = false) => {
       ticket_tiers(*),
       registration_questions(*)
     `)
-        .eq('id', eventId)
+
+    // Legacy links carry the UUID, new links carry the slug — both must resolve.
+    // UUIDs are already out in sent emails, the sitemap and referral redirects,
+    // so they stay valid permanently.
+    query = isUuid(idOrSlug) ? query.eq('id', idOrSlug) : query.eq('slug', idOrSlug)
 
     // Public visitors only see live/unlisted events. Owner preview (below) may
     // pass allowAnyStatus to render a draft in the Design-tab preview iframe.
@@ -100,7 +119,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
         ? plain.slice(0, 157) + (plain.length > 157 ? '…' : '')
         : `Get tickets for ${event.title} on HangHut.`
 
-    const url = `/events/${id}`
+    // Always canonicalise to the slug, so a visitor arriving on the legacy UUID
+    // link doesn't cause the page to be indexed twice.
+    const url = `/events/${(event as any).slug || id}`
     const ogImages = event.cover_image_url
         ? [{ url: event.cover_image_url, width: 1200, height: 630, alt: event.title }]
         : []
@@ -166,6 +187,24 @@ export default async function PublicEventPage({
                 const { data: owned } = await authed
                     .from('partners').select('id').eq('id', ownerId).eq('user_id', user.id).maybeSingle()
                 if (owned) event = anyStatus
+            }
+        }
+    }
+
+    // The event was renamed and this is one of its old slugs — send visitors to the
+    // current URL instead of 404ing, preserving whatever query string they arrived
+    // with (invite tokens, ?ref= attribution, preview flags).
+    if (!event && !isUuid(id)) {
+        const retiredEventId = await getEventIdByRetiredSlug(id)
+        if (retiredEventId) {
+            const current = await getEvent(retiredEventId)
+            if (current?.slug) {
+                const qs = new URLSearchParams(
+                    Object.entries(sp).filter(
+                        (entry): entry is [string, string] => typeof entry[1] === 'string'
+                    )
+                ).toString()
+                redirect(`/events/${current.slug}${qs ? `?${qs}` : ''}`)
             }
         }
     }

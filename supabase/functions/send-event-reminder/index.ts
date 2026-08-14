@@ -48,7 +48,7 @@ serve(async (req) => {
                 title,
                 start_datetime,
                 venue_name,
-                partners!events_organizer_id_fkey ( name )
+                partners!events_organizer_id_fkey ( business_name )
             `)
             .eq('status', 'active')
             .gte('start_datetime', rangeStart)
@@ -66,7 +66,7 @@ serve(async (req) => {
         let totalFailed = 0
 
         for (const event of events) {
-            const organizerName = (event.partners as any)?.name || 'HangHut'
+            const organizerName = (event.partners as any)?.business_name || 'HangHut'
             const eventDate = new Date(event.start_datetime).toLocaleString('en-PH', {
                 weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
                 hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Manila',
@@ -77,7 +77,7 @@ serve(async (req) => {
                 .from('tickets')
                 .select('user_id, guest_email, guest_name')
                 .eq('event_id', event.id)
-                .eq('status', 'active')
+                .in('status', ['valid', 'approved'])
 
             if (ticketsError || !tickets) continue
 

@@ -55,7 +55,8 @@ serve(async (req) => {
                 *,
                 partners (
                     business_name,
-                    xendit_account_id
+                    xendit_account_id,
+                    use_main_wallet
                 )
             `)
             .eq('id', payout_id)
