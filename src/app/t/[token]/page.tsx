@@ -4,6 +4,7 @@ import { TicketQR } from '@/components/tickets/ticket-qr'
 import { TicketPdfButton } from '@/components/tickets/ticket-pdf-button'
 import { CalendarClock, MapPin, Ticket as TicketIcon, Armchair, CheckCircle2, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatEventDateTime } from '@/lib/datetime'
 
 // Per-URL ISR: the page is keyed by an unguessable token and its content is
 // effectively immutable (event, seat, QR payload). Cache it so on-sale spikes
@@ -141,11 +142,9 @@ export default async function TicketPage({ params }: { params: Promise<{ token: 
                 ? undefined
                 : undefined
 
-    const eventDate = event.start_datetime
-        ? new Date(event.start_datetime).toLocaleString('en-PH', {
-            weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
-        })
-        : null
+    // Pinned to Manila: this page renders on the server (UTC), My Tickets renders in
+    // the browser. Without a fixed zone the same ticket showed two different dates.
+    const eventDate = event.start_datetime ? formatEventDateTime(event.start_datetime) : null
 
     // ── Per-template ticket card ────────────────────────────
     function TicketCard({ t }: { t: OrderTicket }) {

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { format } from 'date-fns'
+import { formatEventShort } from '@/lib/datetime'
 import { createClient } from '@/lib/supabase/client'
 import { TicketQR } from '@/components/tickets/ticket-qr'
 import { Armchair } from 'lucide-react'
@@ -371,7 +372,10 @@ function TicketCard({ ticket }: { ticket: TicketRow }) {
                     <div className="space-y-1 text-xs text-muted-foreground">
                         <p className="flex items-center gap-1.5">
                             <Calendar className="h-3 w-3 shrink-0" />
-                            {format(new Date(event.start_datetime), 'EEE, MMM d yyyy · h:mm a')}
+                            {/* Manila-pinned: this is a client component, so date-fns
+                                would format in the viewer's zone and disagree with the
+                                server-rendered event page. */}
+                            {formatEventShort(event.start_datetime)}
                         </p>
                         <p className="flex items-center gap-1.5">
                             <MapPin className="h-3 w-3 shrink-0" />

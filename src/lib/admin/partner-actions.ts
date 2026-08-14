@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
  * Approve a pending partner application.
@@ -253,6 +254,186 @@ export async function resetToStandardPricing(partnerId: string) {
     }
 
     return { success: true, warning: splitRuleWarning }
+}
+
+export type XenditStatusReport = {
+    ok: boolean
+    stage: string
+    local: Record<string, any>
+    xendit?: Record<string, any>
+    discrepancies: string[]
+    blockers: string[]
+}
+
+/**
+ * Read-only: ask Xendit what it actually knows about this partner.
+ *
+ * The Xendit secret lives only in the edge-function secrets, so the check has to
+ * happen there. Nothing is written to Xendit or to our DB — it reports drift and
+ * lets an admin decide.
+ */
+export async function getXenditAccountStatus(
+    partnerId: string
+): Promise<{ report?: XenditStatusReport; error?: string }> {
+    const supabase = await createClient()
+
+    const { data, error } = await supabase.functions.invoke('xendit-account-status', {
+        body: { partner_id: partnerId },
+    })
+
+    if (error) {
+        // Edge errors arrive as an opaque FunctionsHttpError; surface the body when we can.
+        let detail = error.message
+        try {
+            const body = await (error as any).context?.json?.()
+            if (body?.error) detail = body.message ? `${body.error}: ${body.message}` : body.error
+        } catch { /* keep the original message */ }
+        return { error: detail }
+    }
+    if (data?.error) return { error: data.message ? `${data.error}: ${data.message}` : data.error }
+
+    return { report: data as XenditStatusReport }
+}
+
+export type PartnerKycDoc = {
+    doc_type: string
+    owner_kind: string
+    owner_name: string | null
+    created_at: string
+    url: string | null
+}
+
+/**
+ * Every KYC document a partner has uploaded, with short-lived signed URLs.
+ *
+ * The verifications queue can only show partners sitting at 'pending_review', so
+ * documents belonging to anyone in another state (e.g. a partner approved before
+ * they uploaded) were unreachable in the UI despite being stored correctly.
+ */
+export async function getPartnerKycDocuments(
+    partnerId: string
+): Promise<{ docs?: PartnerKycDoc[]; error?: string }> {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { data: adminUser } = await supabase
+        .from('users').select('is_admin').eq('id', user.id).single()
+    if (!adminUser?.is_admin) return { error: 'Forbidden' }
+
+    const { data: rows, error } = await supabase
+        .from('partner_kyc_documents')
+        .select('doc_type, owner_kind, owner_id, storage_path, created_at')
+        .eq('partner_id', partnerId)
+        .order('owner_kind')
+        .order('doc_type')
+    if (error) return { error: error.message }
+    if (!rows?.length) return { docs: [] }
+
+    // Name the person a stakeholder document belongs to, so several people's IDs
+    // in one list stay tellable apart.
+    const stakeholderIds = [...new Set(rows.map(r => r.owner_id).filter(Boolean))] as string[]
+    const names = new Map<string, string>()
+    if (stakeholderIds.length) {
+        const { data: sh } = await supabase
+            .from('partner_stakeholders')
+            .select('id, first_name, last_name')
+            .in('id', stakeholderIds)
+        for (const s of sh ?? []) names.set(s.id, [s.first_name, s.last_name].filter(Boolean).join(' '))
+    }
+
+    const admin = createAdminClient()
+    const docs = await Promise.all(rows.map(async (r) => {
+        let url: string | null = null
+        try {
+            const { data } = await admin.storage
+                .from('kyc-documents')
+                .createSignedUrl(r.storage_path, 3600)
+            url = data?.signedUrl ?? null
+        } catch { /* a missing object shouldn't hide the rest of the list */ }
+        return {
+            doc_type: r.doc_type,
+            owner_kind: r.owner_kind,
+            owner_name: r.owner_id ? (names.get(r.owner_id) ?? null) : null,
+            created_at: r.created_at,
+            url,
+        }
+    }))
+
+    return { docs }
+}
+
+export type PartnerKycDetails = {
+    tax_id?: string
+    street_line1?: string
+    street_line2?: string
+    city?: string
+    province_state?: string
+    postal_code?: string
+}
+
+/**
+ * Admin fill-in for the business details Xendit needs but the KYC form never
+ * collected (TIN + business address). Lets us complete a partner's record without
+ * making them redo the whole verification form.
+ *
+ * Blank fields are skipped rather than written as null, so a partial save can't
+ * wipe data the partner already provided.
+ */
+export async function updatePartnerKycDetails(
+    partnerId: string,
+    details: PartnerKycDetails
+): Promise<{ success?: boolean; error?: string }> {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { data: adminUser } = await supabase
+        .from('users').select('is_admin').eq('id', user.id).single()
+    if (!adminUser?.is_admin) return { error: 'Forbidden' }
+
+    const updates: Record<string, string> = {}
+    for (const [key, value] of Object.entries(details)) {
+        const trimmed = (value ?? '').trim()
+        if (trimmed) updates[key] = trimmed
+    }
+    if (Object.keys(updates).length === 0) return { error: 'Nothing to save.' }
+
+    const { error } = await supabase.from('partners').update(updates).eq('id', partnerId)
+    if (error) return { error: error.message }
+
+    return { success: true }
+}
+
+/**
+ * Send this partner's stored KYC documents to Xendit (legacy account_holder flow).
+ *
+ * This is a real, outward-facing submission of the partner's PII — it exists as an
+ * explicit admin action because the only other trigger is the approve path, which
+ * has already fired for partners who submitted their documents after approval.
+ */
+export async function submitPartnerKycToXendit(
+    partnerId: string
+): Promise<{ success?: boolean; message?: string; error?: string }> {
+    const supabase = await createClient()
+
+    const { data, error } = await supabase.functions.invoke('submit-xendit-kyc', {
+        body: { partner_id: partnerId },
+    })
+
+    if (error) {
+        let detail = error.message
+        try {
+            const body = await (error as any).context?.json?.()
+            if (body?.error) detail = body.details ? `${body.error} — ${JSON.stringify(body.details)}` : body.error
+        } catch { /* keep the original message */ }
+        return { error: detail }
+    }
+    if (data?.error) return { error: data.details ? `${data.error} — ${JSON.stringify(data.details)}` : data.error }
+
+    return { success: true, message: data?.message || 'KYC submitted to Xendit.' }
 }
 
 /**

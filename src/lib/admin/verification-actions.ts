@@ -5,8 +5,19 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import { DEFAULT_PLATFORM_PCT, DEFAULT_FIXED_FEE } from '@/lib/payment/platform-fees'
 
-// Admin-only helper to get signed URL for private docs
+// Admin-only helper to get signed URL for private docs.
+// The comment said "admin-only" but nothing enforced it: this is a server action
+// that mints a signed URL for ANY path in the private KYC bucket, so the caller
+// must be checked before the service-role client is used.
 export async function getDocumentUrl(path: string) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Unauthorized')
+
+    const { data: adminUser } = await supabase
+        .from('users').select('is_admin').eq('id', user.id).single()
+    if (!adminUser?.is_admin) throw new Error('Forbidden')
+
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     if (!serviceRoleKey || !supabaseUrl) throw new Error('Config Error')

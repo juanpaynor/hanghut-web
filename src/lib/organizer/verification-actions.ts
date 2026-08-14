@@ -48,6 +48,7 @@ type BusinessProfile = {
     phone_number?: string
     legal_entity_address?: StructuredAddress | null
     business_address?: StructuredAddress | null
+    tax_id?: string
 }
 type StakeholderInput = {
     roles: string[]
@@ -109,6 +110,10 @@ export async function submitKYCVerification(
     if (!business.intents?.length) errors.intents = ['Select at least one business intent']
     if (!business.source_of_funds?.length) errors.sourceOfFunds = ['Select at least one source of funds']
     if (!business.money_out_frequency) errors.moneyOut = ['Money-out frequency is required']
+    // Xendit needs an address on the business entity; without it the account_holder
+    // payload silently omits `address` and the review stalls.
+    if (!business.business_address?.street_line1?.trim() || !business.business_address?.city?.trim())
+        errors.businessAddress = ['Business street address and city are required']
 
     if (requiresStakeholders(entityType)) {
         const roles = new Set(stakeholders.flatMap(s => s.roles || []))
@@ -149,6 +154,10 @@ export async function submitKYCVerification(
         kyc_status: 'pending_review',
         kyc_rejection_reason: null,
     }
+
+    // TIN gates the Xendit cards capability; blank means "leave what's there"
+    // rather than wiping a value an admin may have filled in.
+    if (business.tax_id?.trim()) updateData.tax_id = business.tax_id.trim()
 
     // Single-person entities: authorized person doubles as the contact person.
     if (isSinglePerson(entityType)) {

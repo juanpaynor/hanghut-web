@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair, Plus, Trash2, Check, Copy, ExternalLink, Code2, Send } from 'lucide-react'
 import { createEvent, updateEvent } from '@/lib/organizer/event-actions'
+import { isoToManilaLocal } from '@/lib/datetime'
 import { GooglePlacesAutocomplete } from '@/components/organizer/google-places-autocomplete'
 import { useToast } from '@/hooks/use-toast'
 import { TicketTiersManager } from '@/components/organizer/ticket-tiers-manager'
@@ -140,11 +141,11 @@ export function EventForm({
         city: initialData?.city || '',
         latitude: initialData?.latitude || null,
         longitude: initialData?.longitude || null,
-        start_datetime: initialData?.start_datetime ? new Date(initialData.start_datetime).toISOString().slice(0, 16) : '',
-        end_datetime: initialData?.end_datetime ? new Date(initialData.end_datetime).toISOString().slice(0, 16) : '',
+        start_datetime: isoToManilaLocal(initialData?.start_datetime),
+        end_datetime: isoToManilaLocal(initialData?.end_datetime),
         ticket_price: initialData?.ticket_price?.toString() || '0',
         capacity: initialData?.capacity?.toString() || '',
-        sales_end_datetime: initialData?.sales_end_datetime ? new Date(initialData.sales_end_datetime).toISOString().slice(0, 16) : '',
+        sales_end_datetime: isoToManilaLocal(initialData?.sales_end_datetime),
         cover_image: null,
         additional_images: [],
         custom_tos: initialData?.custom_tos || '',

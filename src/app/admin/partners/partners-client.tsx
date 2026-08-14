@@ -49,6 +49,7 @@ interface Partner {
     work_email: string | null
     nationality: string | null
     place_of_birth: string | null
+    tax_id: string | null
     street_line1: string | null
     street_line2: string | null
     city: string | null

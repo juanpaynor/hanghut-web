@@ -16,6 +16,7 @@ import { EventInviteResponse } from '@/components/events/event-invite-response'
 import { getEventInviteByToken } from '@/lib/organizer/event-invite-actions'
 import type { QuestionForForm } from '@/components/events/registration-questions-form'
 import { cn, hexToHsl, getYouTubeEmbedUrl } from '@/lib/utils'
+import { formatEventDateTime, formatEventDate, formatEventTime, formatInManila } from '@/lib/datetime'
 
 import { MobileTicketButton, ShareButton, AddToCalendarButton } from '@/components/events/event-actions'
 import { EventViewTracker } from '@/components/events/event-view-tracker'
@@ -528,7 +529,7 @@ export default async function PublicEventPage({
                             {event.title}
                         </h1>
                         <div className="flex items-center gap-3 text-white/75 text-sm font-medium flex-wrap justify-center">
-                            <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
+                            <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{formatEventDateTime(event.start_datetime)}</span>
                             {event.venue_name && (
                                 <>
                                     <span className="w-1 h-1 rounded-full bg-white/40" />
@@ -630,8 +631,8 @@ export default async function PublicEventPage({
                         <Calendar className="h-6 w-6" />
                     </div>
                     <div>
-                        <p className="font-semibold text-lg">{format(eventDate, 'EEEE, MMMM d')}</p>
-                        <p className="text-muted-foreground">{format(eventDate, 'h:mm a')}</p>
+                        <p className="font-semibold text-lg">{formatEventDate(event.start_datetime)}</p>
+                        <p className="text-muted-foreground">{formatEventTime(event.start_datetime)}</p>
                         <AddToCalendarButton
                             title={event.title}
                             startDatetime={event.start_datetime}
@@ -1204,7 +1205,7 @@ export default async function PublicEventPage({
             <Link href="/" className="font-black text-lg">HANGHUT</Link>
         )
 
-    const formattedDate = format(eventDate, 'EEEE, MMMM d · h:mm a')
+    const formattedDate = formatEventDateTime(event.start_datetime)
 
     // ─── BROADSIDE LAYOUT ─ brutalist gig poster ─────────────────────────────
     if (pageLayout === 'broadside') {
@@ -1244,11 +1245,11 @@ export default async function PublicEventPage({
                     <div className="grid grid-cols-2 md:grid-cols-4 border-t-2 border-b-2 border-foreground mt-6 font-mono text-xs uppercase tracking-wider">
                         <div className="p-3 border-r-2 border-foreground">
                             <div className="opacity-50">Date</div>
-                            <div className="font-bold normal-case tracking-normal font-sans">{format(eventDate, 'EEE MMM d')}</div>
+                            <div className="font-bold normal-case tracking-normal font-sans">{formatInManila(event.start_datetime, { weekday: 'short', month: 'short', day: 'numeric' })}</div>
                         </div>
                         <div className="p-3 md:border-r-2 border-foreground">
                             <div className="opacity-50">Time</div>
-                            <div className="font-bold normal-case tracking-normal font-sans">{format(eventDate, 'h:mm a')}</div>
+                            <div className="font-bold normal-case tracking-normal font-sans">{formatEventTime(event.start_datetime)}</div>
                         </div>
                         <div className="p-3 border-r-2 border-t-2 md:border-t-0 border-foreground">
                             <div className="opacity-50">Venue</div>
@@ -1297,7 +1298,7 @@ export default async function PublicEventPage({
                         <div className="min-w-0">
                             <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.2em] text-muted-foreground border-b border-foreground/80 pb-3 mb-6">
                                 <span>{event.organizer?.business_name || 'HangHut'}</span>
-                                <span className="ml-auto">{format(eventDate, 'MMMM yyyy')}</span>
+                                <span className="ml-auto">{formatInManila(event.start_datetime, { month: 'long', year: 'numeric' })}</span>
                             </div>
                             <div className="flex flex-wrap gap-2 mb-4">
                                 <Badge data-hh-badge variant="secondary">{event.event_type || 'Event'}</Badge>
@@ -1420,8 +1421,8 @@ export default async function PublicEventPage({
                             </h1>
                             <div className="w-10 h-px bg-border mx-auto my-7" />
                             <div className="text-muted-foreground leading-loose" style={{ fontFamily: 'var(--font-heading)' }}>
-                                <p>{format(eventDate, 'EEEE, MMMM d')}</p>
-                                <p>{format(eventDate, 'h:mm a')}</p>
+                                <p>{formatEventDate(event.start_datetime)}</p>
+                                <p>{formatEventTime(event.start_datetime)}</p>
                                 {venueVisible && event.venue_name && <p>{event.venue_name}{event.city ? ` · ${event.city}` : ''}</p>}
                             </div>
                             {showCountdown && <div className="mt-8 flex justify-center"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} /></div>}
@@ -1442,7 +1443,7 @@ export default async function PublicEventPage({
 
     // ─── POSTER LAYOUT ───────────────────────────────────────────────────────
     if (pageLayout === 'poster') {
-        const formattedPosterDate = format(eventDate, 'EEEE, MMMM d · h:mm a')
+        const formattedPosterDate = formatEventDateTime(event.start_datetime)
         return (
             <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="poster" className={cn("min-h-screen bg-black", !textColor && "text-white")} style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
                 <PageHead />
@@ -1606,7 +1607,7 @@ export default async function PublicEventPage({
                         </div>
                         <h1 className="text-4xl md:text-5xl font-black leading-tight tracking-tight">{event.title}</h1>
                         <div className="flex items-center gap-2 text-muted-foreground text-sm pt-1 flex-wrap">
-                            <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
+                            <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{formatEventDateTime(event.start_datetime)}</span>
                             {event.venue_name && (
                                 <>
                                     <span>·</span>
@@ -1811,7 +1812,7 @@ export default async function PublicEventPage({
                             {event.title}
                         </h1>
                         <div className="flex items-center gap-3 text-white/75 text-sm font-medium flex-wrap justify-center">
-                            <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{format(eventDate, 'EEEE, MMMM d · h:mm a')}</span>
+                            <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{formatEventDateTime(event.start_datetime)}</span>
                             {event.venue_name && <><span className="w-1 h-1 rounded-full bg-white/40" /><span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{event.venue_name}</span></>}
                         </div>
                         {showCountdown && <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />}

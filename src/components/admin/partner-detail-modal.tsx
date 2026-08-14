@@ -22,8 +22,8 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
-import { CheckCircle, XCircle, Ban, DollarSign, ExternalLink, Phone, MapPin, FileText } from 'lucide-react'
-import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities, setSubscriptionsEnabled, setMerchEnabled } from '@/lib/admin/partner-actions'
+import { CheckCircle, XCircle, Ban, DollarSign, ExternalLink, Phone, MapPin, FileText, ShieldCheck } from 'lucide-react'
+import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities, setSubscriptionsEnabled, setMerchEnabled, getXenditAccountStatus, submitPartnerKycToXendit, updatePartnerKycDetails, getPartnerKycDocuments, type XenditStatusReport, type PartnerKycDoc } from '@/lib/admin/partner-actions'
 import { useRouter } from 'next/navigation'
 
 interface Partner {
@@ -52,6 +52,7 @@ interface Partner {
     work_email: string | null
     nationality: string | null
     place_of_birth: string | null
+    tax_id: string | null
     // Address
     street_line1: string | null
     street_line2: string | null
@@ -95,6 +96,21 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
     const [autoApprovePayouts, setAutoApprovePayoutsState] = useState(partner.auto_approve_payouts || false)
     const [subscriptionsEnabled, setSubscriptionsEnabledState] = useState<boolean>((partner as any).subscriptions_enabled ?? false)
     const [merchEnabled, setMerchEnabledState] = useState<boolean>((partner as any).merch_enabled ?? false)
+    const [xenditReport, setXenditReport] = useState<XenditStatusReport | null>(null)
+    const [xenditChecking, setXenditChecking] = useState(false)
+    const [xenditSubmitting, setXenditSubmitting] = useState(false)
+    const [xenditError, setXenditError] = useState<string | null>(null)
+    const [kycTaxId, setKycTaxId] = useState(partner.tax_id || '')
+    const [kycStreet1, setKycStreet1] = useState(partner.street_line1 || '')
+    const [kycStreet2, setKycStreet2] = useState(partner.street_line2 || '')
+    const [kycCity, setKycCity] = useState(partner.city || '')
+    const [kycProvince, setKycProvince] = useState(partner.province_state || '')
+    const [kycPostal, setKycPostal] = useState(partner.postal_code || '')
+    const [kycSaving, setKycSaving] = useState(false)
+    const [kycSaved, setKycSaved] = useState<string | null>(null)
+    const [kycDocs, setKycDocs] = useState<PartnerKycDoc[] | null>(null)
+    const [docsLoading, setDocsLoading] = useState(false)
+    const [docsError, setDocsError] = useState<string | null>(null)
 
     const handleApprove = async () => {
         setIsLoading(true)
@@ -234,7 +250,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
             case 'rejected':
                 return <Badge className="bg-red-500/10 text-red-500">Rejected</Badge>
             case 'suspended':
-                return <Badge className="bg-slate-500/10 text-slate-500">Suspended</Badge>
+                return <Badge className="bg-muted text-muted-foreground">Suspended</Badge>
             default:
                 return null
         }
@@ -242,13 +258,13 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-3xl bg-slate-900 border-slate-700 text-white max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-3xl bg-card border-border text-foreground max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle className="text-2xl flex items-center gap-3">
                         {partner.business_name}
                         {getStatusBadge()}
                     </DialogTitle>
-                    <DialogDescription className="text-slate-400">
+                    <DialogDescription className="text-muted-foreground">
                         Partner ID: {partner.id}
                     </DialogDescription>
                 </DialogHeader>
@@ -259,44 +275,44 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                         <h3 className="text-lg font-semibold">Business Information</h3>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <Label className="text-slate-400">Business Name</Label>
-                                <p className="text-white">{partner.business_name}</p>
+                                <Label className="text-muted-foreground">Business Name</Label>
+                                <p className="text-foreground">{partner.business_name}</p>
                             </div>
                             <div>
-                                <Label className="text-slate-400">Business Type</Label>
-                                <p className="text-white capitalize">{partner.business_type || 'N/A'}</p>
+                                <Label className="text-muted-foreground">Business Type</Label>
+                                <p className="text-foreground capitalize">{partner.business_type || 'N/A'}</p>
                             </div>
                             <div>
-                                <Label className="text-slate-400">Owner</Label>
-                                <p className="text-white">{partner.user?.display_name || 'Unknown'}</p>
+                                <Label className="text-muted-foreground">Owner</Label>
+                                <p className="text-foreground">{partner.user?.display_name || 'Unknown'}</p>
                             </div>
                             <div>
-                                <Label className="text-slate-400">Email</Label>
-                                <p className="text-white">{partner.user?.email || 'N/A'}</p>
+                                <Label className="text-muted-foreground">Email</Label>
+                                <p className="text-foreground">{partner.user?.email || 'N/A'}</p>
                             </div>
                             <div>
-                                <Label className="text-slate-400">Joined</Label>
-                                <p className="text-white">{format(new Date(partner.created_at), 'MMM d, yyyy')}</p>
+                                <Label className="text-muted-foreground">Joined</Label>
+                                <p className="text-foreground">{format(new Date(partner.created_at), 'MMM d, yyyy')}</p>
                             </div>
                             {partner.approved_at && (
                                 <div>
-                                    <Label className="text-slate-400">Approved</Label>
-                                    <p className="text-white">{format(new Date(partner.approved_at), 'MMM d, yyyy')}</p>
+                                    <Label className="text-muted-foreground">Approved</Label>
+                                    <p className="text-foreground">{format(new Date(partner.approved_at), 'MMM d, yyyy')}</p>
                                 </div>
                             )}
                             {partner.xendit_account_id && (
                                 <div>
-                                    <Label className="text-slate-400">Xendit Sub-Account</Label>
-                                    <p className="text-white font-mono text-xs">{partner.xendit_account_id}</p>
+                                    <Label className="text-muted-foreground">Xendit Sub-Account</Label>
+                                    <p className="text-foreground font-mono text-xs">{partner.xendit_account_id}</p>
                                 </div>
                             )}
                             <div>
-                                <Label className="text-slate-400">KYC Status</Label>
+                                <Label className="text-muted-foreground">KYC Status</Label>
                                 <Badge variant="outline" className={
                                     partner.kyc_status === 'verified' ? 'bg-green-500/10 text-green-500' :
                                     partner.kyc_status === 'submitted' ? 'bg-yellow-500/10 text-yellow-500' :
                                     partner.kyc_status === 'rejected' ? 'bg-red-500/10 text-red-500' :
-                                    'bg-slate-500/10 text-slate-500'
+                                    'bg-muted text-muted-foreground'
                                 }>
                                     {(partner.kyc_status || 'not_started').toUpperCase().replace('_', ' ')}
                                 </Badge>
@@ -304,33 +320,298 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                         </div>
                     </div>
 
+                    {/* Xendit / KYC verification — the only place our stored state can be
+                        checked against what Xendit actually holds. */}
+                    <div className="space-y-4 border-t border-border pt-6">
+                        <div className="flex items-center justify-between gap-3">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <ShieldCheck className="h-5 w-5" />
+                                Xendit Verification
+                            </h3>
+                            <div className="flex gap-2">
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-border bg-muted text-foreground hover:bg-muted hover:text-foreground"
+                                    disabled={xenditChecking}
+                                    onClick={async () => {
+                                        setXenditChecking(true)
+                                        setXenditError(null)
+                                        setXenditReport(null)
+                                        const { report, error } = await getXenditAccountStatus(partner.id)
+                                        if (error) setXenditError(error)
+                                        else setXenditReport(report ?? null)
+                                        setXenditChecking(false)
+                                    }}
+                                >
+                                    {xenditChecking ? 'Checking…' : 'Check Xendit status'}
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    disabled={xenditSubmitting || !partner.xendit_account_id}
+                                    onClick={async () => {
+                                        if (!confirm(
+                                            `Send ${partner.business_name}'s KYC documents and personal details to Xendit?\n\n` +
+                                            `This starts a real verification review and cannot be undone.`
+                                        )) return
+                                        setXenditSubmitting(true)
+                                        setXenditError(null)
+                                        const { error, message } = await submitPartnerKycToXendit(partner.id)
+                                        if (error) setXenditError(error)
+                                        else {
+                                            setXenditError(null)
+                                            alert(message)
+                                            router.refresh()
+                                        }
+                                        setXenditSubmitting(false)
+                                    }}
+                                >
+                                    {xenditSubmitting ? 'Submitting…' : 'Submit KYC to Xendit'}
+                                </Button>
+                            </div>
+                        </div>
+
+                        {xenditError && (
+                            <p className="text-sm text-red-400 bg-red-500/10 rounded p-3">{xenditError}</p>
+                        )}
+
+                        {xenditReport && (
+                            <div className="space-y-3 text-sm">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <Label className="text-muted-foreground">Our record</Label>
+                                        <p className="text-foreground">
+                                            KYC {String(xenditReport.local.kyc_status || 'not_started').replace('_', ' ')}
+                                            {' · '}{xenditReport.local.kyc_documents_uploaded} doc(s)
+                                        </p>
+                                        <p className="text-muted-foreground font-mono text-xs break-all">
+                                            holder: {xenditReport.local.account_holder_id || '—'}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <Label className="text-muted-foreground">Xendit says</Label>
+                                        <p className="text-foreground">{xenditReport.xendit?.kyc_status || xenditReport.stage.replace('_', ' ')}</p>
+                                        <p className="text-muted-foreground font-mono text-xs break-all">
+                                            holder: {xenditReport.xendit?.account_holder_id || '—'}
+                                        </p>
+                                        {/* Proof the sub-account itself resolved, so "no holder"
+                                            reads as Xendit's answer and not a failed lookup. */}
+                                        {xenditReport.xendit?.sub_account?.id && (
+                                            <p className="text-muted-foreground font-mono text-[11px] break-all">
+                                                sub-account {xenditReport.xendit.sub_account.id} found
+                                                {xenditReport.xendit.sub_account.status ? ` · ${xenditReport.xendit.sub_account.status}` : ''}
+                                                {` · HTTP ${xenditReport.xendit.sub_account.lookup_http_status ?? 200}`}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {xenditReport.discrepancies.length > 0 && (
+                                    <div className="bg-amber-500/10 rounded p-3 space-y-1">
+                                        <p className="text-amber-400 font-medium">Mismatches</p>
+                                        {xenditReport.discrepancies.map((d, i) => (
+                                            <p key={i} className="text-amber-200/90 text-xs">• {d}</p>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {xenditReport.blockers.length > 0 && (
+                                    <div className="bg-muted rounded p-3 space-y-1">
+                                        <p className="text-foreground font-medium">Missing before submitting</p>
+                                        {xenditReport.blockers.map((b, i) => (
+                                            <p key={i} className="text-muted-foreground text-xs">• {b}</p>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {xenditReport.ok && xenditReport.discrepancies.length === 0 && (
+                                    <p className="text-green-400 text-xs">Our record matches Xendit.</p>
+                                )}
+
+                                {/* Uploaded documents. The verifications queue only lists
+                                    partners at 'pending_review', so this is the only way to
+                                    reach documents for anyone in another state. */}
+                                <div className="rounded border border-border p-3 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-foreground font-medium">Uploaded documents</p>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="border-border bg-muted text-foreground hover:bg-muted hover:text-foreground"
+                                            disabled={docsLoading}
+                                            onClick={async () => {
+                                                setDocsLoading(true)
+                                                const { docs, error } = await getPartnerKycDocuments(partner.id)
+                                                setKycDocs(error ? [] : (docs ?? []))
+                                                setDocsError(error ?? null)
+                                                setDocsLoading(false)
+                                            }}
+                                        >
+                                            {docsLoading ? 'Loading…' : 'Load documents'}
+                                        </Button>
+                                    </div>
+                                    {docsError && <p className="text-xs text-red-400">{docsError}</p>}
+                                    {kycDocs !== null && kycDocs.length === 0 && !docsError && (
+                                        <p className="text-xs text-muted-foreground">No documents uploaded.</p>
+                                    )}
+                                    {kycDocs && kycDocs.length > 0 && (
+                                        <div className="space-y-1">
+                                            {kycDocs.map((d, i) => (
+                                                <div key={i} className="flex items-center justify-between gap-3 text-xs border-b border-border py-1.5 last:border-0">
+                                                    <div className="min-w-0">
+                                                        <p className="text-foreground truncate">{d.doc_type.replace(/_/g, ' ')}</p>
+                                                        <p className="text-muted-foreground">
+                                                            {d.owner_kind.replace(/_/g, ' ')}
+                                                            {d.owner_name ? ` · ${d.owner_name}` : ''}
+                                                        </p>
+                                                    </div>
+                                                    {d.url ? (
+                                                        <a
+                                                            href={d.url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-blue-400 hover:underline whitespace-nowrap"
+                                                        >
+                                                            View ↗
+                                                        </a>
+                                                    ) : (
+                                                        <span className="text-muted-foreground whitespace-nowrap">unavailable</span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            <p className="text-[11px] text-muted-foreground pt-1">
+                                                Links are signed and expire after 1 hour.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Fill the gaps here rather than sending the partner back
+                                    through the whole verification form. */}
+                                <div className="rounded border border-border p-3 space-y-3">
+                                    <p className="text-foreground font-medium">Business details for Xendit</p>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="col-span-2">
+                                            <Label className="text-muted-foreground text-xs">TIN</Label>
+                                            <Input
+                                                value={kycTaxId}
+                                                onChange={(e) => setKycTaxId(e.target.value)}
+                                                placeholder="000-000-000-000"
+                                                className="bg-card border-border"
+                                            />
+                                        </div>
+                                        <div className="col-span-2">
+                                            <Label className="text-muted-foreground text-xs">Street address</Label>
+                                            <Input
+                                                value={kycStreet1}
+                                                onChange={(e) => setKycStreet1(e.target.value)}
+                                                className="bg-card border-border"
+                                            />
+                                        </div>
+                                        <div className="col-span-2">
+                                            <Label className="text-muted-foreground text-xs">Unit / floor / building (optional)</Label>
+                                            <Input
+                                                value={kycStreet2}
+                                                onChange={(e) => setKycStreet2(e.target.value)}
+                                                className="bg-card border-border"
+                                            />
+                                        </div>
+                                        <div>
+                                            <Label className="text-muted-foreground text-xs">City</Label>
+                                            <Input
+                                                value={kycCity}
+                                                onChange={(e) => setKycCity(e.target.value)}
+                                                className="bg-card border-border"
+                                            />
+                                        </div>
+                                        <div>
+                                            <Label className="text-muted-foreground text-xs">Province / region</Label>
+                                            <Input
+                                                value={kycProvince}
+                                                onChange={(e) => setKycProvince(e.target.value)}
+                                                className="bg-card border-border"
+                                            />
+                                        </div>
+                                        <div>
+                                            <Label className="text-muted-foreground text-xs">Postal code</Label>
+                                            <Input
+                                                value={kycPostal}
+                                                onChange={(e) => setKycPostal(e.target.value)}
+                                                className="bg-card border-border"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <Button
+                                            size="sm"
+                                            disabled={kycSaving}
+                                            onClick={async () => {
+                                                setKycSaving(true)
+                                                setKycSaved(null)
+                                                const { error } = await updatePartnerKycDetails(partner.id, {
+                                                    tax_id: kycTaxId,
+                                                    street_line1: kycStreet1,
+                                                    street_line2: kycStreet2,
+                                                    city: kycCity,
+                                                    province_state: kycProvince,
+                                                    postal_code: kycPostal,
+                                                })
+                                                setKycSaved(error ? `Error: ${error}` : 'Saved. Re-check status to confirm.')
+                                                setKycSaving(false)
+                                                if (!error) router.refresh()
+                                            }}
+                                        >
+                                            {kycSaving ? 'Saving…' : 'Save business details'}
+                                        </Button>
+                                        {kycSaved && <span className="text-xs text-muted-foreground">{kycSaved}</span>}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        Blank fields are left untouched, so a partial save won&apos;t erase what the partner already entered.
+                                    </p>
+                                </div>
+
+                                {xenditReport.xendit?.raw_account && (
+                                    <details className="text-xs">
+                                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                                            Raw Xendit response
+                                        </summary>
+                                        <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-3 text-[11px] text-foreground">
+{JSON.stringify({ account: xenditReport.xendit.raw_account, account_holder: xenditReport.xendit.raw_account_holder }, null, 2)}
+                                        </pre>
+                                    </details>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
                     {/* Contact & Representative Info */}
-                    <div className="space-y-4 border-t border-slate-700 pt-6">
+                    <div className="space-y-4 border-t border-border pt-6">
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             <Phone className="h-5 w-5" />
                             Contact & Representative
                         </h3>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <Label className="text-slate-400">Contact Number</Label>
-                                <p className="text-white">{partner.contact_number || 'N/A'}</p>
+                                <Label className="text-muted-foreground">Contact Number</Label>
+                                <p className="text-foreground">{partner.contact_number || 'N/A'}</p>
                             </div>
                             <div>
-                                <Label className="text-slate-400">Work Email</Label>
-                                <p className="text-white">{partner.work_email || 'N/A'}</p>
+                                <Label className="text-muted-foreground">Work Email</Label>
+                                <p className="text-foreground">{partner.work_email || 'N/A'}</p>
                             </div>
                             <div>
-                                <Label className="text-slate-400">Representative Name</Label>
-                                <p className="text-white">{partner.representative_name || 'N/A'}</p>
+                                <Label className="text-muted-foreground">Representative Name</Label>
+                                <p className="text-foreground">{partner.representative_name || 'N/A'}</p>
                             </div>
                             <div>
-                                <Label className="text-slate-400">Nationality</Label>
-                                <p className="text-white capitalize">{partner.nationality || 'N/A'}</p>
+                                <Label className="text-muted-foreground">Nationality</Label>
+                                <p className="text-foreground capitalize">{partner.nationality || 'N/A'}</p>
                             </div>
                             {partner.place_of_birth && (
                                 <div>
-                                    <Label className="text-slate-400">Place of Birth</Label>
-                                    <p className="text-white">{partner.place_of_birth}</p>
+                                    <Label className="text-muted-foreground">Place of Birth</Label>
+                                    <p className="text-foreground">{partner.place_of_birth}</p>
                                 </div>
                             )}
                         </div>
@@ -338,12 +619,12 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
 
                     {/* Address */}
                     {(partner.street_line1 || partner.city) && (
-                        <div className="space-y-4 border-t border-slate-700 pt-6">
+                        <div className="space-y-4 border-t border-border pt-6">
                             <h3 className="text-lg font-semibold flex items-center gap-2">
                                 <MapPin className="h-5 w-5" />
                                 Address
                             </h3>
-                            <div className="text-white space-y-0.5">
+                            <div className="text-foreground space-y-0.5">
                                 {partner.street_line1 && <p>{partner.street_line1}</p>}
                                 {partner.street_line2 && <p>{partner.street_line2}</p>}
                                 {(partner.city || partner.province_state || partner.postal_code) && (
@@ -355,23 +636,23 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
 
                     {/* Bank Information */}
                     {(partner.bank_name || partner.bank_account_number) && (
-                        <div className="space-y-4 border-t border-slate-700 pt-6">
+                        <div className="space-y-4 border-t border-border pt-6">
                             <h3 className="text-lg font-semibold flex items-center gap-2">
                                 <DollarSign className="h-5 w-5" />
                                 Bank Information
                             </h3>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <Label className="text-slate-400">Bank Name</Label>
-                                    <p className="text-white">{partner.bank_name || 'N/A'}</p>
+                                    <Label className="text-muted-foreground">Bank Name</Label>
+                                    <p className="text-foreground">{partner.bank_name || 'N/A'}</p>
                                 </div>
                                 <div>
-                                    <Label className="text-slate-400">Account Name</Label>
-                                    <p className="text-white">{partner.bank_account_name || 'N/A'}</p>
+                                    <Label className="text-muted-foreground">Account Name</Label>
+                                    <p className="text-foreground">{partner.bank_account_name || 'N/A'}</p>
                                 </div>
                                 <div>
-                                    <Label className="text-slate-400">Account Number</Label>
-                                    <p className="text-white font-mono">{partner.bank_account_number || 'N/A'}</p>
+                                    <Label className="text-muted-foreground">Account Number</Label>
+                                    <p className="text-foreground font-mono">{partner.bank_account_number || 'N/A'}</p>
                                 </div>
                             </div>
                         </div>
@@ -379,7 +660,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
 
                     {/* KYC Documents */}
                     {(partner.id_document_url || partner.business_document_url || partner.bir_2303_url || partner.articles_of_incorporation_url || partner.secretary_certificate_url || partner.latest_gis_url) && (
-                        <div className="space-y-4 border-t border-slate-700 pt-6">
+                        <div className="space-y-4 border-t border-border pt-6">
                             <h3 className="text-lg font-semibold flex items-center gap-2">
                                 <FileText className="h-5 w-5" />
                                 KYC Documents
@@ -427,16 +708,16 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
 
                     {/* Previous Admin Notes */}
                     {partner.admin_notes && (
-                        <div className="space-y-2 border-t border-slate-700 pt-6">
-                            <h3 className="text-base font-semibold text-slate-300">Previous Admin Notes</h3>
-                            <p className="text-sm text-slate-400 bg-slate-800/50 rounded-md p-3 border border-slate-700">{partner.admin_notes}</p>
+                        <div className="space-y-2 border-t border-border pt-6">
+                            <h3 className="text-base font-semibold text-foreground">Previous Admin Notes</h3>
+                            <p className="text-sm text-muted-foreground bg-muted/50 rounded-md p-3 border border-border">{partner.admin_notes}</p>
                         </div>
                     )}
 
                     {/* Partner Type / Capabilities */}
-                    <div className="space-y-4 border-t border-slate-700 pt-6">
+                    <div className="space-y-4 border-t border-border pt-6">
                         <h3 className="text-lg font-semibold">Partner Type</h3>
-                        <p className="text-sm text-slate-400">Controls which dashboard sections this partner can access.</p>
+                        <p className="text-sm text-muted-foreground">Controls which dashboard sections this partner can access.</p>
                         <div className="flex gap-3">
                             {[
                                 { value: 'organizer', label: 'Event Organizer', desc: 'Events, tickets, campaigns' },
@@ -448,8 +729,8 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                     onClick={() => toggleCapability(value)}
                                     className={`flex-1 p-3 rounded-xl border text-left transition-colors ${
                                         capabilities.includes(value)
-                                            ? 'border-primary bg-primary/10 text-white'
-                                            : 'border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-500'
+                                            ? 'border-primary bg-primary/10 text-primary'
+                                            : 'border-border bg-muted text-muted-foreground hover:border-border'
                                     }`}
                                 >
                                     <p className="font-semibold text-sm">{label}</p>
@@ -467,7 +748,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                     </div>
 
                     {/* Pricing Configuration */}
-                    <div className="space-y-4 border-t border-slate-700 pt-6">
+                    <div className="space-y-4 border-t border-border pt-6">
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             <DollarSign className="h-5 w-5" />
                             Pricing Configuration
@@ -475,13 +756,13 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                         <div className="space-y-3">
                             <div className="space-y-4">
                                 <div>
-                                    <Label htmlFor="pricing-model" className="text-slate-400 mb-2 block">Pricing Model</Label>
+                                    <Label htmlFor="pricing-model" className="text-muted-foreground mb-2 block">Pricing Model</Label>
                                     <Select
                                         value={pricingModel}
                                         onValueChange={setPricingModel}
                                         disabled={partner.status !== 'approved'}
                                     >
-                                        <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                                        <SelectTrigger className="bg-muted border-border text-foreground">
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -492,9 +773,9 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                 </div>
 
                                 {pricingModel === 'custom' && (
-                                    <div className="space-y-4 border border-slate-700 rounded-md p-4 bg-slate-800/50">
+                                    <div className="space-y-4 border border-border rounded-md p-4 bg-muted/50">
                                         <div className="space-y-2">
-                                            <Label htmlFor="custom-percentage" className="text-slate-400">Platform Fee Share (%)</Label>
+                                            <Label htmlFor="custom-percentage" className="text-muted-foreground">Platform Fee Share (%)</Label>
                                             <Input
                                                 id="custom-percentage"
                                                 type="number"
@@ -503,18 +784,18 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                                 step="0.5"
                                                 value={customPercentage}
                                                 onChange={(e) => setCustomPercentage(e.target.value)}
-                                                className="bg-slate-800 border-slate-700 text-white"
+                                                className="bg-muted border-border text-foreground"
                                                 disabled={partner.status !== 'approved'}
                                                 placeholder="e.g. 5.0"
                                             />
-                                            <p className="text-xs text-slate-500">
+                                            <p className="text-xs text-muted-foreground">
                                                 Percentage of ticket sales that goes to the platform.
                                             </p>
                                         </div>
 
                                         <div className="space-y-3">
                                             <div className="flex items-center justify-between">
-                                                <Label htmlFor="pass-fixed" className="text-slate-400">Pass ₱ booking fee to customer</Label>
+                                                <Label htmlFor="pass-fixed" className="text-muted-foreground">Pass ₱ booking fee to customer</Label>
                                                 <Switch
                                                     id="pass-fixed"
                                                     checked={passFixedToCustomer}
@@ -523,7 +804,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                                 />
                                             </div>
                                             <div className="flex items-center justify-between">
-                                                <Label htmlFor="pass-pct" className="text-slate-400">Pass % commission to customer</Label>
+                                                <Label htmlFor="pass-pct" className="text-muted-foreground">Pass % commission to customer</Label>
                                                 <Switch
                                                     id="pass-pct"
                                                     checked={passPercentageToCustomer}
@@ -531,7 +812,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                                     disabled={partner.status !== 'approved'}
                                                 />
                                             </div>
-                                            <p className="text-xs text-slate-500">
+                                            <p className="text-xs text-muted-foreground">
                                                 Each fee that&apos;s passed is added to the customer&apos;s total on top of the ticket price;
                                                 whatever isn&apos;t passed comes out of the organizer&apos;s payout. Both are HangHut&apos;s
                                                 platform fee. The payment processing fee is always absorbed by the organizer. Organizers can
@@ -540,7 +821,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label htmlFor="fixed-fee" className="text-slate-400">Fixed Customer Fee (₱)</Label>
+                                            <Label htmlFor="fixed-fee" className="text-muted-foreground">Fixed Customer Fee (₱)</Label>
                                             <Input
                                                 id="fixed-fee"
                                                 type="number"
@@ -548,11 +829,11 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                                 step="1.00"
                                                 value={fixedFeePerTicket}
                                                 onChange={(e) => setFixedFeePerTicket(e.target.value)}
-                                                className="bg-slate-800 border-slate-700 text-white"
+                                                className="bg-muted border-border text-foreground"
                                                 disabled={partner.status !== 'approved'}
                                                 placeholder="e.g. 15.00"
                                             />
-                                            <p className="text-xs text-slate-500">
+                                            <p className="text-xs text-muted-foreground">
                                                 A fixed amount added to the ticket price, paid by the customer to the platform.
                                                 Default is ₱15.00.
                                             </p>
@@ -572,18 +853,18 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                     </div>
 
                     {/* Payout Configuration */}
-                    <div className="space-y-4 border-t border-slate-700 pt-6">
+                    <div className="space-y-4 border-t border-border pt-6">
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             <DollarSign className="h-5 w-5" />
                             Payout Configuration
                         </h3>
                         <div className="space-y-3">
-                            <div className="flex items-center justify-between border border-slate-700 rounded-md p-4 bg-slate-800/50">
+                            <div className="flex items-center justify-between border border-border rounded-md p-4 bg-muted/50">
                                 <div className="space-y-1">
-                                    <Label htmlFor="auto-approve-payouts" className="text-white font-medium">
+                                    <Label htmlFor="auto-approve-payouts" className="text-foreground font-medium">
                                         Auto-Approve Payouts
                                     </Label>
-                                    <p className="text-xs text-slate-400 max-w-md">
+                                    <p className="text-xs text-muted-foreground max-w-md">
                                         When enabled, payout requests from this partner bypass manual admin review and are disbursed immediately via Xendit.
                                     </p>
                                 </div>
@@ -613,17 +894,17 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                     </div>
 
                     {/* Feature Access */}
-                    <div className="space-y-4 border-t border-slate-700 pt-6">
+                    <div className="space-y-4 border-t border-border pt-6">
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             <FileText className="h-5 w-5" />
                             Feature Access
                         </h3>
-                        <div className="flex items-center justify-between border border-slate-700 rounded-md p-4 bg-slate-800/50">
+                        <div className="flex items-center justify-between border border-border rounded-md p-4 bg-muted/50">
                             <div className="space-y-1">
-                                <Label htmlFor="subscriptions-enabled" className="text-white font-medium">
+                                <Label htmlFor="subscriptions-enabled" className="text-foreground font-medium">
                                     Subscriptions / Memberships
                                 </Label>
-                                <p className="text-xs text-slate-400 max-w-md">
+                                <p className="text-xs text-muted-foreground max-w-md">
                                     Gated off for new partners while recurring billing is finalized. Turn on to give this org early access to membership tiers and subscriber posts.
                                 </p>
                             </div>
@@ -648,12 +929,12 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                             />
                         </div>
 
-                        <div className="flex items-center justify-between border border-slate-700 rounded-md p-4 bg-slate-800/50">
+                        <div className="flex items-center justify-between border border-border rounded-md p-4 bg-muted/50">
                             <div className="space-y-1">
-                                <Label htmlFor="merch-enabled" className="text-white font-medium">
+                                <Label htmlFor="merch-enabled" className="text-foreground font-medium">
                                     Merch selling
                                 </Label>
-                                <p className="text-xs text-slate-400 max-w-md">
+                                <p className="text-xs text-muted-foreground max-w-md">
                                     Off by default (controlled rollout). Turn on to let this org create merch products and sell them on their event pages, with claim-at-event or shipped fulfillment.
                                 </p>
                             </div>
@@ -681,17 +962,17 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
 
                     {/* Admin Actions */}
                     {partner.status === 'pending' && (
-                        <div className="space-y-4 border-t border-slate-700 pt-6">
+                        <div className="space-y-4 border-t border-border pt-6">
                             <h3 className="text-lg font-semibold">Review Application</h3>
                             <div className="space-y-3">
                                 <div>
-                                    <Label htmlFor="admin-notes" className="text-slate-400">Admin Notes</Label>
+                                    <Label htmlFor="admin-notes" className="text-muted-foreground">Admin Notes</Label>
                                     <Textarea
                                         id="admin-notes"
                                         value={adminNotes}
                                         onChange={(e) => setAdminNotes(e.target.value)}
                                         placeholder="Add notes about this application..."
-                                        className="bg-slate-800 border-slate-700 text-white"
+                                        className="bg-muted border-border text-foreground"
                                         rows={3}
                                     />
                                 </div>
@@ -720,17 +1001,17 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
 
                     {/* Suspend Partner */}
                     {partner.status === 'approved' && (
-                        <div className="space-y-4 border-t border-slate-700 pt-6">
+                        <div className="space-y-4 border-t border-border pt-6">
                             <h3 className="text-lg font-semibold text-red-400">Danger Zone</h3>
                             <div className="space-y-3">
                                 <div>
-                                    <Label htmlFor="suspend-reason" className="text-slate-400">Reason for Suspension</Label>
+                                    <Label htmlFor="suspend-reason" className="text-muted-foreground">Reason for Suspension</Label>
                                     <Textarea
                                         id="suspend-reason"
                                         value={adminNotes}
                                         onChange={(e) => setAdminNotes(e.target.value)}
                                         placeholder="Required: Explain why you're suspending this partner..."
-                                        className="bg-slate-800 border-slate-700 text-white"
+                                        className="bg-muted border-border text-foreground"
                                         rows={3}
                                     />
                                 </div>
@@ -749,9 +1030,9 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
 
                     {/* Reinstate Suspended Partner */}
                     {partner.status === 'suspended' && (
-                        <div className="space-y-4 border-t border-slate-700 pt-6">
+                        <div className="space-y-4 border-t border-border pt-6">
                             <h3 className="text-lg font-semibold text-yellow-400">Partner Suspended</h3>
-                            <p className="text-sm text-slate-400">
+                            <p className="text-sm text-muted-foreground">
                                 This partner is currently suspended. You can reinstate them to restore access to their storefront and event management.
                             </p>
                             <div className="flex gap-3">

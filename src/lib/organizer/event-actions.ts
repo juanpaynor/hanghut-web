@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
+import { manilaLocalToISO } from '@/lib/datetime'
 
 /**
  * Resolve the partner whose events the current user may manage. Real owners
@@ -108,9 +109,13 @@ export async function createEvent(formData: FormData) {
             imageIndex++
         }
 
-        // 3. Prepare event data
-        const startDatetime = formData.get('start_datetime') as string
-        const salesEndDatetime = formData.get('sales_end_datetime') as string
+        // 3. Prepare event data.
+        // The form sends naive wall-clock strings ("2026-08-28T19:00") meaning
+        // Philippine time. Convert to real instants before storing — writing the
+        // raw string let Postgres (TZ=UTC) read 7pm Manila as 7pm UTC, i.e. 3am the
+        // next day.
+        const startDatetime = manilaLocalToISO(formData.get('start_datetime') as string)
+        const salesEndDatetime = manilaLocalToISO(formData.get('sales_end_datetime') as string)
 
         // Default sales_end to 1 hour before event if not provided
         const defaultSalesEnd = new Date(new Date(startDatetime).getTime() - 3600000).toISOString()
@@ -134,7 +139,7 @@ export async function createEvent(formData: FormData) {
             latitude: parseFloat(formData.get('latitude') as string),
             longitude: parseFloat(formData.get('longitude') as string),
             start_datetime: startDatetime,
-            end_datetime: formData.get('end_datetime') as string || null,
+            end_datetime: manilaLocalToISO(formData.get('end_datetime') as string) || null,
             sales_end_datetime: salesEndDatetime || defaultSalesEnd,
             ticket_price: parseFloat(formData.get('ticket_price') as string) || 0,
             capacity: isExternal ? 999999 : parseInt(formData.get('capacity') as string),
@@ -313,9 +318,9 @@ export async function updateEvent(eventId: string, formData: FormData) {
             imageIndex++
         }
 
-        // 3. Prepare Update Data
-        const startDatetime = formData.get('start_datetime') as string
-        const salesEndDatetime = formData.get('sales_end_datetime') as string
+        // 3. Prepare Update Data — same Manila-local → instant conversion as create.
+        const startDatetime = manilaLocalToISO(formData.get('start_datetime') as string)
+        const salesEndDatetime = manilaLocalToISO(formData.get('sales_end_datetime') as string)
         const defaultSalesEnd = new Date(new Date(startDatetime).getTime() - 3600000).toISOString()
         const isExternal = formData.get('is_external') === 'true'
 
@@ -333,7 +338,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
             latitude: parseFloat(formData.get('latitude') as string),
             longitude: parseFloat(formData.get('longitude') as string),
             start_datetime: startDatetime,
-            end_datetime: formData.get('end_datetime') as string || null,
+            end_datetime: manilaLocalToISO(formData.get('end_datetime') as string) || null,
             sales_end_datetime: salesEndDatetime || defaultSalesEnd,
             ticket_price: parseFloat(formData.get('ticket_price') as string) || 0,
             capacity: isExternal ? 999999 : parseInt(formData.get('capacity') as string),

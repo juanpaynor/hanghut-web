@@ -53,6 +53,13 @@ export type KYCExistingData = {
     money_out_transaction_frequency?: string
     business_phone_country_code?: string
     business_phone_number?: string
+    tax_id?: string
+    street_line1?: string
+    street_line2?: string
+    city?: string
+    province_state?: string
+    postal_code?: string
+    legal_entity_address?: StructuredAddress | null
     authorized_person_first_name?: string
     authorized_person_last_name?: string
     authorized_person_gender?: string
@@ -247,6 +254,18 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
     const [moneyOut, setMoneyOut] = useState(ex.money_out_transaction_frequency || '')
     const [bizPhoneCC, setBizPhoneCC] = useState(ex.business_phone_country_code || '+63')
     const [bizPhone, setBizPhone] = useState(ex.business_phone_number || '')
+    const [taxId, setTaxId] = useState(ex.tax_id || '')
+    const [bizAddress, setBizAddress] = useState<StructuredAddress>({
+        street_line1: ex.street_line1 || '',
+        street_line2: ex.street_line2 || '',
+        city: ex.city || '',
+        province_state: ex.province_state || '',
+        postal_code: ex.postal_code || '',
+    })
+    const [legalAddress, setLegalAddress] = useState<StructuredAddress>(ex.legal_entity_address || {})
+    // Most PH SMEs operate from their registered address; default to "same" so the
+    // common case is one form fill, not two.
+    const [legalSameAsBusiness, setLegalSameAsBusiness] = useState(!ex.legal_entity_address)
 
     // Authorized person (prefill from registration where possible)
     const repParts = (ex.representative_name || '').trim().split(' ')
@@ -306,6 +325,11 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
             industry_subcategory: industrySub, establishment_date: establishmentDate || undefined,
             intents, source_of_funds: sourceFunds, average_monthly_basket_size: basketSize || undefined,
             money_out_frequency: moneyOut || undefined, phone_country_code: bizPhoneCC, phone_number: bizPhone,
+            tax_id: taxId.trim() || undefined,
+            business_address: bizAddress,
+            // "Same as business" is stored explicitly rather than left null, so the
+            // submission always carries a registered address.
+            legal_entity_address: legalSameAsBusiness ? bizAddress : legalAddress,
         }))
         fd.append('authorizedPerson', JSON.stringify(auth))
         if (corp) fd.append('contactPerson', JSON.stringify(contact))
@@ -408,6 +432,42 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
                             <Input value={bizPhoneCC} onChange={(e) => setBizPhoneCC(e.target.value)} className="w-20" />
                             <Input value={bizPhone} onChange={(e) => setBizPhone(e.target.value.replace(/[^0-9]/g, ''))} placeholder="9171234567" className="flex-1" />
                         </div>
+                    </div>
+                    {/* TIN + business address: Xendit needs both on the business entity
+                        (the TIN gates the cards capability). Neither was collected
+                        anywhere before, so they could never be sent. */}
+                    <div className="space-y-2">
+                        <Label>Tax Identification Number (TIN)</Label>
+                        <Input
+                            value={taxId}
+                            onChange={(e) => setTaxId(e.target.value)}
+                            placeholder="000-000-000-000"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            As shown on your BIR 2303. Required before card payments can be enabled.
+                        </p>
+                    </div>
+                    <AddressFields
+                        label="Business address (required)"
+                        value={bizAddress}
+                        onChange={setBizAddress}
+                    />
+                    <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-sm">
+                            <input
+                                type="checkbox"
+                                checked={legalSameAsBusiness}
+                                onChange={(e) => setLegalSameAsBusiness(e.target.checked)}
+                            />
+                            Registered address is the same as the business address
+                        </label>
+                        {!legalSameAsBusiness && (
+                            <AddressFields
+                                label="Registered address (as filed with SEC/DTI)"
+                                value={legalAddress}
+                                onChange={setLegalAddress}
+                            />
+                        )}
                     </div>
                 </div>
             )}
