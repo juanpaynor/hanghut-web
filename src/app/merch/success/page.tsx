@@ -25,14 +25,20 @@ export default function MerchSuccessPage() {
                 <div className="text-left space-y-3 rounded-xl border p-4 text-sm">
                     <div className="flex items-start gap-2.5">
                         <Mail className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                        <span>We&apos;ve sent your receipt and pickup details to your email.</span>
+                        <span>
+                            We&apos;ve emailed your receipt and a link to your order — that link is
+                            your claim code, so keep it.
+                        </span>
                     </div>
                     <div className="flex items-start gap-2.5">
                         <PackageCheck className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                        <span>For claim-at-event items, show your claim QR (in <strong>My Tickets</strong>) at the merch table.</span>
+                        <span>
+                            For claim-at-event items, show the QR on that page at the merch table.
+                            If you have an account, it&apos;s also saved in <strong>My Tickets</strong>.
+                        </span>
                     </div>
                 </div>
-                <Button asChild className="w-full"><Link href="/account">Go to My Tickets</Link></Button>
+                <Button asChild variant="outline" className="w-full"><Link href="/account">Go to My Tickets</Link></Button>
             </Card>
         </div>
     )

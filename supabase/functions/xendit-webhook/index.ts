@@ -462,6 +462,33 @@ serve(async (req) => {
                         }
 
                         console.log('🎉 Merch Order Confirmed:', merchResult)
+
+                        // Deliver the claim link. Guests have no account, so this email
+                        // is their ONLY route to the claim QR — but it must never fail
+                        // the webhook, or Xendit retries an already-confirmed order.
+                        const merchClaimToken = (merchResult as any)?.claim_token
+                        if (merchClaimToken) {
+                            try {
+                                const fnUrl = Deno.env.get('SUPABASE_URL') ?? ''
+                                const svcKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+                                const mailRes = await fetch(`${fnUrl}/functions/v1/send-merch-email`, {
+                                    method: 'POST',
+                                    headers: {
+                                        Authorization: `Bearer ${svcKey}`,
+                                        'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({ claim_token: merchClaimToken }),
+                                })
+                                if (!mailRes.ok) {
+                                    console.error('⚠️ Merch email non-OK:', mailRes.status, await mailRes.text())
+                                }
+                            } catch (mailErr) {
+                                console.error('⚠️ Merch email failed (non-fatal):', mailErr)
+                            }
+                        } else {
+                            console.error('⚠️ confirm_merch_order returned no claim_token — buyer cannot be emailed')
+                        }
+
                         return new Response(JSON.stringify({ success: true, message: 'Merch order confirmed' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
                     }
                 }

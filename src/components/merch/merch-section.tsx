@@ -72,7 +72,7 @@ export function MerchSection({ eventId, products }: Props) {
 
             {/* Sticky cart bar */}
             {count > 0 && (
-                <div className="sticky bottom-4 z-20 flex items-center justify-between rounded-xl border bg-card shadow-lg p-3">
+                <div className="sticky bottom-4 z-20 flex items-center justify-between rounded-xl border bg-card text-card-foreground shadow-lg p-3">
                     <div className="flex items-center gap-2 text-sm">
                         <ShoppingBag className="h-4 w-4" />
                         <span className="font-semibold">{count} item{count === 1 ? '' : 's'}</span>
