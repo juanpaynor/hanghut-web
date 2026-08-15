@@ -183,22 +183,77 @@ function extractPaymentMethod(data: any): string {
  * Mirror of src/lib/payment/processing-fees.ts (keep in sync). Returns 0 for
  * FREE / UNKNOWN / unmapped methods (never guess a rate we don't have).
  */
-const PROCESSING_FEE_RATES: Record<string, { pct: number; fixed?: number }> = {
-    QRPH: { pct: 0.014 },
+/**
+ * Xendit PH published fee schedule. All rates are EXCLUSIVE of 12% VAT — see
+ * PROCESSING_FEE_VAT below, which is applied on top.
+ *
+ * `min` implements Xendit's "X% or PHP N, whichever is higher" pricing. Without it a
+ * small direct-debit sale is billed at the floor (a PHP 65 sale costs PHP 15, not
+ * PHP 0.65) — which is exactly the charge we could not explain on Hanghut Events.
+ */
+const PROCESSING_FEE_RATES: Record<string, { pct: number; fixed?: number; min?: number }> = {
+    // Cards — LOCAL rate. Foreign cards are 4.2–4.5% and we cannot tell them apart
+    // from the webhook payload, so a foreign card is UNDER-charged here.
+    CARDS: { pct: 0.032, fixed: 10 },
+    CARD: { pct: 0.032, fixed: 10 },
+    CREDIT_CARD: { pct: 0.032, fixed: 10 },
+
+    // eWallets
     GCASH: { pct: 0.023 },
     GRABPAY: { pct: 0.020 },
     SHOPEEPAY: { pct: 0.020 },
     PAYMAYA: { pct: 0.018 },
     MAYA: { pct: 0.018 },
-    CARDS: { pct: 0.032, fixed: 10 },
-    CARD: { pct: 0.032, fixed: 10 },
-    CREDIT_CARD: { pct: 0.032, fixed: 10 },
+
+    // Direct debit — enabled at checkout but previously ABSENT from this table, so
+    // every direct-debit sale recorded a PHP 0 fee and over-credited the organizer.
+    BPI: { pct: 0.01, min: 15 },
+    BPI_DIRECT_DEBIT: { pct: 0.01, min: 15 },
+    METROBANK: { pct: 0.01, min: 15 },
+    RCBC: { pct: 0.01, min: 15 },
+    RCBC_DIRECT_DEBIT: { pct: 0.01, min: 15 },
+    UBP: { pct: 0.01, min: 15 },
+    UNIONBANK: { pct: 0.01, min: 15 },
+    UBP_DIRECT_DEBIT: { pct: 0.01, min: 15 },
+    BDO_EPAY: { pct: 0.01, min: 25 },
+    AUTODEBIT_UBP: { pct: 0.01, min: 25 },
+
+    // Over-the-counter
+    '7ELEVEN': { pct: 0.015, min: 15 },
+    CEBUANA: { pct: 0, fixed: 25 },
+    MLHUILLIER: { pct: 0, fixed: 20 },
+    PALAWAN: { pct: 0, fixed: 20 },
+    USSC: { pct: 0, fixed: 20 },
+    LBC: { pct: 0, fixed: 25 },
+    ECPAY: { pct: 0.015 },
+
+    // QRPH is absent from the published schedule. Derived from real Xendit charges
+    // (xendit_channel_code = 'QRPH', fee status COMPLETED): every settled sale from
+    // PHP 1 to PHP 65 was charged a flat PHP 15 base, so a floor applies. We have no
+    // settled sample above PHP 1,071 (where 1.4% would exceed the floor), so whether
+    // the percentage or the floor dominates at scale is still unverified — the sync
+    // records the true fee either way.
+    QRPH: { pct: 0.014, min: 15 },
 }
+/**
+ * Xendit adds 12% VAT ON TOP of its own processing fee. We were charging the fee
+ * without it, so payment_processing_fee was understated on EVERY sale and
+ * organizer_payout was overstated by the same amount — for main-wallet partners
+ * that means promising more than actually landed in the wallet.
+ *
+ * Verified against real Xendit data (purchase_intents.xendit_fee_vat), exact on all
+ * samples: cards 163.888 -> 19.66, GCash 1.495 -> 0.17, QRPH 15.00 -> 1.80.
+ */
+const PROCESSING_FEE_VAT = 0.12
+
 function getProcessingFee(method: string | null | undefined, amount: number): number {
     if (!method || !amount || amount <= 0) return 0
     const r = PROCESSING_FEE_RATES[String(method).toUpperCase()]
     if (!r) return 0
-    return Math.round((amount * r.pct + (r.fixed ?? 0)) * 100) / 100
+    // "X% or PHP N, whichever is higher" — the floor applies BEFORE VAT.
+    let base = amount * r.pct + (r.fixed ?? 0)
+    if (r.min != null && base < r.min) base = r.min
+    return Math.round(base * (1 + PROCESSING_FEE_VAT) * 100) / 100
 }
 
 serve(async (req) => {
@@ -575,7 +630,7 @@ serve(async (req) => {
             // Record transaction (Create transaction BEFORE tickets to ensure accounting)
             const { data: partner } = await supabaseClient
                 .from('partners')
-                .select('id, custom_percentage, fixed_fee_per_ticket, pass_fees_to_customer')
+                .select('id, custom_percentage, fixed_fee_per_ticket, pass_fees_to_customer, use_main_wallet')
                 .eq('id', intent.event.organizer_id)
                 .single()
 
@@ -596,7 +651,15 @@ serve(async (req) => {
             const platformFee = Math.max(platformTake - totalFixedFee, 0)
             // Xendit charges 12% VAT on the platform take, debited from the sub-wallet
             // (organizer-borne, goes to Xendit/BIR — not HangHut revenue).
-            const feeVat = Math.round(platformTake * 0.12)
+            //
+            // ONLY when the inline PLATFORM fee was actually applied. create-purchase-intent
+            // sends `fees: [{ type: 'PLATFORM' }]` under `organizerId && take > 0 && !useMainWallet`
+            // — so for a main-wallet partner Xendit charges no platform fee and therefore no VAT
+            // on one. Deducting it anyway docked the organizer for a charge that never happened
+            // (safe direction: we over-held rather than over-paid, but they were short the VAT
+            // on every sale). The condition below mirrors that call site exactly.
+            const chargesInlinePlatformFee = partner?.use_main_wallet !== true && platformTake > 0
+            const feeVat = chargesInlinePlatformFee ? Math.round(platformTake * 0.12) : 0
             // Xendit processing fee (organizer-absorbed) — from the resolved method + the
             // TOTAL charged. 0 when the method is still UNKNOWN; the backfill branch fills
             // it in (and adjusts organizer_payout) once resolved.
@@ -607,7 +670,7 @@ serve(async (req) => {
             const passFees = partner?.pass_fees_to_customer === true
             const organizerPayout = Math.round(Number(intent.total_amount || 0) - platformTake - feeVat - processingFee)
 
-            console.log(`💰 Fee calc: net=${net}, take=${platformTake} (pct=${platformFee}, fixed=${totalFixedFee}), vat=${feeVat}, processing=${processingFee}, total=${intent.total_amount}, passFees=${passFees}, organizerPayout=${organizerPayout}`)
+            console.log(`💰 Fee calc: net=${net}, take=${platformTake} (pct=${platformFee}, fixed=${totalFixedFee}), vat=${feeVat} (inlineFee=${chargesInlinePlatformFee}), processing=${processingFee}, total=${intent.total_amount}, passFees=${passFees}, organizerPayout=${organizerPayout}`)
 
             const { error: txError } = await supabaseClient
                 .from('transactions')

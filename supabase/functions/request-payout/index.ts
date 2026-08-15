@@ -194,12 +194,72 @@ serve(async (req) => {
             calculatedAmount = walletBalance - reserved
             console.log(`🔍 PAYOUT DEBUG (wallet): walletBalance=${walletBalance}, reserved=${reserved}, available=${calculatedAmount}, requestedAmount=${amount}`)
         } else {
-            // Main-wallet / first-party partners have no sub-wallet — fall back to the
-            // ledger sum (their earnings settle to the main account, tracked in transactions).
-            const eventSum = settledEventTransactions.reduce((sum: number, tx: any) => sum + (Number(tx.organizer_payout) || 0), 0)
-            const expSum = (expTransactions || []).reduce((sum: number, tx: any) => sum + (Number(tx.host_payout) || 0), 0)
-            calculatedAmount = eventSum + expSum
-            console.log(`🔍 PAYOUT DEBUG (ledger): eventSum=${eventSum}, expSum=${expSum}, calculatedAmount=${calculatedAmount}, requestedAmount=${amount}`)
+            // Main-wallet partners have no sub-wallet — their money sits in the HangHut
+            // platform account, so the ledger IS the balance.
+            //
+            // Use the CANONICAL definition (get_partner_balance) rather than summing here.
+            // Three surfaces used to re-implement this with different filters and disagreed:
+            // the old predicate (status='completed' AND payout_id IS NULL) is blind to
+            // refund rows, to payouts whose transaction linking silently failed, and to
+            // rejected payouts that never released their links. It already mis-stated two
+            // live accounts. Canonical sums signed rows across all three revenue streams
+            // and subtracts payouts by status, so none of those can hide.
+            const { data: balRows, error: balErr } = await supabaseClient
+                .rpc('get_partner_balance', { p_partner_id: partner.id })
+            if (balErr) throw new Error(`Failed to compute balance: ${balErr.message}`)
+            const canonicalBalance = Number(balRows?.[0]?.balance ?? 0)
+
+            // Money Xendit hasn't released yet is owed but NOT withdrawable.
+            const unsettledAmount = eventTransactions.reduce((sum: number, tx: any) => {
+                const intent = Array.isArray(tx.purchase_intent) ? tx.purchase_intent[0] : tx.purchase_intent
+                return isSettled(tx.created_at, intent) ? sum : sum + (Number(tx.organizer_payout) || 0)
+            }, 0)
+
+            calculatedAmount = Math.max(0, canonicalBalance - unsettledAmount)
+            console.log(`🔍 PAYOUT DEBUG (ledger): canonical=${canonicalBalance}, unsettled=${unsettledAmount}, available=${calculatedAmount}, requestedAmount=${amount}`)
+
+            // ---- SOLVENCY GUARD ----
+            // Every main-wallet partner is paid from ONE Xendit account. A withdrawal that
+            // is correct for THIS partner can still be funded by another partner's money —
+            // Xendit sees one account and one valid transfer, so nothing errors and no
+            // per-partner check can catch it. The only detector is:
+            //     master balance  vs  SUM(obligations across all main-wallet partners)
+            const xenditSecret = Deno.env.get('XENDIT_SECRET_KEY')
+            if (!xenditSecret) throw new Error('Payment service not configured (Missing API Key)')
+
+            const mainBalRes = await fetch('https://api.xendit.co/balance?account_type=CASH', {
+                headers: { 'Authorization': `Basic ${btoa(xenditSecret + ':')}` },
+            })
+            const mainBalData = await mainBalRes.json()
+            if (!mainBalRes.ok) {
+                throw new Error(`Failed to fetch platform balance: ${mainBalData.message || mainBalRes.status}`)
+            }
+            const masterBalance = Number(mainBalData.balance) || 0
+
+            const { data: oblRows, error: oblErr } = await supabaseClient.rpc('get_main_wallet_obligations')
+            if (oblErr) throw new Error(`Failed to compute platform obligations: ${oblErr.message}`)
+            const totalObligation = Number(oblRows?.[0]?.total_obligation ?? 0)
+            const freeCash = masterBalance - totalObligation
+
+            console.log(`🏦 SOLVENCY: master=${masterBalance}, obligations=${totalObligation}, freeCash=${freeCash}`)
+
+            // Insolvent means partner money has already been spent. Paying ANYONE now uses
+            // someone else's funds, so refuse and surface it rather than compounding it.
+            if (freeCash < 0) {
+                console.error(`🚨 MAIN WALLET SHORT by ₱${Math.abs(freeCash)} — blocking all main-wallet payouts`)
+                return new Response(JSON.stringify({
+                    error: 'Payouts are temporarily unavailable. Our team has been notified.',
+                    code: 'PLATFORM_BALANCE_SHORTFALL',
+                }), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+            }
+
+            // Cash on hand still has to cover this specific transfer.
+            if (amount > masterBalance) {
+                return new Response(JSON.stringify({
+                    error: 'Payouts are temporarily unavailable. Our team has been notified.',
+                    code: 'PLATFORM_BALANCE_SHORTFALL',
+                }), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+            }
         }
 
         // Validate Balance
