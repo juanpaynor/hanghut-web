@@ -14,6 +14,10 @@ import type { PublicMerchProduct, PublicMerchVariant } from '@/lib/merch/public-
 
 const peso = (n: number) => (n === 0 ? 'Free' : `₱${Number(n).toLocaleString()}`)
 
+/** Mirrors reserve_merch: sold + held-by-live-carts counts against the cap. */
+const isSoldOut = (v: PublicMerchVariant) =>
+    v.quantity_total != null && (v.quantity_sold + (v.quantity_reserved ?? 0)) >= v.quantity_total
+
 interface CartLine { productId: string; productName: string; image?: string; variant: PublicMerchVariant; qty: number }
 
 interface Props {
@@ -100,7 +104,9 @@ export function MerchSection({ eventId, products }: Props) {
 function ProductCard({ product, onAdd }: { product: PublicMerchProduct; onAdd: (p: PublicMerchProduct, v: PublicMerchVariant) => void }) {
     const [selected, setSelected] = useState<string>(product.variants[0]?.id ?? '')
     const variant = product.variants.find(v => v.id === selected) ?? product.variants[0]
-    const soldOut = variant && variant.quantity_total != null && variant.quantity_sold >= variant.quantity_total
+    // Stock held by other buyers mid-checkout counts as gone — matches reserve_merch,
+    // so we never offer a unit that would fail at the payment step.
+    const soldOut = variant && isSoldOut(variant)
 
     return (
         <div className="rounded-xl border p-4 flex flex-col">
@@ -121,7 +127,7 @@ function ProductCard({ product, onAdd }: { product: PublicMerchProduct; onAdd: (
             {product.variants.length > 1 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                     {product.variants.map(v => {
-                        const vSoldOut = v.quantity_total != null && v.quantity_sold >= v.quantity_total
+                        const vSoldOut = isSoldOut(v)
                         return (
                             <button key={v.id} onClick={() => setSelected(v.id)} disabled={vSoldOut}
                                 className={`text-xs rounded-full border px-2.5 py-1 transition-colors ${selected === v.id ? 'border-primary bg-primary/10 font-medium' : 'border-border'} ${vSoldOut ? 'opacity-40 line-through cursor-not-allowed' : ''}`}>

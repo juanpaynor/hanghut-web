@@ -7,6 +7,9 @@ export interface PublicMerchVariant {
     price: number
     quantity_total: number | null
     quantity_sold: number
+    /** Units held by live, unexpired carts. Must count against availability or the
+     *  page offers stock that reserve_merch will reject at checkout. */
+    quantity_reserved: number
 }
 
 export interface PublicMerchProduct {
@@ -45,6 +48,17 @@ export async function getPublicMerch(organizerId: string, eventId?: string): Pro
     const { data, error } = await query
     if (error || !data) return []
 
+    // Stock currently held by other buyers mid-checkout. One extra round trip so a
+    // limited drop shows "Sold out" instead of failing at the payment step.
+    const variantIds: string[] = data.flatMap((p: any) => (p.variants ?? []).map((v: any) => v.id))
+    const reservedByVariant = new Map<string, number>()
+    if (variantIds.length > 0) {
+        const { data: reserved } = await supabase.rpc('get_merch_reserved_counts', { p_variant_ids: variantIds })
+        for (const r of (reserved ?? []) as any[]) {
+            reservedByVariant.set(r.variant_id, Number(r.reserved) || 0)
+        }
+    }
+
     return data
         .map((p: any) => ({
             id: p.id,
@@ -58,6 +72,7 @@ export async function getPublicMerch(organizerId: string, eventId?: string): Pro
                 .map((v: any) => ({
                     id: v.id, name: v.name, options: v.options ?? {},
                     price: Number(v.price), quantity_total: v.quantity_total, quantity_sold: Number(v.quantity_sold ?? 0),
+                    quantity_reserved: reservedByVariant.get(v.id) ?? 0,
                 })),
         }))
         .filter((p: PublicMerchProduct) => p.variants.length > 0)

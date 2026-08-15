@@ -127,7 +127,10 @@ serve(async (req) => {
         const headers = new Headers()
         headers.set('Authorization', `Basic ${btoa(xenditKey + ':')}`)
         headers.set('Content-Type', 'application/json')
-        if (partnerXenditAccountId) {
+        // Main-wallet partners settle into the HangHut platform account, so their
+        // payment must NOT be routed to a sub-account even if one still exists on
+        // the record. Mirrors request-payout / create-purchase-intent.
+        if (partnerXenditAccountId && !useMainWallet) {
             headers.set('for-user-id', partnerXenditAccountId)
             if (partnerSplitRuleId) headers.set('with-split-rule', partnerSplitRuleId)
         }
