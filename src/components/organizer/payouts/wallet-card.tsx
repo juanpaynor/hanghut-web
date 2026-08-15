@@ -91,9 +91,23 @@ export function WalletCard({
                         ₱{ledgerBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <p className="text-[10px] text-muted-foreground mt-1">
-                        Based on completed sales minus previous payouts
+                        Settled sales, minus previous payouts
                     </p>
                 </div>
+                {pendingSettlement > 0 && (
+                    <div className="mt-3 p-3 rounded-lg bg-background/60 border border-border/50">
+                        <div className="flex items-center gap-1.5 mb-1">
+                            <Clock className="h-3.5 w-3.5 text-amber-500" />
+                            <p className="text-xs text-muted-foreground font-medium">Awaiting settlement</p>
+                        </div>
+                        <p className="text-lg font-bold text-amber-600">
+                            ₱{pendingSettlement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                            Xendit still holds this. Cards settle in ~5 business days, e-wallets sooner.
+                        </p>
+                    </div>
+                )}
                 {receivable > 0 && (
                     <div className="flex items-center gap-1.5 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
                         <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />

@@ -11,6 +11,53 @@ const corsHeaders = {
 // reserved so a payout (amount + fee) can never overdraw the wallet at Xendit.
 const DISBURSEMENT_FEE_TOTAL = 11.2
 
+// Business days Xendit holds funds per channel. Mirrors src/lib/utils/settlement.ts;
+// the default leans slow so an unrecognised method is never released early.
+const SETTLEMENT_DAYS: Record<string, number> = {
+    gcash: 2, grabpay: 2, shopeepay: 2, maya: 2, paymaya: 2,
+    qrph: 1, qr_code: 1,
+    card: 5, cards: 5, credit_card: 5, debit_card: 5,
+    direct_debit: 1, bpi: 1, ubp: 1,
+    bank_transfer: 2, virtual_account: 2,
+    otc: 3, over_the_counter: 3, '7eleven': 3, cebuana: 3,
+    multiple: 5, unknown: 5,
+}
+const DEFAULT_SETTLEMENT_DAYS = 5
+
+function addBusinessDays(date: Date, days: number): Date {
+    const d = new Date(date)
+    let added = 0
+    while (added < days) {
+        d.setUTCDate(d.getUTCDate() + 1)
+        const day = d.getUTCDay()
+        if (day !== 0 && day !== 6) added++
+    }
+    return d
+}
+
+/**
+ * Has Xendit released this money yet?
+ *
+ * Real settlement data always wins. The estimate is only a fallback, and it skips
+ * weekends but not PH bank holidays — so it can read very slightly early in a
+ * holiday week. The +2 business-day buffer covers that; the durable fix is the
+ * sync-settlements cron populating real data.
+ */
+function isSettled(createdAt: string, intent: any): boolean {
+    const status = String(intent?.settlement_status || '').toUpperCase()
+    if (intent?.settled_at || status === 'SETTLED' || status === 'EARLY_SETTLED') return true
+
+    // Xendit told us when it lands — trust that over any guess.
+    if (intent?.estimated_settlement_time) {
+        return new Date() >= new Date(intent.estimated_settlement_time)
+    }
+    if (status === 'PENDING') return false
+
+    const method = String(intent?.payment_method || '').toLowerCase().replace(/\s+/g, '_')
+    const days = SETTLEMENT_DAYS[method] ?? DEFAULT_SETTLEMENT_DAYS
+    return new Date() >= addBusinessDays(addBusinessDays(new Date(createdAt), days), 2)
+}
+
 serve(async (req) => {
     // Handle CORS
     if (req.method === 'OPTIONS') {
@@ -70,14 +117,31 @@ serve(async (req) => {
 
         // 5. FETCH ELIGIBLE TRANSACTIONS (used for reconciliation/linking below)
         // Fetch Event Transactions
-        const { data: eventTransactions, error: eventTxError } = await supabaseClient
+        const { data: eventTransactionsRaw, error: eventTxError } = await supabaseClient
             .from('transactions')
-            .select('id, organizer_payout')
+            .select('id, organizer_payout, created_at, purchase_intent:purchase_intents(payment_method, settlement_status, settled_at, estimated_settlement_time)')
             .eq('partner_id', partner.id)
             .eq('status', 'completed')
             .is('payout_id', null)
 
-        console.log(`🔍 PAYOUT DEBUG: eventTransactions count=${eventTransactions?.length ?? 0}, error=${eventTxError?.message ?? 'none'}`)
+        const eventTransactions = eventTransactionsRaw || []
+
+        // Money Xendit still holds is NOT withdrawable. Used for the LEDGER BALANCE
+        // ONLY (main-wallet partners), never for linking: a sub-wallet partner's
+        // amount comes from Xendit's real balance, so filtering their link list by
+        // our *estimate* could leave paid-out transactions unlinked — they'd then be
+        // counted again in a later payout.
+        const settledEventTransactions = eventTransactions.filter((tx: any) => {
+            const intent = Array.isArray(tx.purchase_intent) ? tx.purchase_intent[0] : tx.purchase_intent
+            return isSettled(tx.created_at, intent)
+        })
+
+        const heldBack = eventTransactions.length - settledEventTransactions.length
+        if (heldBack > 0) {
+            console.log(`⏳ ${heldBack} unsettled transaction(s) excluded from ledger-balance eligibility`)
+        }
+
+        console.log(`🔍 PAYOUT DEBUG: eventTransactions count=${eventTransactions.length}, settled=${settledEventTransactions.length}, error=${eventTxError?.message ?? 'none'}`)
 
         if (eventTxError) throw new Error('Failed to fetch eligible event transactions')
 
@@ -132,7 +196,7 @@ serve(async (req) => {
         } else {
             // Main-wallet / first-party partners have no sub-wallet — fall back to the
             // ledger sum (their earnings settle to the main account, tracked in transactions).
-            const eventSum = (eventTransactions || []).reduce((sum: number, tx: any) => sum + (Number(tx.organizer_payout) || 0), 0)
+            const eventSum = settledEventTransactions.reduce((sum: number, tx: any) => sum + (Number(tx.organizer_payout) || 0), 0)
             const expSum = (expTransactions || []).reduce((sum: number, tx: any) => sum + (Number(tx.host_payout) || 0), 0)
             calculatedAmount = eventSum + expSum
             console.log(`🔍 PAYOUT DEBUG (ledger): eventSum=${eventSum}, expSum=${expSum}, calculatedAmount=${calculatedAmount}, requestedAmount=${amount}`)

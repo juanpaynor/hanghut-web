@@ -1,6 +1,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+/**
+ * Normalise a reference so both sides of the match agree.
+ *
+ * We send Xendit `intent_<uuid>` as reference_id, but the Transactions API returns
+ * it with a random suffix appended — `intent_<uuid>_f0wREoqshb`. The old exact-match
+ * therefore never matched a single row, which is why settlement data stayed empty.
+ * Keying on the embedded UUID is stable across both forms.
+ */
+const REF_UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+function refKey(ref: string | null | undefined): string {
+    if (!ref) return ''
+    const m = REF_UUID_RE.exec(ref)
+    return m ? m[0].toLowerCase() : ref
+}
+
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -17,9 +32,10 @@ const corsHeaders = {
  * SAFE BY CONSTRUCTION:
  *  - Read-only against Xendit (GET /transactions); writes only our own nullable
  *    settlement_* columns.
- *  - Only writes on an EXACT reference_id match, and only ever stores Xendit's
- *    own settlement_status verbatim (never a computed guess). No match → nothing
- *    written → the UI keeps its honest estimate fallback.
+ *  - Only writes on a reference match (by embedded intent UUID — see refKey) against
+ *    a SUCCESS transaction, and only ever stores Xendit's own settlement_status
+ *    verbatim (never a computed guess). No match → nothing written → the UI keeps
+ *    its honest estimate fallback.
  *  - Throttled: only touches paid, not-yet-settled intents from the last 90 days.
  */
 
@@ -79,10 +95,10 @@ serve(async (req: Request) => {
             return json({ ok: true, updated: 0, checked: 0, reason: 'nothing pending' }, 200)
         }
 
-        const byRef = new Map<string, string>() // reference_id → intent id
+        const byRef = new Map<string, string>() // normalised reference → intent id
         let earliestPaid = Date.now()
         for (const i of intents as any[]) {
-            if (i.xendit_external_id) byRef.set(i.xendit_external_id, i.id)
+            if (i.xendit_external_id) byRef.set(refKey(i.xendit_external_id), i.id)
             const t = i.paid_at ? new Date(i.paid_at).getTime() : NaN
             if (!Number.isNaN(t) && t < earliestPaid) earliestPaid = t
         }
@@ -105,6 +121,10 @@ serve(async (req: Request) => {
             const url = new URL('https://api.xendit.co/transactions')
             url.searchParams.set('limit', '50')
             url.searchParams.set('types', 'PAYMENT')
+            // Successful attempts only. A retried card can leave several transactions
+            // sharing one intent UUID; without this filter the reference match could
+            // land on a FAILED/VOIDED attempt and read its settlement status instead.
+            url.searchParams.set('statuses', 'SUCCESS')
             url.searchParams.set('created[gte]', createdGte)
             if (afterId) url.searchParams.set('after_id', afterId)
 
@@ -118,7 +138,7 @@ serve(async (req: Request) => {
             if (rows.length === 0) break
 
             for (const t of rows) {
-                const ref = t.reference_id
+                const ref = refKey(t.reference_id)
                 if (ref && byRef.has(ref) && !found.has(ref)) {
                     found.set(ref, {
                         settlement_status: (t.settlement_status || '').toUpperCase() || undefined,

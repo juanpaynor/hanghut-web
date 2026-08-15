@@ -15,6 +15,7 @@ import { TransactionsHistory } from '@/components/organizer/payouts/transactions
 import { PayoutsDateFilter } from '@/components/organizer/payouts/payouts-date-filter'
 import { WalletCard } from '@/components/organizer/payouts/wallet-card'
 import { SettlementSync } from '@/components/organizer/payouts/settlement-sync'
+import { getSettlementInfo } from '@/lib/utils/settlement'
 import { getWalletInfo } from '@/lib/organizer/wallet-actions'
 import Link from 'next/link'
 import { SearchInput } from '@/components/ui/search-input'
@@ -28,9 +29,12 @@ async function getPayoutStats(partnerId: string) {
     // Get all completed earnings (Lifetime for Balance) — event tickets AND
     // experience bookings (separate ledger, partner's host_payout).
     const [{ data: transactions }, { data: expTransactions }, { data: merchTransactions }, { data: refundedIntents }] = await Promise.all([
+        // Settlement fields come along so earnings can be split into money that has
+        // actually landed vs money Xendit is still holding. Counting an unsettled
+        // card sale as "available to withdraw" is a lie: cards settle T+5.
         supabase
             .from('transactions')
-            .select('organizer_payout')
+            .select('organizer_payout, created_at, purchase_intent:purchase_intents(payment_method, settlement_status, estimated_settlement_time, settled_at)')
             .eq('partner_id', partnerId)
             .eq('status', 'completed'),
         supabase
@@ -61,8 +65,23 @@ async function getPayoutStats(partnerId: string) {
 
     const eventRefunds = (refundedIntents?.reduce((sum, r: any) => sum + Number(r.refunded_amount || 0), 0) || 0)
 
+    const ticketEarnings = transactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0
+
+    // Ticket money Xendit hasn't released yet. Real settlement data wins; absent
+    // that, getSettlementInfo falls back to a holiday-aware T+N estimate with a
+    // safety buffer, so this leans conservative rather than promising money early.
+    const unsettledEarnings = (transactions || []).reduce((sum, t: any) => {
+        const intent = Array.isArray(t.purchase_intent) ? t.purchase_intent[0] : t.purchase_intent
+        const info = getSettlementInfo(t.created_at, intent?.payment_method, {
+            status: intent?.settlement_status,
+            etaTime: intent?.estimated_settlement_time,
+            settledAt: intent?.settled_at,
+        })
+        return info.status === 'settled' ? sum : sum + Number(t.organizer_payout)
+    }, 0)
+
     const totalEarnings =
-        (transactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0) +
+        ticketEarnings +
         (expTransactions?.reduce((sum, t) => sum + Number(t.host_payout), 0) || 0) +
         (merchTransactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0) -
         eventRefunds
@@ -83,7 +102,10 @@ async function getPayoutStats(partnerId: string) {
         totalEarnings,
         completedPayouts,
         pendingPayouts,
-        availableBalance: totalEarnings - completedPayouts - pendingPayouts,
+        unsettledEarnings,
+        // Withdrawable = lifetime earnings, minus what's already been paid out or
+        // requested, minus what Xendit is still holding.
+        availableBalance: totalEarnings - completedPayouts - pendingPayouts - unsettledEarnings,
     }
 }
 
@@ -408,7 +430,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                         receivable={walletInfo.receivable}
                         kycStatus={walletInfo.kycStatus}
                         xenditAvailableBalance={walletInfo.xenditAvailableBalance}
-                        pendingSettlement={walletInfo.pendingSettlement}
+                        pendingSettlement={walletInfo.useMainWallet ? stats.unsettledEarnings : walletInfo.pendingSettlement}
                         useMainWallet={walletInfo.useMainWallet}
                         ledgerBalance={stats.availableBalance}
                     />

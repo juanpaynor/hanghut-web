@@ -22,11 +22,19 @@ const SETTLEMENT_DAYS: Record<string, number> = {
     'qrph': 1,
     'qr_code': 1,
     
-    // Cards
+    // Cards — 'cards' (plural) is what the webhook actually stores; without it
+    // card sales fell through to the 2-day default and were shown as withdrawable
+    // three business days early.
     'credit_card': 5,
     'debit_card': 5,
     'card': 5,
-    
+    'cards': 5,
+
+    // Mixed-method carts and anything unrecognised: assume the slowest channel
+    // rather than the fastest, so the estimate can only be late, never early.
+    'multiple': 5,
+    'unknown': 5,
+
     // Direct Debit
     'direct_debit': 1,
     'bpi': 1,
@@ -43,7 +51,9 @@ const SETTLEMENT_DAYS: Record<string, number> = {
     'cebuana': 3,
 }
 
-const DEFAULT_SETTLEMENT_DAYS = 2
+// Unrecognised methods lean slow on purpose: promising money early is the
+// damaging direction, promising it late is merely conservative.
+const DEFAULT_SETTLEMENT_DAYS = 5
 
 /**
  * PH bank holidays (no settlement on these) — best-effort list, UPDATE YEARLY.
