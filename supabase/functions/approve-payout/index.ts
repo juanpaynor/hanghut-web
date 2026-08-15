@@ -102,11 +102,19 @@ serve(async (req) => {
         }
 
         const partnerXenditAccountId = payout.partners?.xendit_account_id
-        if (partnerXenditAccountId) {
+        const usesMainWallet = payout.partners?.use_main_wallet === true
+        // A main-wallet partner is paid from the HangHut platform account even if a
+        // sub-account id is still on the record — disbursing from an empty sub-wallet
+        // would fail, and a funded one would pay from the wrong balance.
+        if (partnerXenditAccountId && !usesMainWallet) {
             xenditHeaders['for-user-id'] = partnerXenditAccountId
             console.log(`Using partner sub-account: ${partnerXenditAccountId}`)
         } else {
-            console.warn(`No xendit_account_id for partner — disbursing from main account`)
+            console.warn(
+                usesMainWallet
+                    ? `Partner is on the HangHut main wallet — disbursing from main account`
+                    : `No xendit_account_id for partner — disbursing from main account`
+            )
         }
 
         let response: Response

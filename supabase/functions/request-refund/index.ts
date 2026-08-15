@@ -85,7 +85,7 @@ serve(async (req: Request) => {
             if (intent?.experience?.partner_id) {
                 const { data: p } = await supabaseAdmin
                     .from('partners')
-                    .select('xendit_account_id, split_rule_id, custom_percentage, platform_fee_receivable')
+                    .select('xendit_account_id, split_rule_id, custom_percentage, platform_fee_receivable, use_main_wallet')
                     .eq('id', intent.experience.partner_id)
                     .single();
                 partnerData = p;
@@ -93,7 +93,7 @@ serve(async (req: Request) => {
         } else {
             const { data, error } = await supabaseClient
                 .from('purchase_intents')
-                .select('*, event:events(title, organizer_id, organizer:partners!organizer_id(user_id, xendit_account_id, split_rule_id, custom_percentage, platform_fee_receivable)), transactions(xendit_transaction_id, status)')
+                .select('*, event:events(title, organizer_id, organizer:partners!organizer_id(user_id, xendit_account_id, split_rule_id, custom_percentage, platform_fee_receivable, use_main_wallet)), transactions(xendit_transaction_id, status)')
                 .eq('id', intent_id)
                 .single();
 
@@ -319,7 +319,11 @@ serve(async (req: Request) => {
         // Organizer shoulders the full refund cost. Hanghut keeps its take.
         // The sub-wallet must already hold the full refund amount.
         const refundAmount = amount || intent.total_amount;
-        const hasSubAccount = partnerData?.xendit_account_id;
+        // Main-wallet partners have no sub-wallet to check or refund from — their
+        // money sits in the HangHut platform account. Checking a stale sub-account's
+        // balance would block a legitimate refund with a bogus "insufficient funds".
+        const usesMainWallet = partnerData?.use_main_wallet === true;
+        const hasSubAccount = partnerData?.xendit_account_id && !usesMainWallet;
 
         if (hasSubAccount) {
             try {
