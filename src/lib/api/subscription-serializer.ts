@@ -15,7 +15,7 @@ export interface RawFanSubscription {
     created_at: string
     updated_at: string
     tier?: { id: string; name: string; price_monthly: number } | null
-    fan?: { id: string; email: string | null; full_name: string | null } | null
+    fan?: { id: string; email: string | null; display_name: string | null } | null
 }
 
 export function serializeSubscription(sub: RawFanSubscription) {
@@ -33,7 +33,7 @@ export function serializeSubscription(sub: RawFanSubscription) {
             ? {
                 id: sub.fan.id,
                 email: sub.fan.email,
-                name: sub.fan.full_name,
+                name: sub.fan.display_name,
             }
             : { id: sub.fan_id },
         currency: 'PHP',
@@ -50,5 +50,5 @@ export const SUBSCRIPTION_SELECT = `
     id, fan_id, tier_id, partner_id, status,
     current_period_start, current_period_end, cancelled_at, created_at, updated_at,
     tier:subscription_tiers ( id, name, price_monthly ),
-    fan:users ( id, email, full_name )
+    fan:users ( id, email, display_name )
 `

@@ -108,18 +108,18 @@ export async function POST(request: Request) {
     if (!tier.is_active) return apiError('Subscription tier is not active', 400)
 
     // Resolve the fan to an existing HangHut user (by id or email)
-    let fan: { id: string; email: string | null; full_name: string | null } | null = null
+    let fan: { id: string; email: string | null; display_name: string | null } | null = null
     if (customer.fan_id) {
         const { data } = await supabase
             .from('users')
-            .select('id, email, full_name')
+            .select('id, email, display_name')
             .eq('id', customer.fan_id)
             .maybeSingle()
         fan = data
     } else {
         const { data } = await supabase
             .from('users')
-            .select('id, email, full_name')
+            .select('id, email, display_name')
             .ilike('email', customer.email)
             .maybeSingle()
         fan = data
@@ -150,7 +150,7 @@ export async function POST(request: Request) {
     let payrexCustomerId = (existing as any)?.payrex_customer_id ?? null
     if (!payrexCustomerId) {
         const customer = await createPayrexCustomer({
-            name: fan.full_name || fan.email || 'HangHut Fan',
+            name: fan.display_name || fan.email || 'HangHut Fan',
             email: fan.email || '',
             userId: fan.id,
         })

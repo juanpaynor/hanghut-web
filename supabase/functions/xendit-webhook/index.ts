@@ -321,7 +321,7 @@ serve(async (req) => {
             // Find purchase intent
             let { data: intent, error: intentError } = await supabaseClient
                 .from('purchase_intents')
-                .select('*, event:events(id, title, organizer_id, tickets_sold, venue_name, start_datetime, end_datetime, cover_image_url), user:users(id, email, full_name)')
+                .select('*, event:events(id, title, organizer_id, tickets_sold, venue_name, start_datetime, end_datetime, cover_image_url), user:users(id, email, display_name)')
                 .eq('xendit_external_id', lookupId)
                 .single()
 
@@ -350,7 +350,7 @@ serve(async (req) => {
 
                     const { data: user } = await supabaseClient
                         .from('users')
-                        .select('id, email, full_name')
+                        .select('id, email, display_name')
                         .eq('id', fallbackIntent.user_id)
                         .maybeSingle()  // Use maybeSingle for guest checkouts (user_id might be null)
 
@@ -421,10 +421,10 @@ serve(async (req) => {
                                 if (tableInfo?.host_id) {
                                     const { data: host } = await supabaseClient
                                         .from('users')
-                                        .select('display_name, full_name')
+                                        .select('display_name')
                                         .eq('id', tableInfo.host_id)
                                         .single()
-                                    hostName = host?.display_name || host?.full_name || 'Host'
+                                    hostName = host?.display_name || 'Host'
                                 }
 
                                 let recipientEmail = fullExpIntent.guest_email
@@ -432,11 +432,11 @@ serve(async (req) => {
                                 if (!recipientEmail && fullExpIntent.user_id) {
                                     const { data: userInfo } = await supabaseClient
                                         .from('users')
-                                        .select('email, display_name, full_name')
+                                        .select('email, display_name')
                                         .eq('id', fullExpIntent.user_id)
                                         .single()
                                     recipientEmail = userInfo?.email
-                                    recipientName = recipientName || userInfo?.display_name || userInfo?.full_name
+                                    recipientName = recipientName || userInfo?.display_name
                                 }
 
                                 let experienceDate = fullExpIntent.created_at
@@ -734,7 +734,7 @@ serve(async (req) => {
                 const sideEffects: any[] = []
 
                 // 1. Push notification to organizer
-                const buyerName = intent.guest_name || intent.user?.full_name || 'Someone';
+                const buyerName = intent.guest_name || intent.user?.display_name || 'Someone';
                 const eventTitle = intent.event?.title || 'your event';
                 const qty = intent.quantity || 1;
 
@@ -768,7 +768,7 @@ serve(async (req) => {
                             total_amount: intent.total_amount,
                             payment_method: capturedMethod,
                             customer: {
-                                name: intent.guest_name || intent.user?.full_name,
+                                name: intent.guest_name || intent.user?.display_name,
                                 email: intent.guest_email || intent.user?.email,
                             },
                         },
@@ -777,7 +777,7 @@ serve(async (req) => {
 
                 // 3. Ticket confirmation email
                 const recipientEmail = intent.guest_email || intent.user?.email
-                const recipientName = intent.guest_name || intent.user?.full_name
+                const recipientName = intent.guest_name || intent.user?.display_name
 
                 if (recipientEmail && generatedTickets && generatedTickets.length > 0) {
                     sideEffects.push({

@@ -59,7 +59,7 @@ serve(async (req) => {
         // Fetch waitlist entries, optionally filtered by phone_type
         let recipientQuery = supabase
             .from('waitlist')
-            .select('email, full_name')
+            .select('email, display_name')
 
         if (phone_type) {
             recipientQuery = recipientQuery.eq('phone_type', phone_type)

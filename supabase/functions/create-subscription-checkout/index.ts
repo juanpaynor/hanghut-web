@@ -114,13 +114,13 @@ serve(async (req) => {
     if (!payrexCustomerId) {
         const { data: profile } = await adminClient
             .from("users")
-            .select("full_name, email")
+            .select("display_name, email")
             .eq("id", user.id)
             .maybeSingle()
 
         const customer = await payrexPost("/customers", {
             currency: "PHP",
-            name: profile?.full_name || user.email || "HangHut Fan",
+            name: profile?.display_name || user.email || "HangHut Fan",
             email: user.email || profile?.email || "",
             metadata: { internal_customer_id: user.id },
         })

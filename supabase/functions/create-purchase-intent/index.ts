@@ -58,13 +58,18 @@ serve(async (req) => {
         }
 
         // Get user profile for customer details (only if authenticated)
-        let userProfile = null
+        // `users` has display_name and NO phone column at all — the old
+        // `.select('full_name, phone')` threw 42703 on EVERY authenticated checkout. The
+        // error was swallowed (only `data` was destructured), so userProfile silently came
+        // back null and every logged-in buyer was treated as nameless.
+        let userProfile: { display_name: string | null } | null = null
         if (user) {
-            const { data: profile } = await supabaseClient
+            const { data: profile, error: profileError } = await supabaseClient
                 .from('users')
-                .select('full_name, phone')
+                .select('display_name')
                 .eq('id', user.id)
                 .single()
+            if (profileError) console.error('Failed to load buyer profile:', profileError)
             userProfile = profile
         }
 
@@ -264,8 +269,10 @@ serve(async (req) => {
                 p_user_id: user?.id ?? null,
                 p_quantity: quantity,
                 p_guest_email: guest_details?.email ?? user?.email ?? null,
-                p_guest_name: guest_details?.name ?? userProfile?.full_name ?? null,
-                p_guest_phone: guest_details?.phone ?? userProfile?.phone ?? null,
+                p_guest_name: guest_details?.name ?? userProfile?.display_name ?? null,
+                // No phone is stored on `users` anywhere in the schema — checkout input is
+                // the only source, for guests and signed-in buyers alike.
+                p_guest_phone: guest_details?.phone ?? null,
             }
         )
 
@@ -462,7 +469,7 @@ serve(async (req) => {
 
             const recipientEmail = user?.email || guest_details?.email
             const recipientName = user
-                ? (userProfile?.full_name ?? null)
+                ? (userProfile?.display_name ?? null)
                 : (guest_details?.name ?? null)
 
             if (recipientEmail && Array.isArray(tickets) && tickets.length > 0) {
@@ -544,10 +551,13 @@ serve(async (req) => {
                 reference_id: (user?.id ? `${user.id}_${Date.now()}` : `guest_${intent.id}_${Date.now()}`),
                 type: 'INDIVIDUAL',
                 email: user?.email || guest_details?.email || 'customer@example.com',
-                mobile_number: (user ? (userProfile?.phone || '') : (guest_details?.phone || '')) || '+639000000000',
+                // Was `user ? userProfile?.phone : guest_details?.phone` — and since no phone
+                // column exists, a signed-in buyer ALWAYS fell through to the dummy number.
+                // Checkout collects one from everyone, so use it in both cases.
+                mobile_number: (guest_details?.phone || '') || '+639000000000',
                 individual_detail: {
-                    given_names: user ? (userProfile?.full_name?.split(' ')[0] || 'Customer') : (guest_details?.name?.split(' ')[0] || 'Guest'),
-                    surname: (user ? (userProfile?.full_name?.split(' ').slice(1).join(' ')) : (guest_details?.name?.split(' ').slice(1).join(' '))) || '-',
+                    given_names: user ? (userProfile?.display_name?.split(' ')[0] || 'Customer') : (guest_details?.name?.split(' ')[0] || 'Guest'),
+                    surname: (user ? (userProfile?.display_name?.split(' ').slice(1).join(' ')) : (guest_details?.name?.split(' ').slice(1).join(' '))) || '-',
                 },
             },
             description: `${quantity}x ${tierName} for ${intent.event.title}`,

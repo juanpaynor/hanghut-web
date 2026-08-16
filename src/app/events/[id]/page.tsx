@@ -234,10 +234,14 @@ export default async function PublicEventPage({
 
     // Seat-map presence is viewer-independent — kick it off now so it overlaps
     // the auth work below instead of running strictly after it.
+    // NOTE: every query below keys off `event.id`, NOT the `id` route param — that param
+    // is whatever was in the URL, which is a SLUG on every canonical event link. Passing it
+    // to a uuid column throws 22P02 ("invalid input syntax for type uuid: beyond-the-aswang")
+    // and the lookup silently returns nothing.
     const seatMapPromise = createPublicClient()
         .from('event_seat_maps')
         .select('id')
-        .eq('event_id', id)
+        .eq('event_id', event.id)
         .maybeSingle()
         .then(r => !!r.data, () => false)
 
@@ -254,7 +258,7 @@ export default async function PublicEventPage({
                 gated
                     ? admin.from('event_registrations')
                         .select('id')
-                        .eq('event_id', id)
+                        .eq('event_id', event.id)
                         .eq('user_id', user.id)
                         .in('status', ['approved', 'auto_approved'])
                         .order('created_at', { ascending: false })
@@ -266,7 +270,7 @@ export default async function PublicEventPage({
                 //  this single query covers both — no separate venue lookup).
                 admin.from('tickets')
                     .select('id, purchase_intents(access_token)')
-                    .eq('event_id', id)
+                    .eq('event_id', event.id)
                     .eq('user_id', user.id)
                     .in('status', ['valid', 'used', 'approved'])
                     .order('created_at', { ascending: false })
@@ -274,7 +278,7 @@ export default async function PublicEventPage({
                     .maybeSingle(),
                 // Subscriber discount + active flag (only when there's an organizer).
                 event.organizer?.id
-                    ? authClient.rpc('get_subscriber_event_discount', { p_event_id: id })
+                    ? authClient.rpc('get_subscriber_event_discount', { p_event_id: event.id })
                     : Promise.resolve({ data: null }),
                 event.organizer?.id
                     ? authClient.rpc('is_active_subscriber', { p_partner_id: event.organizer.id })
@@ -308,7 +312,9 @@ export default async function PublicEventPage({
         try {
             if (inviteToken) {
                 const inv = await getEventInviteByToken(inviteToken)
-                if (inv && inv.event_id === id) {
+                // String compare against the ROUTE PARAM was never true on a slug URL, so a
+                // valid invite token silently read as "uninvited" on every canonical link.
+                if (inv && inv.event_id === event.id) {
                     inviteState = inv.status === 'accepted' ? 'accepted' : inv.status === 'declined' ? 'declined' : 'pending'
                     inviteTokenForResponse = inviteToken
                     inviteeName = inv.name
@@ -320,7 +326,7 @@ export default async function PublicEventPage({
                 const { data: inv } = await admin
                     .from('event_invites')
                     .select('token, name, status')
-                    .eq('event_id', id)
+                    .eq('event_id', event.id)
                     .eq('email', viewerEmail.toLowerCase())
                     .maybeSingle()
                 if (inv) {
@@ -487,7 +493,7 @@ export default async function PublicEventPage({
             const { data: regs } = await adminForProof
                 .from('event_registrations')
                 .select('guest_name, user_id, users!event_registrations_user_id_fkey(display_name)')
-                .eq('event_id', id)
+                .eq('event_id', event.id)
                 .in('status', ['approved', 'auto_approved'])
                 .order('created_at', { ascending: false })
                 .limit(12)

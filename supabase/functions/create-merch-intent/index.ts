@@ -39,9 +39,9 @@ serve(async (req) => {
             return new Response(JSON.stringify({ error: 'Please provide your contact details to continue.' }), { status: 401, headers: corsHeaders })
         }
 
-        let userProfile: { full_name: string | null; phone: string | null } | null = null
+        let userProfile: { display_name: string | null } | null = null
         if (user) {
-            const { data: profile } = await supabaseClient.from('users').select('full_name, phone').eq('id', user.id).single()
+            const { data: profile } = await supabaseClient.from('users').select('display_name').eq('id', user.id).single()
             userProfile = profile
         }
 
@@ -50,7 +50,7 @@ serve(async (req) => {
             p_items: items,
             p_user_id: user?.id ?? null,
             p_guest_email: guest_details?.email ?? user?.email ?? null,
-            p_guest_name: guest_details?.name ?? userProfile?.full_name ?? null,
+            p_guest_name: guest_details?.name ?? userProfile?.display_name ?? null,
             p_guest_phone: guest_details?.phone ?? userProfile?.phone ?? null,
             p_event_id: event_id ?? null,
             p_fulfillment_mode: fulfillment_mode === 'ship' ? 'ship' : 'claim',
@@ -82,7 +82,7 @@ serve(async (req) => {
         if (!xenditKey) throw new Error('XENDIT_SECRET_KEY not configured')
 
         const guestEmail = guest_details?.email || user?.email || 'customer@hanghut.com'
-        const guestName = guest_details?.name || userProfile?.full_name || 'Guest'
+        const guestName = guest_details?.name || userProfile?.display_name || 'Guest'
         const nameParts = guestName.trim().split(' ')
         const givenNames = nameParts[0] || 'Guest'
         const surname = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '-'
