@@ -167,6 +167,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                 subscriptionTiers={rawSubscriptionTiers || []}
                 existingDiscounts={rawExistingDiscounts || []}
                 subscriptionsEnabled={(partner as any).subscriptions_enabled === true}
+                merchEnabled={(partner as any).merch_enabled === true}
             />
         </div>
     )

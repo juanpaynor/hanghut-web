@@ -36,7 +36,14 @@ serve(async (req) => {
         )
 
         // Parse request body
-        const { event_id, quantity, tier_id, seat_ids, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution } = await req.json()
+        const { event_id, quantity, tier_id, seat_ids, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution, source } = await req.json()
+
+        // Which client created this order. Whitelisted rather than stored raw so the column
+        // can't drift into 'App'/'ios'/'mobile-web' variants; anything unrecognised is stored
+        // as NULL ("client did not report it") instead of being coerced to 'web', which would
+        // silently mislabel app orders as web ones.
+        const ALLOWED_SOURCES = ['web', 'app', 'embed', 'api']
+        const orderSource = typeof source === 'string' && ALLOWED_SOURCES.includes(source) ? source : null
 
         // Get authenticated user (if any)
         const {
@@ -422,6 +429,7 @@ serve(async (req) => {
                 fee_percentage: platformFeePercentage,
                 subscribed_to_newsletter: subscribed_to_newsletter ?? false,
                 attribution: attribution && typeof attribution === 'object' ? attribution : null,
+                source: orderSource,
                 metadata: Object.keys(combinedMetadata).length > 0 ? combinedMetadata : null
             })
             .eq('id', intentId)

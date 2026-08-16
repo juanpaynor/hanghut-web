@@ -321,6 +321,10 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 // First-touch acquisition attribution → stored on the intent, then
                 // copied to the transaction on payment (revenue-by-channel).
                 attribution: getStoredAttribution() || undefined,
+                // Which client made the sale. Without this an app order is indistinguishable
+                // from a web one in purchase_intents, so "how much revenue does the app
+                // drive?" has no answer. Whitelisted server-side; anything else stores NULL.
+                source: 'web',
                 // [NEW] Fee Metadata for Edge Function
                 metadata: {
                     pass_fixed: passFixed,

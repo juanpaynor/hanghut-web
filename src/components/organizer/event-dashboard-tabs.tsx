@@ -44,6 +44,7 @@ interface EventDashboardTabsProps {
     subscriptionTiers?: SubscriptionTierBasic[]
     existingDiscounts?: ExistingDiscount[]
     subscriptionsEnabled?: boolean
+    merchEnabled?: boolean
 }
 
 export function EventDashboardTabs({
@@ -63,6 +64,7 @@ export function EventDashboardTabs({
     subscriptionTiers = [],
     existingDiscounts = [],
     subscriptionsEnabled = false,
+    merchEnabled = false,
 }: EventDashboardTabsProps) {
     const [activeTab, setActiveTab] = useState('overview')
 
@@ -203,6 +205,7 @@ export function EventDashboardTabs({
             <TabsContent value="design" className="mt-6 animate-in fade-in-50 duration-300">
                 <StorefrontCustomizationForm
                     eventId={eventId}
+                    merchEnabled={merchEnabled}
                     initialData={event}
                 />
             </TabsContent>

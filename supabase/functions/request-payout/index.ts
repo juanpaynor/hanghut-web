@@ -173,6 +173,38 @@ serve(async (req) => {
 
         if (expTxError) throw new Error('Failed to fetch eligible experience transactions')
 
+        // MERCH. get_partner_balance counts merch earnings, but nothing ever held them
+        // back for settlement — so merch revenue became withdrawable the instant the
+        // webhook fired, before Xendit had released a peso of it.
+        //
+        // merch_orders has no settlement_status/settled_at columns and nothing syncs them,
+        // so this can only use the holiday-aware T+N estimate keyed off the order's payment
+        // method. That leans slightly early in a holiday week; the +2 business-day buffer
+        // inside isSettled() is what absorbs it.
+        //
+        // 'refunded' is included for the same reason as the event reversals: those rows are
+        // negative and must net down, not be silently dropped.
+        const { data: merchTransactionsRaw, error: merchTxError } = await supabaseClient
+            .from('merch_transactions')
+            .select('id, organizer_payout, created_at, merch_order:merch_orders(payment_method)')
+            .eq('organizer_id', partner.id)
+            .in('status', ['completed', 'refunded'])
+
+        if (merchTxError) throw new Error('Failed to fetch eligible merch transactions')
+
+        // Normalise into the shape the unsettled reducer expects, so merch, event and
+        // reversal rows all go through ONE settlement verdict instead of three.
+        const merchForSettlement = (merchTransactionsRaw || []).map((tx: any) => {
+            const order = Array.isArray(tx.merch_order) ? tx.merch_order[0] : tx.merch_order
+            return {
+                created_at: tx.created_at,
+                organizer_payout: tx.organizer_payout,
+                purchase_intent: { payment_method: order?.payment_method ?? null },
+            }
+        })
+
+        console.log(`🔍 PAYOUT DEBUG: merchTransactions count=${merchForSettlement.length}`)
+
         // 6. CALCULATE AVAILABLE BALANCE
         // Xendit applies the split rule + PLATFORM fee + processing AT SETTLEMENT
         // (see create-purchase-intent: fees:[{type:'PLATFORM'}] + with-split-rule +
@@ -229,7 +261,7 @@ serve(async (req) => {
             // folded in under the SAME settlement verdict (they share the sale's intent), so
             // a refund against a still-unsettled sale cancels that sale's unsettled portion
             // instead of leaving it subtracted twice.
-            const unsettledAmount = [...eventTransactions, ...refundReversals].reduce((sum: number, tx: any) => {
+            const unsettledAmount = [...eventTransactions, ...refundReversals, ...merchForSettlement].reduce((sum: number, tx: any) => {
                 const intent = Array.isArray(tx.purchase_intent) ? tx.purchase_intent[0] : tx.purchase_intent
                 return isSettled(tx.created_at, intent) ? sum : sum + (Number(tx.organizer_payout) || 0)
             }, 0)

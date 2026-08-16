@@ -136,6 +136,9 @@ export async function POST(request: Request) {
             event_id,
             quantity,
             tier_id: tier_id || undefined,
+            // Partner-integration checkout, not our own web UI — tagged separately so
+            // partner-driven volume doesn't get counted as hanghut.com traffic.
+            source: 'api',
             guest_details: {
                 name: customer.name,
                 email: customer.email,

@@ -183,6 +183,9 @@ export async function approveRegistration(
                 event_id: reg.event_id,
                 quantity: 1,
                 registration_id: registrationId,
+                // Organizer approving a free registration from the dashboard — still a
+                // web-originated order, just not a buyer-initiated one.
+                source: 'web',
             }
             if (reg.tier_id) intentPayload.tier_id = reg.tier_id
             // Pass guest_details so the server guard can match guest email ownership

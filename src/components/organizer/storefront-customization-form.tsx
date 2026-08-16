@@ -42,6 +42,8 @@ const formSchema = z.object({
 
 interface StorefrontCustomizationFormProps {
     eventId: string
+    /** Partner has merch switched on — only then is the Merch row worth showing. */
+    merchEnabled?: boolean
     initialData: {
         video_url?: string | null
         description_html?: string | null
@@ -116,6 +118,7 @@ const SECTION_LABELS: Record<string, string> = {
     faq: "FAQ",
     sponsors: "Sponsors & Partners",
     pricing: "Pricing Table (all tiers)",
+    merch: "Merch",
     tickets: "Ticket Selector"
 }
 
@@ -127,7 +130,7 @@ type ScheduleEntry = { time: string; title: string; description?: string }
 type FaqEntry = { q: string; a: string }
 type SponsorEntry = { name: string; logo_url?: string; url?: string }
 
-export function StorefrontCustomizationForm({ eventId, initialData }: StorefrontCustomizationFormProps) {
+export function StorefrontCustomizationForm({ eventId, merchEnabled = false, initialData }: StorefrontCustomizationFormProps) {
     const router = useRouter()
     const { toast } = useToast()
     const [isLoading, setIsLoading] = useState(false)
@@ -151,6 +154,14 @@ export function StorefrontCustomizationForm({ eventId, initialData }: Storefront
         if (!saved.includes('pricing')) {
             const ti = saved.indexOf('tickets')
             saved.splice(ti === -1 ? saved.length : ti, 0, 'pricing')
+        }
+        // 'merch' likewise — surfaced ONLY for partners with merch switched on, so it
+        // isn't dead noise in every other organizer's arrangement list. Inserted just
+        // before tickets, which is where the public page used to force-append it, so
+        // turning this on changes nothing visually until the organizer moves it.
+        if (merchEnabled && !saved.includes('merch')) {
+            const ti = saved.indexOf('tickets')
+            saved.splice(ti === -1 ? saved.length : ti, 0, 'merch')
         }
         return saved
     })()

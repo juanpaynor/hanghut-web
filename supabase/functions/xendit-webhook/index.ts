@@ -492,7 +492,9 @@ serve(async (req) => {
                     console.log(`🔍 Checking if ${lookupId} is a Merch Order...`)
                     const { data: merchOrder } = await supabaseClient
                         .from('merch_orders')
-                        .select('id, status')
+                        // total_amount is what Xendit actually charged, and therefore the
+                        // base its processing fee is calculated on.
+                        .select('id, status, total_amount')
                         .eq('xendit_external_id', lookupId)
                         .single()
 
@@ -504,12 +506,20 @@ serve(async (req) => {
                         }
 
                         const merchMethod = extractPaymentMethod(data)
-                        console.log(`💳 Merch Payment Method: ${merchMethod}`)
+                        // Merch never deducted Xendit's cut, so organizer_payout overstated
+                        // by the full processing fee on every sale. Computed HERE rather than
+                        // in SQL so the rate schedule stays in exactly one place
+                        // (PROCESSING_FEE_RATES above); the RPC just records what it's given.
+                        // 0 when the method is UNKNOWN — an unknown method must never invent
+                        // a charge, and understating errs toward the organizer.
+                        const merchProcessingFee = getProcessingFee(merchMethod, Number(merchOrder.total_amount) || 0)
+                        console.log(`💳 Merch Payment Method: ${merchMethod}, total=${merchOrder.total_amount}, processingFee=${merchProcessingFee}`)
 
                         const { data: merchResult, error: merchError } = await supabaseClient.rpc('confirm_merch_order', {
                             p_order_id: merchOrder.id,
                             p_payment_method: merchMethod,
                             p_xendit_id: data.id || data.payment_id || lookupId,
+                            p_processing_fee: merchProcessingFee,
                         })
                         if (merchError) {
                             console.error('❌ Merch RPC Error:', merchError)

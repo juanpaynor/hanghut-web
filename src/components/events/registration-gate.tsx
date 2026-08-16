@@ -116,6 +116,7 @@ export function RegistrationGate({
                         tier_id: freeTierId,
                         registration_id: regId,
                         guest_details: guest ?? undefined,
+                        source: 'web',
                     },
                 })
                 if (!error && (data as any)?.success) setClaimed(true)

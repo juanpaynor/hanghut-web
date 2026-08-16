@@ -1169,7 +1169,9 @@ export default async function PublicEventPage({
                 case 'pricing': return <PricingSection key="pricing" />
                 case 'organizer': return <OrganizerSection key="organizer" />
                 case 'gallery': return <GallerySection key="gallery" />
-                case 'merch': return event.organizer?.id
+                // Only render when there is something to sell — an ordered-but-empty
+                // merch slot would otherwise leave a blank block on the page.
+                case 'merch': return event.organizer?.id && eventMerch.length > 0
                     ? <MerchSection key="merch" organizerId={event.organizer.id} eventId={event.id} products={eventMerch} />
                     : null
                 case 'tickets': return <TicketsSection key="tickets" />
@@ -1188,11 +1190,13 @@ export default async function PublicEventPage({
     // Buyer-facing merch for this event + the organizer's storefront-wide items.
     const eventMerch = event.organizer?.id ? await getPublicMerch(event.organizer.id, event.id) : []
 
-    // Separate special sections. Merch is appended to the main content (existing
-    // saved layouts don't include it) whenever the organizer has sellable merch.
+    // Separate special sections. Merch is now a FIRST-CLASS orderable section — it used
+    // to be stripped out of layoutOrder and force-appended, which meant organizers could
+    // neither move nor hide it. It only falls back to being appended for layouts saved
+    // before merch became arrangeable, so those pages render exactly as they do today.
     const mainContentOrder = [
-        ...layoutOrder.filter((id: string) => id !== 'hero' && id !== 'tickets' && id !== 'merch'),
-        ...(eventMerch.length > 0 ? ['merch'] : []),
+        ...layoutOrder.filter((id: string) => id !== 'hero' && id !== 'tickets'),
+        ...(eventMerch.length > 0 && !layoutOrder.includes('merch') ? ['merch'] : []),
     ]
     const showHero = !hiddenSections.has('hero')
     const showTickets = !hiddenSections.has('tickets')
