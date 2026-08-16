@@ -145,6 +145,22 @@ serve(async (req) => {
 
         if (eventTxError) throw new Error('Failed to fetch eligible event transactions')
 
+        // Refund reversals, fetched SEPARATELY and deliberately kept out of
+        // `eventTransactions`: that list drives the payout_id linking loop below, and
+        // linking a negative row there would corrupt the running total it accumulates.
+        // They are needed for one thing only — netting `unsettledAmount` further down.
+        // get_partner_balance already counts them, so without them here the balance is
+        // refund-aware while the unsettled figure is refund-blind, and a partly-refunded
+        // unsettled sale gets subtracted at full value. That is the same mismatch that
+        // showed a negative balance on the payouts page.
+        const { data: refundReversalsRaw } = await supabaseClient
+            .from('transactions')
+            .select('id, organizer_payout, created_at, purchase_intent:purchase_intents(payment_method, settlement_status, settled_at, estimated_settlement_time)')
+            .eq('partner_id', partner.id)
+            .eq('status', 'refunded')
+
+        const refundReversals = refundReversalsRaw || []
+
         // Fetch Experience Transactions
         const { data: expTransactions, error: expTxError } = await supabaseClient
             .from('experience_transactions')
@@ -209,8 +225,11 @@ serve(async (req) => {
             if (balErr) throw new Error(`Failed to compute balance: ${balErr.message}`)
             const canonicalBalance = Number(balRows?.[0]?.balance ?? 0)
 
-            // Money Xendit hasn't released yet is owed but NOT withdrawable.
-            const unsettledAmount = eventTransactions.reduce((sum: number, tx: any) => {
+            // Money Xendit hasn't released yet is owed but NOT withdrawable. Reversals are
+            // folded in under the SAME settlement verdict (they share the sale's intent), so
+            // a refund against a still-unsettled sale cancels that sale's unsettled portion
+            // instead of leaving it subtracted twice.
+            const unsettledAmount = [...eventTransactions, ...refundReversals].reduce((sum: number, tx: any) => {
                 const intent = Array.isArray(tx.purchase_intent) ? tx.purchase_intent[0] : tx.purchase_intent
                 return isSettled(tx.created_at, intent) ? sum : sum + (Number(tx.organizer_payout) || 0)
             }, 0)

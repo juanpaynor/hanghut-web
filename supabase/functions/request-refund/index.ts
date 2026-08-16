@@ -325,6 +325,52 @@ serve(async (req: Request) => {
         const usesMainWallet = partnerData?.use_main_wallet === true;
         const hasSubAccount = partnerData?.xendit_account_id && !usesMainWallet;
 
+        // ============================================================
+        // 4a. ENTITLEMENT GUARD — does THIS partner actually have the money?
+        // ============================================================
+        // The wallet checks below ask Xendit "is there cash?". For a main-wallet partner
+        // that is the POOLED HangHut account holding every partner's funds, so it says yes
+        // to a refund the organizer cannot cover — Xendit has no way to tell whose pesos
+        // are whose. This asks the only question that matters: is the PARTNER'S OWN ledger
+        // balance enough. Blocks rather than allowing the balance to go negative.
+        const refundPartnerId = isExperience
+            ? (intent.experience?.partner_id || null)
+            : (intent.event?.organizer_id || null);
+
+        if (refundPartnerId) {
+            const { data: balRows, error: balErr } = await supabaseAdmin
+                .rpc('get_partner_balance', { p_partner_id: refundPartnerId });
+
+            if (balErr) {
+                // Fail CLOSED. An unreadable balance is not permission to move money.
+                console.error('❌ Balance lookup failed for refund:', balErr);
+                return new Response(JSON.stringify({
+                    error: 'Could not verify the available balance. Please try again.',
+                    code: 'BALANCE_CHECK_FAILED',
+                }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    status: 503,
+                });
+            }
+
+            const partnerBalance = Number(balRows?.[0]?.balance ?? 0);
+            if (partnerBalance < refundAmount) {
+                const shortfall = refundAmount - partnerBalance;
+                console.log(`❌ Partner ${refundPartnerId} short by ₱${shortfall} for refund of ₱${refundAmount} (balance ₱${partnerBalance})`);
+                return new Response(JSON.stringify({
+                    error: 'Insufficient balance to refund this customer.',
+                    code: 'INSUFFICIENT_PARTNER_BALANCE',
+                    available_balance: partnerBalance,
+                    required: refundAmount,
+                    shortfall,
+                    message: `This account has ₱${partnerBalance.toFixed(2)} available but the refund needs ₱${refundAmount.toFixed(2)} — short by ₱${shortfall.toFixed(2)}. The organizer covers the full refund, so the balance must cover it before the refund can go through.`
+                }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    status: 402,
+                });
+            }
+        }
+
         if (hasSubAccount) {
             try {
                 const balanceRes = await fetch('https://api.xendit.co/balance', {
@@ -475,6 +521,69 @@ serve(async (req: Request) => {
                         refunded_at: new Date().toISOString()
                     })
                     .eq('id', intent_id)
+
+                // Reversing ledger row, so the refund actually reduces what the organizer
+                // is owed. WHY HERE rather than only in the webhook: xendit-webhook's
+                // `refund.succeeded` branch writes one too, but that event has never once
+                // arrived — 5 refunds between 2026-03 and 2026-08, 0 reversing rows written.
+                // (Only 2 of those 5 overstated a balance; the 3 oldest predate transaction
+                // rows entirely, so their sales were never ledgered either.)
+                // Writing it synchronously, where we KNOW Xendit accepted the refund, is the
+                // only path that has ever actually run. Both sides check for an existing
+                // reversal first, so enabling the subscription later cannot double-count.
+                try {
+                    const { data: existingReversal } = await supabaseAdmin
+                        .from('transactions')
+                        .select('id')
+                        .eq('purchase_intent_id', intent_id)
+                        .eq('status', 'refunded')
+                        .limit(1)
+
+                    if (existingReversal && existingReversal.length > 0) {
+                        console.log(`⚡ Reversing row already exists for ${intent_id} — skipping`)
+                    } else {
+                        const { data: origRows } = await supabaseAdmin
+                            .from('transactions')
+                            .select('event_id, partner_id, user_id, gross_amount, platform_fee, fixed_fee, vat, organizer_payout')
+                            .eq('purchase_intent_id', intent_id)
+                            .eq('status', 'completed')
+                            .limit(1)
+
+                        const origTx = origRows?.[0]
+                        if (!origTx) {
+                            console.error(`❌ No original transaction for ${intent_id} — reversing row NOT written`)
+                        } else {
+                            // Proportional, so a partial refund reverses only its share of
+                            // the fees and payout rather than the whole sale.
+                            const origGross = Number(origTx.gross_amount) || 0
+                            const ratio = origGross > 0 ? Math.min(refundAmount / origGross, 1) : 1
+                            const reversedPayout = Math.round(Number(origTx.organizer_payout || 0) * ratio)
+
+                            const { error: revErr } = await supabaseAdmin.from('transactions').insert({
+                                purchase_intent_id: intent_id,
+                                event_id: origTx.event_id,
+                                partner_id: origTx.partner_id,
+                                user_id: origTx.user_id,
+                                gross_amount: -refundAmount,
+                                platform_fee: -Math.round(Number(origTx.platform_fee || 0) * ratio),
+                                fixed_fee: -Math.round(Number(origTx.fixed_fee || 0) * ratio),
+                                vat: -Math.round(Number(origTx.vat || 0) * ratio),
+                                organizer_payout: -reversedPayout,
+                                // Xendit does NOT return the processing fee on a refund, so
+                                // there is nothing to reverse — the organizer keeps eating it.
+                                payment_processing_fee: 0,
+                                xendit_transaction_id: xenditData.id || null,
+                                fee_basis: 'refund',
+                                status: 'refunded',
+                            })
+
+                            if (revErr) console.error(`❌ Reversing row insert failed for ${intent_id}:`, revErr)
+                            else console.log(`✅ Reversing row written for ${intent_id}: payout -${reversedPayout} (ratio ${ratio.toFixed(2)})`)
+                        }
+                    }
+                } catch (revError) {
+                    console.error('Failed to write reversing transaction:', revError)
+                }
             }
             console.log(`Updated refund tracking for ${intent_id}: ${refundAmount}`)
         } catch (updateError) {

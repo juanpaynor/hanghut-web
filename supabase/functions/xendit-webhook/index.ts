@@ -1164,7 +1164,26 @@ serve(async (req) => {
 
                         console.log(`💰 Refund calc: amount=${refundAmount}, ratio=${ratio.toFixed(2)}, platformFee=${refundPlatformFee}, fixedFee=${refundFixedFee}, vat=${refundVat}, payout=${refundPayout}`);
 
-                        const { error: refundTxError } = await supabaseClient.from('transactions').insert({
+                        // request-refund now writes the reversing row synchronously, because
+                        // this `refund.succeeded` event has historically never arrived. If the
+                        // subscription is ever switched on, both paths would fire for the same
+                        // refund and double-reverse the organizer's balance. Whoever gets there
+                        // first wins; the other backs off.
+                        const { data: alreadyReversed } = await supabaseClient
+                            .from('transactions')
+                            .select('id')
+                            .eq('purchase_intent_id', intent.id)
+                            .eq('status', 'refunded')
+                            .limit(1);
+
+                        // Skip ONLY the ledger insert — the rest of this branch (seat release,
+                        // ticket.refunded partner webhook, notifications) still has to run.
+                        const skipReversal = !!(alreadyReversed && alreadyReversed.length > 0);
+                        if (skipReversal) {
+                            console.log(`⚡ Reversing row already exists for ${intentId} — skipping webhook insert`);
+                        }
+
+                        const { error: refundTxError } = skipReversal ? { error: null } as any : await supabaseClient.from('transactions').insert({
                             purchase_intent_id: intent.id,
                             event_id: intent.event_id,
                             partner_id: intent.event.organizer_id,

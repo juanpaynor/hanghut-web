@@ -32,11 +32,17 @@ async function getPayoutStats(partnerId: string) {
         // Settlement fields come along so earnings can be split into money that has
         // actually landed vs money Xendit is still holding. Counting an unsettled
         // card sale as "available to withdraw" is a lie: cards settle T+5.
+        // 'refunded' rows are included deliberately: they carry a NEGATIVE
+        // organizer_payout, so they net earnings down here and — because they share the
+        // sale's purchase_intent_id — they also net down `unsettledEarnings` under the
+        // same settlement verdict. That second part is what stops a partly-refunded,
+        // not-yet-settled sale from subtracting its full value twice and showing a
+        // negative balance.
         supabase
             .from('transactions')
-            .select('organizer_payout, created_at, purchase_intent:purchase_intents(payment_method, settlement_status, estimated_settlement_time, settled_at)')
+            .select('organizer_payout, created_at, purchase_intent_id, purchase_intent:purchase_intents(payment_method, settlement_status, estimated_settlement_time, settled_at)')
             .eq('partner_id', partnerId)
-            .eq('status', 'completed'),
+            .in('status', ['completed', 'refunded']),
         supabase
             .from('experience_transactions')
             .select('host_payout')
@@ -50,20 +56,33 @@ async function getPayoutStats(partnerId: string) {
             .select('organizer_payout')
             .eq('organizer_id', partnerId)
             .in('status', ['completed', 'refunded']),
-        // EVENT refunds. Unlike experiences, event refunds don't reliably write a
-        // negative reversal row (the bare request-refund path writes none, and the
-        // reversal row that finalize_event_refund does write is status='refunded', which
-        // the completed-only filter above excludes). The organizer shoulders the full
-        // refunded amount, so subtract it here from `refunded_amount` — the one field
-        // every refund path sets — to keep the balance from reading too high.
+        // EVENT refunds — LEGACY FALLBACK ONLY. request-refund now writes a proper
+        // negative reversal row, which the query above already counts. This exists for
+        // refunds taken before that shipped, which set `refunded_amount` and nothing else.
+        // It is applied per-intent below, and only where no reversal row exists, because
+        // counting both would subtract the same refund twice.
         supabase
             .from('purchase_intents')
-            .select('refunded_amount, event:events!inner(organizer_id)')
+            .select('id, refunded_amount, event:events!inner(organizer_id)')
             .eq('event.organizer_id', partnerId)
             .gt('refunded_amount', 0),
     ])
 
-    const eventRefunds = (refundedIntents?.reduce((sum, r: any) => sum + Number(r.refunded_amount || 0), 0) || 0)
+    // Intents whose refund is already represented by a reversal row in the ledger.
+    const reversedIntentIds = new Set(
+        (transactions || [])
+            .filter((t: any) => Number(t.organizer_payout) < 0 && t.purchase_intent_id)
+            .map((t: any) => t.purchase_intent_id)
+    )
+
+    // Note this subtracts the GROSS refund, whereas a reversal row subtracts the
+    // organizer's proportional share. The fallback therefore reads slightly pessimistic
+    // — the correct direction to be wrong in, and it disappears per intent as soon as a
+    // reversal row exists for it.
+    const eventRefunds = (refundedIntents || []).reduce(
+        (sum: number, r: any) => (reversedIntentIds.has(r.id) ? sum : sum + Number(r.refunded_amount || 0)),
+        0
+    )
 
     const ticketEarnings = transactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0
 
