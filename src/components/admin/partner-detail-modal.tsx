@@ -23,7 +23,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
 import { CheckCircle, XCircle, Ban, DollarSign, ExternalLink, Phone, MapPin, FileText, ShieldCheck } from 'lucide-react'
-import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities, setSubscriptionsEnabled, setMerchEnabled, setPartnerWalletMode, getXenditAccountStatus, submitPartnerKycToXendit, updatePartnerKycDetails, getPartnerKycDocuments, type XenditStatusReport, type PartnerKycDoc } from '@/lib/admin/partner-actions'
+import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities, setSubscriptionsEnabled, setMerchEnabled, setPartnerWalletMode, getXenditAccountStatus, createPartnerXenditSubaccount, submitPartnerKycToXendit, updatePartnerKycDetails, getPartnerKycDocuments, type XenditStatusReport, type PartnerKycDoc } from '@/lib/admin/partner-actions'
 import { useRouter } from 'next/navigation'
 
 interface Partner {
@@ -100,6 +100,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
     const [xenditReport, setXenditReport] = useState<XenditStatusReport | null>(null)
     const [xenditChecking, setXenditChecking] = useState(false)
     const [xenditSubmitting, setXenditSubmitting] = useState(false)
+    const [xenditCreatingSub, setXenditCreatingSub] = useState(false)
     const [xenditError, setXenditError] = useState<string | null>(null)
     const [kycTaxId, setKycTaxId] = useState(partner.tax_id || '')
     const [kycStreet1, setKycStreet1] = useState(partner.street_line1 || '')
@@ -347,10 +348,38 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                 >
                                     {xenditChecking ? 'Checking…' : 'Check Xendit status'}
                                 </Button>
+                                {!partner.xendit_account_id && (
+                                    <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        disabled={xenditCreatingSub}
+                                        onClick={async () => {
+                                            if (!confirm(
+                                                `Create a Xendit sub-account for ${partner.business_name}?\n\n` +
+                                                `This creates a real account at Xendit and cannot be undone.\n\n` +
+                                                `It does NOT change their wallet mode — they keep settling exactly as they do now.`
+                                            )) return
+                                            setXenditCreatingSub(true)
+                                            setXenditError(null)
+                                            const { error, message } = await createPartnerXenditSubaccount(partner.id)
+                                            if (error) setXenditError(error)
+                                            else {
+                                                alert(message)
+                                                router.refresh()
+                                            }
+                                            setXenditCreatingSub(false)
+                                        }}
+                                    >
+                                        {xenditCreatingSub ? 'Creating…' : 'Create Xendit sub-account'}
+                                    </Button>
+                                )}
                                 <Button
                                     size="sm"
                                     variant="secondary"
                                     disabled={xenditSubmitting || !partner.xendit_account_id}
+                                    title={!partner.xendit_account_id
+                                        ? 'Needs a Xendit sub-account first — create one with the button on the left.'
+                                        : undefined}
                                     onClick={async () => {
                                         if (!confirm(
                                             `Send ${partner.business_name}'s KYC documents and personal details to Xendit?\n\n` +

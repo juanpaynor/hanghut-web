@@ -7,7 +7,7 @@ const corsHeaders = {
 }
 
 /**
- * submit-xendit-kyc  (v22 — LEGACY Account Holder API, PH doc spec aligned)
+ * submit-xendit-kyc  (v23 — auto-creates the sub-account; LEGACY Account Holder API)
  *
  * Doc types + industry code aligned to Xendit's official PH requirements table,
  * VALIDATED against the Xendit dev sandbox (POST /account_holders → HTTP 200):
@@ -17,10 +17,10 @@ const corsHeaders = {
  *   - kyc_documents {type,country,file_id} with the PH legacy enums all accepted.
  *   - capabilities body {type:MONEY_IN, channel_code:PH_CARDS|GCASH} accepted (PATCH).
  *
- * Flow: upload docs to /files (idempotent) → POST /account_holders →
- * PATCH /v2/accounts/{sub} { account_holder_id } (links + starts KYC) →
- * kyc_status='submitted'. Cards/GCash capabilities are requested later by
- * xendit-webhook once KYC passes.
+ * Flow: ensure sub-account (POST /v2/accounts if missing) → upload docs to /files
+ * (idempotent) → POST /account_holders → PATCH /v2/accounts/{sub}
+ * { account_holder_id } (links + starts KYC) → kyc_status='submitted'.
+ * Cards/GCash capabilities are requested later by xendit-webhook once KYC passes.
  */
 
 const KYC_BUCKET = 'kyc-documents'
@@ -113,15 +113,70 @@ serve(async (req: Request) => {
         }
         if (!isAdmin && partner.user_id !== user.id) return json({ error: 'Unauthorized' }, 403)
 
-        if (!partner.xendit_account_id) {
-            return json({ error: 'Partner has no Xendit sub-account. Create one first.', code: 'NO_SUBACCOUNT' }, 400)
-        }
         if (partner.kyc_status === 'submitted' || partner.kyc_status === 'verified') {
             return json({ success: true, message: `KYC already ${partner.kyc_status}`, kyc_status: partner.kyc_status, already_submitted: true })
         }
 
-        const subAccountId = partner.xendit_account_id as string
         const authHeader = `Basic ${btoa(xenditKey + ':')}`
+
+        // A missing sub-account used to be a hard 400 (NO_SUBACCOUNT) here, because the
+        // sub-account is normally created in approvePartner() at approval time. Partners
+        // approved before that step existed — or whose creation call failed — could fill
+        // in the entire 4-entity form, upload every document and sign the agreement, then
+        // hit this wall at the very last step with all their work stranded. So create it
+        // on demand instead.
+        //
+        // This deliberately does NOT touch use_main_wallet. Having a sub-account and
+        // settling through it are separate decisions: create-purchase-intent only routes
+        // (`for-user-id`) and charges the inline PLATFORM fee when use_main_wallet is
+        // false, so a main-wallet partner keeps settling to the main account exactly as
+        // before. The sub-account is only the identity that KYC attaches to.
+        let subAccountId = partner.xendit_account_id as string | null
+
+        if (!subAccountId) {
+            const subEmail = partner.work_email || user.email || `partner-${partner_id}@hanghut.com`
+            console.log(`🏦 No sub-account for ${partner_id} — creating one before KYC`)
+
+            const subRes = await fetch(`${XENDIT_API}/v2/accounts`, {
+                method: 'POST',
+                headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: subEmail,
+                    type: 'OWNED',
+                    public_profile: {
+                        business_name: partner.business_name || `HangHut Partner ${String(partner_id).substring(0, 8)}`,
+                    },
+                }),
+            })
+            const subData = await subRes.json()
+
+            if (!subRes.ok) {
+                console.error('❌ create sub-account failed:', JSON.stringify(subData))
+                return json({
+                    error: subData.message || 'Failed to create Xendit sub-account',
+                    code: subData.error_code === 'DUPLICATE_ACCOUNT_ERROR' || subRes.status === 409
+                        ? 'DUPLICATE_EMAIL'
+                        : 'SUBACCOUNT_CREATE_FAILED',
+                    details: subData,
+                }, subRes.status)
+            }
+
+            subAccountId = subData.id as string
+
+            // Persist BEFORE going any further. If the KYC calls below fail we must not
+            // lose the account id — re-running would otherwise create a second orphaned
+            // Xendit account under a different email.
+            const { error: saveErr } = await supabaseAdmin
+                .from('partners').update({ xendit_account_id: subAccountId }).eq('id', partner_id)
+            if (saveErr) {
+                console.error('🚨 CRITICAL: sub-account created but id not saved!', { partner_id, subAccountId, saveErr })
+                return json({
+                    error: 'Xendit sub-account created but could not be saved. Contact support before retrying.',
+                    xendit_account_id: subAccountId, code: 'DB_SAVE_FAILED',
+                }, 500)
+            }
+            console.log(`✅ sub-account created + stored: ${subAccountId}`)
+        }
 
         const { data: docs } = await supabaseAdmin
             .from('partner_kyc_documents')

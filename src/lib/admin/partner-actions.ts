@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { revalidatePath } from 'next/cache'
 
 /**
  * Approve a pending partner application.
@@ -405,6 +406,51 @@ export async function updatePartnerKycDetails(
     if (error) return { error: error.message }
 
     return { success: true }
+}
+
+/**
+ * Create this partner's Xendit sub-account on demand.
+ *
+ * Sub-accounts are normally created inside approvePartner(), so a partner approved
+ * before that step existed — or whose creation call failed at the time — has no way
+ * back: "Submit KYC to Xendit" is disabled without one. This is that way back.
+ *
+ * Idempotent: the edge function returns the existing id (already_existed) rather than
+ * creating a second account, so a double click cannot orphan a Xendit account.
+ *
+ * Does NOT change use_main_wallet. Owning a sub-account and settling through it are
+ * separate decisions — create-purchase-intent routes on the wallet flag, not on the
+ * presence of an account id — so a main-wallet partner keeps settling to the main
+ * account until that flag is deliberately flipped.
+ */
+export async function createPartnerXenditSubaccount(
+    partnerId: string
+): Promise<{ success?: boolean; message?: string; xenditAccountId?: string; error?: string }> {
+    const supabase = await createClient()
+
+    const { data, error } = await supabase.functions.invoke('create-xendit-subaccount', {
+        body: { partner_id: partnerId },
+    })
+
+    if (error) {
+        let detail = error.message
+        try {
+            const body = await (error as any).context?.json?.()
+            if (body?.error) detail = body.details ? `${body.error} — ${JSON.stringify(body.details)}` : body.error
+        } catch { /* keep the original message */ }
+        return { error: detail }
+    }
+    if (data?.error) return { error: data.details ? `${data.error} — ${JSON.stringify(data.details)}` : data.error }
+
+    revalidatePath('/admin/partners')
+
+    return {
+        success: true,
+        xenditAccountId: data?.xendit_account_id,
+        message: data?.already_existed
+            ? `Sub-account already existed: ${data.xendit_account_id}`
+            : `Xendit sub-account created: ${data?.xendit_account_id}`,
+    }
 }
 
 /**
