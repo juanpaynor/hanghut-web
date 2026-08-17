@@ -297,6 +297,7 @@ export async function getXenditAccountStatus(
 }
 
 export type PartnerKycDoc = {
+    id: string
     doc_type: string
     owner_kind: string
     owner_name: string | null
@@ -325,7 +326,7 @@ export async function getPartnerKycDocuments(
 
     const { data: rows, error } = await supabase
         .from('partner_kyc_documents')
-        .select('doc_type, owner_kind, owner_id, storage_path, created_at')
+        .select('id, doc_type, owner_kind, owner_id, storage_path, created_at')
         .eq('partner_id', partnerId)
         .order('owner_kind')
         .order('doc_type')
@@ -354,6 +355,7 @@ export async function getPartnerKycDocuments(
             url = data?.signedUrl ?? null
         } catch { /* a missing object shouldn't hide the rest of the list */ }
         return {
+            id: r.id,
             doc_type: r.doc_type,
             owner_kind: r.owner_kind,
             owner_name: r.owner_id ? (names.get(r.owner_id) ?? null) : null,
@@ -363,6 +365,119 @@ export async function getPartnerKycDocuments(
     }))
 
     return { docs }
+}
+
+/**
+ * Replace a single KYC document a partner uploaded (wrong file, unreadable scan,
+ * expired ID). Admin-only.
+ *
+ * The subtle part is NOT the upload — it's cache invalidation. submit-xendit-kyc skips
+ * re-uploading a file when partner_gateway_accounts.file_ids already has an entry for
+ * that storage path. We write the replacement to a NEW path (so the original stays
+ * recoverable) and drop the OLD path's entry, otherwise the stale mapping lingers and
+ * the "documents uploaded" count silently disagrees with what Xendit actually holds.
+ *
+ * We also do NOT touch a 'verified' partner's status: silently un-verifying a live
+ * partner would strip capabilities. For 'submitted', the submission is genuinely stale
+ * once a document changes, and submit-xendit-kyc refuses to run at that status — so it
+ * returns to 'pending_review' and the caller is told to resubmit.
+ */
+export async function replacePartnerKycDocument(
+    formData: FormData
+): Promise<{ success?: boolean; message?: string; warning?: string; error?: string }> {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { data: adminUser } = await supabase
+        .from('users').select('is_admin').eq('id', user.id).single()
+    if (!adminUser?.is_admin) return { error: 'Forbidden' }
+
+    const docId = formData.get('doc_id') as string
+    const file = formData.get('file') as File | null
+    if (!docId) return { error: 'Missing document id' }
+    if (!file || file.size === 0) return { error: 'Choose a file to upload.' }
+
+    // Bucket limits: 5MB, jpeg/png/pdf. Fail here with a readable message rather than
+    // letting storage reject it with an opaque one.
+    const ALLOWED = ['image/jpeg', 'image/png', 'application/pdf']
+    if (!ALLOWED.includes(file.type)) {
+        return { error: `Unsupported file type (${file.type || 'unknown'}). Use JPEG, PNG or PDF.` }
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        return { error: `File is ${(file.size / 1024 / 1024).toFixed(1)}MB — the limit is 5MB.` }
+    }
+
+    const admin = createAdminClient()
+
+    const { data: doc } = await admin
+        .from('partner_kyc_documents')
+        .select('id, partner_id, doc_type, storage_path')
+        .eq('id', docId)
+        .single()
+    if (!doc) return { error: 'Document not found' }
+
+    const { data: partner } = await admin
+        .from('partners')
+        .select('id, kyc_status, business_name')
+        .eq('id', doc.partner_id)
+        .single()
+    if (!partner) return { error: 'Partner not found' }
+
+    // Keep the partner's own folder prefix — the storage bucket's RLS and the
+    // organizer form's own-folder guard both key off that first path segment.
+    const folder = String(doc.storage_path).split('/')[0]
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
+    const newPath = `${folder}/${doc.doc_type.toLowerCase()}-${Date.now()}-admin.${ext}`
+
+    const { error: upErr } = await admin.storage
+        .from('kyc-documents')
+        .upload(newPath, file, { contentType: file.type, upsert: false })
+    if (upErr) return { error: `Upload failed: ${upErr.message}` }
+
+    const { error: rowErr } = await admin
+        .from('partner_kyc_documents')
+        .update({ storage_path: newPath })
+        .eq('id', docId)
+    if (rowErr) {
+        // Roll the object back so a failed swap doesn't leave an orphan in the bucket.
+        await admin.storage.from('kyc-documents').remove([newPath])
+        return { error: `Could not update the document record: ${rowErr.message}` }
+    }
+
+    // Drop the superseded path -> Xendit file id mapping.
+    const { data: gateway } = await admin
+        .from('partner_gateway_accounts')
+        .select('file_ids')
+        .eq('partner_id', doc.partner_id).eq('provider', 'xendit')
+        .maybeSingle()
+
+    if (gateway?.file_ids && typeof gateway.file_ids === 'object') {
+        const fileIds = { ...(gateway.file_ids as Record<string, string>) }
+        if (doc.storage_path in fileIds) {
+            delete fileIds[doc.storage_path]
+            await admin
+                .from('partner_gateway_accounts')
+                .update({ file_ids: fileIds, updated_at: new Date().toISOString() })
+                .eq('partner_id', doc.partner_id).eq('provider', 'xendit')
+        }
+    }
+
+    let warning: string | undefined
+    if (partner.kyc_status === 'submitted') {
+        await admin.from('partners')
+            .update({ kyc_status: 'pending_review' })
+            .eq('id', doc.partner_id)
+        warning = 'KYC was already submitted, so it has been moved back to pending review. Press "Submit KYC to Xendit" again to send the corrected document.'
+    } else if (partner.kyc_status === 'verified') {
+        warning = 'This partner is already VERIFIED — the new file is stored but Xendit still holds the old one. Status left untouched so their capabilities are not revoked; contact Xendit if the verified record must change.'
+    }
+
+    revalidatePath('/admin/partners')
+    revalidatePath('/admin/verifications')
+
+    return { success: true, message: `Replaced ${doc.doc_type.replace(/_/g, ' ')}.`, warning }
 }
 
 export type PartnerKycDetails = {

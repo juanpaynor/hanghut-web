@@ -137,8 +137,18 @@ serve(async (req: Request) => {
         if (!remoteHolderId && !partner.xendit_account_holder_id) {
             discrepancies.push('No account_holder exists on Xendit for this partner — KYC has never been submitted.')
         }
-        if ((docCount ?? 0) > 0 && !remoteHolderId) {
-            discrepancies.push(`${docCount} KYC document(s) are stored locally but were never sent to Xendit.`)
+        // Whether documents reached Xendit is recorded by the /files upload loop as
+        // partner_gateway_accounts.file_ids — it has nothing to do with whether a holder
+        // is LINKED to the sub-account. Inferring it from remoteHolderId reported
+        // "never sent to Xendit" for documents that had in fact all uploaded
+        // successfully, which points the reader at the wrong problem.
+        const uploadedFileIds = Object.keys((gateway?.file_ids as Record<string, string>) ?? {}).length
+        if ((docCount ?? 0) > uploadedFileIds) {
+            discrepancies.push(
+                uploadedFileIds === 0
+                    ? `${docCount} KYC document(s) are stored locally but none have been uploaded to Xendit yet.`
+                    : `${docCount} KYC document(s) stored locally but only ${uploadedFileIds} uploaded to Xendit.`
+            )
         }
 
         const holderId = remoteHolderId || partner.xendit_account_holder_id
@@ -227,7 +237,15 @@ serve(async (req: Request) => {
                 },
                 raw_account: acctBody,
                 channel_probe: channelProbe,
+                // The id we actually queried. It may be OURS (fallback) rather than one
+                // Xendit linked — surfacing it under "Xendit says" without that
+                // distinction made an unlinked holder look confirmed. account_holder_linked
+                // is the honest signal: true only when the SUB-ACCOUNT carries the link.
                 account_holder_id: holderId,
+                account_holder_linked: !!remoteHolderId,
+                account_holder_id_source: remoteHolderId ? 'xendit' : (holderId ? 'local_fallback' : null),
+                // Confirms the holder object itself exists at Xendit even when unlinked.
+                account_holder_exists: holderBody ? !!(holderBody as any)?.id : false,
                 kyc_status: kycStatusRemote,
                 capabilities,
                 raw_account_holder: holderBody,

@@ -23,7 +23,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
 import { CheckCircle, XCircle, Ban, DollarSign, ExternalLink, Phone, MapPin, FileText, ShieldCheck } from 'lucide-react'
-import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities, setSubscriptionsEnabled, setMerchEnabled, setPartnerWalletMode, getXenditAccountStatus, createPartnerXenditSubaccount, submitPartnerKycToXendit, updatePartnerKycDetails, getPartnerKycDocuments, type XenditStatusReport, type PartnerKycDoc } from '@/lib/admin/partner-actions'
+import { approvePartner, rejectPartner, setCustomPricing, suspendPartner, reactivatePartner, resetToStandardPricing, setAutoApprovePayouts, setPartnerCapabilities, setSubscriptionsEnabled, setMerchEnabled, setPartnerWalletMode, getXenditAccountStatus, createPartnerXenditSubaccount, submitPartnerKycToXendit, updatePartnerKycDetails, getPartnerKycDocuments, replacePartnerKycDocument, type XenditStatusReport, type PartnerKycDoc } from '@/lib/admin/partner-actions'
 import { useRouter } from 'next/navigation'
 
 interface Partner {
@@ -113,6 +113,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
     const [kycDocs, setKycDocs] = useState<PartnerKycDoc[] | null>(null)
     const [docsLoading, setDocsLoading] = useState(false)
     const [docsError, setDocsError] = useState<string | null>(null)
+    const [replacingDocId, setReplacingDocId] = useState<string | null>(null)
 
     const handleApprove = async () => {
         setIsLoading(true)
@@ -496,18 +497,58 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                                             {d.owner_name ? ` · ${d.owner_name}` : ''}
                                                         </p>
                                                     </div>
-                                                    {d.url ? (
-                                                        <a
-                                                            href={d.url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="text-blue-400 hover:underline whitespace-nowrap"
+                                                    <div className="flex items-center gap-3 whitespace-nowrap">
+                                                        {d.url ? (
+                                                            <a
+                                                                href={d.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-blue-400 hover:underline"
+                                                            >
+                                                                View ↗
+                                                            </a>
+                                                        ) : (
+                                                            <span className="text-muted-foreground">unavailable</span>
+                                                        )}
+                                                        <label
+                                                            className={`cursor-pointer text-foreground hover:underline ${replacingDocId === d.id ? 'opacity-50 pointer-events-none' : ''}`}
+                                                            title="Upload a corrected file for this document"
                                                         >
-                                                            View ↗
-                                                        </a>
-                                                    ) : (
-                                                        <span className="text-muted-foreground whitespace-nowrap">unavailable</span>
-                                                    )}
+                                                            {replacingDocId === d.id ? 'Replacing…' : 'Replace'}
+                                                            <input
+                                                                type="file"
+                                                                className="hidden"
+                                                                accept="image/jpeg,image/png,application/pdf"
+                                                                onChange={async (e) => {
+                                                                    const file = e.target.files?.[0]
+                                                                    // Reset immediately so re-picking the SAME file still fires onChange.
+                                                                    e.target.value = ''
+                                                                    if (!file) return
+                                                                    if (!confirm(
+                                                                        `Replace "${d.doc_type.replace(/_/g, ' ')}" for ${partner.business_name}?\n\n` +
+                                                                        `New file: ${file.name}\n\n` +
+                                                                        `The original stays in storage, but this becomes the document sent to Xendit.`
+                                                                    )) return
+
+                                                                    setReplacingDocId(d.id)
+                                                                    setDocsError(null)
+                                                                    const fd = new FormData()
+                                                                    fd.append('doc_id', d.id)
+                                                                    fd.append('file', file)
+                                                                    const res = await replacePartnerKycDocument(fd)
+                                                                    if (res.error) {
+                                                                        setDocsError(res.error)
+                                                                    } else {
+                                                                        alert([res.message, res.warning].filter(Boolean).join('\n\n'))
+                                                                        const { docs } = await getPartnerKycDocuments(partner.id)
+                                                                        setKycDocs(docs ?? [])
+                                                                        router.refresh()
+                                                                    }
+                                                                    setReplacingDocId(null)
+                                                                }}
+                                                            />
+                                                        </label>
+                                                    </div>
                                                 </div>
                                             ))}
                                             <p className="text-[11px] text-muted-foreground pt-1">

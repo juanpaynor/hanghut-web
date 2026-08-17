@@ -7,7 +7,7 @@ const corsHeaders = {
 }
 
 /**
- * submit-xendit-kyc  (v23 — auto-creates the sub-account; LEGACY Account Holder API)
+ * submit-xendit-kyc  (v25 — truthful incorporator/PIC + ISO nationality; LEGACY API)
  *
  * Doc types + industry code aligned to Xendit's official PH requirements table,
  * VALIDATED against the Xendit dev sandbox (POST /account_holders → HTTP 200):
@@ -260,18 +260,74 @@ serve(async (req: Request) => {
             country: 'PH',
         } : undefined
 
+        // The form collects nationality as free text and defaults it to the demonym
+        // "Filipino", while this file's own fallback is the ISO code 'PH' — so a single
+        // payload could carry BOTH spellings for the same country. Normalize at the
+        // boundary rather than changing the form, which is friendlier as typed.
+        const toCountryCode = (raw: unknown): string => {
+            const v = (typeof raw === 'string' ? raw : '').trim()
+            if (!v) return 'PH'
+            if (/^[a-z]{2}$/i.test(v)) return v.toUpperCase()
+            const DEMONYMS: Record<string, string> = {
+                filipino: 'PH', filipina: 'PH', pilipino: 'PH', philippine: 'PH', philippines: 'PH',
+                american: 'US', british: 'GB', australian: 'AU', canadian: 'CA', chinese: 'CN',
+                japanese: 'JP', korean: 'KR', indian: 'IN', singaporean: 'SG', malaysian: 'MY',
+                indonesian: 'ID', thai: 'TH', vietnamese: 'VN', spanish: 'ES', german: 'DE', french: 'FR',
+            }
+            return DEMONYMS[v.toLowerCase()] || 'PH'
+        }
+
+        // A personal TIN is only the same as the business TIN when the business IS the
+        // person. For a corporation/partnership, partner.tax_id is the COMPANY's — putting
+        // it on an individual states something untrue. We never collect personal TINs, and
+        // the company TIN already rides on business_detail where it belongs.
+        const entityType = BUSINESS_TYPE_MAP[(partner.business_type || '').toLowerCase()] || 'CORPORATION'
+        const personalTin = (entityType === 'INDIVIDUAL' || entityType === 'SOLE_PROPRIETORSHIP')
+            ? (partner.tax_id || undefined)
+            : undefined
+
         // PH_CARDS requires a minimum of 1 INCORPORATOR and 1 PIC in individual_details,
-        // and (per Xendit's cards guide) an address on each individual. The base KYC
-        // accepts these too, so we set them unconditionally.
+        // and (per Xendit's cards guide) an address on each individual.
+        //
+        // Who is which MATTERS — a reviewer cross-checks these against the GIS and
+        // Secretary's Certificate. Stakeholders carry the recorded corporate roles, so
+        // they decide ownership; the authorized person is whoever is authorised to
+        // transact, which is a PIC, not automatically an owner. Previously the authorized
+        // person was hardcoded to INCORPORATOR/owner, which declared (for example) an
+        // Executive Assistant as a company owner and then bolted on a duplicate PIC.
         const individuals: any[] = []
         let hasIncorporator = false
         let hasPic = false
+
+        for (const s of stakeholders ?? []) {
+            const roles = s.roles || []
+            const isOwner = roles.includes('BUSINESS_OWNER')
+            const isDirector = roles.includes('BOARD_DIRECTOR')
+            // Owners and directors are the incorporating parties; anyone else is a PIC.
+            const t = (isOwner || isDirector) ? 'INCORPORATOR' : 'PIC'
+            if (t === 'INCORPORATOR') hasIncorporator = true; else hasPic = true
+            individuals.push({
+                given_names: s.first_name,
+                surname: s.last_name || '-',
+                nationality: toCountryCode(s.nationality),
+                date_of_birth: s.date_of_birth || undefined,
+                address: mkAddr((s as any).address) || addr,
+                // NOTE: s.identification.number is a PASSPORT/UMID/etc number, NOT a tax id.
+                // Sending it as tax_identification_number was a straight mislabel.
+                type: t,
+                role: isOwner ? 'owner' : isDirector ? 'director' : 'stakeholder',
+            })
+        }
+
         if (partner.authorized_person_first_name || partner.representative_name) {
             const fallback = (partner.representative_name || '').trim().split(' ')
+            // Only promote them to INCORPORATOR when no stakeholder already establishes
+            // ownership — i.e. a sole proprietor / individual, where they ARE the owner.
+            const authorizedIsOwner = !hasIncorporator
             individuals.push({
                 given_names: partner.authorized_person_first_name || fallback[0] || 'Partner',
                 surname: partner.authorized_person_last_name || (fallback.length > 1 ? fallback.slice(1).join(' ') : '-'),
-                nationality: partner.authorized_person_nationality || partner.nationality || 'PH',
+                nationality: toCountryCode(partner.authorized_person_nationality || partner.nationality),
                 date_of_birth: partner.authorized_person_date_of_birth || undefined,
                 gender: partner.authorized_person_gender || undefined,
                 place_of_birth: partner.place_of_birth || undefined,
@@ -280,34 +336,20 @@ serve(async (req: Request) => {
                     ? `${partner.authorized_person_mobile_country_code || ''}${partner.authorized_person_mobile_number}`
                     : (partner.contact_number || undefined),
                 address: mkAddr(partner.authorized_person_address) || addr,
-                tax_identification_number: partner.tax_id || undefined,
-                type: 'INCORPORATOR',
-                role: 'owner',
+                tax_identification_number: personalTin,
+                type: authorizedIsOwner ? 'INCORPORATOR' : 'PIC',
+                role: authorizedIsOwner ? 'owner' : (partner.authorized_person_role || 'authorized person'),
             })
-            hasIncorporator = true
+            if (authorizedIsOwner) hasIncorporator = true; else hasPic = true
         }
-        for (const s of stakeholders ?? []) {
-            const isOwner = (s.roles || []).includes('BUSINESS_OWNER')
-            const isDirector = (s.roles || []).includes('BOARD_DIRECTOR')
-            const t = isOwner ? 'INCORPORATOR' : 'PIC'
-            if (t === 'INCORPORATOR') hasIncorporator = true; else hasPic = true
-            individuals.push({
-                given_names: s.first_name,
-                surname: s.last_name || '-',
-                nationality: s.nationality || 'PH',
-                date_of_birth: s.date_of_birth || undefined,
-                address: mkAddr((s as any).address) || addr,
-                tax_identification_number: (s.identification as any)?.number || undefined,
-                type: t,
-                role: isOwner ? 'owner' : isDirector ? 'director' : 'stakeholder',
-            })
-        }
+
         if (individuals.length === 0) {
             individuals.push({ given_names: partner.business_name || 'Partner', surname: '-', address: addr, type: 'INCORPORATOR', role: 'owner' })
             hasIncorporator = true
         }
         if (!hasIncorporator) { individuals[0].type = 'INCORPORATOR'; individuals[0].role = 'owner'; hasIncorporator = true }
-        // Guarantee at least one PIC (Person In Charge / contact person).
+        // Backstop only — with the authorized person now defaulting to PIC this rarely
+        // fires, so it no longer duplicates a person already listed above.
         if (!hasPic) {
             individuals.push({
                 given_names: partner.contact_person_first_name || partner.authorized_person_first_name || (partner.representative_name || 'Contact').split(' ')[0] || 'Contact',
@@ -323,9 +365,44 @@ serve(async (req: Request) => {
             hasPic = true
         }
 
+        // website_url is REQUIRED — Xendit accepts POST /account_holders without it, then
+        // rejects the link step with INSUFFICIENT_ACCOUNT_HOLDER_DATA, so its absence only
+        // shows up after an account holder already exists. Resolve it in preference order:
+        //   1. the partner's own site (social_links.website) — what a reviewer expects
+        //   2. their verified custom domain
+        //   3. their HangHut storefront, which IS their public shopfront
+        //   4. hanghut.com — last resort for a partner with no slug yet; still a page
+        //      showing the platform they trade through, rather than sending nothing.
+        // Stored values are user-typed and routinely lack a scheme ("thekoolpals.com"),
+        // which would fail URL validation, so normalize before sending.
+        const withScheme = (raw: unknown): string | null => {
+            const v = typeof raw === 'string' ? raw.trim() : ''
+            if (!v) return null
+            const url = /^https?:\/\//i.test(v) ? v : `https://${v}`
+            try {
+                const parsed = new URL(url)
+                // Reject a bare token like "n/a" that normalizes to a hostname with no dot.
+                return parsed.hostname.includes('.') ? parsed.toString() : null
+            } catch {
+                return null
+            }
+        }
+
+        const socialWebsite = (partner.social_links as any)?.website
+            ?? (partner.branding as any)?.social_links?.website
+
+        const websiteUrl =
+            withScheme(socialWebsite)
+            ?? (partner.custom_domain_verified ? withScheme(partner.custom_domain) : null)
+            ?? (partner.slug ? `https://hanghut.com/${partner.slug}` : null)
+            ?? 'https://hanghut.com'
+
+        console.log(`🌐 website_url for ${partner_id}: ${websiteUrl}`)
+
         const accountHolderPayload = {
+            website_url: websiteUrl,
             business_detail: {
-                type: BUSINESS_TYPE_MAP[(partner.business_type || '').toLowerCase()] || 'CORPORATION',
+                type: entityType,
                 legal_name: partner.business_name,
                 trading_name: partner.business_name,
                 description: partner.description || `HangHut partner: ${partner.business_name}`,
@@ -343,16 +420,33 @@ serve(async (req: Request) => {
                 : (partner.contact_number || undefined),
         }
 
-        console.log(`🏢 Creating account_holder for ${partner_id}:`, JSON.stringify(accountHolderPayload))
+        // RETRY SAFETY. The link step can fail after the account holder exists (that is
+        // exactly how the missing website_url surfaced), and we persist the id in that
+        // branch. Re-POSTing here would mint a SECOND account holder at Xendit for the
+        // same partner and abandon the first — unrecoverable from our side. So when we
+        // already hold an id, PATCH it with the corrected payload and reuse it.
+        const existingHolderId = partner.xendit_account_holder_id as string | null
 
-        const holderRes = await fetch(`${XENDIT_API}/account_holders`, {
-            method: 'POST',
-            headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
-            body: JSON.stringify(accountHolderPayload),
-        })
+        const holderRes = existingHolderId
+            ? await fetch(`${XENDIT_API}/account_holders/${existingHolderId}`, {
+                method: 'PATCH',
+                headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+                body: JSON.stringify(accountHolderPayload),
+            })
+            : await fetch(`${XENDIT_API}/account_holders`, {
+                method: 'POST',
+                headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+                body: JSON.stringify(accountHolderPayload),
+            })
+
+        console.log(
+            `🏢 ${existingHolderId ? `Updating account_holder ${existingHolderId}` : 'Creating account_holder'} for ${partner_id}:`,
+            JSON.stringify(accountHolderPayload)
+        )
+
         const holderData = await holderRes.json()
         if (!holderRes.ok) {
-            console.error('❌ create account_holder failed:', JSON.stringify(holderData))
+            console.error('❌ account_holder write failed:', JSON.stringify(holderData))
             await supabaseAdmin.from('partner_gateway_accounts').upsert({
                 partner_id, provider: 'xendit', account_id: subAccountId, raw_response: holderData,
                 updated_at: new Date().toISOString(),
@@ -360,8 +454,16 @@ serve(async (req: Request) => {
             return json({ error: 'Failed to create Xendit account holder', details: holderData, code: 'XENDIT_KYC_ERROR' }, holderRes.status)
         }
 
-        const accountHolderId = holderData.id
-        console.log(`✅ account_holder created: ${accountHolderId}`)
+        // On PATCH some responses echo no id — fall back to the one we already hold.
+        const accountHolderId = holderData.id || existingHolderId
+        console.log(`✅ account_holder ${existingHolderId ? 'updated' : 'created'}: ${accountHolderId}`)
+
+        // Persist immediately on create too, not just in the link-failure branch — a crash
+        // between here and the link would otherwise strand an unreferenced Xendit account.
+        if (!existingHolderId && accountHolderId) {
+            await supabaseAdmin.from('partners')
+                .update({ xendit_account_holder_id: accountHolderId }).eq('id', partner_id)
+        }
 
         const linkRes = await fetch(`${XENDIT_API}/v2/accounts/${subAccountId}`, {
             method: 'PATCH',
