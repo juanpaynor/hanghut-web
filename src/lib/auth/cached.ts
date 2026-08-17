@@ -90,11 +90,19 @@ export const getUserRole = cache(async (userId: string): Promise<UserRole | null
     // Check team membership
     const { data: member } = await supabase
         .from('partner_team_members')
-        .select('partner_id, role')
+        .select('partner_id, role, is_platform_support')
         .eq('user_id', userId)
         .maybeSingle()
 
     if (member) {
+        // A platform-support seat is owner-equivalent. Settings (and anything else
+        // gated on 'owner') is otherwise unreachable for a team member — the four
+        // assignable roles all sit below it — so staff helping a partner configure
+        // their org would have no way in without taking the client's ownership away.
+        // The row itself is hidden from the partner's Team page in getTeamMembers().
+        if ((member as any).is_platform_support === true) {
+            return { role: 'owner', partnerId: member.partner_id }
+        }
         return { role: member.role as UserRole['role'], partnerId: member.partner_id }
     }
 

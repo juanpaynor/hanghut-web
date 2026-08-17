@@ -12,11 +12,15 @@ export async function getTeamMembers(partnerId: string) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
 
-    // Get Active Members
+    // Get Active Members.
+    // Platform-support seats are excluded — they are HangHut staff, not the partner's
+    // own team, and listing them would offer Remove/Change-role controls for a row the
+    // partner does not administer.
     const { data: members, error: membersError } = await supabase
         .from('partner_team_members')
         .select('id, role, created_at, user_id')
         .eq('partner_id', partnerId)
+        .eq('is_platform_support', false)
 
     if (membersError) {
         console.error('Error fetching members:', membersError)
@@ -349,11 +353,18 @@ export async function updateMemberRole(memberId: string, newRole: string) {
 
     const { data: member } = await adminClient
         .from('partner_team_members')
-        .select('partner_id, user_id, role')
+        .select('partner_id, user_id, role, is_platform_support')
         .eq('id', memberId)
         .single()
 
     if (!member) return { error: 'Member not found' }
+
+    // Platform-support seats are not part of the partner's team and are hidden from
+    // the list this action drives — refuse rather than silently no-op, so a stale id
+    // surfaces as an error instead of looking like it worked.
+    if ((member as any).is_platform_support === true) {
+        return { error: 'Member not found' }
+    }
 
     // Only owner can change roles
     const { data: ownerPartner } = await supabase
@@ -392,10 +403,14 @@ export async function updateMemberRole(memberId: string, newRole: string) {
 export async function removeTeamMember(memberId: string) {
     const supabase = await createClient()
 
+    // Never removable through the partner-facing team UI: a platform-support seat is
+    // hidden from that list, so any delete naming one came from a guessed/stale id
+    // rather than a visible control.
     const { error } = await supabase
         .from('partner_team_members')
         .delete()
         .eq('id', memberId)
+        .eq('is_platform_support', false)
 
     if (error) {
         console.error('Error removing team member:', error)
