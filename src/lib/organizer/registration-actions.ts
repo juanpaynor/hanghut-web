@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import { RegistrationQuestion } from '@/components/organizer/registration-questions-manager'
+import { getActingPartnerId } from '@/lib/auth/cached'
 
 export async function saveRegistrationQuestions(eventId: string, questions: RegistrationQuestion[]) {
     const supabase = await createClient()
@@ -11,13 +12,9 @@ export async function saveRegistrationQuestions(eventId: string, questions: Regi
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
 
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-    if (!partner) return { error: 'Partner account not found' }
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (!actingPartnerId) return { error: 'Partner account not found' }
+    const partner = { id: actingPartnerId }
 
     // Verify event ownership
     const { data: event } = await supabase

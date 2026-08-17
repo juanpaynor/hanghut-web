@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+import { getActingPartnerId } from '@/lib/auth/cached'
 
 const profileSchema = z.object({
     business_name: z.string().min(2, 'Business name must be at least 2 characters'),
@@ -145,16 +146,16 @@ export async function updatePartnerProfile(
 
     const { data } = validatedFields
 
-    // Get partner ID
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
+    // The acting partner — ownership, or an owner-equivalent platform-support seat.
+    // A plain `.eq('user_id', user.id)` here answers "which partner do you OWN", which
+    // is why a support seat got "Partner profile not found" while the page itself
+    // rendered (that gate goes through getUserRole, which does honour the seat).
+    const actingPartnerId = await getActingPartnerId(user.id)
 
-    if (!partner) {
+    if (!actingPartnerId) {
         return { message: 'Partner profile not found' }
     }
+    const partner = { id: actingPartnerId }
 
     // Use service role for file uploads
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -287,10 +288,13 @@ export async function updateMembershipTabVisibility(show: boolean): Promise<{ er
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
 
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (!actingPartnerId) return { error: 'Partner account not found' }
+
     const { data: partner } = await supabase
         .from('partners')
         .select('id, slug')
-        .eq('user_id', user.id)
+        .eq('id', actingPartnerId)
         .single()
 
     if (!partner) return { error: 'Partner account not found' }

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { formatInManila } from '@/lib/datetime'
+import { getActingPartnerId } from '@/lib/auth/cached'
 
 // Edge functions must be called via the raw Supabase project URL, not the custom domain
 const SUPABASE_FUNCTIONS_URL = 'https://rahhezqtkpvkialnduft.supabase.co/functions/v1'
@@ -119,13 +120,9 @@ export async function approveRegistration(
     if (!user) return { success: false, error: 'Unauthorized' }
 
     // Explicit ownership check — don't rely on RLS silently blocking
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-    if (!partner) return { success: false, error: 'Unauthorized' }
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (!actingPartnerId) return { success: false, error: 'Unauthorized' }
+    const partner = { id: actingPartnerId }
 
     const { data: eventCheck } = await supabase
         .from('events')
@@ -338,13 +335,9 @@ export async function rejectRegistration(
     if (!user) return { success: false, error: 'Unauthorized' }
 
     // Explicit ownership check
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-    if (!partner) return { success: false, error: 'Unauthorized' }
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (!actingPartnerId) return { success: false, error: 'Unauthorized' }
+    const partner = { id: actingPartnerId }
 
     const { data: eventCheck } = await supabase
         .from('events')

@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
+import { getActingPartnerId } from '@/lib/auth/cached'
 
 export async function updatePartnerBranding(partnerId: string, branding: {
     colors?: {
@@ -52,16 +53,20 @@ export async function updatePartnerBranding(partnerId: string, branding: {
         .single()
 
     if (!partner) {
-        // Check team membership (owner only for branding)
+        // Branding is owner-level. A team member can never hold role='owner' (the four
+        // assignable roles exclude it), so the only non-owner who may edit branding is a
+        // platform-support seat, which is owner-equivalent by design.
         const { data: teamMember } = await supabase
             .from('partner_team_members')
-            .select('role')
+            .select('role, is_platform_support')
             .eq('user_id', user.id)
             .eq('partner_id', partnerId)
-            .eq('role', 'owner')
-            .single()
+            .maybeSingle()
 
-        if (!teamMember) {
+        const mayEditBranding = !!teamMember
+            && ((teamMember as any).is_platform_support === true || teamMember.role === 'owner')
+
+        if (!mayEditBranding) {
             return { error: 'Permission denied. Only owners can update branding.' }
         }
 
@@ -121,15 +126,10 @@ export async function uploadBrandingImage(partnerId: string, file: File, type: '
         return { error: 'Not authenticated' }
     }
 
-    // Verify ownership
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('id', partnerId)
-        .eq('user_id', user.id)
-        .single()
+    // Verify ownership (or an owner-equivalent platform-support seat)
+    const actingPartnerId = await getActingPartnerId(user.id)
 
-    if (!partner) {
+    if (actingPartnerId !== partnerId) {
         return { error: 'Permission denied' }
     }
 

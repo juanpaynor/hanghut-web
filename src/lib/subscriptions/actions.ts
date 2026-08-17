@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { calculatePlatformFee } from './fees'
 import { getPartnerMonthlyRevenue } from './access'
+import { getActingPartnerId } from '@/lib/auth/cached'
 
 // ─────────────────────────────────────────────
 // CHECKOUT
@@ -210,11 +211,12 @@ export async function createSubscriptionTier(data: {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
 
-    const { data: partner } = await supabase
+    const actingPartnerId = await getActingPartnerId(user.id)
+    const { data: partner } = actingPartnerId ? await supabase
         .from('partners')
         .select('id, kyc_status, verified, subscriptions_enabled')
-        .eq('user_id', user.id)
-        .single()
+        .eq('id', actingPartnerId)
+        .single() : { data: null }
 
     if (!partner) return { error: 'Partner account not found' }
     if (!partner.subscriptions_enabled) {
@@ -350,11 +352,12 @@ export async function createSubscriptionPost(data: {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
 
-    const { data: partner } = await supabase
+    const actingPartnerId = await getActingPartnerId(user.id)
+    const { data: partner } = actingPartnerId ? await supabase
         .from('partners')
         .select('id, subscriptions_enabled')
-        .eq('user_id', user.id)
-        .single()
+        .eq('id', actingPartnerId)
+        .single() : { data: null }
 
     if (!partner) return { error: 'Partner account not found' }
     if (!partner.subscriptions_enabled) {
@@ -416,13 +419,9 @@ export async function upsertEventDiscount(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
 
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-    if (!partner) return { error: 'Partner account not found' }
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (!actingPartnerId) return { error: 'Partner account not found' }
+    const partner = { id: actingPartnerId }
 
     // Ownership check — verify event belongs to this partner
     const { data: event } = await supabase
@@ -461,13 +460,9 @@ export async function deleteEventDiscount(eventId: string, subscriptionTierId: s
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
 
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-    if (!partner) return { error: 'Partner account not found' }
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (!actingPartnerId) return { error: 'Partner account not found' }
+    const partner = { id: actingPartnerId }
 
     // Ownership check
     const { data: event } = await supabase
@@ -507,13 +502,9 @@ export async function updateClaimStatus(
     if (!user) return { error: 'Not authenticated' }
 
     // Resolve the caller's partner account
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-    if (!partner) return { error: 'Partner account not found' }
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (!actingPartnerId) return { error: 'Partner account not found' }
+    const partner = { id: actingPartnerId }
 
     // Explicit ownership check — the claim must belong to THIS partner.
     // RLS updates can fail silently, so we verify ownership ourselves and

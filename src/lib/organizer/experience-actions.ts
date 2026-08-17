@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { getActingPartnerId } from '@/lib/auth/cached'
 
 function experienceDatetime() {
     // Keeps experience out of the hangout feed (which filters by upcoming datetime)
@@ -32,13 +33,9 @@ export async function createExperience(data: {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
 
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-    if (!partner) return { error: 'Partner account not found' }
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (!actingPartnerId) return { error: 'Partner account not found' }
+    const partner = { id: actingPartnerId }
 
     if (!data.title?.trim()) return { error: 'Title is required' }
     if (!data.description?.trim()) return { error: 'Description is required' }

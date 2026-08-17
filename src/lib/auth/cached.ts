@@ -16,6 +16,39 @@ export const getAuthUser = cache(async () => {
     return { user, error }
 })
 
+/**
+ * The partner this user is ACTING ON — ownership first, then a platform-support seat.
+ *
+ * Server actions historically resolved the partner with
+ * `from('partners').select('id').eq('user_id', user.id)`, which answers "which partner
+ * does this user OWN". A platform-support seat is not an owner row, so every one of
+ * those call sites returns nothing and reports "Partner profile not found" even though
+ * getUserRole() reports 'owner'. Use this instead wherever an action needs the acting
+ * partner, so the read gate and the write gate agree.
+ *
+ * Returns null when the user has neither — callers keep their existing not-found path.
+ */
+export const getActingPartnerId = cache(async (userId: string): Promise<string | null> => {
+    const supabase = await createClient()
+
+    const { data: owned } = await supabase
+        .from('partners')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+    if (owned?.id) return owned.id
+
+    const { data: support } = await supabase
+        .from('partner_team_members')
+        .select('partner_id')
+        .eq('user_id', userId)
+        .eq('is_platform_support', true)
+        .maybeSingle()
+
+    return support?.partner_id ?? null
+})
+
 export const getPartner = cache(async (userId: string) => {
     const supabase = await createClient()
 
