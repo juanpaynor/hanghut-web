@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { Loader2, Minus, Plus, RotateCcw, ArrowLeft, Armchair } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
 
 // ─── RPC payload types (shared contract with the Flutter app) ───────────────
 
@@ -153,6 +154,9 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     // can release these holds right before assign_seats_to_intent takes its own —
     // a foreign-session hold would otherwise block the buyer's OWN checkout.
     const sessionIdRef = useRef('')
+    // Mirrored into state as well: the hold countdown is a hook, and a ref
+    // mutation would not re-render it into existence on first mount.
+    const [sessionId, setSessionId] = useState<string | null>(null)
     useEffect(() => {
         let sid = sessionStorage.getItem('hh_seat_session')
         if (!sid) {
@@ -160,6 +164,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
             sessionStorage.setItem('hh_seat_session', sid)
         }
         sessionIdRef.current = sid
+        setSessionId(sid)
     }, [])
 
     // Release held seats when the picker closes WITHOUT continuing to checkout
@@ -516,6 +521,26 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         const loaded = geometryRef.current?.sections.find((s: any) => s.id === section.id)
         zoomToSection(loaded ?? section)
     }, [loadSection, zoomToSection])
+
+    // Hold countdown. On expiry the server has already released the seats (every
+    // availability check filters on expires_at > now()), so the UI's job is only
+    // to stop showing a selection the buyer no longer owns.
+    const handleHoldExpired = useCallback(() => {
+        if (selectedIdsRef.current.length === 0) return
+        setSelectedSeatIds([])
+        void refreshStatus()
+        toast({
+            title: 'Seat hold expired',
+            description: 'Your seats were released and are available to other buyers again. Please pick your seats once more.',
+            variant: 'destructive',
+        })
+    }, [refreshStatus, toast])
+
+    const { secondsLeft: holdSecondsLeft } = useSeatHoldTimer(
+        sessionId,
+        selectedSeatIds.length,
+        handleHoldExpired,
+    )
 
     const handleSeatTap = useCallback((seat: MapSeat) => {
         const supabase = createClient()
@@ -934,6 +959,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                     </p>
                 ) : (
                     <div className="space-y-3">
+                        <SeatHoldTimer secondsLeft={holdSecondsLeft} />
                         <div className="flex flex-wrap gap-1.5">
                             {selectedSeats
                                 .slice()

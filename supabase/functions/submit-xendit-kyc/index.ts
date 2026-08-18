@@ -7,7 +7,7 @@ const corsHeaders = {
 }
 
 /**
- * submit-xendit-kyc  (v25 — truthful incorporator/PIC + ISO nationality; LEGACY API)
+ * submit-xendit-kyc  (v26 — required address.street_line2; LEGACY Account Holder API)
  *
  * Doc types + industry code aligned to Xendit's official PH requirements table,
  * VALIDATED against the Xendit dev sandbox (POST /account_holders → HTTP 200):
@@ -239,9 +239,23 @@ serve(async (req: Request) => {
         const selfie = fid('authorized_person', 'SELFIE')
         if (selfie) kycDocuments.push({ type: 'SELFIE_WITH_PRIMARY_ID_DOCUMENT', country: 'PH', file_id: selfie })
 
+        // Xendit REQUIRES address.street_line2 — omitting it fails the link step with
+        // INSUFFICIENT_ACCOUNT_HOLDER_DATA {"field":["address","street_line2"]}. Most PH
+        // addresses have no second line, and our form leaves it blank, so `|| undefined`
+        // dropped the key entirely. Send an explicit placeholder instead; '-' matches the
+        // convention already used for a missing surname elsewhere in this payload.
+        //
+        // Applied to BOTH the business address and every individual address — the two
+        // people on this submission are also missing street_line2, so fixing only the
+        // business one would just move the rejection one field along.
+        const line2 = (v: unknown) => {
+            const s = typeof v === 'string' ? v.trim() : ''
+            return s || '-'
+        }
+
         const addr = (partner.street_line1 || partner.city) ? {
             street_line1: partner.street_line1 || undefined,
-            street_line2: partner.street_line2 || undefined,
+            street_line2: line2(partner.street_line2),
             city: partner.city || undefined,
             province_state: partner.province_state || undefined,
             postal_code: partner.postal_code || undefined,
@@ -253,7 +267,7 @@ serve(async (req: Request) => {
         // PH_CARDS), falling back to the business address when a person didn't fill one.
         const mkAddr = (a: any) => (a && (a.street_line1 || a.city)) ? {
             street_line1: a.street_line1 || undefined,
-            street_line2: a.street_line2 || undefined,
+            street_line2: line2(a?.street_line2),
             city: a.city || undefined,
             province_state: a.province_state || undefined,
             postal_code: a.postal_code || undefined,

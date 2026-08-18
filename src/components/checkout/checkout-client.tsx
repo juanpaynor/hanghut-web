@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
@@ -23,6 +23,7 @@ import { hexToHsl } from '@/lib/utils'
 import { resolvePlatformPct, resolveFixedFee, computePassedFees } from '@/lib/payment/platform-fees'
 import { CheckCircle2, ClipboardList } from 'lucide-react'
 import { formatEventShort } from '@/lib/datetime'
+import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
 
 // Conditionally rendered (approval/invite events or events with custom questions),
 // so it's code-split: normal checkouts never load this chunk. Default SSR keeps
@@ -114,6 +115,24 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     const [showOrganizerTos, setShowOrganizerTos] = useState(false)
     const [newsletterSubscribed, setNewsletterSubscribed] = useState(false)
 
+    // ── Seat hold countdown ───────────────────────────────────────────────────
+    // Reads the SAME picker session id, so the countdown continues here instead
+    // of restarting. Once it hits zero the seats are genuinely gone (the server
+    // frees them the instant expires_at passes), so paying would either fail in
+    // assign_seats_to_intent or hand the buyer different seats than they chose —
+    // hence the pay button is blocked rather than merely warned about.
+    const [seatSessionId, setSeatSessionId] = useState<string | null>(null)
+    useEffect(() => {
+        if (selectedSeatIds.length === 0) return
+        setSeatSessionId(sessionStorage.getItem('hh_seat_session'))
+    }, [selectedSeatIds.length])
+
+    const { secondsLeft: holdSecondsLeft } = useSeatHoldTimer(
+        seatSessionId,
+        selectedSeatIds.length,
+    )
+    const seatHoldExpired = selectedSeatIds.length > 0 && holdSecondsLeft === 0
+
     // Fee Logic — resolve the partner's platform rate from the single source of
     // truth (uses `??` so a deliberate 0% / ₱0 stays 0, and ignores pricing_model
     // so web + webhook agree on one predicate).
@@ -190,6 +209,18 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     }
 
     const handlePayment = async () => {
+        // Seats already released server-side — proceeding would either fail in
+        // assign_seats_to_intent or silently assign DIFFERENT seats than the ones
+        // on screen. Send the buyer back to re-pick instead.
+        if (seatHoldExpired) {
+            toast({
+                title: "Seat hold expired",
+                description: "Your seats were released and may have been taken. Please choose your seats again.",
+                variant: "destructive"
+            })
+            return
+        }
+
         // STRICT PROTOCOL: Name, Email, and Phone are REQUIRED
         if (!effectiveUser && (!guestDetails.name || !guestDetails.email || !guestDetails.phone)) {
             toast({
@@ -496,6 +527,15 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8 pb-28 lg:pb-0">
             <div className="lg:col-span-3 space-y-6">
 
+                {/* Seat hold countdown — same session id the picker held under, so
+                    this continues that timer rather than starting a new one. */}
+                {selectedSeatIds.length > 0 && (
+                    <SeatHoldTimer
+                        secondsLeft={holdSecondsLeft}
+                        label="Your seats are held for"
+                    />
+                )}
+
                 {/* 1. Account / Guest Info */}
                 <Card className="border-border/50 shadow-sm">
                     <CardHeader>
@@ -686,7 +726,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                         <Button
                             className="hidden lg:flex w-full h-12 text-lg font-semibold shadow-md hover:shadow-lg transition-all mt-1"
                             onClick={handlePayClick}
-                            disabled={isLoading}
+                            disabled={isLoading || seatHoldExpired}
                         >
                             {isLoading ? (
                                 <>
@@ -830,7 +870,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                         <span className="text-[11px] text-muted-foreground">Total</span>
                         <span className="font-bold text-lg text-primary">₱{(total - discount).toLocaleString()}</span>
                     </div>
-                    <Button className="flex-1 h-12 text-base font-semibold" onClick={handlePayClick} disabled={isLoading}>
+                    <Button className="flex-1 h-12 text-base font-semibold" onClick={handlePayClick} disabled={isLoading || seatHoldExpired}>
                         {isLoading ? (
                             <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Processing...</>
                         ) : (total - discount) <= 0 ? (
