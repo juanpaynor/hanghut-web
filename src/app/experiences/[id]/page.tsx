@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ShieldCheck, Users, Clock, CheckCircle, ArrowLeft, MapPin, Package, Star } from 'lucide-react'
+import { ShieldCheck, Users, Clock, CheckCircle, ArrowLeft, MapPin, Package, Star, CalendarOff } from 'lucide-react'
 import type { Metadata } from 'next'
 import { ExperienceHeroCarousel } from '@/components/experiences/experience-hero-carousel'
 import { ExperienceSlotPicker } from '@/components/experiences/experience-slot-picker'
@@ -152,6 +152,15 @@ export default async function ExperienceDetailPage({ params }: { params: Promise
     const successUrl = `${baseUrl}/experiences/success`
     const failureUrl = `${baseUrl}/experiences/${id}`
     const symbol = exp.currency === 'PHP' ? '₱' : (exp.currency ?? '₱')
+
+    // Whether anything is actually bookable. The slot picker filters schedules to
+    // future + non-cancelled, so when none qualify it renders a calendar that simply
+    // never offers a date — the buyer gets no explanation and no way forward. Detect
+    // it here and say so plainly instead. Matches the index page's listing filter, so
+    // the two can't disagree about what "bookable" means.
+    const hasUpcomingSlot = (schedules as any[]).some(
+        (s: any) => s?.status !== 'cancelled' && new Date(s.start_time).getTime() > Date.now()
+    )
 
     // Stats
     const maxGuests = (schedules as any[]).reduce((max: number, s: any) => Math.max(max, s.max_guests ?? 0), 0)
@@ -450,29 +459,73 @@ export default async function ExperienceDetailPage({ params }: { params: Promise
                                     </div>
                                 </div>
                                 <CardContent className="pt-5">
-                                    {!isLoggedIn && (
-                                        <LoginNudge
-                                            label="Have an account? Sign in to skip the form"
-                                            className="mb-4"
-                                        />
-                                    )}
-                                    <ExperienceSlotPicker
-                                        tableId={exp.id}
-                                        schedules={schedules as any[]}
-                                        basePricePerPerson={Number(exp.price_per_person)}
-                                        currency={exp.currency ?? 'PHP'}
-                                        successUrl={successUrl}
-                                        failureUrl={failureUrl}
-                                        isLoggedIn={isLoggedIn}
-                                    />
+                                    {!hasUpcomingSlot ? (
+                                        // Reachable via a direct/shared link even though the index now
+                                        // filters these out — so it has to stand on its own.
+                                        <div className="py-4 text-center">
+                                            <CalendarOff className="mx-auto h-8 w-8 text-muted-foreground/40" />
+                                            <p className="mt-3 font-semibold">No dates available yet</p>
+                                            <p className="mt-1 text-sm text-muted-foreground">
+                                                {hostName} hasn&apos;t opened any upcoming dates for this experience.
+                                                Check back soon.
+                                            </p>
+                                            <Link
+                                                href="/experiences"
+                                                className="mt-4 inline-flex items-center justify-center h-10 px-5 rounded-md border border-border font-medium text-sm hover:bg-muted transition-colors"
+                                            >
+                                                Browse other experiences
+                                            </Link>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {/* "Sign in to skip the form" described a guest form that no
+                                                longer exists — experiences are account-only now. */}
+                                            {!isLoggedIn && (
+                                                <LoginNudge
+                                                    label="Sign in to book this experience"
+                                                    className="mb-4"
+                                                />
+                                            )}
+                                            <ExperienceSlotPicker
+                                                tableId={exp.id}
+                                                schedules={schedules as any[]}
+                                                basePricePerPerson={Number(exp.price_per_person)}
+                                                currency={exp.currency ?? 'PHP'}
+                                                successUrl={successUrl}
+                                                failureUrl={failureUrl}
+                                                isLoggedIn={isLoggedIn}
+                                            />
 
-                                    {/* Refund policy */}
-                                    <div className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">
-                                        <ShieldCheck className="h-4 w-4 text-green-500 shrink-0 mt-0" />
-                                        <span>
-                                            <strong className="text-foreground">Protected Booking.</strong> Full refund if you cancel up to 48 hours before the event.
-                                        </span>
-                                    </div>
+                                            {/* Refund policy.
+                                                Previously read "Full refund if you cancel up to 48 hours
+                                                before the event" — which implied self-serve cancellation
+                                                that does not exist. There is no customer-facing cancel
+                                                anywhere: request-refund is gated to the host or an admin
+                                                (a buyer calling it gets a 403), and the buyer has no
+                                                surface to see the booking on in the first place.
+
+                                                The 48-hour window is kept as the policy; only the
+                                                MECHANISM is corrected. Routing to support is not a
+                                                fallback — admins are one of the two roles request-refund
+                                                actually authorises, so support can genuinely execute it,
+                                                whereas the host section exposes no contact details at all. */}
+                                            <div className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">
+                                                <ShieldCheck className="h-4 w-4 text-green-500 shrink-0 mt-0" />
+                                                <span>
+                                                    <strong className="text-foreground">Protected Booking.</strong>{' '}
+                                                    Free cancellation up to 48 hours before the experience.
+                                                    Cancellations are arranged with your host —{' '}
+                                                    <a
+                                                        href={`mailto:support@hanghut.com?subject=${encodeURIComponent(`Cancellation request: ${exp.title}`)}`}
+                                                        className="underline underline-offset-2 hover:text-foreground"
+                                                    >
+                                                        contact support
+                                                    </a>{' '}
+                                                    and we&apos;ll sort it out with {hostName}.
+                                                </span>
+                                            </div>
+                                        </>
+                                    )}
                                 </CardContent>
                             </Card>
                         </div>
@@ -489,11 +542,17 @@ export default async function ExperienceDetailPage({ params }: { params: Promise
                         </span>
                         <span className="text-sm text-muted-foreground ml-1">/ person</span>
                     </div>
+                    {/* Don't invite a reservation that cannot be made — scrolling to an
+                        empty booking card is the dead end this whole change removes. */}
                     <a
                         href="#booking"
-                        className="inline-flex items-center justify-center h-10 px-6 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-colors"
+                        className={
+                            hasUpcomingSlot
+                                ? "inline-flex items-center justify-center h-10 px-6 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-colors"
+                                : "inline-flex items-center justify-center h-10 px-6 rounded-md border border-border text-muted-foreground font-semibold text-sm hover:bg-muted transition-colors"
+                        }
                     >
-                        Reserve Experience
+                        {hasUpcomingSlot ? 'Reserve Experience' : 'No dates yet'}
                     </a>
                 </div>
             </div>

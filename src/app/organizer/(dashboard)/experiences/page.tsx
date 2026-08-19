@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Compass, CalendarClock, ExternalLink, Pencil } from 'lucide-react'
+import { Plus, Compass, CalendarClock, ExternalLink, Pencil, AlertTriangle } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,8 +54,12 @@ export default async function ExperiencesPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {list.map((exp: any) => {
                         const schedules = exp.experience_schedules ?? []
+                        // Must use the SAME predicate as the buyer-facing index and detail
+                        // pages ('not cancelled' + future, so a sold-out date still counts).
+                        // Counting only status==='open' would show "Not visible to buyers" on
+                        // an experience that is in fact listed and merely fully booked.
                         const upcomingSlots = schedules.filter(
-                            (s: any) => s.status === 'open' && new Date(s.start_time) > new Date()
+                            (s: any) => s.status !== 'cancelled' && new Date(s.start_time) > new Date()
                         ).length
                         const heroImage = exp.images?.[0]
 
@@ -85,6 +89,23 @@ export default async function ExperiencesPage() {
                                             {exp.experience_type?.replace('_', ' ') ?? 'Experience'}
                                         </Badge>
                                     </div>
+
+                                    {/* With no upcoming date this experience is unbookable, and is now
+                                        hidden from /experiences entirely — so silence here would leave the
+                                        organizer believing it is on sale. "0 upcoming slots" in muted grey
+                                        below reads as neutral info; this has to read as a problem. */}
+                                    {upcomingSlots === 0 && (
+                                        <Link
+                                            href="/organizer/experiences/calendar"
+                                            className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
+                                        >
+                                            <AlertTriangle className="h-4 w-4 shrink-0 mt-px" />
+                                            <span>
+                                                <strong>Not visible to buyers.</strong> This experience has no
+                                                upcoming dates, so it isn&apos;t listed. Add a date →
+                                            </span>
+                                        </Link>
+                                    )}
                                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                                         <span className="flex items-center gap-1">
                                             <CalendarClock className="h-3.5 w-3.5" />

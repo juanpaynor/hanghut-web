@@ -50,13 +50,30 @@ export default async function ExperiencesPage({ searchParams }: ExperiencesPageP
             experience_schedules(id, start_time, max_guests, current_guests, status)
         `)
         .eq('is_experience', true)
+        // Was unfiltered, so cancelled/closed experiences listed as if on sale.
+        .eq('status', 'open')
         .order('created_at', { ascending: false })
 
     if (type && type !== 'all') {
         query = query.eq('experience_type', type)
     }
 
-    const { data: experiences } = await query
+    const { data: rawExperiences } = await query
+
+    // An experience with no upcoming date is not purchasable: the slot picker
+    // filters schedules to future + non-cancelled, so with none it renders an empty
+    // calendar and the buyer hits a dead end with no explanation. Listing those was
+    // costing real clicks — a ₱2,000 workshop went live with ZERO schedules.
+    //
+    // 'full' slots deliberately still count: a sold-out date is genuine supply and
+    // should stay listed (the card shows it), unlike a listing with nothing at all.
+    const now = Date.now()
+    const hasUpcomingSlot = (exp: any) =>
+        ((exp.experience_schedules ?? []) as any[]).some(
+            s => s.status !== 'cancelled' && new Date(s.start_time).getTime() > now
+        )
+
+    const experiences = (rawExperiences ?? []).filter(hasUpcomingSlot)
 
     // Fetch host names + profile photos
     const hostIds = [...new Set((experiences || []).map(e => e.host_id).filter(Boolean))]

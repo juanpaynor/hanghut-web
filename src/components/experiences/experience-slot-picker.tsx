@@ -3,10 +3,13 @@
 import { useState, useMemo } from 'react'
 import { format, parseISO, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isToday, isBefore } from 'date-fns'
 import { createClient } from '@/lib/supabase/client'
+import Link from 'next/link'
+// usePathname rather than window.location: this renders on the server first, so
+// reading window would ship one href in the HTML and a different one after
+// hydration — a mismatch, and a wrong `next` for anyone who clicks early.
+import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Loader2, CalendarClock, Users, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Loader2, CalendarClock, Users, CheckCircle2, XCircle, ChevronLeft, ChevronRight, LogIn } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 
@@ -41,13 +44,11 @@ export function ExperienceSlotPicker({
     failureUrl,
 }: ExperienceSlotPickerProps) {
     const { toast } = useToast()
+    const pathname = usePathname()
     const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
     const [quantity, setQuantity] = useState(1)
     const [loading, setLoading] = useState(false)
     const [selectedDate, setSelectedDate] = useState<Date | null>(null)
-    const [guestName, setGuestName] = useState('')
-    const [guestEmail, setGuestEmail] = useState('')
-    const [guestPhone, setGuestPhone] = useState('')
     const [calendarMonth, setCalendarMonth] = useState(() => {
         // Initialize to the month of the first future open slot
         const futureSlots = schedules
@@ -101,11 +102,15 @@ export function ExperienceSlotPicker({
             return
         }
 
+        // Server-side this would fail anyway (user_id NOT NULL), so stop it here with a
+        // useful message rather than letting the edge function return an opaque 500.
         if (!isLoggedIn) {
-            if (!guestName.trim() || !guestEmail.trim()) {
-                toast({ title: 'Contact details required', description: 'Please enter your name and email to continue.', variant: 'destructive' })
-                return
-            }
+            toast({
+                title: 'Sign in to book',
+                description: 'Experiences are booked to your account so you can message your host.',
+                variant: 'destructive',
+            })
+            return
         }
 
         setLoading(true)
@@ -120,14 +125,8 @@ export function ExperienceSlotPicker({
                 failure_url: failureUrl,
             }
 
-            if (!isLoggedIn) {
-                body.guest_details = {
-                    name: guestName.trim(),
-                    email: guestEmail.trim(),
-                    ...(guestPhone.trim() ? { phone: guestPhone.trim() } : {}),
-                }
-            }
-
+            // No guest_details branch: booking is account-only, so the edge function
+            // always receives an authenticated caller.
             const { data, error } = await supabase.functions.invoke('create-experience-intent', { body })
 
             if (error) throw new Error(error.message)
@@ -345,36 +344,33 @@ export function ExperienceSlotPicker({
                 </div>
             )}
 
-            {/* Guest details — shown for unauthenticated users after slot selection */}
+            {/* Sign-in gate — replaces the old guest-details form.
+                That form could never have worked: experience_purchase_intents.user_id is
+                NOT NULL (unlike purchase_intents and merch_orders, which are nullable), so
+                reserve_experience raised 23502 on every guest attempt, before Xendit. Guest
+                booking was offered in the UI and impossible in the database.
+
+                Requiring an account is the deliberate fix rather than dropping the
+                constraint: a paid booking inserts the buyer into table_participants (also
+                user_id NOT NULL), which is what puts them in the host's chat. A guest has no
+                user_id, so they could never message their host — guest checkout and
+                on-platform host communication are mutually exclusive here. */}
             {selectedScheduleId && !isLoggedIn && (
-                <div className="space-y-3 rounded-xl border border-border p-4 animate-in fade-in slide-in-from-top-2 duration-200">
-                    <p className="text-sm font-medium">Your contact details</p>
-                    <div className="space-y-1.5">
-                        <Label className="text-xs">Full Name <span className="text-destructive">*</span></Label>
-                        <Input
-                            placeholder="Juan dela Cruz"
-                            value={guestName}
-                            onChange={e => setGuestName(e.target.value)}
-                        />
+                <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-4 text-center animate-in fade-in slide-in-from-top-2 duration-200">
+                    <LogIn className="mx-auto h-6 w-6 text-muted-foreground" />
+                    <div>
+                        <p className="text-sm font-medium">Sign in to book</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            Experiences are booked to your account so you can message your host
+                            and manage your booking.
+                        </p>
                     </div>
-                    <div className="space-y-1.5">
-                        <Label className="text-xs">Email Address <span className="text-destructive">*</span></Label>
-                        <Input
-                            type="email"
-                            placeholder="juan@email.com"
-                            value={guestEmail}
-                            onChange={e => setGuestEmail(e.target.value)}
-                        />
-                    </div>
-                    <div className="space-y-1.5">
-                        <Label className="text-xs">Phone Number <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                        <Input
-                            type="tel"
-                            placeholder="+63 912 345 6789"
-                            value={guestPhone}
-                            onChange={e => setGuestPhone(e.target.value)}
-                        />
-                    </div>
+                    <Link
+                        href={`/experiences/login?next=${encodeURIComponent(pathname)}`}
+                        className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
+                        Sign in or create an account
+                    </Link>
                 </div>
             )}
 
@@ -389,17 +385,19 @@ export function ExperienceSlotPicker({
             {/* Book button */}
             <Button
                 onClick={handleBook}
-                disabled={!selectedScheduleId || loading || (!isLoggedIn && (!guestName.trim() || !guestEmail.trim()))}
+                disabled={!selectedScheduleId || loading || !isLoggedIn}
                 className="w-full h-12 font-semibold text-base"
             >
                 {loading ? (
                     <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing…
                     </>
-                ) : selectedScheduleId ? (
-                    `Book Now · ${symbol}${totalPrice.toLocaleString()}`
-                ) : (
+                ) : !selectedScheduleId ? (
                     'Select a Slot to Book'
+                ) : !isLoggedIn ? (
+                    'Sign in to Book'
+                ) : (
+                    `Book Now · ${symbol}${totalPrice.toLocaleString()}`
                 )}
             </Button>
         </div>
