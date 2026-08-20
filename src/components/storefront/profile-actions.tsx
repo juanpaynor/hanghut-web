@@ -49,23 +49,32 @@ export function ProfileActions({ shareUrl, partnerId, partnerName }: ProfileActi
 
         setStatus('loading')
         try {
+            // Goes through subscribe_to_partner, NOT a direct insert: RLS on
+            // partner_subscribers has no public INSERT policy, so the old insert
+            // was denied for every visitor and surfaced as "Something went wrong".
             const supabase = createClient()
-            const { error } = await supabase.from('partner_subscribers').insert({
-                partner_id: partnerId,
-                email: email.trim().toLowerCase(),
+            const { data, error } = await supabase.rpc('subscribe_to_partner', {
+                p_partner_id: partnerId,
+                p_email: email.trim(),
+                p_source: 'storefront',
             })
 
-            if (error) {
-                if (error.code === '23505') {
-                    setStatus('success')
-                    setMessage("You're already following this organizer!")
-                } else {
-                    setStatus('error')
-                    setMessage('Something went wrong. Please try again.')
-                }
+            const result = data as { success: boolean; reason?: string; already_subscribed?: boolean } | null
+
+            if (error || !result?.success) {
+                setStatus('error')
+                setMessage(
+                    result?.reason === 'invalid_email'
+                        ? "That email doesn't look right. Mind checking it?"
+                        : 'Something went wrong. Please try again.'
+                )
             } else {
                 setStatus('success')
-                setMessage("You're now following! We'll notify you about new events.")
+                setMessage(
+                    result.already_subscribed
+                        ? "You're already following this organizer!"
+                        : "You're now following! We'll notify you about new events."
+                )
                 setEmail('')
             }
         } catch {

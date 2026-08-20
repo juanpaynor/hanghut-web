@@ -15,7 +15,7 @@ import {
     Crown, Ticket, Settings, LogOut, Calendar, MapPin,
     CheckCircle2, Clock, XCircle, Download, Link2,
     Package, Megaphone, Zap, Star, Gift, QrCode, User,
-    ShoppingBag, PackageCheck, Truck,
+    ShoppingBag, PackageCheck, Truck, Compass, CalendarClock, Users,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { format } from 'date-fns'
@@ -81,6 +81,30 @@ interface MerchClaim {
     items: { name_snapshot: string; quantity: number }[]
 }
 
+/**
+ * A paid experience booking. PostgREST returns an embedded to-one as an object but
+ * resolves some relationships to a single-element array, so both shapes are allowed
+ * and normalised at render — otherwise a booking silently renders as blank.
+ */
+interface ExperienceBooking {
+    id: string
+    quantity: number
+    total_amount: number
+    status: string
+    paid_at: string | null
+    created_at: string
+    check_in_status: string | null
+    checked_in_at: string | null
+    experience: { id: string; title: string; location_name: string | null; images: string[] | null; host_id: string | null } | Array<{ id: string; title: string; location_name: string | null; images: string[] | null; host_id: string | null }> | null
+    schedule: { id: string; start_time: string; end_time: string | null } | Array<{ id: string; start_time: string; end_time: string | null }> | null
+}
+
+/** Collapse PostgREST's object-or-array to-one embed to a single row (or null). */
+function one<T>(v: T | T[] | null | undefined): T | null {
+    if (!v) return null
+    return Array.isArray(v) ? (v[0] ?? null) : v
+}
+
 interface Props {
     user: { id: string; email: string }
     profile: { display_name: string | null; email: string | null; profile_photo_url: string | null } | null
@@ -88,6 +112,7 @@ interface Props {
     tickets: TicketRow[]
     claims: Claim[]
     merchClaims?: MerchClaim[]
+    experienceBookings?: ExperienceBooking[]
 }
 
 const SUB_STATUS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
@@ -98,7 +123,7 @@ const SUB_STATUS: Record<string, { label: string; variant: 'default' | 'secondar
 }
 
 // ─── Main component ───────────────────────────────────────────
-export function AccountDashboard({ user, profile, subscriptions, tickets, claims, merchClaims = [] }: Props) {
+export function AccountDashboard({ user, profile, subscriptions, tickets, claims, merchClaims = [], experienceBookings = [] }: Props) {
     const router = useRouter()
     const { toast } = useToast()
     const supabase = createClient()
@@ -136,6 +161,22 @@ export function AccountDashboard({ user, profile, subscriptions, tickets, claims
         return event && new Date(event.start_datetime) < new Date()
     })
 
+    // Split on the SLOT's start_time, not paid_at — a booking made months ago for
+    // next week is upcoming, and a booking made yesterday for yesterday is not.
+    // A booking whose schedule row failed to embed is treated as past so it still
+    // appears somewhere rather than vanishing from both lists.
+    const bookingStart = (b: ExperienceBooking) => {
+        const t = one(b.schedule)?.start_time
+        return t ? new Date(t).getTime() : 0
+    }
+    const nowMs = Date.now()
+    const upcomingBookings = experienceBookings
+        .filter(b => bookingStart(b) >= nowMs)
+        .sort((a, b) => bookingStart(a) - bookingStart(b))
+    const pastBookings = experienceBookings
+        .filter(b => bookingStart(b) < nowMs)
+        .sort((a, b) => bookingStart(b) - bookingStart(a))
+
     return (
         <div className="min-h-screen bg-background">
             {/* Header */}
@@ -172,7 +213,7 @@ export function AccountDashboard({ user, profile, subscriptions, tickets, claims
             {/* Tabs */}
             <div className="container mx-auto px-4 py-8 max-w-3xl">
                 <Tabs defaultValue="memberships">
-                    <TabsList className="grid grid-cols-3 w-full mb-8">
+                    <TabsList className="grid grid-cols-4 w-full mb-8">
                         <TabsTrigger value="memberships" className="gap-1.5">
                             <Crown className="h-4 w-4" />
                             Memberships
@@ -188,6 +229,15 @@ export function AccountDashboard({ user, profile, subscriptions, tickets, claims
                             {upcoming.length > 0 && (
                                 <Badge variant="secondary" className="h-4 px-1 text-[10px] ml-1">
                                     {upcoming.length}
+                                </Badge>
+                            )}
+                        </TabsTrigger>
+                        <TabsTrigger value="bookings" className="gap-1.5">
+                            <Compass className="h-4 w-4" />
+                            Bookings
+                            {upcomingBookings.length > 0 && (
+                                <Badge variant="secondary" className="h-4 px-1 text-[10px] ml-1">
+                                    {upcomingBookings.length}
                                 </Badge>
                             )}
                         </TabsTrigger>
@@ -332,6 +382,44 @@ export function AccountDashboard({ user, profile, subscriptions, tickets, claims
                         )}
                     </TabsContent>
 
+                    {/* ── EXPERIENCE BOOKINGS ── */}
+                    <TabsContent value="bookings" className="space-y-6">
+                        {experienceBookings.length === 0 ? (
+                            <Card className="p-12 flex flex-col items-center text-center border-dashed">
+                                <Compass className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                                <p className="font-semibold">No bookings yet</p>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    Workshops and experiences you book will appear here.
+                                </p>
+                                <Link
+                                    href="/experiences"
+                                    className="mt-4 inline-flex h-10 items-center justify-center rounded-md border border-border px-5 text-sm font-medium hover:bg-muted transition-colors"
+                                >
+                                    Browse experiences
+                                </Link>
+                            </Card>
+                        ) : (
+                            <>
+                                {upcomingBookings.length > 0 && (
+                                    <section className="space-y-3">
+                                        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                                            Upcoming ({upcomingBookings.length})
+                                        </h2>
+                                        {upcomingBookings.map(b => <ExperienceBookingCard key={b.id} booking={b} />)}
+                                    </section>
+                                )}
+                                {pastBookings.length > 0 && (
+                                    <section className="space-y-3">
+                                        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                                            Past ({pastBookings.length})
+                                        </h2>
+                                        {pastBookings.map(b => <ExperienceBookingCard key={b.id} booking={b} />)}
+                                    </section>
+                                )}
+                            </>
+                        )}
+                    </TabsContent>
+
                     {/* ── SETTINGS ── */}
                     <TabsContent value="settings">
                         <AccountSettings userId={user.id} email={user.email} displayName={profile?.display_name ?? ''} />
@@ -339,6 +427,83 @@ export function AccountDashboard({ user, profile, subscriptions, tickets, claims
                 </Tabs>
             </div>
         </div>
+    )
+}
+
+// ─── Experience booking card ──────────────────────────────────
+function ExperienceBookingCard({ booking }: { booking: ExperienceBooking }) {
+    const exp = one(booking.experience)
+    const slot = one(booking.schedule)
+    if (!exp) return null
+
+    const startMs = slot ? new Date(slot.start_time).getTime() : 0
+    const isPast = startMs < Date.now()
+    const isCheckedIn = !!booking.checked_in_at
+    const hero = exp.images?.[0]
+
+    return (
+        <Card className={`overflow-hidden ${isPast ? 'opacity-60' : ''}`}>
+            <div className="flex gap-0">
+                {hero && (
+                    <div className="relative w-24 shrink-0">
+                        <Image src={hero} alt={exp.title} fill className="object-cover" />
+                    </div>
+                )}
+                <div className="p-4 flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                        <p className="font-bold leading-tight line-clamp-2">{exp.title}</p>
+                        {isCheckedIn && (
+                            <Badge variant="default" className="text-xs shrink-0 gap-1">
+                                <CheckCircle2 className="h-3 w-3" /> Attended
+                            </Badge>
+                        )}
+                    </div>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                        <p className="flex items-center gap-1.5">
+                            <CalendarClock className="h-3 w-3 shrink-0" />
+                            {/* Manila-pinned for the same reason as TicketCard: this renders
+                                client-side and must agree with the server-rendered detail page. */}
+                            {slot ? formatEventShort(slot.start_time) : 'Date to be confirmed'}
+                        </p>
+                        {exp.location_name && (
+                            <p className="flex items-center gap-1.5">
+                                <MapPin className="h-3 w-3 shrink-0" />
+                                {exp.location_name}
+                            </p>
+                        )}
+                        <p className="flex items-center gap-1.5">
+                            <Users className="h-3 w-3 shrink-0" />
+                            {booking.quantity} guest{booking.quantity === 1 ? '' : 's'} · ₱
+                            {Number(booking.total_amount).toLocaleString()}
+                        </p>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <Button asChild size="sm" variant="outline" className="h-8 text-xs">
+                            <Link href={`/experiences/${exp.id}`}>View experience</Link>
+                        </Button>
+                        {/* Cancelling is host/admin-only (request-refund 403s a buyer), and the
+                            host section exposes no contact details — so route to support, the
+                            other role that edge function authorises. Same destination as the
+                            detail page's 48h policy note, kept deliberately in sync. */}
+                        {!isPast && (
+                            <a
+                                href={`mailto:support@hanghut.com?subject=${encodeURIComponent(
+                                    `Cancellation request: ${exp.title}`
+                                )}&body=${encodeURIComponent(
+                                    `Booking reference: ${booking.id}\n` +
+                                    (slot ? `Date: ${formatEventShort(slot.start_time)}\n` : '') +
+                                    `Guests: ${booking.quantity}\n\nReason: `
+                                )}`}
+                                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                            >
+                                Need to cancel or change?
+                            </a>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </Card>
     )
 }
 

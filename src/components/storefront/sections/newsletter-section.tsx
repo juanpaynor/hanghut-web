@@ -30,23 +30,32 @@ export function NewsletterSection({ config, partnerId, partnerName }: Newsletter
 
         setStatus('loading')
         try {
+            // Same RLS problem as the Follow dialog in profile-actions.tsx — a
+            // direct insert here was denied for every visitor. Both now share the
+            // subscribe_to_partner RPC; only `source` differs.
             const supabase = createClient()
-            const { error } = await supabase.from('partner_subscribers').insert({
-                partner_id: partnerId,
-                email: email.trim().toLowerCase(),
+            const { data, error } = await supabase.rpc('subscribe_to_partner', {
+                p_partner_id: partnerId,
+                p_email: email.trim(),
+                p_source: 'newsletter',
             })
 
-            if (error) {
-                if (error.code === '23505') {
-                    setStatus('success')
-                    setMessage("You're already subscribed!")
-                } else {
-                    setStatus('error')
-                    setMessage('Something went wrong. Please try again.')
-                }
+            const result = data as { success: boolean; reason?: string; already_subscribed?: boolean } | null
+
+            if (error || !result?.success) {
+                setStatus('error')
+                setMessage(
+                    result?.reason === 'invalid_email'
+                        ? "That email doesn't look right. Mind checking it?"
+                        : 'Something went wrong. Please try again.'
+                )
             } else {
                 setStatus('success')
-                setMessage("You're subscribed! We'll keep you posted.")
+                setMessage(
+                    result.already_subscribed
+                        ? "You're already subscribed!"
+                        : "You're subscribed! We'll keep you posted."
+                )
                 setEmail('')
             }
         } catch {

@@ -17,6 +17,7 @@ interface HeroSectionProps {
         hero_logo_url?: string
     }
     partner: {
+        id: string
         business_name: string
         profile_photo_url?: string | null
         cover_image_url?: string | null
@@ -110,7 +111,7 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
                         <SocialButtons social={social} />
                     </div>
                     <div className="max-w-xs mx-auto">
-                        <ProfileActions shareUrl={`https://hanghut.com/${partner.slug}`} />
+                        <ProfileActions shareUrl={`https://hanghut.com/${partner.slug}`} partnerId={partner.id} partnerName={partner.business_name} />
                     </div>
                     {ctaText && ctaLink && (
                         <a
@@ -174,7 +175,7 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
                             )}
                             <SocialButtons social={social} />
                             <div className="max-w-xs">
-                                <ProfileActions shareUrl={`https://hanghut.com/${partner.slug}`} />
+                                <ProfileActions shareUrl={`https://hanghut.com/${partner.slug}`} partnerId={partner.id} partnerName={partner.business_name} />
                             </div>
                             {ctaText && ctaLink && (
                                 <a

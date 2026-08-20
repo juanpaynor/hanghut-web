@@ -54,6 +54,28 @@ export default async function AccountPage() {
         .order('created_at', { ascending: false })
         .limit(50)
 
+    // My experience bookings. Until now these existed on exactly ONE screen — the
+    // one-time /experiences/success page right after payment — so a buyer had no way
+    // to see what they had booked, and nowhere to put a cancel/reschedule action.
+    // RLS ("Users can view own experience intents") already scopes this to the buyer.
+    // Only 'completed' — pending/expired intents are abandoned carts, not bookings.
+    const { data: experienceBookings } = await supabase
+        .from('experience_purchase_intents')
+        .select(`
+            id, quantity, total_amount, status, paid_at, created_at,
+            check_in_status, checked_in_at,
+            experience:tables!experience_purchase_intents_table_id_fkey (
+                id, title, location_name, images, host_id
+            ),
+            schedule:experience_schedules!experience_purchase_intents_schedule_id_fkey (
+                id, start_time, end_time
+            )
+        `)
+        .eq('user_id', user.id)
+        .eq('status', 'completed')
+        .order('paid_at', { ascending: false })
+        .limit(50)
+
     return (
         <AccountDashboard
             user={{ id: user.id, email: user.email ?? '' }}
@@ -62,6 +84,7 @@ export default async function AccountPage() {
             tickets={(tickets || []) as any}
             claims={(claims || []) as any}
             merchClaims={(merchClaims || []) as any}
+            experienceBookings={(experienceBookings || []) as any}
         />
     )
 }

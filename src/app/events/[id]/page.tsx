@@ -1408,7 +1408,7 @@ export default async function PublicEventPage({
 
                 <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4">
                     <OrganizerHeaderLink dark />
-                    <ShareButton title={event.title} description={event.description} eventId={event.id} />
+                    <ShareButton title={event.title} description={event.description} eventId={event.id} dark />
                 </header>
 
                 {/* Hero: content floats bottom-left over the poster */}
@@ -1538,7 +1538,7 @@ export default async function PublicEventPage({
                             HANGHUT
                         </Link>
                     )}
-                    <ShareButton title={event.title} description={event.description} eventId={event.id} />
+                    <ShareButton title={event.title} description={event.description} eventId={event.id} dark />
                 </header>
 
                 {/* Full-viewport poster hero */}
@@ -1599,8 +1599,14 @@ export default async function PublicEventPage({
                     </div>
                 </section>
 
-                {/* Content section slides up over the fixed bg */}
-                <div className="relative z-20 bg-background rounded-t-3xl shadow-2xl">
+                {/* Content section slides up over the fixed bg.
+                    text-foreground is REQUIRED, not cosmetic: the layout root sets
+                    `text-white` for the dark hero, and colour inherits straight into
+                    this light panel. Anything inside without its own colour class —
+                    the organizer name, section headings — rendered white on white.
+                    <Card> was immune (it carries text-card-foreground), which is why
+                    the tickets box looked fine while the organizer block vanished. */}
+                <div className="relative z-20 bg-background text-foreground rounded-t-3xl shadow-2xl">
                     <div className="container mx-auto px-4 py-16 max-w-3xl">
                         {mainContentOrder.map(sectionId => (
                             <div key={sectionId}>{renderSection(sectionId)}</div>

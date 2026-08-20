@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ExternalLink, Share2, CalendarPlus } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 import { trackEventInteraction } from '@/lib/analytics/track-event'
 import {
@@ -137,9 +138,15 @@ interface ShareButtonProps {
     description?: string
     url?: string
     eventId?: string
+    /** Set on layouts that render this over a dark hero (poster, cinematic).
+     *  Without it the button paints text-muted-foreground — a mid grey that is
+     *  nearly invisible on black, and whose hover state (text-foreground) is
+     *  near-black on black, i.e. fully invisible. Matches OrganizerHeaderLink's
+     *  existing `dark` prop rather than inventing a second convention. */
+    dark?: boolean
 }
 
-export function ShareButton({ title, description, eventId }: ShareButtonProps) {
+export function ShareButton({ title, description, eventId, dark }: ShareButtonProps) {
     const { toast } = useToast()
 
     const handleShare = async () => {
@@ -169,7 +176,11 @@ export function ShareButton({ title, description, eventId }: ShareButtonProps) {
         <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground hover:text-foreground"
+            className={cn(
+                dark
+                    ? 'text-white/80 hover:text-white hover:bg-white/10'
+                    : 'text-muted-foreground hover:text-foreground'
+            )}
             onClick={handleShare}
         >
             <Share2 className="h-4 w-4 mr-2" /> Share this event
