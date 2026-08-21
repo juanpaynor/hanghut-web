@@ -2,7 +2,6 @@ import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { format } from 'date-fns'
 import {
@@ -13,10 +12,10 @@ import {
     Star,
     AlertTriangle,
     CheckCircle,
-    Ban,
 } from 'lucide-react'
 import Link from 'next/link'
 import { AdminTicketList } from './admin-ticket-list'
+import { EventAdminActions } from './event-admin-actions'
 import { formatInManila, formatEventTime } from '@/lib/datetime'
 
 export const dynamic = 'force-dynamic'
@@ -271,16 +270,7 @@ async function EventDetailsContent({ event }: { event: any }) {
             {/* Admin Actions */}
             <Card className="p-6 bg-card border-border">
                 <h2 className="text-xl font-bold mb-4">Admin Actions</h2>
-                <div className="flex gap-3">
-                    <Button variant="outline" className="border-border hover:bg-muted">
-                        <Star className="h-4 w-4 mr-2" />
-                        {event.is_featured ? 'Remove from Featured' : 'Feature Event'}
-                    </Button>
-                    <Button variant="destructive">
-                        <Ban className="h-4 w-4 mr-2" />
-                        Cancel Event
-                    </Button>
-                </div>
+                <EventAdminActions eventId={event.id} isFeatured={!!event.is_featured} status={event.status} />
             </Card>
         </div>
     )

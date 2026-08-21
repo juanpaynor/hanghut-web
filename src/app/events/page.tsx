@@ -19,8 +19,10 @@ export const metadata: Metadata = {
 async function EventsList() {
     const supabase = createPublicClient()
 
-    // Fetch active upcoming events + the category lookup in parallel
-    const [{ data: events }, { data: categories }] = await Promise.all([
+    // Fetch active upcoming events + the category lookup + any STARRED experiences
+    // in parallel. Experiences feed the hero carousel only — the rails and grid
+    // below stay events-only, because this is the events page.
+    const [{ data: events }, { data: categories }, { data: featuredExperiences }] = await Promise.all([
         supabase
             .from('events')
             .select(`
@@ -35,6 +37,8 @@ async function EventsList() {
                 category,
                 capacity,
                 tickets_sold,
+                is_external,
+                is_featured,
                 organizer_id,
                 organizer:partners!events_organizer_id_fkey(
                     id,
@@ -53,9 +57,54 @@ async function EventsList() {
             .select('key,label,emoji')
             .eq('is_active', true)
             .order('sort_order', { ascending: true }),
+        supabase
+            .from('tables')
+            .select(`
+                id,
+                title,
+                location_name,
+                price_per_person,
+                images,
+                host_id,
+                experience_schedules(start_time, status)
+            `)
+            .eq('is_experience', true)
+            .eq('is_featured', true),
     ])
 
-    return <EventsFilterGrid events={events || []} categories={categories || []} />
+    // Normalise a starred experience into the shape the hero renders. Only ones
+    // with a bookable date qualify — the same predicate the /experiences index
+    // uses ('not cancelled' + in the future, so a sold-out date still counts).
+    const now = Date.now()
+    const experienceSlides = (featuredExperiences ?? []).flatMap((exp: any) => {
+        const upcoming = (exp.experience_schedules ?? [])
+            .filter((sch: any) => sch.status !== 'cancelled' && new Date(sch.start_time).getTime() > now)
+            .sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+
+        if (upcoming.length === 0) return []
+
+        return [{
+            id: exp.id,
+            kind: 'experience' as const,
+            title: exp.title,
+            start_datetime: upcoming[0].start_time,
+            venue_name: exp.location_name ?? '',
+            city: null,
+            cover_image_url: exp.images?.[0] ?? null,
+            ticket_price: Number(exp.price_per_person ?? 0),
+            // Experiences are always booked on HangHut, never a redirect.
+            is_external: false,
+            is_featured: true,
+        }]
+    })
+
+    return (
+        <EventsFilterGrid
+            events={events || []}
+            categories={categories || []}
+            heroExtras={experienceSlides}
+        />
+    )
 }
 
 function EventsGridSkeleton() {

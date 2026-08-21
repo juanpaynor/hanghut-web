@@ -1,24 +1,15 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
-import { Calendar, MapPin, Ticket, ArrowUpRight } from 'lucide-react'
+import { Calendar, MapPin, Ticket, ArrowUpRight, ExternalLink } from 'lucide-react'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { formatEventDate, formatEventTime } from '@/lib/datetime'
+import { isExternal, isSoldOut as computeSoldOut, type DiscoveryEvent } from '@/lib/events/discovery'
 
 interface PublicEventCardProps {
-    event: {
-        id: string
-        title: string
-        start_datetime: string
-        venue_name: string
-        cover_image_url: string | null
-        ticket_price: number
-        event_type?: string
-        capacity?: number
-        tickets_sold?: number
-    }
+    event: DiscoveryEvent
     // From the category layer (event_categories). Falls back to event_type when absent.
     categoryLabel?: string
     categoryEmoji?: string
@@ -26,9 +17,10 @@ interface PublicEventCardProps {
 
 export function PublicEventCard({ event, categoryLabel, categoryEmoji }: PublicEventCardProps) {
     const badgeLabel = categoryLabel ?? event.event_type
-    const isSoldOut = typeof event.capacity === 'number' && typeof event.tickets_sold === 'number'
-        ? event.tickets_sold >= event.capacity
-        : false
+    // Sold-out goes through lib/events/discovery so external listings
+    // (placeholder capacity 999999) can never be reported as sold out.
+    const isSoldOut = computeSoldOut(event)
+    const external = isExternal(event)
 
     return (
         <Link href={`/events/${event.id}`} className="group block h-full">
@@ -55,6 +47,22 @@ export function PublicEventCard({ event, categoryLabel, categoryEmoji }: PublicE
 
                     {/* Price Badge */}
                     <div className="absolute top-3 right-3 flex flex-col items-end gap-2">
+                        {/* Where the buy button actually leads. 45 of 50 live events redirect
+                            off-site, and without this they are indistinguishable from the ones
+                            we own the checkout for — which is the whole point of the badge. */}
+                        {external ? (
+                            <Badge
+                                variant="outline"
+                                className="bg-background/80 text-muted-foreground border-border/60 backdrop-blur-md font-medium text-[10px] gap-1"
+                            >
+                                <ExternalLink className="h-2.5 w-2.5" aria-hidden />
+                                Off-site
+                            </Badge>
+                        ) : (
+                            <Badge className="bg-primary/90 text-primary-foreground hover:bg-primary backdrop-blur-md font-semibold text-[10px] shadow-sm">
+                                On HangHut
+                            </Badge>
+                        )}
                         {isSoldOut && (
                             <Badge variant="destructive" className="font-bold uppercase tracking-widest text-[10px] shadow-sm">
                                 Sold Out

@@ -25,6 +25,8 @@ import { format } from 'date-fns'
 import { Search, Eye, MapPin, Calendar, Users, Star } from 'lucide-react'
 import Link from 'next/link'
 import { formatInManila, formatEventTime } from '@/lib/datetime'
+import { setEventFeatured } from '@/lib/admin/event-controls'
+import { useToast } from '@/hooks/use-toast'
 
 interface Event {
     id: string
@@ -248,9 +250,10 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                                             <div>
                                                 <div className="font-medium flex items-center gap-2">
                                                     {event.title}
-                                                    {event.is_featured && (
-                                                        <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                                                    )}
+                                                    <FeatureToggle
+                                                        eventId={event.id}
+                                                        featured={!!event.is_featured}
+                                                    />
                                                 </div>
                                                 <div className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                                                     <MapPin className="h-3 w-3" />
@@ -342,5 +345,65 @@ export function EventsClient({ events, currentPage, totalCount, statusFilter, ty
                 </div>
             )}
         </div>
+    )
+}
+
+/**
+ * Star control for the /events spotlight. Optimistic so the table doesn't feel
+ * laggy while the server action round-trips; reverts on failure rather than
+ * leaving a lie on screen.
+ */
+function FeatureToggle({ eventId, featured }: { eventId: string; featured: boolean }) {
+    const [on, setOn] = useState(featured)
+    const [saving, setSaving] = useState(false)
+    const { toast } = useToast()
+
+    // Keep in step with server-rendered data after a revalidate or page change.
+    useEffect(() => setOn(featured), [featured])
+
+    const toggle = async (e: React.MouseEvent) => {
+        // The row is a link target in places — never let the star navigate.
+        e.preventDefault()
+        e.stopPropagation()
+        if (saving) return
+
+        const next = !on
+        setOn(next)
+        setSaving(true)
+        const res = await setEventFeatured(eventId, next)
+        setSaving(false)
+
+        if ('error' in res) {
+            setOn(!next)
+            toast({
+                title: 'Could not update',
+                description: res.error,
+                variant: 'destructive',
+            })
+        } else {
+            toast({
+                title: next ? 'Featured' : 'Removed from spotlight',
+                description: next
+                    ? 'This event now takes the spotlight on /events.'
+                    : 'The spotlight falls back to the soonest event on sale.',
+            })
+        }
+    }
+
+    return (
+        <button
+            onClick={toggle}
+            disabled={saving}
+            title={on ? 'Remove from /events spotlight' : 'Feature in the /events spotlight'}
+            aria-pressed={on}
+            className={`rounded p-0.5 transition-opacity hover:opacity-100 disabled:opacity-40 ${
+                on ? 'opacity-100' : 'opacity-25'
+            }`}
+        >
+            <Star
+                className={`h-4 w-4 ${on ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground'}`}
+            />
+            <span className="sr-only">{on ? 'Unfeature event' : 'Feature event'}</span>
+        </button>
     )
 }

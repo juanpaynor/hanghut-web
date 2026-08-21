@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { ExperienceFeatureToggle } from './feature-toggle'
 import Image from 'next/image'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -49,6 +50,7 @@ export default async function AdminExperiencesPage() {
             price_per_person,
             currency,
             verified_by_hanghut,
+            is_featured,
             created_at,
             images,
             host_avatar_url,
@@ -126,8 +128,14 @@ export default async function AdminExperiencesPage() {
                                             </div>
                                         </TableCell>
 
-                                        <TableCell className="font-medium text-slate-800 max-w-[200px] truncate">
-                                            {exp.title}
+                                        <TableCell className="font-medium text-slate-800 max-w-[220px]">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="truncate">{exp.title}</span>
+                                                <ExperienceFeatureToggle
+                                                    experienceId={exp.id}
+                                                    featured={!!exp.is_featured}
+                                                />
+                                            </div>
                                         </TableCell>
 
                                         <TableCell className="text-slate-500 text-sm max-w-[160px] truncate">
