@@ -1,3 +1,4 @@
+import { eventHref } from '@/lib/events/urls'
 import { PublicEventCard } from '@/components/events/public-event-card'
 import { Calendar, MapPin, Ticket, ArrowUpRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -90,7 +91,7 @@ function ListEventCard({ event }: { event: any }) {
         : false
 
     return (
-        <Link href={`/events/${event.id}`} className="group block">
+        <Link href={eventHref(event)} className="group block">
             <div className="flex gap-4 bg-card rounded-xl overflow-hidden border border-border/50 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
                 {/* Compact side thumbnail */}
                 <div className="relative w-40 md:w-52 shrink-0 overflow-hidden">

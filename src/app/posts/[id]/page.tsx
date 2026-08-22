@@ -57,6 +57,7 @@ const getPost = cache(async (id: string) => {
         .select(`
             id, content, image_url, image_urls, video_url, thumbnail_url,
             city, created_at, like_count, comment_count, event_id, vibe_tag,
+            events ( slug ),
             user:users!posts_user_id_fkey ( display_name, username, avatar_url, is_verified )
         `)
         .eq('id', id)
@@ -139,6 +140,11 @@ export default async function PublicPostPage({ params }: { params: Promise<{ id:
     const images: string[] = Array.isArray(post.image_urls) && post.image_urls.length > 0
         ? post.image_urls.filter(Boolean)
         : (post.image_url ? [post.image_url] : [])
+
+    // A to-one embed comes back as an array from PostgREST here, so normalise
+    // before reading it rather than trusting either shape.
+    const linkedEvent = post.events as unknown as { slug?: string | null } | { slug?: string | null }[] | null
+    const eventSlug = Array.isArray(linkedEvent) ? linkedEvent[0]?.slug : linkedEvent?.slug
 
     return (
         <main className="min-h-screen bg-background">
@@ -247,7 +253,7 @@ export default async function PublicPostPage({ params }: { params: Promise<{ id:
                     since that page is fully functional without the app. */}
                 {post.event_id && (
                     <Link
-                        href={`/events/${post.event_id}`}
+                        href={`/events/${eventSlug || post.event_id}`}
                         className="mt-4 flex items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 p-4 transition-colors hover:bg-primary/10"
                     >
                         <Ticket className="h-5 w-5 shrink-0 text-primary" />

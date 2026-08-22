@@ -1,5 +1,6 @@
 "use client"
 
+import { eventHref } from '@/lib/events/urls'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -69,7 +70,7 @@ export function EventDashboardOverview({ event, stats }: DashboardOverviewProps)
 
                 <div className="flex gap-2 w-full md:w-auto">
                     <Button variant="outline" asChild className="flex-1 md:flex-none">
-                        <Link href={`/events/${event.id}`} target="_blank">
+                        <Link href={eventHref(event)} target="_blank">
                             <ExternalLink className="w-4 h-4 mr-2" />
                             View Page
                         </Link>

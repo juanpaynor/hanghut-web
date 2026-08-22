@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect } from 'react'
 import Link from 'next/link'
 import {
     Minus, Plus, Banknote, CreditCard, Landmark, Gift, Check, Undo2,
-    Loader2, Ticket, Search, DoorOpen, X,
+    Loader2, Ticket, Search, DoorOpen, X, Printer,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -505,6 +505,7 @@ export function DoorTill({
                                 <Button size="lg" variant="ghost" className="h-14" onClick={() => undo(last.intent_id)} disabled={pending}>
                                     <Undo2 className="mr-2 h-4 w-4" /> Undo
                                 </Button>
+                                <PrintSoon label="Receipt" className="h-14 px-5" />
                             </div>
                         </div>
                     )}
@@ -517,6 +518,7 @@ export function DoorTill({
                             In the tin
                         </p>
                         <p className="mt-1 text-4xl font-bold tabular-nums">{peso(cashHeld)}</p>
+                        <PrintSoon label="Print close-out" className="mt-3 w-full justify-center" />
                         <div className="mt-3 space-y-1">
                             {cardTotal > 0 && <Row label="Card terminal" value={peso(cardTotal)} />}
                             {bankTotal > 0 && <Row label="Bank transfer" value={peso(bankTotal)} />}
@@ -565,6 +567,28 @@ export function DoorTill({
                 </aside>
             </div>
         </div>
+    )
+}
+
+/**
+ * Printing is planned, not built. Rendered as a visibly disabled control with a
+ * "Soon" pill rather than a live button, so nobody at a door taps it during a
+ * queue and thinks the till has failed. `disabled` also keeps it out of the tab
+ * order, and the title gives a hover explanation on desktop.
+ */
+function PrintSoon({ label, className = '' }: { label: string; className?: string }) {
+    return (
+        <span
+            title="Printing is coming soon — not available yet"
+            className={`inline-flex cursor-not-allowed select-none items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm font-medium text-muted-foreground/70 ${className}`}
+            aria-disabled="true"
+        >
+            <Printer className="h-4 w-4" />
+            {label}
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Soon
+            </span>
+        </span>
     )
 }
 

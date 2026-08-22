@@ -1,3 +1,4 @@
+import { eventHref } from '@/lib/events/urls'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
@@ -23,7 +24,7 @@ export function PublicEventCard({ event, categoryLabel, categoryEmoji }: PublicE
     const external = isExternal(event)
 
     return (
-        <Link href={`/events/${event.id}`} className="group block h-full">
+        <Link href={eventHref(event)} className="group block h-full">
             <div data-hh-card className="h-full bg-card rounded-2xl overflow-hidden border border-border/50 shadow-sm hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 transition-all duration-300 flex flex-col">
                 {/* Image Container */}
                 <div className="relative aspect-[4/3] overflow-hidden">

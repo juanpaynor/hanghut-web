@@ -121,8 +121,8 @@ export function SalesDashboardClient({ data }: SalesDashboardProps) {
                 <StatCard label="Avg. Order" icon={Users} tint="amber"
                     value={`₱${metrics.avgOrderValue.toFixed(0)}`} sub="Per transaction" />
 
-                <StatCard label="Active Events" icon={Calendar} tint="sky"
-                    value={`${metrics.activeEventsCount}`} sub="Currently live" />
+                <StatCard label="Upcoming Events" icon={Calendar} tint="sky"
+                    value={`${metrics.activeEventsCount}`} sub="Still to happen" />
             </div>
 
             <div className="grid gap-4 md:grid-cols-7">

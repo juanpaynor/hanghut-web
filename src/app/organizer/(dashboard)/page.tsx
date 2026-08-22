@@ -3,8 +3,9 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { Plus, LayoutDashboard } from 'lucide-react'
-import { getDashboardStats } from '@/lib/organizer/dashboard-actions'
+import { Plus } from 'lucide-react'
+import { getDashboardStats, getDashboardFocus } from '@/lib/organizer/dashboard-actions'
+import { DashboardFocusPanel } from '@/components/organizer/dashboard-focus'
 import { SalesDashboardClient } from '@/components/organizer/sales-dashboard'
 import { OnboardingChecklist } from '@/components/organizer/onboarding-checklist'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -21,6 +22,20 @@ async function DashboardData({ partnerId, businessName }: { partnerId: string; b
     }
 
     return <SalesDashboardClient data={dashboardData} />
+}
+
+async function FocusData({ partnerId, businessName }: { partnerId: string; businessName: string }) {
+    const focus = await getDashboardFocus(partnerId)
+    return <DashboardFocusPanel focus={focus} businessName={businessName} />
+}
+
+function FocusSkeleton() {
+    return (
+        <div className="grid gap-4 lg:grid-cols-3">
+            <Skeleton className="h-48 rounded-2xl lg:col-span-2" />
+            <Skeleton className="h-48 rounded-2xl" />
+        </div>
+    )
 }
 
 function DashboardSkeleton() {
@@ -58,30 +73,25 @@ export default async function OrganizerDashboard() {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Hero header */}
-            <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 p-6 sm:p-8 text-white shadow-lg">
-                <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
-                <div className="pointer-events-none absolute -bottom-20 right-24 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
-                <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur">
-                            <LayoutDashboard className="h-3.5 w-3.5" /> Dashboard
-                        </div>
-                        <h1 className="mt-3 font-headline text-2xl sm:text-3xl font-bold tracking-tight">
-                            Welcome back, {firstName}
-                        </h1>
-                        <p className="mt-1 max-w-xl text-sm text-white/80">
-                            Here’s how {partner.business_name} is performing, in real time.
-                        </p>
-                    </div>
-                    <Link href="/organizer/events/create" className="shrink-0">
-                        <Button className="gap-2 bg-white text-indigo-600 shadow-sm hover:bg-white/90">
-                            <Plus className="h-4 w-4" />
-                            Create Event
-                        </Button>
-                    </Link>
+            {/* A page header, not a banner. The old gradient hero occupied the top
+                of the viewport to say "Welcome back" and nothing else; that space
+                now belongs to the next show. */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h1 className="font-headline text-2xl font-bold tracking-tight">{firstName}</h1>
+                    <p className="text-sm text-muted-foreground">{partner.business_name}</p>
                 </div>
+                <Link href="/organizer/events/create">
+                    <Button className="gap-2">
+                        <Plus className="h-4 w-4" />
+                        Create event
+                    </Button>
+                </Link>
             </div>
+
+            <Suspense fallback={<FocusSkeleton />}>
+                <FocusData partnerId={partner.id} businessName={partner.business_name} />
+            </Suspense>
 
             {/* Onboarding checklist — hides itself once setup is complete */}
             <OnboardingChecklist partnerId={partner.id} kycStatus={partner.kyc_status} />

@@ -211,6 +211,20 @@ export default async function PublicEventPage({
 
     if (!event) notFound()
 
+    // Canonicalise: a UUID link still resolves (they are in sent emails, printed
+    // QR codes, the sitemap and referral redirects, so they must never break) but
+    // the visitor lands on the readable address. The query string is preserved so
+    // invite tokens and ?ref= attribution survive the hop. Skipped for the owner's
+    // design-preview iframe, which addresses the event by id on purpose.
+    if (isUuid(id) && event.slug && !isPreview) {
+        const qs = new URLSearchParams(
+            Object.entries(sp).filter(
+                (entry): entry is [string, string] => typeof entry[1] === 'string'
+            )
+        ).toString()
+        redirect(`/events/${event.slug}${qs ? `?${qs}` : ''}`)
+    }
+
     // ── Viewer-dependent state (venue, subscriber, tickets) ─────────────────
     // Resolve the viewer ONCE, then run every per-viewer lookup in parallel.
     // (Previously this made two separate auth.getUser() round-trips and ran the
