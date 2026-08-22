@@ -23,9 +23,11 @@ const ICON_MAP: Record<string, any> = {
 interface SectionListProps {
     sections: StorefrontSection[]
     onChange: (sections: StorefrontSection[]) => void
+    /** Needed by the Gallery config panel to scope image uploads. */
+    partnerId: string
 }
 
-export function SectionList({ sections, onChange }: SectionListProps) {
+export function SectionList({ sections, onChange, partnerId }: SectionListProps) {
     const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
 
     const moveSection = (index: number, direction: 'up' | 'down') => {
@@ -173,6 +175,7 @@ export function SectionList({ sections, onChange }: SectionListProps) {
                                     <div className="border-t px-4 py-4 animate-in fade-in slide-in-from-top-2 duration-200">
                                         <SectionConfigPanel
                                             type={section.type}
+                                            partnerId={partnerId}
                                             config={section.config}
                                             onChange={(config: Record<string, any>) => updateSectionConfig(index, config)}
                                         />

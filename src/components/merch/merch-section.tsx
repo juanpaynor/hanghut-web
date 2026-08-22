@@ -24,9 +24,13 @@ interface Props {
     organizerId: string
     eventId?: string
     products: PublicMerchProduct[]
+    /** Suppress the built-in "Merch" title when the caller renders its own.
+     *  The storefront section does — its heading is organizer-configurable and
+     *  carries the theme hook — while the event page relies on the one below. */
+    showHeading?: boolean
 }
 
-export function MerchSection({ eventId, products }: Props) {
+export function MerchSection({ eventId, products, showHeading = true }: Props) {
     const [cart, setCart] = useState<Record<string, CartLine>>({})
     const [checkoutOpen, setCheckoutOpen] = useState(false)
 
@@ -63,10 +67,12 @@ export function MerchSection({ eventId, products }: Props) {
 
     return (
         <section className="space-y-5">
-            <div className="flex items-center gap-2">
-                <Shirt className="h-5 w-5 text-primary" />
-                <h2 className="text-xl font-bold">Merch</h2>
-            </div>
+            {showHeading && (
+                <div className="flex items-center gap-2">
+                    <Shirt className="h-5 w-5 text-primary" />
+                    <h2 className="text-xl font-bold">Merch</h2>
+                </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
                 {products.map(product => (

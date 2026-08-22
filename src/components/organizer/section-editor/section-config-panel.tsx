@@ -6,15 +6,18 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Upload, X, Loader2, GalleryHorizontal } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { uploadGalleryImage } from '@/lib/organizer/branding-actions'
 
 interface SectionConfigPanelProps {
     type: SectionType
     config: Record<string, any>
     onChange: (config: Record<string, any>) => void
+    partnerId: string
 }
 
-export function SectionConfigPanel({ type, config, onChange }: SectionConfigPanelProps) {
+export function SectionConfigPanel({ type, config, onChange, partnerId }: SectionConfigPanelProps) {
     const update = (key: string, value: any) => {
         onChange({ ...config, [key]: value })
     }
@@ -288,7 +291,37 @@ export function SectionConfigPanel({ type, config, onChange }: SectionConfigPane
                             </SelectContent>
                         </Select>
                     </div>
-                    <p className="text-xs text-muted-foreground">Gallery image upload coming soon. You can add image URLs manually in the data.</p>
+                    <GalleryImagesPanel
+                        partnerId={partnerId}
+                        images={config.images ?? []}
+                        onChange={(images) => update('images', images)}
+                    />
+                </div>
+            )
+
+        case 'merch':
+            return (
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label>Heading</Label>
+                        <Input
+                            value={config.heading ?? 'Merch'}
+                            onChange={(e) => update('heading', e.target.value)}
+                            placeholder="Merch"
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Subheading</Label>
+                        <Input
+                            value={config.subheading ?? ''}
+                            onChange={(e) => update('subheading', e.target.value)}
+                            placeholder="Optional line under the heading"
+                        />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        Products come from your Merch catalog. This section hides itself when you
+                        have nothing on sale.
+                    </p>
                 </div>
             )
 
@@ -347,6 +380,130 @@ function StatsConfigPanel({
                     <Plus className="h-3.5 w-3.5" /> Add Stat
                 </Button>
             )}
+        </div>
+    )
+}
+
+
+// ── Gallery images sub-editor ───────────────────────────────
+//
+// Replaces the "upload coming soon, add URLs manually in the data" note that
+// stood here since launch. Three live storefronts had a visible but empty
+// Gallery section because there was no way to put pictures in it.
+
+function GalleryImagesPanel({
+    partnerId,
+    images,
+    onChange,
+}: {
+    partnerId: string
+    images: string[]
+    onChange: (images: string[]) => void
+}) {
+    const inputRef = useRef<HTMLInputElement>(null)
+    const [busy, setBusy] = useState(false)
+    const [error, setError] = useState('')
+
+    const handleFiles = async (files: FileList | null) => {
+        if (!files || files.length === 0) return
+        setBusy(true)
+        setError('')
+
+        const uploaded: string[] = []
+        for (const file of Array.from(files)) {
+            const res = await uploadGalleryImage(partnerId, file)
+            if (res.url) uploaded.push(res.url)
+            else setError(res.error || 'Upload failed')
+        }
+
+        // Append whatever succeeded rather than discarding a partial batch.
+        if (uploaded.length > 0) onChange([...images, ...uploaded])
+        setBusy(false)
+        if (inputRef.current) inputRef.current.value = ''
+    }
+
+    const move = (from: number, to: number) => {
+        if (to < 0 || to >= images.length) return
+        const next = [...images]
+        const [item] = next.splice(from, 1)
+        next.splice(to, 0, item)
+        onChange(next)
+    }
+
+    return (
+        <div className="space-y-3">
+            <Label>Photos</Label>
+
+            {images.length > 0 && (
+                <div className="grid grid-cols-3 gap-2">
+                    {images.map((src, i) => (
+                        <div key={`${src}-${i}`} className="relative group aspect-square rounded-lg overflow-hidden border">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={src} alt="" className="w-full h-full object-cover" />
+                            <button
+                                type="button"
+                                onClick={() => onChange(images.filter((_, idx) => idx !== i))}
+                                className="absolute top-1 right-1 rounded-full bg-black/60 p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                aria-label="Remove photo"
+                            >
+                                <X className="h-3 w-3" />
+                            </button>
+                            <div className="absolute bottom-1 left-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                    type="button"
+                                    onClick={() => move(i, i - 1)}
+                                    disabled={i === 0}
+                                    className="rounded bg-black/60 px-1.5 text-xs text-white disabled:opacity-30"
+                                    aria-label="Move earlier"
+                                >
+                                    ←
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => move(i, i + 1)}
+                                    disabled={i === images.length - 1}
+                                    className="rounded bg-black/60 px-1.5 text-xs text-white disabled:opacity-30"
+                                    aria-label="Move later"
+                                >
+                                    →
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {images.length === 0 && (
+                <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed py-8 text-center">
+                    <GalleryHorizontal className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                    <p className="text-xs text-muted-foreground">No photos yet</p>
+                </div>
+            )}
+
+            <input
+                ref={inputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => handleFiles(e.target.files)}
+            />
+            <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => inputRef.current?.click()}
+            >
+                {busy ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-2" />}
+                {busy ? 'Uploading…' : 'Add photos'}
+            </Button>
+
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <p className="text-xs text-muted-foreground">
+                Remember to hit Save — photos upload immediately, but the section only keeps them
+                once the page is saved.
+            </p>
         </div>
     )
 }

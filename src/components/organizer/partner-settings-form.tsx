@@ -31,6 +31,9 @@ import { MAXIMALIST_PRESET_CSS } from '@/lib/storefront-custom-css'
 
 interface PartnerSettingsFormProps {
     initialData: {
+        /** Already present at runtime — the settings page selects '*'. Declared
+         *  so the gallery uploader can be scoped to this partner. */
+        id: string
         business_name: string
         description?: string
         slug?: string
@@ -823,6 +826,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                     />
                                     {(formData.branding.sections as StorefrontSection[])?.length > 0 ? (
                                         <SectionList
+                                            partnerId={initialData.id}
                                             sections={formData.branding.sections as StorefrontSection[]}
                                             onChange={(sections) => {
                                                 setFormData(prev => ({

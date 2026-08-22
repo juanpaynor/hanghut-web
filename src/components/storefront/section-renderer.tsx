@@ -7,6 +7,9 @@ import { NewsletterSection } from './sections/newsletter-section'
 import { DividerSection } from './sections/divider-section'
 import { StatsSection } from './sections/stats-section'
 import { CTASection } from './sections/cta-section'
+import { GallerySection } from './sections/gallery-section'
+import { MerchStorefrontSection } from './sections/merch-storefront-section'
+import type { PublicMerchProduct } from '@/lib/merch/public-actions'
 
 interface SectionRendererProps {
     sections: StorefrontSection[]
@@ -23,9 +26,11 @@ interface SectionRendererProps {
     }
     events: any[]
     pastEvents: any[]
+    /** Empty unless this partner has merch_enabled and active products. */
+    merch?: PublicMerchProduct[]
 }
 
-export function SectionRenderer({ sections, partner, events, pastEvents }: SectionRendererProps) {
+export function SectionRenderer({ sections, partner, events, pastEvents, merch = [] }: SectionRendererProps) {
     const branding = partner.branding || {}
 
     return (
@@ -94,6 +99,18 @@ export function SectionRenderer({ sections, partner, events, pastEvents }: Secti
                                 <CTASection
                                     config={section.config}
                                     primaryColor={branding.colors?.primary}
+                                />
+                            )
+                            break
+                        case 'gallery':
+                            content = <GallerySection config={section.config} />
+                            break
+                        case 'merch':
+                            content = (
+                                <MerchStorefrontSection
+                                    organizerId={partner.id}
+                                    products={merch}
+                                    config={section.config}
                                 />
                             )
                             break

@@ -246,7 +246,10 @@ export async function getEventAttendees(eventId: string, filters: AttendeeFilter
             email: t.user.email,
             display_name: t.user.display_name,
         } : null,
-        guest_info: (t.guest_name || t.guest_email || pi.guest_email) ? {
+        // pi.guest_name is part of the test, not just the fallback: a box-office
+        // door sale can legitimately have a NAME and no email, and without it here
+        // that attendee renders with no identity at all.
+        guest_info: (t.guest_name || t.guest_email || pi.guest_name || pi.guest_email) ? {
             name: t.guest_name || pi.guest_name,
             email: t.guest_email || pi.guest_email,
             phone: pi.guest_phone

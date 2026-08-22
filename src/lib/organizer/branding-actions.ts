@@ -169,3 +169,56 @@ export async function uploadBrandingImage(partnerId: string, file: File, type: '
         return { error: 'An unexpected error occurred' }
     }
 }
+
+/**
+ * Upload one photo for a storefront Gallery section.
+ *
+ * Gallery has been selectable in the builder — and baked into the "festival"
+ * template — since launch, but there was never a way to put images in it: the
+ * config panel just said "coming soon" and told organizers to edit the data by
+ * hand. Reuses the same ownership check and bucket as uploadBrandingImage; the
+ * URL is stored in `branding.sections[n].config.images`.
+ */
+export async function uploadGalleryImage(
+    partnerId: string,
+    file: File
+): Promise<{ url?: string; error?: string }> {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (actingPartnerId !== partnerId) return { error: 'Permission denied' }
+
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    if (!serviceRoleKey || !supabaseUrl) return { error: 'Server configuration error' }
+
+    const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey)
+
+    try {
+        // Sanitise the extension rather than trusting the whole filename — it ends
+        // up in a public URL path.
+        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+        const fileName = `${partnerId}/gallery-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+
+        const { data, error } = await adminSupabase.storage
+            .from('event-covers')
+            .upload(fileName, file, { contentType: file.type, upsert: false })
+
+        if (error) {
+            console.error('uploadGalleryImage error:', error)
+            return { error: 'Failed to upload image' }
+        }
+
+        const { data: { publicUrl } } = adminSupabase.storage
+            .from('event-covers')
+            .getPublicUrl(data.path)
+
+        return { url: publicUrl }
+    } catch (error) {
+        console.error('uploadGalleryImage unexpected error:', error)
+        return { error: 'An unexpected error occurred' }
+    }
+}

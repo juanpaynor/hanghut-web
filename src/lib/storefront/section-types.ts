@@ -1,5 +1,5 @@
 // Section type definitions for the storefront page builder
-export type SectionType = 'hero' | 'about' | 'events' | 'past_events' | 'gallery' | 'newsletter' | 'stats' | 'cta' | 'divider'
+export type SectionType = 'hero' | 'about' | 'events' | 'past_events' | 'gallery' | 'merch' | 'newsletter' | 'stats' | 'cta' | 'divider'
 
 export interface StorefrontSection {
     type: SectionType
@@ -14,6 +14,7 @@ export const SECTION_META: Record<SectionType, { label: string; icon: string; de
     events: { label: 'Upcoming Events', icon: 'Calendar', description: 'Grid or list of your upcoming events' },
     past_events: { label: 'Past Events', icon: 'History', description: 'Showcase your previously hosted events' },
     gallery: { label: 'Photo Gallery', icon: 'GalleryHorizontal', description: 'Image gallery grid or masonry layout' },
+    merch: { label: 'Merch', icon: 'ShoppingBag', description: 'Sell merchandise directly from your page' },
     newsletter: { label: 'Newsletter Signup', icon: 'Mail', description: 'Email subscribe form for your audience' },
     stats: { label: 'Stats & Numbers', icon: 'BarChart3', description: 'Highlight key numbers and achievements' },
     cta: { label: 'Call to Action', icon: 'Megaphone', description: 'Full-width banner with a call to action' },
@@ -27,6 +28,7 @@ export const DEFAULT_SECTION_CONFIG: Record<SectionType, Record<string, any>> = 
     events: { variant: 'grid', columns: 3, show_price: true, show_category: true },
     past_events: { variant: 'grid', columns: 2 },
     gallery: { variant: 'grid', columns: 3, images: [] },
+    merch: { heading: 'Merch', subheading: '' },
     newsletter: { variant: 'banner', heading: 'Stay in the loop', subheading: 'Get notified about upcoming events' },
     stats: { items: [{ label: 'Events Hosted', value: '10+' }, { label: 'Happy Attendees', value: '1,000+' }] },
     cta: { heading: '', subheading: '', button_text: 'Learn More', button_link: '', background_color: '' },

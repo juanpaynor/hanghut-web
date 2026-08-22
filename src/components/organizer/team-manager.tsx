@@ -39,6 +39,7 @@ import { format } from 'date-fns'
 const ROLES = [
     { value: 'manager', label: 'Manager', desc: 'Can create/edit events, invite members' },
     { value: 'scanner', label: 'Scanner', desc: 'Can scan tickets at the door' },
+    { value: 'cashier', label: 'Cashier', desc: 'Can sell and check in at the box office' },
     { value: 'finance', label: 'Finance', desc: 'Can view payouts and financials' },
     { value: 'marketing', label: 'Marketing', desc: 'Can send email campaigns' },
 ]
@@ -47,6 +48,7 @@ const ROLE_COLORS: Record<string, string> = {
     owner: 'bg-yellow-100 text-yellow-800 border-yellow-200',
     manager: 'bg-blue-100 text-blue-800 border-blue-200',
     scanner: 'bg-green-100 text-green-800 border-green-200',
+    cashier: 'bg-teal-100 text-teal-800 border-teal-200',
     finance: 'bg-purple-100 text-purple-800 border-purple-200',
     marketing: 'bg-pink-100 text-pink-800 border-pink-200',
 }

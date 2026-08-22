@@ -102,7 +102,7 @@ export const getPartnerId = cache(async (userId: string) => {
  * Roles: 'owner' | 'manager' | 'scanner' | 'finance' | 'marketing'
  */
 export type UserRole = {
-    role: 'owner' | 'manager' | 'scanner' | 'finance' | 'marketing'
+    role: 'owner' | 'manager' | 'scanner' | 'finance' | 'marketing' | 'cashier'
     partnerId: string
 }
 

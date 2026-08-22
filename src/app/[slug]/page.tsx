@@ -21,6 +21,7 @@ import { sanitizeCustomCss } from '@/lib/storefront-custom-css'
 import { getEventThemeCss } from '@/lib/event-themes'
 import { StorefrontPreviewBridge } from '@/components/organizer/storefront-preview-bridge'
 import { CaptureAttribution } from '@/components/tracking/track-view'
+import { getPublicMerch } from '@/lib/merch/public-actions'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
@@ -176,6 +177,24 @@ export default async function StorefrontPage({
     const sortBy = branding.content?.sort_by || 'upcoming'
     const hasSections = Array.isArray(branding.sections) && branding.sections.length > 0
 
+    // ── Merch on the brand page ──
+    // getPublicMerch is itself gated on partners.merch_enabled and returns [] when
+    // the partner isn't switched on, so this is safe to call unconditionally.
+    // Called WITHOUT an eventId: on a storefront the shopper sees everything the
+    // brand sells, not one show's table.
+    const merch = await getPublicMerch(partner.id)
+
+    // If a partner has merch but hasn't added the section, append it rather than
+    // leaving stock invisible. The section builder is opt-in and most partners
+    // have never opened it — an organizer who uploads products and sees nothing
+    // on their page would reasonably conclude merch is broken. Once they add or
+    // reorder a Merch section themselves, their arrangement wins.
+    const sections = hasSections
+        ? (merch.length > 0 && !branding.sections.some((sec: any) => sec.type === 'merch')
+            ? [...branding.sections, { type: 'merch', visible: true, config: { heading: 'Merch' } }]
+            : branding.sections)
+        : []
+
     // ── Art-directed theme + custom-CSS skin (shared engine with event pages) ──
     // A theme id restyles the storefront's shared section hooks (data-hh-card etc.)
     // via event-themes.ts; custom CSS is the HelixPay-style escape hatch. In the
@@ -330,16 +349,17 @@ export default async function StorefrontPage({
                         {showNavbar && (
                             <StorefrontNavbar
                                 partner={partner}
-                                sections={branding.sections}
+                                sections={sections}
                                 fontClass={fontClass}
                                 isLoggedIn={subscriptionStatus.isAuthenticated}
                             />
                         )}
                         <SectionRenderer
-                            sections={branding.sections}
+                            sections={sections}
                             partner={partner}
                             events={upcoming}
                             pastEvents={past}
+                            merch={merch}
                         />
                         {/* Membership section for section-based storefronts: show unless mode is explicitly events-only */}
                         {hasTiers && resolvedMode !== 'events' && (
