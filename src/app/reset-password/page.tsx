@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Lock, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
     const [password, setPassword] = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
     const [loading, setLoading] = useState(false)
@@ -174,5 +174,31 @@ export default function ResetPasswordPage() {
                 </CardContent>
             </Card>
         </div>
+    )
+}
+
+/**
+ * useSearchParams() forces a client-side bailout, so this page needs its own
+ * Suspense boundary. It previously inherited one from the root src/app/loading.tsx
+ * — but that file wrapped EVERY route, which pinned the HTTP status at 200 and made
+ * every 404 on the site a soft 404. The boundary belongs here instead, scoped to the
+ * page that needs it.
+ */
+export default function ResetPasswordPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="min-h-screen flex items-center justify-center bg-background p-4">
+                    <Card className="w-full max-w-md">
+                        <CardHeader>
+                            <CardTitle>Reset password</CardTitle>
+                            <CardDescription>Loading…</CardDescription>
+                        </CardHeader>
+                    </Card>
+                </div>
+            }
+        >
+            <ResetPasswordForm />
+        </Suspense>
     )
 }

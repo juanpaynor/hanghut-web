@@ -40,7 +40,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
 
     let path = '/'
     if (link.type === 'organizer_event' && link.event_id) {
-        path = `/events/${link.event_id}?ref=${ref}`
+        // Resolve to the slug so the visitor lands on the canonical URL in one hop
+        // instead of /r/CODE -> /events/<uuid> -> /events/<slug>. Falls back to the
+        // id, which still resolves, if the lookup fails for any reason.
+        const { data: ev } = await supabase
+            .from('events').select('slug').eq('id', link.event_id).maybeSingle()
+        path = `/events/${ev?.slug || link.event_id}?ref=${ref}`
     } else if (link.type === 'organizer_storefront' && link.partner_slug) {
         path = `/${link.partner_slug}?ref=${ref}`
     } else if (link.type === 'platform') {

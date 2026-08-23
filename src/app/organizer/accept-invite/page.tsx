@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,7 @@ const ROLE_LABELS: Record<string, string> = {
 type PageState = 'loading' | 'show_invite' | 'accepting' | 'success' | 'already_member' | 'error' | 'no_token'
 type AuthMode = 'choose' | 'login' | 'signup'
 
-export default function AcceptInvitePage() {
+function AcceptInviteContent() {
     const searchParams = useSearchParams()
     const router = useRouter()
     const token = searchParams.get('token')
@@ -378,5 +378,29 @@ export default function AcceptInvitePage() {
                 )}
             </Card>
         </div>
+    )
+}
+
+/**
+ * useSearchParams() forces a client-side bailout, so this page needs a Suspense
+ * boundary of its own. It used to get one for free from the root src/app/loading.tsx
+ * — but that file put a boundary above EVERY route, which locked the HTTP status at
+ * 200 and turned every 404 on the site into a soft 404. With the root file removed,
+ * the boundary belongs here, scoped to the one page that actually needs it.
+ */
+export default function AcceptInvitePage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4">
+                    <Card className="max-w-md w-full p-8 text-center space-y-6 shadow-xl border-0 shadow-black/5">
+                        <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
+                        <h2 className="text-xl font-bold">Loading invite...</h2>
+                    </Card>
+                </div>
+            }
+        >
+            <AcceptInviteContent />
+        </Suspense>
     )
 }

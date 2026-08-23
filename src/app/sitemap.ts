@@ -41,12 +41,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Public active events
     const { data: events } = await supabase
         .from('events')
-        .select('id, updated_at')
+        .select('id, slug, updated_at')
         .eq('status', 'active')
         .neq('invite_only', true);
 
     const eventEntries: MetadataRoute.Sitemap = (events || []).map((event) => ({
-        url: `${baseUrl}/events/${event.id}`,
+        // Canonical form. The UUID still resolves, but listing it here would make
+        // every sitemap entry a redirect.
+        url: `${baseUrl}/events/${event.slug || event.id}`,
         lastModified: event.updated_at ? new Date(event.updated_at) : now,
         changeFrequency: 'weekly',
         priority: 0.6,

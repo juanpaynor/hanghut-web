@@ -16,6 +16,9 @@ const corsHeaders = {
  * Performs ONLY GETs:
  *   GET /v2/accounts/{sub_account_id}   → sub-account + linked account_holder_id
  *   GET /account_holders/{holder_id}    → KYC status + capabilities (when linked)
+ *   GET /account_verification           → the NEW verification API, via for-user-id.
+ *       The legacy account_holder object exposes only kyc.status with no reason,
+ *       so AWAITING_RESUBMISSION and the per-field kyc_details are visible ONLY here.
  *
  * It deliberately does NOT write to Xendit or to our DB. Where our stored state
  * disagrees with Xendit's, it reports the drift as a `discrepancies[]` entry so
@@ -173,6 +176,52 @@ serve(async (req: Request) => {
             }
         }
 
+        // ── Account verification (the NEW KYC API) ────────────────────────────
+        // We submit through the LEGACY /account_holders endpoint, whose object only
+        // exposes kyc.status ("NOT_VERIFIED") and carries no reason. Xendit's newer
+        // verification API is where AWAITING_RESUBMISSION and the per-field kyc_details
+        // actually live — so "what do they want resubmitted?" is unanswerable without
+        // this call. Read-only GET, keyed by sub-account via for-user-id.
+        let verification: unknown = null
+        let verificationStatus: string | null = null
+        let verificationHttp = 0
+        try {
+            const verRes = await fetch(`${XENDIT_API}/account_verification`, {
+                headers: { Authorization: authHeader, 'for-user-id': partner.xendit_account_id },
+            })
+            verificationHttp = verRes.status
+            const verText = await verRes.text()
+            try { verification = JSON.parse(verText) } catch { verification = verText.slice(0, 2000) }
+            if (verRes.ok) {
+                verificationStatus = (verification as any)?.status ?? null
+                if (verificationStatus === 'AWAITING_RESUBMISSION') {
+                    discrepancies.push('Xendit is AWAITING_RESUBMISSION on this sub-account — inspect xendit.verification.kyc_details for which fields/documents it is missing.')
+                }
+                if (verificationStatus && verificationStatus !== 'PASSED' && partner.kyc_status === 'verified') {
+                    discrepancies.push(`Verification reports "${verificationStatus}" but our kyc_status is "verified".`)
+                }
+            } else if (verRes.status === 404) {
+                discrepancies.push('No verification request exists on the new account_verification API for this sub-account — the KYC we sent went only to the legacy /account_holders endpoint.')
+            } else {
+                discrepancies.push(`Account verification lookup failed (HTTP ${verRes.status}).`)
+            }
+        } catch (e: any) {
+            discrepancies.push(`Account verification lookup threw: ${e.message}`)
+        }
+
+        // Which uploaded files never made it into the account_holder payload. The
+        // submission attaches only the authorized person's ID_FRONT and SELFIE, so
+        // ID_BACK and every stakeholder ID are uploaded and then silently dropped.
+        const attachedFileIds = new Set(
+            (((holderBody as any)?.kyc_documents ?? []) as any[]).map(d => d?.file_id).filter(Boolean)
+        )
+        const orphanedFiles = Object.entries((gateway?.file_ids as Record<string, string>) ?? {})
+            .filter(([, fileId]) => !attachedFileIds.has(fileId))
+            .map(([path, fileId]) => ({ path, file_id: fileId }))
+        if (orphanedFiles.length > 0) {
+            discrepancies.push(`${orphanedFiles.length} file(s) uploaded to Xendit but NOT attached to the account holder — see xendit.orphaned_files.`)
+        }
+
         // ── Channel probe ─────────────────────────────────────────────────────
         // The question this answers: does an OWNED sub-account already have Cards
         // and GCash available (i.e. inherited from the master), or does it still
@@ -249,6 +298,11 @@ serve(async (req: Request) => {
                 kyc_status: kycStatusRemote,
                 capabilities,
                 raw_account_holder: holderBody,
+                // The new verification API — the only place a resubmission reason exists.
+                verification_status: verificationStatus,
+                verification_lookup_http: verificationHttp,
+                verification,
+                orphaned_files: orphanedFiles,
             },
             discrepancies,
             blockers,
