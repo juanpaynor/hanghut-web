@@ -58,7 +58,12 @@ export function VideoUploader({ value, onChange, className, disabled }: VideoUpl
             if (!user) throw new Error("Not authenticated")
 
             const fileExt = file.name.split('.').pop()
-            const fileName = `videos/${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+            // Bucket + path are both load-bearing and were changed together in a5ba5f4:
+            //   - event-covers allows images ONLY, so it rejects video/mp4 at the API.
+            //   - the event-videos INSERT policy requires foldername(name)[1] = auth.uid(),
+            //     so a 'videos/' prefix pushes the uid to segment 2 and RLS refuses the row.
+            // Either one alone is enough to break every upload. Don't "tidy" this path.
+            const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
 
             // Simulate progress
             const progressInterval = setInterval(() => {
@@ -69,7 +74,7 @@ export function VideoUploader({ value, onChange, className, disabled }: VideoUpl
             }, 500)
 
             const { data, error } = await supabase.storage
-                .from('event-covers')
+                .from('event-videos')
                 .upload(fileName, file, {
                     cacheControl: '3600',
                     upsert: false
@@ -83,7 +88,7 @@ export function VideoUploader({ value, onChange, className, disabled }: VideoUpl
 
             // Get Public URL
             const { data: { publicUrl } } = supabase.storage
-                .from('event-covers')
+                .from('event-videos')
                 .getPublicUrl(data.path)
 
             onChange(publicUrl)
