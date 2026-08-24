@@ -6,7 +6,7 @@ import { Calendar, MapPin, Ticket, ArrowUpRight, ExternalLink } from 'lucide-rea
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { formatEventDate, formatEventTime } from '@/lib/datetime'
+import { formatEventTime, formatEventDateWithEnd, isMultiDayEvent, eventDayCount, showsDayCount } from '@/lib/datetime'
 import { isExternal, isSoldOut as computeSoldOut, type DiscoveryEvent } from '@/lib/events/discovery'
 
 interface PublicEventCardProps {
@@ -22,6 +22,9 @@ export function PublicEventCard({ event, categoryLabel, categoryEmoji }: PublicE
     // (placeholder capacity 999999) can never be reported as sold out.
     const isSoldOut = computeSoldOut(event)
     const external = isExternal(event)
+    // A run across several days has to read as a range here — the card is where
+    // most people decide, and "Aug 29" for an Aug 29–30 market loses day two.
+    const multiDay = isMultiDayEvent(event.start_datetime, event.end_datetime)
 
     return (
         <Link href={eventHref(event)} className="group block h-full">
@@ -105,10 +108,14 @@ export function PublicEventCard({ event, categoryLabel, categoryEmoji }: PublicE
                             <Calendar className="h-4 w-4 shrink-0 mt-0.5 text-primary/70" />
                             <div className="flex flex-col">
                                 <span className="font-medium text-foreground">
-                                    {formatEventDate(event.start_datetime)}
+                                    {formatEventDateWithEnd(event.start_datetime, event.end_datetime)}
                                 </span>
                                 <span className="text-xs">
-                                    {formatEventTime(event.start_datetime)}
+                                    {!multiDay
+                                        ? formatEventTime(event.start_datetime)
+                                        : showsDayCount(event.start_datetime, event.end_datetime)
+                                            ? `${eventDayCount(event.start_datetime, event.end_datetime)} days · from ${formatEventTime(event.start_datetime)}`
+                                            : `from ${formatEventTime(event.start_datetime)}`}
                                 </span>
                             </div>
                         </div>

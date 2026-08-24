@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { format } from 'date-fns'
-import { formatEventShort } from '@/lib/datetime'
+import { formatEventShort, formatEventShortWithEnd } from '@/lib/datetime'
 import { createClient } from '@/lib/supabase/client'
 import { TicketQR } from '@/components/tickets/ticket-qr'
 import { Armchair } from 'lucide-react'
@@ -49,7 +49,7 @@ interface TicketRow {
     checked_in_at: string | null
     created_at: string
     seat_info: SeatInfo | null
-    events: { id: string; title: string; start_datetime: string; venue_name: string; cover_image_url: string | null } | null
+    events: { id: string; title: string; start_datetime: string; end_datetime: string | null; venue_name: string; cover_image_url: string | null } | null
     purchase_intents: { access_token: string | null } | null
 }
 
@@ -152,13 +152,19 @@ export function AccountDashboard({ user, profile, subscriptions, tickets, claims
         })
     }
 
+    // A multi-day event is still upcoming while it is RUNNING. Splitting on
+    // start_datetime alone filed a two-day event under "Past" on its second
+    // morning — the ticket a person needed at the door was in the wrong tab.
+    const stillOn = (event: any) =>
+        new Date(event.end_datetime ?? event.start_datetime) >= new Date()
+
     const upcoming = tickets.filter(t => {
         const event = t.events as any
-        return event && new Date(event.start_datetime) >= new Date()
+        return event && stillOn(event)
     })
     const past = tickets.filter(t => {
         const event = t.events as any
-        return event && new Date(event.start_datetime) < new Date()
+        return event && !stillOn(event)
     })
 
     // Split on the SLOT's start_time, not paid_at — a booking made months ago for
@@ -513,7 +519,7 @@ function TicketCard({ ticket }: { ticket: TicketRow }) {
     const event = ticket.events as any
     if (!event) return null
 
-    const isPast = new Date(event.start_datetime) < new Date()
+    const isPast = new Date(event.end_datetime ?? event.start_datetime) < new Date()
     const isCheckedIn = !!ticket.checked_in_at
     const seat = seatLine(ticket.seat_info)
 
@@ -540,7 +546,7 @@ function TicketCard({ ticket }: { ticket: TicketRow }) {
                             {/* Manila-pinned: this is a client component, so date-fns
                                 would format in the viewer's zone and disagree with the
                                 server-rendered event page. */}
-                            {formatEventShort(event.start_datetime)}
+                            {formatEventShortWithEnd(event.start_datetime, event.end_datetime)}
                         </p>
                         <p className="flex items-center gap-1.5">
                             <MapPin className="h-3 w-3 shrink-0" />

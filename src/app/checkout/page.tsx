@@ -32,6 +32,7 @@ export default async function CheckoutPage({
                 id,
                 title,
                 start_datetime,
+                end_datetime,
                 venue_name,
                 ticket_price,
                 cover_image_url,

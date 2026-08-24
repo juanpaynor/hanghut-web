@@ -1,13 +1,14 @@
 'use client'
 
 import { format } from 'date-fns'
-import { formatInManila, formatEventTime } from '@/lib/datetime'
+import { formatInManila, formatEventTime, formatEventDayRange, isMultiDayEvent } from '@/lib/datetime'
 
 interface EmbedEventCardProps {
     event: {
         id: string
         title: string
         start_datetime: string
+        end_datetime?: string | null
         venue_name: string
         cover_image_url: string | null
         ticket_price: number
@@ -22,6 +23,8 @@ export function EmbedEventCard({ event, variant = 'grid' }: EmbedEventCardProps)
     const isSoldOut = typeof event.capacity === 'number' && typeof event.tickets_sold === 'number'
         ? event.tickets_sold >= event.capacity
         : false
+
+    const multiDay = isMultiDayEvent(event.start_datetime, event.end_datetime)
 
     const handleClick = () => {
         // Open the checkout flow in the parent modal
@@ -85,7 +88,9 @@ export function EmbedEventCard({ event, variant = 'grid' }: EmbedEventCardProps)
                         {event.title}
                     </h3>
                     <div style={{ fontSize: '12px', color: 'var(--embed-text, #888)', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 500 }}>{formatInManila(event.start_datetime, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                        <span style={{ fontWeight: 500 }}>{multiDay
+                            ? formatEventDayRange(event.start_datetime, event.end_datetime, 'short')
+                            : formatInManila(event.start_datetime, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--embed-text, #888)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {event.venue_name}
@@ -231,9 +236,11 @@ export function EmbedEventCard({ event, variant = 'grid' }: EmbedEventCardProps)
                             <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
                         </svg>
                         <span style={{ fontWeight: 500, color: 'var(--embed-text, #333)' }}>
-                            {formatInManila(event.start_datetime, { weekday: 'short', month: 'short', day: 'numeric' })}
+                            {multiDay
+                                ? formatEventDayRange(event.start_datetime, event.end_datetime, 'short')
+                                : formatInManila(event.start_datetime, { weekday: 'short', month: 'short', day: 'numeric' })}
                         </span>
-                        <span>{formatEventTime(event.start_datetime)}</span>
+                        <span>{multiDay ? `from ${formatEventTime(event.start_datetime)}` : formatEventTime(event.start_datetime)}</span>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--embed-text, #888)' }}>

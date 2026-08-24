@@ -21,6 +21,8 @@ export interface DiscoveryEvent {
     id: string
     title: string
     start_datetime: string
+    /** Optional. Present so cards can show a multi-day run as a date range. */
+    end_datetime?: string | null
     venue_name: string
     city?: string | null
     cover_image_url: string | null

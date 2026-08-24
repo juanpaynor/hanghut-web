@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import Image from 'next/image'
 import { format } from 'date-fns'
-import { formatInManila, formatEventTime } from '@/lib/datetime'
+import { formatInManila, formatEventTime, formatEventDayRange, isMultiDayEvent } from '@/lib/datetime'
 
 interface EventsSectionProps {
     config: {
@@ -143,10 +143,12 @@ function ListEventCard({ event }: { event: any }) {
                         <span className="flex items-center gap-1.5">
                             <Calendar className="h-3.5 w-3.5 text-primary/70" />
                             <span className="font-medium text-foreground">
-                                {formatInManila(event.start_datetime, { month: 'short', day: 'numeric' })}
+                                {formatEventDayRange(event.start_datetime, event.end_datetime, 'short')}
                             </span>
                             <span className="text-xs">
-                                {formatEventTime(event.start_datetime)}
+                                {isMultiDayEvent(event.start_datetime, event.end_datetime)
+                                    ? `from ${formatEventTime(event.start_datetime)}`
+                                    : formatEventTime(event.start_datetime)}
                             </span>
                         </span>
                         <span className="flex items-center gap-1.5">

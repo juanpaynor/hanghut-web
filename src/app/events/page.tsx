@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 
 async function EventsList() {
     const supabase = createPublicClient()
+    const nowIso = new Date().toISOString()
 
     // Fetch active upcoming events + the category lookup + any STARRED experiences
     // in parallel. Experiences feed the hero carousel only — the rails and grid
@@ -29,6 +30,7 @@ async function EventsList() {
                 id,
                 title,
                 start_datetime,
+                end_datetime,
                 venue_name,
                 city,
                 cover_image_url,
@@ -50,7 +52,10 @@ async function EventsList() {
             .eq('status', 'active')
             .neq('is_subscriber_only', true)
             .neq('invite_only', true)
-            .gte('start_datetime', new Date().toISOString())
+            // Still-running counts as upcoming. Filtering on start_datetime alone
+            // dropped a multi-day event from discovery on its second morning —
+            // a two-day market vanished from the site while its doors were open.
+            .or(`end_datetime.gte.${nowIso},and(end_datetime.is.null,start_datetime.gte.${nowIso})`)
             .order('start_datetime', { ascending: true }),
         supabase
             .from('event_categories')
@@ -66,7 +71,7 @@ async function EventsList() {
                 price_per_person,
                 images,
                 host_id,
-                experience_schedules(start_time, status)
+                experience_schedules(start_time, end_time, status)
             `)
             .eq('is_experience', true)
             .eq('is_featured', true),
@@ -88,6 +93,7 @@ async function EventsList() {
             kind: 'experience' as const,
             title: exp.title,
             start_datetime: upcoming[0].start_time,
+            end_datetime: upcoming[0].end_time ?? null,
             venue_name: exp.location_name ?? '',
             city: null,
             cover_image_url: exp.images?.[0] ?? null,

@@ -32,7 +32,7 @@ export default async function AccountPage() {
         .from('tickets')
         .select(`
             id, ticket_number, qr_code, status, tier, checked_in_at, created_at, seat_info,
-            events ( id, title, start_datetime, venue_name, cover_image_url, organizer_id ),
+            events ( id, title, start_datetime, end_datetime, venue_name, cover_image_url, organizer_id ),
             purchase_intents ( access_token )
         `)
         .eq('user_id', user.id)

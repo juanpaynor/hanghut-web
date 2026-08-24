@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { CheckCircle2, Home, Mail, Armchair, CalendarClock, MapPin } from 'lucide-react'
 import type { Metadata } from 'next'
-import { formatEventDateTime } from '@/lib/datetime'
+import { formatEventDateTimeWithEnd } from '@/lib/datetime'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,6 +30,7 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
     let eventTitle: string | null = null
     let venueName: string | null = null
     let startTime: string | null = null
+    let endTime: string | null = null
     let quantity = 0
     let seats: SeatInfo[] = []
 
@@ -39,7 +40,7 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
         const supabase = createAdminClient()
         const { data: intent } = await supabase
             .from('purchase_intents')
-            .select('quantity, status, event:events(title, venue_name, start_datetime)')
+            .select('quantity, status, event:events(title, venue_name, start_datetime, end_datetime)')
             .eq('id', intent_id)
             .maybeSingle()
 
@@ -48,6 +49,7 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
             eventTitle = event?.title ?? null
             venueName = event?.venue_name ?? null
             startTime = event?.start_datetime ?? null
+            endTime = event?.end_datetime ?? null
             quantity = intent.quantity ?? 0
 
             const { data: ticketRows } = await supabase
@@ -84,7 +86,7 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
                         {startTime && (
                             <p className="text-sm flex items-center gap-2">
                                 <CalendarClock className="h-4 w-4 text-primary shrink-0" />
-                                {formatEventDateTime(startTime)}
+                                {formatEventDateTimeWithEnd(startTime, endTime)}
                             </p>
                         )}
                         {venueName && (

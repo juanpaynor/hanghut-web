@@ -22,7 +22,7 @@ import { subscribeGuestToNewsletter } from '@/lib/marketing/actions'
 import { hexToHsl } from '@/lib/utils'
 import { resolvePlatformPct, resolveFixedFee, computePassedFees } from '@/lib/payment/platform-fees'
 import { CheckCircle2, ClipboardList } from 'lucide-react'
-import { formatEventShort } from '@/lib/datetime'
+import { formatEventShortWithEnd } from '@/lib/datetime'
 import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
 
 // Conditionally rendered (approval/invite events or events with custom questions),
@@ -790,7 +790,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                             {(() => {
                                                 try {
                                                     return event.start_datetime
-                                                        ? formatEventShort(event.start_datetime)
+                                                        ? formatEventShortWithEnd(event.start_datetime, event.end_datetime)
                                                         : 'Date TBA'
                                                 } catch (e) {
                                                     return event.start_datetime || 'Date TBA'

@@ -3,7 +3,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { TicketQR } from '@/components/tickets/ticket-qr'
 import { CalendarClock, MapPin, Package, Truck, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { formatEventDateTime } from '@/lib/datetime'
+import { formatEventDateTime, formatEventDateTimeWithEnd } from '@/lib/datetime'
 import type { Metadata } from 'next'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -20,7 +20,7 @@ type MerchClaim = {
         created_at: string
     }
     items: { name: string; quantity: number; unit_price: number }[]
-    event: { id: string; title: string; slug: string | null; start_datetime: string | null; venue_name: string | null } | null
+    event: { id: string; title: string; slug: string | null; start_datetime: string | null; end_datetime: string | null; venue_name: string | null } | null
     organizer: { business_name: string | null; profile_photo_url: string | null; branding: any } | null
 }
 
@@ -62,7 +62,7 @@ export default async function MerchClaimPage({ params }: { params: Promise<{ tok
 
     // Pinned to Manila — this renders on the server (UTC) while other surfaces
     // render in the browser; without a fixed zone the same order shows two dates.
-    const eventDate = event?.start_datetime ? formatEventDateTime(event.start_datetime) : null
+    const eventDate = event?.start_datetime ? formatEventDateTimeWithEnd(event.start_datetime, event.end_datetime) : null
 
     return (
         <main className="min-h-screen bg-muted/30 px-4 py-10">

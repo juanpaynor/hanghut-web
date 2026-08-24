@@ -8,7 +8,7 @@ import Image from 'next/image'
 import { Plus, Calendar, Users, Ticket } from 'lucide-react'
 import { format } from 'date-fns'
 import { EventsControls } from '@/components/organizer/events-controls'
-import { formatEventShort } from '@/lib/datetime'
+import { formatEventShortWithEnd } from '@/lib/datetime'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,16 +27,20 @@ async function getOrganizerEvents(partnerId: string, page: number, filters: Even
 
     let query = supabase
         .from('events')
-        .select('id, title, capacity, tickets_sold, start_datetime, cover_image_url, status, ticket_price, event_type', { count: 'exact' })
+        .select('id, title, capacity, tickets_sold, start_datetime, end_datetime, cover_image_url, status, ticket_price, event_type', { count: 'exact' })
         .eq('organizer_id', partnerId)
 
     // Status / time filter
     switch (filters.status) {
+        // Upcoming/past pivot on the END where there is one, so an organizer
+        // running a two-day event doesn't find it under "Past" on day two.
         case 'upcoming':
-            query = query.eq('status', 'active').gte('start_datetime', nowIso)
+            query = query.eq('status', 'active')
+                .or(`end_datetime.gte.${nowIso},and(end_datetime.is.null,start_datetime.gte.${nowIso})`)
             break
         case 'past':
-            query = query.eq('status', 'active').lt('start_datetime', nowIso)
+            query = query.eq('status', 'active')
+                .or(`end_datetime.lt.${nowIso},and(end_datetime.is.null,start_datetime.lt.${nowIso})`)
             break
         case 'draft':
             query = query.eq('status', 'draft')
@@ -117,7 +121,7 @@ export default async function OrganizerEventsPage(props: Props) {
     }
 
     const getDisplayStatus = (event: any) => {
-        if (event.status === 'active' && new Date(event.start_datetime) < new Date()) {
+        if (event.status === 'active' && new Date(event.end_datetime ?? event.start_datetime) < new Date()) {
             return 'completed'
         }
         return event.status
@@ -216,7 +220,7 @@ export default async function OrganizerEventsPage(props: Props) {
                                     <div>
                                         <h3 className="font-bold text-lg mb-1 line-clamp-1">{event.title}</h3>
                                         <p className="text-sm text-muted-foreground">
-                                            {formatEventShort(event.start_datetime)}
+                                            {formatEventShortWithEnd(event.start_datetime, event.end_datetime)}
                                         </p>
                                     </div>
                                     <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">

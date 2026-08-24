@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Calendar, MapPin, ArrowRight, ChevronLeft, ChevronRight, Ticket } from 'lucide-react'
-import { formatEventDate, formatEventTime } from '@/lib/datetime'
+import { formatEventDate, formatEventTime, formatEventDateWithEnd, isMultiDayEvent } from '@/lib/datetime'
 import { isSoldOut, itemHref, type DiscoveryEvent } from '@/lib/events/discovery'
 
 const AUTOPLAY_MS = 7000
@@ -116,7 +116,9 @@ export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
                             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-white/85">
                                 <span className="inline-flex items-center gap-1.5">
                                     <Calendar className="h-4 w-4" />
-                                    {formatEventDate(event.start_datetime)} · {formatEventTime(event.start_datetime)}
+                                    {isMultiDayEvent(event.start_datetime, event.end_datetime)
+                                        ? formatEventDateWithEnd(event.start_datetime, event.end_datetime)
+                                        : `${formatEventDate(event.start_datetime)} · ${formatEventTime(event.start_datetime)}`}
                                 </span>
                                 <span className="inline-flex items-center gap-1.5">
                                     <MapPin className="h-4 w-4" />
