@@ -5,12 +5,40 @@ import { AlertCircle, CheckCircle, Clock, ShieldCheck, CreditCard, Wallet, Lock 
 import { KYCVerificationForm } from './kyc-form'
 import { ServiceAgreementSign } from '@/components/organizer/service-agreement-sign'
 
-export default async function VerificationPage() {
+/**
+ * Verification intake.
+ *
+ * Normally scoped to the signed-in partner. An admin may append
+ * `?partner_id=<uuid>` to open ANOTHER partner's verification and complete or
+ * correct it on their behalf — KYC repeatedly stalls on fields a client can't
+ * interpret, and the alternative is walking someone through their own tax
+ * documents over a screen share.
+ *
+ * Deliberately the same form, not an admin copy: a second implementation would
+ * drift from this one the first time Xendit changes a requirement, and the
+ * divergence would only surface as a rejection weeks later.
+ */
+export default async function VerificationPage({
+    searchParams,
+}: {
+    searchParams: Promise<{ partner_id?: string }>
+}) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
         redirect('/organizer/login')
+    }
+
+    const { partner_id: requestedPartnerId } = await searchParams
+
+    // Admin status is read server-side and never trusted from the URL.
+    let isAdminActing = false
+    if (requestedPartnerId) {
+        const { data: caller } = await supabase
+            .from('users').select('is_admin').eq('id', user.id).single()
+        if (!caller?.is_admin) redirect('/organizer/verification')
+        isAdminActing = true
     }
 
     const { data: partner } = await supabase
@@ -20,6 +48,8 @@ export default async function VerificationPage() {
             representative_name, contact_number, nationality, place_of_birth, work_email,
             street_line1, street_line2, city, province_state, postal_code,
             tax_id, registration_number, legal_entity_address,
+            business_description, shareholders_include_corporate_entity,
+            kyc_submitted_by_admin, kyc_submitted_at,
             business_industry_subcategory, business_establishment_date,
             business_intents, business_source_of_funds, business_average_monthly_basket_size,
             money_out_transaction_frequency, business_phone_country_code, business_phone_number,
@@ -28,7 +58,7 @@ export default async function VerificationPage() {
             id_document_url, business_document_url, bir_2303_url,
             articles_of_incorporation_url, secretary_certificate_url, latest_gis_url
         `)
-        .eq('user_id', user.id)
+        .match(requestedPartnerId ? { id: requestedPartnerId } : { user_id: user.id })
         .single()
 
     if (!partner) {
@@ -36,6 +66,13 @@ export default async function VerificationPage() {
     }
 
     const status = partner.kyc_status || 'not_started'
+
+    // A partner may only edit while the form is actionable. An admin acting on
+    // their behalf must be able to edit at ANY status — the case this exists for
+    // is precisely a stuck 'submitted' record that Xendit has since bounced, which
+    // the partner themselves can no longer touch.
+    const partnerCanEdit = status === 'not_started' || status === 'rejected' || status === 'resubmission_required'
+    const showForm = partnerCanEdit || isAdminActing
 
     // Build the existing-docs map (slot -> storage path) the form uses to offer
     // "previously uploaded" reuse. Prefer normalized rows; fall back to legacy columns.
@@ -231,23 +268,42 @@ export default async function VerificationPage() {
             })()}
 
             {/* E-sign the Xendit Service Agreement (self-rolled e-consent → SERVICE_AGREEMENT_DOCUMENT) */}
-            {(status === 'not_started' || status === 'rejected' || status === 'resubmission_required') && (
+            {partnerCanEdit && !isAdminActing && (
                 <div className="mb-6"><ServiceAgreementSign /></div>
             )}
 
             {/* Submission Form — hidden while awaiting admin review ('pending_review')
                 or payment-provider verification ('submitted') */}
-            {(status === 'not_started' || status === 'rejected' || status === 'resubmission_required') && (
+            {showForm && (
                 <Card>
+                    {isAdminActing && (
+                        <div className="rounded-t-lg border-b bg-amber-50 px-6 py-3 text-sm text-amber-900">
+                            <span className="font-semibold">Admin mode</span> — editing{' '}
+                            <span className="font-semibold">{partner.business_name}</span> on their behalf.
+                            Submitting records you as the submitter and sets their status to pending review.
+                            {partner.kyc_submitted_at && (
+                                <span className="block text-xs mt-0.5 opacity-80">
+                                    Last submitted {new Date(partner.kyc_submitted_at).toLocaleString('en-PH')}
+                                    {partner.kyc_submitted_by_admin ? ' by an admin' : ' by the partner'}.
+                                </span>
+                            )}
+                        </div>
+                    )}
                     <CardHeader>
-                        <CardTitle>Submit Verification</CardTitle>
+                        <CardTitle>{isAdminActing ? 'Verification details' : 'Submit Verification'}</CardTitle>
                         <CardDescription>
-                            Complete the form below to verify your identity and business.
+                            {isAdminActing
+                                ? 'Every field is editable. Values already on file are pre-filled.'
+                                : 'Complete the form below to verify your identity and business.'}
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <KYCVerificationForm
+                            adminPartnerId={isAdminActing ? partner.id : undefined}
                             existingData={{
+                                registration_number: partner.registration_number,
+                                business_description: partner.business_description,
+                                shareholders_include_corporate_entity: partner.shareholders_include_corporate_entity,
                                 business_type: partner.business_type,
                                 business_name: partner.business_name,
                                 representative_name: partner.representative_name,

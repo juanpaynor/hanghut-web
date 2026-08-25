@@ -49,6 +49,12 @@ type BusinessProfile = {
     legal_entity_address?: StructuredAddress | null
     business_address?: StructuredAddress | null
     tax_id?: string
+    /** SEC/DTI registration number — Required by /account_verification. */
+    registration_number?: string
+    /** Factual business description for KYC review (not storefront copy). */
+    business_description?: string
+    /** Drives whether a shareholding-chart document is also required. */
+    shareholders_include_corporate_entity?: boolean
 }
 type StakeholderInput = {
     roles: string[]
@@ -81,11 +87,28 @@ export async function submitKYCVerification(
     if (!serviceRoleKey || !supabaseUrl) return { message: 'Server Config Error' }
     const adminSupabase = createSupabaseClient(supabaseUrl, serviceRoleKey)
 
-    const { data: partner } = await adminSupabase
-        .from('partners')
-        .select('id, business_type')
-        .eq('user_id', user.id)
-        .single()
+    // ── Resolve WHICH partner this submission is for ─────────────────────────
+    // Normally the caller's own partner record. An admin may instead pass
+    // `partnerId` to complete or correct a submission on a partner's behalf —
+    // KYC stalls constantly on fields a client can't interpret, and the
+    // alternative is screen-sharing through someone's tax documents.
+    //
+    // The admin check reads is_admin with the SERVICE ROLE client on purpose: the
+    // caller must not be able to influence the row that authorises them.
+    const requestedPartnerId = (formData.get('partnerId') as string) || ''
+    let actingAsAdmin = false
+
+    if (requestedPartnerId) {
+        const { data: caller } = await adminSupabase
+            .from('users').select('is_admin').eq('id', user.id).single()
+        if (!caller?.is_admin) return { message: 'Not authorized to submit for another partner.' }
+        actingAsAdmin = true
+    }
+
+    const partnerQuery = adminSupabase.from('partners').select('id, business_type')
+    const { data: partner } = requestedPartnerId
+        ? await partnerQuery.eq('id', requestedPartnerId).single()
+        : await partnerQuery.eq('user_id', user.id).single()
     if (!partner) return { message: 'Partner profile not found.' }
 
     // ── Parse submission ─────────────────────────────────────────────────────
@@ -153,11 +176,27 @@ export async function submitKYCVerification(
             : null,
         kyc_status: 'pending_review',
         kyc_rejection_reason: null,
+        // New in the /account_verification API — see kyc-constants.
+        business_description: business.business_description?.trim() || null,
+        shareholders_include_corporate_entity:
+            typeof business.shareholders_include_corporate_entity === 'boolean'
+                ? business.shareholders_include_corporate_entity
+                : null,
+        // Who actually filled this in. A partner reading "submitted 14:32" needs to
+        // know whether that was them or us, and a rejection six weeks later is much
+        // easier to unpick when the record says who typed it.
+        kyc_submitted_by_admin: actingAsAdmin,
+        kyc_submitted_by: user.id,
+        kyc_submitted_at: new Date().toISOString(),
     }
 
     // TIN gates the Xendit cards capability; blank means "leave what's there"
     // rather than wiping a value an admin may have filled in.
     if (business.tax_id?.trim()) updateData.tax_id = business.tax_id.trim()
+    // business_registration_number is Required by /account_verification. The LEGACY
+    // account_holders API rejected the field outright, which is why it was never
+    // collected and is null on every partner today.
+    if (business.registration_number?.trim()) updateData.registration_number = business.registration_number.trim()
 
     // Single-person entities: authorized person doubles as the contact person.
     if (isSinglePerson(entityType)) {

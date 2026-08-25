@@ -319,6 +319,18 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
                                 }>
                                     {(partner.kyc_status || 'not_started').toUpperCase().replace('_', ' ')}
                                 </Badge>
+                                {/* Open the real intake form scoped to this partner. Same
+                                    form the partner sees — an admin-only copy would drift
+                                    from it the first time Xendit changes a requirement. */}
+                                <a
+                                    href={`/organizer/verification?partner_id=${partner.id}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                                >
+                                    Open verification form as this partner
+                                    <ExternalLink className="h-3 w-3" />
+                                </a>
                             </div>
                         </div>
                     </div>

@@ -4,16 +4,17 @@ import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { submitKYCVerification, type KYCFormState } from '@/lib/organizer/verification-actions'
 import {
     ENTITY_TYPES, BUSINESS_INTENTS, SOURCE_OF_FUNDS, MONEY_OUT_FREQUENCY, BASKET_SIZE,
     GENDER, STAKEHOLDER_ROLES, ID_TYPES, requiresStakeholders, isSinglePerson,
-    type StructuredAddress, type EntityType,
+    type StructuredAddress, type EntityType, idNeedsProofOfResidency,
 } from '@/lib/organizer/kyc-constants'
 import {
-    Upload, FileText, X, CheckCircle, ArrowRight, ArrowLeft, Plus, Trash2, User,
+    Upload, FileText, X, CheckCircle, ArrowRight, ArrowLeft, Plus, Trash2, User, Download,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -54,6 +55,11 @@ export type KYCExistingData = {
     business_phone_country_code?: string
     business_phone_number?: string
     tax_id?: string
+    /** SEC/DTI registration number — Required by /account_verification. */
+    registration_number?: string
+    /** Factual business description for KYC review (not storefront copy). */
+    business_description?: string
+    shareholders_include_corporate_entity?: boolean | null
     street_line1?: string
     street_line2?: string
     city?: string
@@ -104,9 +110,11 @@ function StepIndicator({ currentStep, steps }: { currentStep: number; steps: str
     )
 }
 
-function FileDropZone({ docType, label, hint, file, hasExisting, onFileChange }: {
+function FileDropZone({ docType, label, hint, file, hasExisting, onFileChange, templateUrl }: {
     docType: string; label: string; hint: string; file: File | null
     hasExisting: boolean; onFileChange: (f: File | null) => void
+    /** Where a blank version of this document can be downloaded, when one exists. */
+    templateUrl?: string
 }) {
     const [dragging, setDragging] = useState(false)
     const id = `file-${docType}-${Math.random().toString(36).slice(2, 7)}`
@@ -117,7 +125,23 @@ function FileDropZone({ docType, label, hint, file, hasExisting, onFileChange }:
     const showExisting = hasExisting && !file
     return (
         <div className="space-y-1.5">
-            <Label className="text-sm font-medium">{label}</Label>
+            <div className="flex items-baseline justify-between gap-2">
+                <Label className="text-sm font-medium">{label}</Label>
+                {templateUrl && (
+                    /* Outside the drop zone on purpose: the zone's onClick opens the
+                       file picker, so a link nested inside it could never be reached. */
+                    <a
+                        href={templateUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                    >
+                        <Download className="h-3 w-3" />
+                        Download template
+                    </a>
+                )}
+            </div>
             <div
                 className={cn('relative border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-all',
                     dragging && 'border-primary bg-primary/5',
@@ -200,8 +224,17 @@ function AddressFields({ value, onChange, label }: { value: StructuredAddress; o
 // corporation (Articles of Partnership + Notarized Partner's Certificate, no GIS).
 // This is Xendit's sub-merchant Service Agreement (Xendit ↔ partner), with HangHut
 // named as the Platform Account Holder — NOT a HangHut-drafted agreement.
+// Xendit's own blank Secretary's Certificate. Submissions were rejected for using
+// a version that didn't name Xendit Philippines, Inc., so hand partners the correct
+// document at the moment they're asked for it rather than in an email they'll lose.
+const SECRETARY_CERT_TEMPLATE_URL =
+    'https://api.hanghut.com/storage/v1/object/public/XENDIT-SECCERT/Secretary-certificate/secretary_cert.docx'
+
+// business_license_documents is Required for PH. Xendit PH support confirmed the
+// Mayor's Permit satisfies it — it was never collected, so no partner has one.
+const MAYORS_PERMIT_SLOT = { type: 'PH_MAYORS_PERMIT', label: "Mayor's Permit", hint: 'Current business permit from your city or municipality' }
 const SERVICE_AGREEMENT_SLOT = { type: 'SERVICE_AGREEMENT', label: 'Service Agreement', hint: 'Signed Xendit Service Agreement (HangHut as your platform)' }
-function businessDocSlots(entity: string): { type: string; label: string; hint: string }[] {
+function businessDocSlots(entity: string): { type: string; label: string; hint: string; templateUrl?: string }[] {
     if (entity === 'sole_proprietorship') return [
         { type: 'PH_DTI_CERTIFICATE_REGISTRATION', label: 'DTI Registration', hint: 'DTI business name registration' },
         { type: 'PH_BIR_2303', label: 'BIR Form 2303', hint: 'BIR Certificate of Registration' },
@@ -211,8 +244,15 @@ function businessDocSlots(entity: string): { type: string; label: string; hint: 
         { type: 'PH_SEC_CERTIFICATE_REGISTRATION', label: 'SEC Certificate of Registration', hint: 'SEC registration certificate' },
         { type: 'PH_BIR_2303', label: 'BIR Form 2303', hint: 'BIR Certificate of Registration' },
         { type: 'PH_ARTICLES_OF_INCORPORATION', label: 'Articles of Incorporation', hint: 'Notarized copy' },
-        { type: 'PH_NOTARIZED_SECRETARY_CERTIFICATE', label: "Notarized Secretary's Certificate", hint: 'Board resolution authorizing the representative' },
+        {
+            type: 'PH_NOTARIZED_SECRETARY_CERTIFICATE',
+            label: "Notarized Secretary's Certificate",
+            // The two things Xendit rejected submissions over, said plainly.
+            hint: 'Must name Xendit Philippines, Inc. and the same authorized person you entered above. Notarized.',
+            templateUrl: SECRETARY_CERT_TEMPLATE_URL,
+        },
         { type: 'PH_GIS', label: 'Latest GIS', hint: 'Most recent General Information Sheet filed with SEC' },
+        MAYORS_PERMIT_SLOT,
         SERVICE_AGREEMENT_SLOT,
     ]
     if (entity === 'partnership') return [
@@ -220,22 +260,49 @@ function businessDocSlots(entity: string): { type: string; label: string; hint: 
         { type: 'PH_BIR_2303', label: 'BIR Form 2303', hint: 'BIR Certificate of Registration' },
         { type: 'PH_ARTICLES_OF_PARTNERSHIP', label: 'Articles of Partnership', hint: 'Notarized Articles of Partnership' },
         { type: 'PH_NOTARIZED_PARTNER_CERTIFICATE', label: "Notarized Partner's Certificate", hint: 'Notarized certificate authorizing the representative' },
+        MAYORS_PERMIT_SLOT,
         SERVICE_AGREEMENT_SLOT,
     ]
     return [SERVICE_AGREEMENT_SLOT] // individual: service agreement + person ID/selfie
 }
-const AUTH_DOC_SLOTS = [
-    { type: 'ID_FRONT', label: 'Government ID — Front', hint: 'Front of a valid government ID' },
-    { type: 'ID_BACK', label: 'Government ID — Back', hint: 'Back of the same ID' },
-    { type: 'SELFIE', label: 'Selfie with ID', hint: 'A selfie holding your ID (for liveness)' },
-]
-const STAKEHOLDER_DOC_SLOTS = [
-    { type: 'ID_FRONT', label: 'ID — Front', hint: 'Front of a valid government ID' },
-    { type: 'ID_BACK', label: 'ID — Back', hint: 'Back of the same ID' },
-]
+/**
+ * Person document slots depend on the ID they chose.
+ *
+ * Xendit requires `proof_of_residency_document` whenever the ID does not itself
+ * show a residential address — a passport being the case they name. Asking for
+ * it conditionally is the whole point: demanding a utility bill from someone
+ * submitting a driver's licence is noise, and NOT demanding it from someone
+ * submitting a passport is a rejection nobody sees for days.
+ */
+const PROOF_OF_RESIDENCY_SLOT = {
+    type: 'PROOF_OF_RESIDENCY',
+    label: 'Proof of address',
+    hint: 'Utility bill or bank statement showing the home address — required because a passport does not show one',
+}
+function authDocSlots(idType?: string) {
+    return [
+        { type: 'ID_FRONT', label: 'Government ID — Front', hint: 'Front of a valid government ID' },
+        { type: 'ID_BACK', label: 'Government ID — Back', hint: 'Back of the same ID' },
+        { type: 'SELFIE', label: 'Selfie with ID', hint: 'A selfie holding your ID (for liveness)' },
+        ...(idNeedsProofOfResidency(idType) ? [PROOF_OF_RESIDENCY_SLOT] : []),
+    ]
+}
+function stakeholderDocSlots(idType?: string) {
+    return [
+        { type: 'ID_FRONT', label: 'ID — Front', hint: 'Front of a valid government ID' },
+        { type: 'ID_BACK', label: 'ID — Back', hint: 'Back of the same ID' },
+        ...(idNeedsProofOfResidency(idType) ? [PROOF_OF_RESIDENCY_SLOT] : []),
+    ]
+}
 
 // ─── Main form ────────────────────────────────────────────────────────────────
-export function KYCVerificationForm({ existingData }: { existingData?: KYCExistingData }) {
+export function KYCVerificationForm({ existingData, adminPartnerId }: {
+    existingData?: KYCExistingData
+    /** Set when a HangHut admin is completing this for a partner. Submitted with
+     *  the form so the server can re-check admin rights — the presence of this
+     *  prop is a UI hint, never the authorisation itself. */
+    adminPartnerId?: string
+}) {
     const ex = existingData || {}
     const existingDocs = ex.existing_docs || {}
 
@@ -255,6 +322,15 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
     const [bizPhoneCC, setBizPhoneCC] = useState(ex.business_phone_country_code || '+63')
     const [bizPhone, setBizPhone] = useState(ex.business_phone_number || '')
     const [taxId, setTaxId] = useState(ex.tax_id || '')
+    // Required by /account_verification. The legacy account_holders API REJECTED
+    // this field, which is why it is null on every partner created before now.
+    const [registrationNumber, setRegistrationNumber] = useState(ex.registration_number || '')
+    const [businessDescription, setBusinessDescription] = useState(ex.business_description || '')
+    // Drives whether a shareholding-chart document is also required, so it has to
+    // be answered before we can tell the partner which documents to bring.
+    const [corporateShareholders, setCorporateShareholders] = useState<boolean | null>(
+        typeof ex.shareholders_include_corporate_entity === 'boolean' ? ex.shareholders_include_corporate_entity : null
+    )
     const [bizAddress, setBizAddress] = useState<StructuredAddress>({
         street_line1: ex.street_line1 || '',
         street_line2: ex.street_line2 || '',
@@ -326,6 +402,9 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
             intents, source_of_funds: sourceFunds, average_monthly_basket_size: basketSize || undefined,
             money_out_frequency: moneyOut || undefined, phone_country_code: bizPhoneCC, phone_number: bizPhone,
             tax_id: taxId.trim() || undefined,
+            registration_number: registrationNumber.trim() || undefined,
+            business_description: businessDescription.trim() || undefined,
+            shareholders_include_corporate_entity: corporateShareholders ?? undefined,
             business_address: bizAddress,
             // "Same as business" is stored explicitly rather than left null, so the
             // submission always carries a registered address.
@@ -366,6 +445,10 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
             if (!files[slot] && path) reuse[slot] = path
         }
         fd.append('reuse', JSON.stringify(reuse))
+
+        // Presence alone grants nothing: the server re-reads is_admin with the
+        // service role before honouring it.
+        if (adminPartnerId) fd.append('partnerId', adminPartnerId)
 
         const result = await submitKYCVerification(undefined, fd)
         setState(result)
@@ -447,6 +530,53 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
                             As shown on your BIR 2303. Required before card payments can be enabled.
                         </p>
                     </div>
+                    <div className="space-y-2">
+                        <Label>SEC / DTI Registration Number</Label>
+                        <Input
+                            value={registrationNumber}
+                            onChange={(e) => setRegistrationNumber(e.target.value)}
+                            placeholder="e.g. CS201812345"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            The registration number printed on your SEC (or DTI) certificate.
+                        </p>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>What does the business do?</Label>
+                        <Textarea
+                            value={businessDescription}
+                            onChange={(e) => setBusinessDescription(e.target.value)}
+                            placeholder="e.g. We produce and promote live music events and sell tickets to them."
+                            rows={3}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            A plain description for the compliance reviewer — not marketing copy.
+                        </p>
+                    </div>
+                    {corp && (
+                        <div className="space-y-2">
+                            <Label>Is any shareholder a company rather than a person?</Label>
+                            <div className="flex gap-2">
+                                <Button
+                                    type="button"
+                                    variant={corporateShareholders === false ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => setCorporateShareholders(false)}
+                                >No — all individuals</Button>
+                                <Button
+                                    type="button"
+                                    variant={corporateShareholders === true ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => setCorporateShareholders(true)}
+                                >Yes — a company holds shares</Button>
+                            </div>
+                            {corporateShareholders === true && (
+                                <p className="text-xs text-amber-700">
+                                    A shareholding chart will also be required.
+                                </p>
+                            )}
+                        </div>
+                    )}
                     <AddressFields
                         label="Business address (required)"
                         value={bizAddress}
@@ -534,7 +664,7 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
                             </div>
                             <AddressFields label="Residential address" value={s.address || {}} onChange={(a) => updateStakeholder(i, { address: a })} />
                             <div className="grid grid-cols-2 gap-3">
-                                {STAKEHOLDER_DOC_SLOTS.map(d => (
+                                {stakeholderDocSlots(s.id_type).map(d => (
                                     <FileDropZone key={d.type} docType={`stakeholder:${d.type}:${i}`} label={d.label} hint={d.hint}
                                         file={files[`stakeholder:${d.type}:${i}`] || null} hasExisting={false}
                                         onFileChange={(f) => setFile(`stakeholder:${d.type}:${i}`, f)} />
@@ -562,13 +692,14 @@ export function KYCVerificationForm({ existingData }: { existingData?: KYCExisti
                             {bizSlots.map(d => {
                                 const slot = `business:${d.type}`
                                 return <FileDropZone key={slot} docType={slot} label={d.label} hint={d.hint}
+                                    templateUrl={d.templateUrl}
                                     file={files[slot] || null} hasExisting={!!existingDocs[slot]} onFileChange={(f) => setFile(slot, f)} />
                             })}
                         </div>
                     )}
                     <div className="space-y-3 border-t pt-4">
                         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Authorized Person ID</h3>
-                        {AUTH_DOC_SLOTS.map(d => {
+                        {authDocSlots(auth.id_type).map(d => {
                             const slot = `authorized:${d.type}`
                             return <FileDropZone key={slot} docType={slot} label={d.label} hint={d.hint}
                                 file={files[slot] || null} hasExisting={!!existingDocs[slot]} onFileChange={(f) => setFile(slot, f)} />

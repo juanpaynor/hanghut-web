@@ -87,17 +87,44 @@ export const STAKEHOLDER_ROLES = [
 ] as const
 
 // PH identification document types (for authorized person + stakeholders).
+/**
+ * PH identification types offered in the form.
+ *
+ * `carriesAddress` drives a hard requirement, not a hint: Xendit requires
+ * `proof_of_residency_document` whenever the submitted ID does not itself show a
+ * residential address — a passport being the case they name explicitly. Getting
+ * this wrong is silent: the submission is accepted and then rejected days later.
+ *
+ * `xendit` is the enum sent to the API. PhilSys splits physical/digital there,
+ * so the form has to ask which one rather than collapsing both to one option.
+ */
 export const ID_TYPES = [
-    { value: 'PASSPORT', label: 'Passport' },
-    { value: 'PHILSYS_ID', label: 'PhilSys / National ID' },
-    { value: 'DRIVING_LICENSE', label: "Driver's License" },
-    { value: 'UMID', label: 'UMID' },
-    { value: 'SSS', label: 'SSS ID' },
-    { value: 'PRC', label: 'PRC ID' },
-    { value: 'POSTAL_ID', label: 'Postal ID' },
-    { value: 'VOTER_ID', label: "Voter's ID" },
-    { value: 'ACR', label: 'ACR / Immigrant COR' },
+    { value: 'PHILSYS_PHYSICAL', label: 'PhilSys / National ID (physical card)', xendit: 'PH_PHILSYS_PHYSICAL', carriesAddress: true },
+    { value: 'PHILSYS_DIGITAL',  label: 'PhilSys / National ID (digital)',       xendit: 'PH_PHILSYS_DIGITAL',  carriesAddress: true },
+    { value: 'DRIVING_LICENSE',  label: "Driver's License",                      xendit: 'PH_DRIVERS_LICENSE',  carriesAddress: true },
+    { value: 'UMID',             label: 'UMID',                                  xendit: 'PH_UMID',             carriesAddress: true },
+    { value: 'SSS',              label: 'SSS / GSIS ID',                         xendit: 'PH_SSS_OR_GSIS',      carriesAddress: true },
+    { value: 'PRC',              label: 'PRC ID',                                xendit: 'PH_PRC_LICENSE',      carriesAddress: true },
+    { value: 'POSTAL_ID',        label: 'Postal ID',                             xendit: 'PH_POSTAL_ID',        carriesAddress: true },
+    { value: 'VOTER_ID',         label: "Voter's ID",                            xendit: 'PH_VOTER_ID',         carriesAddress: true },
+    { value: 'ACR',              label: 'ACR / Immigrant COR',                   xendit: 'PH_ACR_OR_IMMIGRANT_COR', carriesAddress: true },
+    // Accepted, but a passport shows no address — selecting it forces an extra
+    // proof-of-residency upload. Listed last so it isn't the path of least effort.
+    { value: 'PASSPORT',         label: 'Passport (needs proof of address)',     xendit: 'PASSPORT',            carriesAddress: false },
 ] as const
+
+/** True when choosing this ID also obliges a separate proof-of-residency document. */
+export function idNeedsProofOfResidency(idType: string | null | undefined): boolean {
+    const found = ID_TYPES.find(t => t.value === idType)
+    // Unknown/unset is treated as needing proof: over-collecting costs an upload,
+    // under-collecting costs a rejection cycle measured in days.
+    return found ? !found.carriesAddress : true
+}
+
+/** Our internal ID value -> the enum Xendit expects. */
+export function toXenditIdType(idType: string | null | undefined): string | null {
+    return ID_TYPES.find(t => t.value === idType)?.xendit ?? null
+}
 
 // ─── Document types (our internal vocabulary stored in partner_kyc_documents) ──
 // owner_kind 'business' docs:
@@ -114,6 +141,11 @@ export const BUSINESS_DOC_TYPES = {
     PH_NOTARIZED_PARTNER_CERTIFICATE: 'PH_NOTARIZED_PARTNER_CERTIFICATE', // partnership
     SERVICE_AGREEMENT: 'SERVICE_AGREEMENT',                          // all entities
     OFFICE_ADDRESS_PROOF: 'OFFICE_ADDRESS_PROOF',
+    // business_license_documents — Required for PH. Xendit PH support confirmed
+    // the Mayor's Permit is what satisfies it for a Philippine corporation.
+    PH_MAYORS_PERMIT: 'PH_MAYORS_PERMIT',
+    // Required only when shareholders_include_corporate_entity is true.
+    SHAREHOLDING_CHART: 'SHAREHOLDING_CHART',
 } as const
 
 // person-scoped docs (owner_kind 'authorized_person' | 'stakeholder'):
@@ -123,6 +155,66 @@ export const PERSON_DOC_TYPES = {
     SELFIE: 'SELFIE',
     PROOF_OF_RESIDENCY: 'PROOF_OF_RESIDENCY',
 } as const
+
+/**
+ * Maps our stored address onto Xendit's `AccountVerificationAddress`.
+ *
+ * Two mismatches, both silent if unhandled:
+ *  - the API field is `street_line_1` (underscore before the digit); ours is `street_line1`
+ *  - the Philippines requires BOTH `province` and `state`, while we only ever
+ *    captured one combined `province_state` box. We send the same value to both
+ *    rather than leaving one empty, because "Metro Manila" is the true answer to
+ *    each and a missing required field fails the whole submission.
+ */
+export function toXenditAddress(a: StructuredAddress | null | undefined) {
+    if (!a) return null
+    const region = a.province_state || ''
+    return {
+        street_line_1: a.street_line1 || '',
+        ...(a.street_line2 ? { street_line_2: a.street_line2 } : {}),
+        city: a.city || '',
+        province: region,
+        state: region,
+        postal_code: a.postal_code || '',
+        country_code: a.country || 'PH',
+    }
+}
+
+/** Every field Xendit requires on a PH address. Used to block submit, not warn. */
+export function missingAddressFields(a: StructuredAddress | null | undefined): string[] {
+    const mapped = toXenditAddress(a)
+    if (!mapped) return ['street_line_1', 'city', 'province', 'state', 'postal_code']
+    return (['street_line_1', 'city', 'province', 'state', 'postal_code'] as const)
+        .filter(k => !String((mapped as Record<string, unknown>)[k] ?? '').trim())
+}
+
+/**
+ * Xendit wants `business_average_monthly_basket_size` as a USD range STRING
+ * ("$50K - $300K"). Our form has always asked in PESOS, so this is a currency
+ * conversion, not a relabel — and at ~₱56/$ every PH band below the top one
+ * lands under $10K.
+ *
+ * Only the two values Xendit have confirmed in writing are mapped. The rest
+ * deliberately return null so `submitKYCVerification` refuses to submit rather
+ * than inventing an enum: an invalid value here fails the whole request with
+ * INVALID_DATA_SUBMITTED, and a wrong-but-valid one misstates the merchant's
+ * turnover to a compliance team.
+ *
+ * TODO(xendit): Laura @ Xendit PH — awaiting the full enum list, in particular
+ * the band below $10K, which is where most PH partners will sit.
+ */
+const CONFIRMED_BASKET_SIZES: Record<string, string> = {
+    // Intentionally empty. Xendit confirmed the FORMAT ("$50K - $300K") but not
+    // which band each of our peso ranges maps to, and the two do not line up:
+    // ₱250,000–₱1,000,000/month is roughly $4.5K–$18K, straddling their $10K
+    // boundary rather than sitting inside a band. Guessing here is how the last
+    // submission failed, so we return null and block instead.
+}
+
+export function toXenditBasketSize(phpBand: string | null | undefined): string | null {
+    if (!phpBand) return null
+    return CONFIRMED_BASKET_SIZES[phpBand] ?? null
+}
 
 export type StructuredAddress = {
     street_line1?: string
