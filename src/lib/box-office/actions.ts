@@ -226,3 +226,67 @@ export async function admitAtDoor(
     if (error) return { ok: false, error: 'SERVER_ERROR', message: readableError(error.message) }
     return data as Awaited<ReturnType<typeof admitAtDoor>>
 }
+
+/* ── Close-out: counting the tin ───────────────────────────────────────────── */
+
+export interface DoorCloseout {
+    seller_id: string | null
+    seller_name: string
+    counted_cash: number
+    expected_cash: number
+    /** counted − expected. Positive = over, negative = short. */
+    variance: number
+    note: string | null
+    counted_by_name: string
+    counted_at: string
+}
+
+export async function getDoorCloseouts(eventId: string): Promise<DoorCloseout[]> {
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('get_box_office_closeouts', { p_event_id: eventId })
+    if (error || !data) return []
+    return (data as DoorCloseout[]).map((r) => ({
+        ...r,
+        counted_cash: Number(r.counted_cash),
+        expected_cash: Number(r.expected_cash),
+        variance: Number(r.variance),
+    }))
+}
+
+/**
+ * Record what was actually counted.
+ *
+ * Only the counted figure is sent — expected cash is recomputed by the RPC. A
+ * client-supplied expectation would let a till be balanced by asserting the very
+ * number it exists to prove.
+ *
+ * `sellerId` null counts the whole door as one tin, which is how a small event
+ * with a single drawer actually works.
+ */
+export async function recordDoorCloseout(
+    eventId: string,
+    countedCash: number,
+    sellerId?: string | null,
+    note?: string
+): Promise<
+    | { ok: true; expected: number; counted: number; variance: number }
+    | { ok: false; error: string }
+> {
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('record_box_office_closeout', {
+        p_event_id: eventId,
+        p_counted_cash: countedCash,
+        p_seller_id: sellerId ?? null,
+        p_note: note ?? null,
+    })
+    if (error) return { ok: false, error: readableError(error.message) }
+
+    const row = data as { expected_cash: number; counted_cash: number; variance: number }
+    revalidatePath(`/box-office/${eventId}`)
+    return {
+        ok: true,
+        expected: Number(row.expected_cash),
+        counted: Number(row.counted_cash),
+        variance: Number(row.variance),
+    }
+}

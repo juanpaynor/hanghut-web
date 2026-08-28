@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect } from 'react'
 import Link from 'next/link'
 import {
     Minus, Plus, Banknote, CreditCard, Landmark, Gift, Check, Undo2,
-    Loader2, Ticket, Search, DoorOpen, X, Printer,
+    Loader2, Ticket, Search, DoorOpen, X, Printer, Calculator,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,8 +13,9 @@ import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import {
     sellAtDoor, voidDoorSale, getDoorSales, getDoorSummary, findAtDoor, admitAtDoor,
+    recordDoorCloseout, getDoorCloseouts,
     type DoorPaymentMethod, type DoorSale, type DoorSaleResult, type DoorSummaryRow,
-    type DoorAttendee,
+    type DoorAttendee, type DoorCloseout,
 } from '@/lib/box-office/actions'
 
 interface Tier { id: string; name: string; price: number; available: number }
@@ -518,6 +519,7 @@ export function DoorTill({
                             In the tin
                         </p>
                         <p className="mt-1 text-4xl font-bold tabular-nums">{peso(cashHeld)}</p>
+                        <CloseOut eventId={eventId} expected={cashHeld} />
                         <PrintSoon label="Print close-out" className="mt-3 w-full justify-center" />
                         <div className="mt-3 space-y-1">
                             {cardTotal > 0 && <Row label="Card terminal" value={peso(cardTotal)} />}
@@ -589,6 +591,111 @@ function PrintSoon({ label, className = '' }: { label: string; className?: strin
                 Soon
             </span>
         </span>
+    )
+}
+
+/**
+ * Counting the tin at close.
+ *
+ * The rail above says what the system RECORDED. This is the other half: what was
+ * actually in the drawer. Previously the two were compared in someone's head and
+ * a shortfall left no trace.
+ *
+ * Only the counted figure is sent — the server recomputes what was expected. The
+ * variance is deliberately shown plainly and without alarm styling for a match:
+ * being ₱20 short at a door is ordinary, and a UI that treats it as an incident
+ * trains people to stop reporting it.
+ */
+function CloseOut({ eventId, expected }: { eventId: string; expected: number }) {
+    const { toast } = useToast()
+    const [open, setOpen] = useState(false)
+    const [counted, setCounted] = useState('')
+    const [saved, setSaved] = useState<DoorCloseout | null>(null)
+    const [pending, startTransition] = useTransition()
+
+    useEffect(() => {
+        void getDoorCloseouts(eventId).then((rows) => setSaved(rows[0] ?? null))
+    }, [eventId])
+
+    const amount = Number(counted)
+    const canSubmit = counted.trim() !== '' && Number.isFinite(amount) && amount >= 0
+
+    const submit = () => {
+        if (!canSubmit) return
+        startTransition(async () => {
+            const res = await recordDoorCloseout(eventId, amount)
+            if (!res.ok) {
+                toast({ title: 'Could not save the count', description: res.error, variant: 'destructive' })
+                return
+            }
+            const diff = res.variance
+            toast({
+                title: diff === 0 ? 'Till balanced' : diff > 0 ? `Over by ${peso(diff)}` : `Short by ${peso(Math.abs(diff))}`,
+                description: `Counted ${peso(res.counted)} against ${peso(res.expected)} recorded.`,
+            })
+            setOpen(false)
+            setCounted('')
+            void getDoorCloseouts(eventId).then((rows) => setSaved(rows[0] ?? null))
+        })
+    }
+
+    if (!open) {
+        return (
+            <div className="mt-3">
+                <Button variant="outline" className="w-full justify-center" onClick={() => setOpen(true)}>
+                    <Calculator className="mr-2 h-4 w-4" />
+                    {saved ? 'Re-count the tin' : 'Count the tin'}
+                </Button>
+                {saved && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                        Counted {peso(saved.counted_cash)} —{' '}
+                        {saved.variance === 0
+                            ? 'balanced'
+                            : saved.variance > 0
+                                ? `over by ${peso(saved.variance)}`
+                                : `short by ${peso(Math.abs(saved.variance))}`}
+                        {' · '}{saved.counted_by_name}
+                    </p>
+                )}
+            </div>
+        )
+    }
+
+    return (
+        <div className="mt-3 rounded-lg border border-border p-3">
+            <label htmlFor="counted-cash" className="text-xs font-medium text-muted-foreground">
+                Cash actually in the tin
+            </label>
+            <Input
+                id="counted-cash"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                autoFocus
+                value={counted}
+                placeholder={String(expected)}
+                onChange={(e) => setCounted(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
+                className="mt-1 text-lg tabular-nums"
+            />
+            {canSubmit && amount !== expected && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                    {amount > expected
+                        ? `${peso(amount - expected)} more than recorded`
+                        : `${peso(expected - amount)} less than recorded`}
+                </p>
+            )}
+            <div className="mt-3 flex gap-2">
+                <Button className="flex-1" onClick={submit} disabled={!canSubmit || pending}>
+                    {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                    Save count
+                </Button>
+                <Button variant="ghost" onClick={() => { setOpen(false); setCounted('') }} disabled={pending}>
+                    Cancel
+                </Button>
+            </div>
+        </div>
     )
 }
 

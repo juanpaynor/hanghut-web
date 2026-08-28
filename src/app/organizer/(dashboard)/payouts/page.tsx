@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { DollarSign, TrendingUp, Clock, Settings, Wallet, FileText } from 'lucide-react'
+import { DollarSign, TrendingUp, Clock, Settings, Wallet, FileText, DoorOpen } from 'lucide-react'
 import { format } from 'date-fns'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BankSettingsForm } from '@/components/organizer/payouts/bank-settings-form'
@@ -105,6 +105,21 @@ async function getPayoutStats(partnerId: string) {
         (merchTransactions?.reduce((sum, t) => sum + Number(t.organizer_payout), 0) || 0) -
         eventRefunds
 
+    // Door takings. Deliberately NOT part of any balance above: the organizer
+    // collected this cash themselves, HangHut never held it and charges no fee on
+    // it (create_box_office_order writes platform_fee = 0 and no transactions row).
+    // It's surfaced only so the payouts page can say where it went — otherwise an
+    // organizer reconciling their year finds door money in the event stats and
+    // nowhere here, and reasonably reads that as missing revenue.
+    const { data: doorIntents } = await supabase
+        .from('purchase_intents')
+        .select('total_amount, event:events!inner(organizer_id)')
+        .eq('source', 'box_office')
+        .eq('status', 'completed')
+        .eq('event.organizer_id', partnerId)
+
+    const doorCollected = (doorIntents || []).reduce((sum, r: any) => sum + Number(r.total_amount), 0)
+
     // Get all payouts (Lifetime for Balance)
     const { data: payouts } = await supabase
         .from('payouts')
@@ -122,6 +137,7 @@ async function getPayoutStats(partnerId: string) {
         completedPayouts,
         pendingPayouts,
         unsettledEarnings,
+        doorCollected,
         // Withdrawable = lifetime earnings, minus what's already been paid out or
         // requested, minus what Xendit is still holding.
         availableBalance: totalEarnings - completedPayouts - pendingPayouts - unsettledEarnings,
@@ -505,6 +521,35 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                             </div>
                         </Card>
                     </div>
+
+                    {/*
+                      * Door takings, stated only when they exist. This money is NOT in any
+                      * figure above and must never be: the organizer took it themselves, so
+                      * adding it to a withdrawable balance would promise them money we do
+                      * not hold. Showing it here answers the question it otherwise raises —
+                      * "the event says ₱12,750, the payout page doesn't" — before it reads
+                      * as missing revenue.
+                      */}
+                    {stats.doorCollected > 0 && (
+                        <Card className="p-5 border-border/50 bg-muted/30">
+                            <div className="flex items-start gap-3">
+                                <div className="p-2.5 rounded-xl bg-slate-500/10">
+                                    <DoorOpen className="h-5 w-5 text-slate-500" />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                                        Collected at the door
+                                    </p>
+                                    <p className="text-xl font-bold">₱{stats.doorCollected.toLocaleString()}</p>
+                                    <p className="mt-1 text-xs text-muted-foreground max-w-prose">
+                                        You took this at the box office, so it is already yours — it is not part of
+                                        your balance and no platform fee is charged on it. Count it against your till
+                                        in the box office.
+                                    </p>
+                                </div>
+                            </div>
+                        </Card>
+                    )}
 
                     {/* Request Payout */}
                     <RequestPayoutCard
