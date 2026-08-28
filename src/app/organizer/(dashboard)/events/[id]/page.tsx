@@ -52,7 +52,10 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         { data: partnerPricing },
         { data: rawTiers },
         { data: tierTickets },
-        { attendees },
+        // `total` is the UNPAGINATED count. Without it the client seeded its total
+        // from initialAttendees.length (one page = 20), so totalPages computed to 1
+        // and the pager was hidden — stranding every attendee past the first page.
+        { attendees, total: attendeeTotal },
         { data: promoCodes },
         { data: statsRows },
         registrationQuestions,
@@ -149,6 +152,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                 eventId={event.id}
                 tiers={tiers || []}
                 initialAttendees={attendees}
+                initialAttendeeTotal={attendeeTotal}
                 promoCodes={promoCodes || []}
                 stats={{
                     totalRevenue,

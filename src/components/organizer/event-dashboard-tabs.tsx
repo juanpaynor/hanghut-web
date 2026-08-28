@@ -28,6 +28,8 @@ interface EventDashboardTabsProps {
     eventId: string
     tiers: any[]
     initialAttendees: Attendee[]
+    /** Unpaginated attendee count — drives the pager. NOT initialAttendees.length. */
+    initialAttendeeTotal: number
     promoCodes: PromoCode[]
     stats: {
         totalRevenue: number
@@ -54,6 +56,7 @@ export function EventDashboardTabs({
     eventId,
     tiers,
     initialAttendees,
+    initialAttendeeTotal,
     promoCodes,
     stats,
     passFixedToCustomer,
@@ -147,6 +150,7 @@ export function EventDashboardTabs({
                     <AttendeeManager
                         eventId={eventId}
                         initialAttendees={initialAttendees}
+                        initialTotal={initialAttendeeTotal}
                         eventTitle={event.title}
                         eventDate={formatInManila(event.start_datetime, {
                             year: 'numeric',

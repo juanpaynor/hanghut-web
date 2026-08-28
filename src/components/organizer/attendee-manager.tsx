@@ -45,25 +45,37 @@ import {
 } from '@/components/ui/alert-dialog'
 import { TicketPrintModal } from './ticket-print-modal'
 
+/** Rows per page. Shared by the fetch and the pager so the two can't drift. */
+const PAGE_SIZE = 20
+
 interface AttendeeManagerProps {
     eventId: string
     initialAttendees: Attendee[]
+    /**
+     * Unpaginated attendee count from the server.
+     *
+     * Must NOT be derived from initialAttendees.length — that's one PAGE (20). It
+     * made totalPages compute to 1, which hid the pager entirely, and because the
+     * fetch effect deliberately skips its first run the total was never corrected.
+     * An event with 68 attendees showed 20 and offered no way to reach the rest.
+     */
+    initialTotal: number
     eventTitle: string
     eventDate: string
     eventVenue: string
 }
 
-export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDate, eventVenue }: AttendeeManagerProps) {
+export function AttendeeManager({ eventId, initialAttendees, initialTotal, eventTitle, eventDate, eventVenue }: AttendeeManagerProps) {
     const { toast } = useToast()
     const [attendees, setAttendees] = useState<Attendee[]>(initialAttendees)
-    const [total, setTotal] = useState(initialAttendees.length)
+    const [total, setTotal] = useState(initialTotal)
     const [loading, setLoading] = useState(false)
 
     // Pagination & Search
     const [page, setPage] = useState(1)
     const [search, setSearch] = useState('')
     const debouncedSearch = useDebounce(search, 500)
-    const totalPages = Math.ceil(total / 20)
+    const totalPages = Math.ceil(total / PAGE_SIZE)
 
     // ── Filters ──────────────────────────────────────────────────────────
     // Orthogonal axes: status (lifecycle) is separate from check-in state, so
@@ -84,7 +96,7 @@ export function AttendeeManager({ eventId, initialAttendees, eventTitle, eventDa
     // Refresh button and the post-refund reload, so they can never drift apart.
     const filters = useMemo<AttendeeFilters>(() => ({
         page,
-        limit: 20,
+        limit: PAGE_SIZE,
         search: debouncedSearch,
         status: statusFilter,
         payment: paymentFilter,
