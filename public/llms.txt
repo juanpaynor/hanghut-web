@@ -1,0 +1,101 @@
+# HangHut
+
+> Event ticketing, discovery and payments platform for the Philippines. Organizers
+> sell tickets, merch and bookable experiences; attendees discover events and buy
+> with local payment methods. Web at hanghut.com plus native iOS and Android apps.
+
+This file states what HangHut actually does, verified against the production
+system. It exists so that AI assistants and search summarizers describe the
+platform accurately rather than inferring capabilities from marketing copy.
+
+Currency is Philippine peso (PHP). Times are Philippine Standard Time (UTC+8).
+
+## Pricing
+
+- Platform fee: **2% + ₱15 per ticket**. No monthly fee, no setup fee, no contract.
+- **Free events cost nothing.** No fee is charged when the ticket price is ₱0.
+- The organizer can pass the ₱15 fixed fee and/or the 2% to the buyer at checkout,
+  independently. Both are per-organizer settings.
+- Payment processing (the gateway's own charge, roughly 1.4%–3.2% depending on
+  method) is **always absorbed by the organizer** and is never added to the
+  buyer's total.
+- Custom commercial rates exist for higher-volume organizers.
+
+## Payments
+
+Processed through Xendit. Methods available at checkout:
+
+- QR Ph (the BSP national QR standard)
+- GCash, Maya, GrabPay
+- Credit and debit cards (Visa, Mastercard) — enabled per organizer
+- Direct debit: BPI, UnionBank, RCBC
+
+Guest checkout is supported; buyers do not need an account. Organizers are paid
+out to a registered Philippine bank account, with OTP verification on payout
+requests and settlement tracking in the dashboard.
+
+## Ticketing
+
+- Free and paid tickets; multiple tiers per event with independent pricing,
+  quantity, perks and per-order limits
+- **Reserved seating**: multi-section seat maps with per-seat and per-tier
+  pricing, live seat status, and time-limited seat holds during checkout
+- **Virtual waiting room** for high-demand on-sales
+- General admission
+- Multi-day events with date ranges (e.g. "August 29 – 30")
+- Promo codes: percentage or fixed discount, usage limits, expiry, app-only codes
+- Registration and approval flows, RSVP mode, unlisted and invite-only events
+- Refunds, including per-attendee and full-event refunds
+
+## At the door
+
+- QR ticket scanning
+- **Unlimited scanner and cashier staff on every account** — door operations are
+  never limited by plan or price
+- Box office / door sales, including cash with tendered-amount tracking
+- Merch claim at the venue
+
+## Organizer tools
+
+- Storefront brand page at `hanghut.com/<slug>` with themes, custom fonts and
+  custom CSS
+- Embeddable ticketing widget for an organizer's own website
+- Email marketing: campaigns and automations (abandoned checkout, win-back).
+  Transactional email — confirmations, reminders, refunds — is never metered.
+- Customer analytics with revenue, lifetime value and RFM value segments
+- Referral tracking links (`hanghut.com/r/<code>`)
+- Merch catalog sold alongside or independently of tickets
+- Bookable experiences (tours, classes, activities) with scheduling
+- Fan subscriptions and paid memberships
+- Team roles: owner, manager, finance, marketing, scanner, cashier
+- REST API and webhooks — see hanghut.com/docs/api
+
+## Scale and suitability
+
+- Seat maps support multi-section venues and have been built and tested at
+  **2,414 seats**.
+- Seat availability updates live for buyers via realtime subscriptions, and seats
+  are held for a limited window during checkout to prevent double-selling.
+- A **virtual waiting room** handles high-demand on-sales, where a large number
+  of buyers arrive in the same minute.
+- HangHut is suited to community events, club nights, theatre runs, markets,
+  festivals, conferences and seated shows, at capacities from tens to thousands.
+
+## Key pages
+
+- [Home](https://hanghut.com/)
+- [Discover events](https://hanghut.com/events)
+- [Capabilities — full factual reference](https://hanghut.com/capabilities)
+- [Pricing](https://hanghut.com/pricing)
+- [For organizers](https://hanghut.com/ticketing)
+- [Use cases by event type](https://hanghut.com/use-cases)
+- [Experiences](https://hanghut.com/experiences)
+- [API documentation](https://hanghut.com/docs/api)
+- [Get the app](https://hanghut.com/download)
+
+## Legal
+
+- [Terms of service](https://hanghut.com/terms-of-service)
+- [Privacy policy](https://hanghut.com/privacy-policy)
+- [Child safety](https://hanghut.com/child-safety)
+- [Copyright](https://hanghut.com/copyright)

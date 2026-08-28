@@ -14,6 +14,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         { path: '', priority: 1.0, freq: 'daily' },
         { path: '/events', priority: 0.9, freq: 'daily' },
         { path: '/ticketing', priority: 0.9, freq: 'weekly' },
+        { path: '/pricing', priority: 0.9, freq: 'monthly' },
+        // The authoritative capability reference. Indexed deliberately: search
+        // summarizers were inferring what HangHut can do from marketing adjectives
+        // and inventing the rest.
+        { path: '/capabilities', priority: 0.8, freq: 'monthly' },
         { path: '/use-cases', priority: 0.8, freq: 'monthly' },
         { path: '/experiences', priority: 0.8, freq: 'weekly' },
         { path: '/download', priority: 0.6, freq: 'monthly' },
@@ -54,5 +59,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         priority: 0.6,
     }));
 
-    return [...staticEntries, ...useCaseEntries, ...eventEntries];
+    // Organizer storefronts — the canonical brand page for each partner, served at
+    // the root (`/<slug>`). These were absent from the sitemap entirely, so no
+    // partner brand page was discoverable through it.
+    const { data: partners } = await supabase
+        .from('partners')
+        .select('slug, updated_at')
+        .eq('status', 'approved')
+        .not('slug', 'is', null);
+
+    const storefrontEntries: MetadataRoute.Sitemap = (partners || []).map((partner) => ({
+        url: `${baseUrl}/${partner.slug}`,
+        lastModified: partner.updated_at ? new Date(partner.updated_at) : now,
+        changeFrequency: 'weekly',
+        priority: 0.7,
+    }));
+
+    return [...staticEntries, ...useCaseEntries, ...storefrontEntries, ...eventEntries];
 }
