@@ -48,6 +48,13 @@ import { TicketPrintModal } from './ticket-print-modal'
 /** Rows per page. Shared by the fetch and the pager so the two can't drift. */
 const PAGE_SIZE = 20
 
+/**
+ * Rows per request when exporting. Exports page through the SAME filtered
+ * query as the table rather than reading the page in state — reading state
+ * capped every export at PAGE_SIZE rows.
+ */
+const EXPORT_PAGE_SIZE = 200
+
 interface AttendeeManagerProps {
     eventId: string
     initialAttendees: Attendee[]
@@ -332,61 +339,112 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
 
     const selectedAttendeesData = attendees.filter(a => selectedAttendees.has(a.id))
 
-    const downloadCSV = () => {
-        const headers = ['Ticket #', 'Name', 'Email', 'Tier', 'Price', 'Seat', 'Status', 'Purchased', 'Check-in Time']
-        const rows = attendees.map(a => [
-            a.ticket_number || a.id,
-            a.user?.display_name || a.guest_info?.name || 'Guest',
-            a.user?.email || a.guest_info?.email || '-',
-            a.tier?.name || 'General',
-            a.amount_paid.toString(),
-            seatLine(a.seat_info) || '-',
-            a.status,
-            a.created_at ? new Date(a.created_at).toLocaleString() : '-',
-            a.checked_in_at ? new Date(a.checked_in_at).toLocaleString() : '-'
-        ])
+    const [exporting, setExporting] = useState<'csv' | 'pdf' | null>(null)
 
-        const csvContent = [
-            headers.join(','),
-            ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-        ].join('\n')
-
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-        const link = document.createElement('a')
-        link.href = URL.createObjectURL(blob)
-        link.download = `${eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_attendees.csv`
-        link.click()
+    /**
+     * Every attendee matching the CURRENT filters, not just the page on screen.
+     * `attendees` holds a single page, so exporting from it silently truncated
+     * the file — an event with 68 attendees exported 20 rows with no warning.
+     */
+    const fetchAllForExport = async (): Promise<Attendee[]> => {
+        const first = await getEventAttendees(eventId, { ...filters, page: 1, limit: EXPORT_PAGE_SIZE })
+        const all = [...first.attendees]
+        const pages = Math.max(1, Math.ceil(first.total / EXPORT_PAGE_SIZE))
+        for (let p = 2; p <= pages; p++) {
+            const next = await getEventAttendees(eventId, { ...filters, page: p, limit: EXPORT_PAGE_SIZE })
+            // A short or empty page means we've run out; don't spin.
+            if (!next.attendees.length) break
+            all.push(...next.attendees)
+        }
+        return all
     }
 
-    const downloadPDF = () => {
-        const doc = new jsPDF()
+    /** RFC 4180: wrap in quotes, and double any quote inside the value. */
+    const csvCell = (value: string) => `"${String(value ?? '').replace(/"/g, '""')}"`
 
-        doc.setFontSize(18)
-        doc.text(eventTitle, 14, 20)
+    const downloadCSV = async () => {
+        if (exporting) return
+        setExporting('csv')
+        try {
+            const rowsSource = await fetchAllForExport()
 
-        doc.setFontSize(10)
-        doc.text(`Date: ${eventDate}`, 14, 30)
-        doc.text(`Venue: ${eventVenue}`, 14, 35)
-        doc.text(`Total Attendees: ${total}`, 14, 40)
+            const headers = ['Ticket #', 'Name', 'Email', 'Tier', 'Price', 'Seat', 'Status', 'Purchased', 'Check-in Time']
+            const rows = rowsSource.map(a => [
+                a.ticket_number || a.id,
+                a.user?.display_name || a.guest_info?.name || 'Guest',
+                a.user?.email || a.guest_info?.email || '-',
+                a.tier?.name || 'General',
+                a.amount_paid.toString(),
+                seatLine(a.seat_info) || '-',
+                a.status,
+                a.created_at ? new Date(a.created_at).toLocaleString() : '-',
+                a.checked_in_at ? new Date(a.checked_in_at).toLocaleString() : '-'
+            ])
 
-        const tableColumn = ["Ticket ID", "Name", "Tier", "Status", "Email"]
-        const tableRows = attendees.map(attendee => [
-            attendee.id.slice(0, 8) + '...',
-            attendee.user?.display_name || attendee.guest_info?.name || 'Guest',
-            attendee.tier?.name || 'General',
-            attendee.status,
-            attendee.user?.email || attendee.guest_info?.email || '-'
-        ])
+            const csvContent = [
+                headers.map(csvCell).join(','),
+                ...rows.map(row => row.map(csvCell).join(','))
+            ].join('\n')
 
-        autoTable(doc, {
-            head: [tableColumn],
-            body: tableRows,
-            startY: 45,
-            theme: 'striped',
-            headStyles: { fillColor: [66, 66, 66] }
-        })
+            // BOM so Excel reads it as UTF-8 (accented names arrive intact).
+            const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+            const url = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = url
+            link.download = `${eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_attendees.csv`
+            link.click()
+            URL.revokeObjectURL(url)
 
-        doc.save(`${eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_attendees.pdf`)
+            toast({ title: 'Export ready', description: `${rows.length} attendee${rows.length === 1 ? '' : 's'} exported.` })
+        } catch {
+            toast({ title: 'Export failed', description: 'Could not load all attendees.', variant: 'destructive' })
+        } finally {
+            setExporting(null)
+        }
+    }
+
+    const downloadPDF = async () => {
+        if (exporting) return
+        setExporting('pdf')
+        try {
+            const rowsSource = await fetchAllForExport()
+
+            const doc = new jsPDF()
+
+            doc.setFontSize(18)
+            doc.text(eventTitle, 14, 20)
+
+            doc.setFontSize(10)
+            doc.text(`Date: ${eventDate}`, 14, 30)
+            doc.text(`Venue: ${eventVenue}`, 14, 35)
+            // Count the rows actually in this file. Printing `total` here while
+            // listing one page made the header contradict the table.
+            doc.text(`Attendees in this export: ${rowsSource.length}`, 14, 40)
+
+            const tableColumn = ["Ticket #", "Name", "Tier", "Status", "Email"]
+            const tableRows = rowsSource.map(attendee => [
+                attendee.ticket_number || attendee.id.slice(0, 8),
+                attendee.user?.display_name || attendee.guest_info?.name || 'Guest',
+                attendee.tier?.name || 'General',
+                attendee.status,
+                attendee.user?.email || attendee.guest_info?.email || '-'
+            ])
+
+            autoTable(doc, {
+                head: [tableColumn],
+                body: tableRows,
+                startY: 45,
+                theme: 'striped',
+                headStyles: { fillColor: [66, 66, 66] }
+            })
+
+            doc.save(`${eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_attendees.pdf`)
+            toast({ title: 'Export ready', description: `${tableRows.length} attendee${tableRows.length === 1 ? '' : 's'} exported.` })
+        } catch {
+            toast({ title: 'Export failed', description: 'Could not load all attendees.', variant: 'destructive' })
+        } finally {
+            setExporting(null)
+        }
     }
 
     return (
@@ -548,12 +606,16 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
-                                <DropdownMenuItem onClick={downloadCSV}>
-                                    <FileText className="w-4 h-4 mr-2" />
+                                <DropdownMenuItem onClick={downloadCSV} disabled={exporting !== null}>
+                                    {exporting === 'csv'
+                                        ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        : <FileText className="w-4 h-4 mr-2" />}
                                     Export as CSV
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={downloadPDF}>
-                                    <Sheet className="w-4 h-4 mr-2" />
+                                <DropdownMenuItem onClick={downloadPDF} disabled={exporting !== null}>
+                                    {exporting === 'pdf'
+                                        ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        : <Sheet className="w-4 h-4 mr-2" />}
                                     Export as PDF
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
