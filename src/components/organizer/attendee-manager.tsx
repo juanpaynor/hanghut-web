@@ -392,8 +392,14 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
             const link = document.createElement('a')
             link.href = url
             link.download = `${eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_attendees.csv`
+            // Appended before clicking, and the URL revoked a tick later rather than
+            // on the same one. Chrome resolves the blob during click(), but Safari
+            // and Firefox can abort the download if the URL is revoked synchronously
+            // The failure mode is a silently missing file, not an error.
+            document.body.appendChild(link)
             link.click()
-            URL.revokeObjectURL(url)
+            document.body.removeChild(link)
+            setTimeout(() => URL.revokeObjectURL(url), 0)
 
             toast({ title: 'Export ready', description: `${rows.length} attendee${rows.length === 1 ? '' : 's'} exported.` })
         } catch {
