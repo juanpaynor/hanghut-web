@@ -88,7 +88,19 @@ export function useSeatHoldTimer(
 
     // Local tick against the server-corrected clock.
     useEffect(() => {
-        if (!hold.expiresAt) { setSecondsLeft(null); return }
+        if (!hold.expiresAt) {
+            setSecondsLeft(null)
+            // A re-sync that comes back empty means the hold is GONE — the RPC
+            // filters `expires_at > now()`, so an expired hold and a hold that
+            // never existed both arrive as null. Treat it as expiry once the
+            // buyer actually has a selection, otherwise the countdown silently
+            // stops mattering the moment the tab is backgrounded and refocused.
+            if (hold.loaded && selectionCount > 0 && !firedRef.current) {
+                firedRef.current = true
+                onExpireRef.current?.()
+            }
+            return
+        }
         const tick = () => {
             const serverNow = Date.now() + hold.skewMs
             const left = Math.max(0, Math.round((hold.expiresAt! - serverNow) / 1000))
@@ -101,13 +113,22 @@ export function useSeatHoldTimer(
         tick()
         const id = setInterval(tick, 1000)
         return () => clearInterval(id)
-    }, [hold.expiresAt, hold.skewMs])
+    }, [hold.expiresAt, hold.skewMs, hold.loaded, selectionCount])
 
     return {
         secondsLeft,
         seatsHeld: hold.seatsHeld,
-        expired: hold.loaded && hold.expiresAt !== null && secondsLeft === 0,
+        /**
+         * True when the buyer has seats selected but no longer holds them —
+         * whether the countdown ran out in front of them or the hold vanished
+         * between syncs. Gate the pay button on THIS, never on
+         * `secondsLeft === 0`: secondsLeft is null for a lapsed hold, and
+         * `null === 0` is false, which fails open.
+         */
+        expired: hold.loaded && selectionCount > 0
+            && (hold.expiresAt === null || secondsLeft === 0),
         hasHold: hold.expiresAt !== null,
+        loaded: hold.loaded,
         resync: sync,
     }
 }

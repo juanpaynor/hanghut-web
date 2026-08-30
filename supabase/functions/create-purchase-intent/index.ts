@@ -36,7 +36,7 @@ serve(async (req) => {
         )
 
         // Parse request body
-        const { event_id, quantity, tier_id, seat_ids, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution, source } = await req.json()
+        const { event_id, quantity, tier_id, seat_ids, seat_session_id, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution, source } = await req.json()
 
         // Which client created this order. Whitelisted rather than stored raw so the column
         // can't drift into 'App'/'ios'/'mobile-web' variants; anything unrecognised is stored
@@ -309,6 +309,12 @@ serve(async (req) => {
                     p_tier_id: tier_id,
                     p_quantity: quantity,
                     p_seat_ids: Array.isArray(seat_ids) && seat_ids.length > 0 ? seat_ids : null,
+                    // Lets the RPC confirm the buyer STILL holds these seats.
+                    // Without it the checkout countdown is UI-only: the RPC can
+                    // see whether someone else holds a seat, but not whether the
+                    // buyer's own hold lapsed while they sat on the page.
+                    p_session_id: typeof seat_session_id === 'string' && seat_session_id
+                        ? seat_session_id : null,
                 }
             )
 
@@ -316,7 +322,8 @@ serve(async (req) => {
                 await supabaseAdmin.from('purchase_intents').update({ status: 'failed' }).eq('id', intentId)
                 await supabaseAdmin.from('tickets').update({ status: 'available' }).eq('purchase_intent_id', intentId).eq('status', 'reserved')
                 console.error('Seat assignment error:', seatError)
-                const code = seatError.message?.includes('SEATS_UNAVAILABLE') ? 'SEATS_UNAVAILABLE'
+                const code = seatError.message?.includes('SEATS_EXPIRED') ? 'SEATS_EXPIRED'
+                    : seatError.message?.includes('SEATS_UNAVAILABLE') ? 'SEATS_UNAVAILABLE'
                     : seatError.message?.includes('SEAT_COUNT_MISMATCH') ? 'SEAT_COUNT_MISMATCH'
                     : 'SERVER_ERROR'
                 return new Response(

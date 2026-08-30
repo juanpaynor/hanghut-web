@@ -117,21 +117,29 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
 
     // ── Seat hold countdown ───────────────────────────────────────────────────
     // Reads the SAME picker session id, so the countdown continues here instead
-    // of restarting. Once it hits zero the seats are genuinely gone (the server
-    // frees them the instant expires_at passes), so paying would either fail in
-    // assign_seats_to_intent or hand the buyer different seats than they chose —
-    // hence the pay button is blocked rather than merely warned about.
+    // of restarting.
+    //
+    // This block is the ONLY thing stopping a buyer paying on a lapsed hold, so
+    // it has to be right. assign_seats_to_intent does NOT rescue us: it rejects
+    // seats held by a different session, but never checks that the buyer's own
+    // hold is still alive — it is not even given the picker session id. So an
+    // expired buyer whose seats nobody else claimed sails straight through and
+    // takes seats that were legitimately released back to the pool.
+    //
+    // Gate on the hook's `expired`, never on `secondsLeft === 0`: once a hold
+    // lapses get_seat_hold_expiry filters it out and secondsLeft goes null, and
+    // `null === 0` is false — which fails OPEN on exactly the case we are
+    // guarding against.
     const [seatSessionId, setSeatSessionId] = useState<string | null>(null)
     useEffect(() => {
         if (selectedSeatIds.length === 0) return
         setSeatSessionId(sessionStorage.getItem('hh_seat_session'))
     }, [selectedSeatIds.length])
 
-    const { secondsLeft: holdSecondsLeft } = useSeatHoldTimer(
+    const { secondsLeft: holdSecondsLeft, expired: seatHoldExpired } = useSeatHoldTimer(
         seatSessionId,
         selectedSeatIds.length,
     )
-    const seatHoldExpired = selectedSeatIds.length > 0 && holdSecondsLeft === 0
 
     // Fee Logic — resolve the partner's platform rate from the single source of
     // truth (uses `??` so a deliberate 0% / ₱0 stays 0, and ignores pricing_model
@@ -345,6 +353,11 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 quantity: quantity,
                 tier_id: tier.id || undefined,
                 seat_ids: selectedSeatIds.length > 0 ? selectedSeatIds : undefined,
+                // The picker session that holds these seats. The server needs it to
+                // verify the buyer STILL holds them — assign_seats_to_intent can
+                // otherwise only see whether someone ELSE does, which lets a buyer
+                // on a lapsed hold take seats already released back to the pool.
+                seat_session_id: selectedSeatIds.length > 0 ? (seatSessionId || undefined) : undefined,
                 guest_details: !effectiveUser ? guestDetails : undefined,
                 promo_code: appliedPromo ? appliedPromo.code : undefined,
                 subscribed_to_newsletter: newsletterSubscribed,
@@ -423,6 +436,19 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 } else if (code === 'REGISTRATION_INVALID' || code === 'REGISTRATION_NOT_APPROVED') {
                     toast({ title: "Registration Invalid", description: "Your registration could not be verified. Please try again.", variant: "destructive" })
                     setApprovedRegistrationId(null)
+                    setIsLoading(false)
+                    return
+                } else if (code === 'SEATS_EXPIRED') {
+                    // Distinct from SEATS_UNAVAILABLE on purpose: the seats may
+                    // well still be free, the buyer just no longer has a claim on
+                    // them. Telling them "unavailable" here would be a lie they
+                    // can disprove by looking at the map.
+                    toast({
+                        title: "Your seat hold expired",
+                        description: "We released your seats after the timer ran out. Pick again — they may still be free.",
+                        variant: "destructive",
+                    })
+                    setTimeout(() => router.push(`/events/${event.id}`), 1500)
                     setIsLoading(false)
                     return
                 } else if (code === 'SEATS_UNAVAILABLE') {
