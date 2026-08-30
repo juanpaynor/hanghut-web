@@ -19,13 +19,16 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Check, AlertCircle, Ticket, ArrowLeft } from 'lucide-react'
+import { Loader2, Check, AlertCircle, Ticket, ArrowLeft, Plus, Minus } from 'lucide-react'
 import { kioskCheckIn, getKioskCounts, type KioskResult } from '@/lib/checkin/actions'
 
 /** How long a confirmation holds the screen before it resets for the next guest. */
 const RESET_AFTER_MS = 4500
 /** Press-and-hold duration to leave the kiosk. */
 const EXIT_HOLD_MS = 2000
+/** Party-size ceiling. The server clamps to the same number — this only keeps
+ *  the stepper honest about it. */
+const MAX_PAX = 10
 
 export function CheckinKiosk({
     eventId,
@@ -41,6 +44,7 @@ export function CheckinKiosk({
     const router = useRouter()
     const [name, setName] = useState('')
     const [email, setEmail] = useState('')
+    const [pax, setPax] = useState(1)
     const [busy, setBusy] = useState(false)
     const [result, setResult] = useState<KioskResult | null>(null)
     const [counts, setCounts] = useState(initialCounts)
@@ -54,6 +58,7 @@ export function CheckinKiosk({
         setResult(null)
         setName('')
         setEmail('')
+        setPax(1)
         // Focus back on the first field so the next guest can just start typing.
         setTimeout(() => nameRef.current?.focus(), 50)
     }, [])
@@ -64,7 +69,7 @@ export function CheckinKiosk({
         e.preventDefault()
         if (busy) return
         setBusy(true)
-        const res = await kioskCheckIn(eventId, name, email)
+        const res = await kioskCheckIn(eventId, name, email, pax)
         setResult(res)
 
         // Clear the guest's details immediately — the confirmation screen is
@@ -72,6 +77,7 @@ export function CheckinKiosk({
         if (res.ok || res.code === 'ALREADY_IN' || res.code === 'SEE_BOX_OFFICE') {
             setName('')
             setEmail('')
+            setPax(1)
             setCounts(await getKioskCounts(eventId))
         }
         setBusy(false)
@@ -79,7 +85,12 @@ export function CheckinKiosk({
         // Validation misses stay on screen until corrected; a resolved check-in
         // clears itself so the door keeps moving without staff intervention.
         if (res.ok || res.code === 'ALREADY_IN') {
-            resetTimer.current = setTimeout(reset, RESET_AFTER_MS)
+            // A partial result asks the guest to go somewhere, so it holds the
+            // screen longer than a clean "you're in".
+            resetTimer.current = setTimeout(
+                reset,
+                res.ok && res.code === 'PARTIAL' ? RESET_AFTER_MS * 2 : RESET_AFTER_MS,
+            )
         }
     }
 
@@ -184,6 +195,36 @@ export function CheckinKiosk({
                                     className="h-14 w-full rounded-xl border border-border bg-card px-4 text-lg text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                                 />
                             </div>
+                            <div>
+                                <span className="mb-1.5 block text-sm font-medium text-foreground">
+                                    How many of you?
+                                </span>
+                                {/* A stepper, not a text field: this is a tablet at a
+                                    door, and tapping a big +/- is faster and less
+                                    error-prone than a number keyboard. */}
+                                <div className="flex items-center gap-4">
+                                    <PaxButton
+                                        label="One fewer guest"
+                                        disabled={pax <= 1}
+                                        onClick={() => setPax((n) => Math.max(1, n - 1))}
+                                    >
+                                        <Minus className="h-6 w-6" />
+                                    </PaxButton>
+                                    <output
+                                        aria-live="polite"
+                                        className="flex-1 text-center text-3xl font-bold tabular-nums text-foreground"
+                                    >
+                                        {pax}
+                                    </output>
+                                    <PaxButton
+                                        label="One more guest"
+                                        disabled={pax >= MAX_PAX}
+                                        onClick={() => setPax((n) => Math.min(MAX_PAX, n + 1))}
+                                    >
+                                        <Plus className="h-6 w-6" />
+                                    </PaxButton>
+                                </div>
+                            </div>
                         </div>
 
                         {result && !result.ok && (
@@ -202,7 +243,7 @@ export function CheckinKiosk({
                             className="mt-6 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary text-lg font-semibold text-primary-foreground transition-opacity disabled:opacity-60"
                         >
                             {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Ticket className="h-5 w-5" />}
-                            {busy ? 'Checking in…' : 'Check in'}
+                            {busy ? 'Checking in…' : pax === 1 ? 'Check in' : `Check in ${pax} people`}
                         </button>
                     </form>
                 )}
@@ -217,8 +258,10 @@ export function CheckinKiosk({
  * right person was matched, not enough to expose the guest list.
  */
 function Outcome({ result, onDone }: { result: KioskResult; onDone: () => void }) {
-    const admitted = result.ok
+    const partial = result.ok && result.code === 'PARTIAL'
+    const admitted = result.ok && !partial
     const first = ('first_name' in result && result.first_name) || 'there'
+    const count = ('admitted' in result && result.admitted) || 0
 
     return (
         <button
@@ -236,20 +279,65 @@ function Outcome({ result, onDone }: { result: KioskResult; onDone: () => void }
             </span>
 
             <span className="text-4xl font-bold tracking-tight text-foreground">
-                {admitted ? `You're in, ${first}!` : `Already checked in`}
+                {admitted
+                    ? `You're in, ${first}!`
+                    : partial
+                      ? 'Almost there'
+                      : 'Already checked in'}
             </span>
 
+            {/* The party size is the thing door staff glance at from a metre away,
+                so it gets its own line rather than being folded into prose. */}
+            {count > 1 && admitted && (
+                <span className="rounded-full bg-primary/10 px-4 py-1.5 text-lg font-semibold tabular-nums text-primary">
+                    {count} people checked in
+                </span>
+            )}
+
             <span className="text-base text-muted-foreground">
-                {result.ok && result.code === 'REGISTERED'
-                    ? "We've emailed your ticket. Enjoy the show."
-                    : admitted
-                      ? 'Enjoy the show.'
-                      : `${first}, this ticket has already been used. Please see a staff member.`}
+                {partial
+                    ? result.message
+                    : result.ok && result.code === 'REGISTERED'
+                      ? "We've emailed your ticket. Enjoy the show."
+                      : admitted
+                        ? 'Enjoy the show.'
+                        : !result.ok
+                          ? result.message
+                          : 'Enjoy the show.'}
             </span>
 
             <span className="mt-2 text-xs uppercase tracking-wide text-muted-foreground">
                 Tap anywhere for the next guest
             </span>
+        </button>
+    )
+}
+
+/**
+ * Stepper control. Sized for a thumb on a propped-up tablet rather than a mouse —
+ * the whole point of the kiosk is that a guest uses it unassisted, standing up,
+ * often in a queue.
+ */
+function PaxButton({
+    label,
+    disabled,
+    onClick,
+    children,
+}: {
+    label: string
+    disabled: boolean
+    onClick: () => void
+    children: React.ReactNode
+}) {
+    return (
+        <button
+            type="button"
+            aria-label={label}
+            disabled={disabled}
+            onClick={onClick}
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-foreground transition-colors hover:bg-accent disabled:opacity-35"
+        >
+            {children}
         </button>
     )
 }

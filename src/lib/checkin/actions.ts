@@ -12,25 +12,49 @@ import { createClient } from '@/lib/supabase/server'
  */
 
 export type KioskResult =
-    | { ok: true; code: 'ADMITTED' | 'REGISTERED'; first_name: string; ticket_url?: string }
+    | {
+          ok: true
+          code: 'ADMITTED' | 'REGISTERED'
+          first_name: string
+          /** How many people were actually let in. */
+          admitted: number
+          ticket_url?: string
+      }
+    | {
+          /**
+           * PARTIAL is ok:true — some of the party got in. It carries `short`
+           * so the screen can say who still needs to see someone, rather than
+           * reading as a flat failure when most of the group is already inside.
+           */
+          ok: true
+          code: 'PARTIAL'
+          first_name: string
+          admitted: number
+          short: number
+          message: string
+      }
     | {
           ok: false
           code: 'ALREADY_IN' | 'SEE_BOX_OFFICE' | 'NAME_REQUIRED' | 'EMAIL_REQUIRED' | 'SERVER_ERROR'
           message: string
           first_name?: string
-          checked_in_at?: string
+          already_in?: number
+          admitted?: number
+          short?: number
       }
 
 export async function kioskCheckIn(
     eventId: string,
     name: string,
-    email: string
+    email: string,
+    pax: number
 ): Promise<KioskResult> {
     const supabase = await createClient()
     const { data, error } = await supabase.rpc('kiosk_check_in', {
         p_event_id: eventId,
         p_name: name,
         p_email: email,
+        p_pax: pax,
     })
 
     if (error) {
