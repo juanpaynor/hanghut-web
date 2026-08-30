@@ -209,12 +209,16 @@ export function DoorTill({
                     <Stat label="left" value={String(stock)} />
                     <Stat label="sold at door" value={String(soldUnits)} />
                 </div>
-                <Link
-                    href={`/checkin/${eventId}`}
-                    className="shrink-0 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent"
-                >
-                    Check-in
-                </Link>
+                {/* Free events only — the kiosk admits by typed email, which is not
+                    proof of a ticket, so it is never offered for a paid door. */}
+                {basePrice === 0 && !tiers.some((t) => t.price > 0) && (
+                    <Link
+                        href={`/checkin/${eventId}`}
+                        className="shrink-0 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+                    >
+                        Check-in
+                    </Link>
+                )}
                 <Link
                     href="/scan"
                     className="shrink-0 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent"

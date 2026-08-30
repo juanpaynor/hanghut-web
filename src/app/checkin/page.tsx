@@ -48,7 +48,7 @@ export default async function CheckinPickerPage() {
     // multi-day event on its second morning still has its doors open.
     const { data: events } = await supabase
         .from('events')
-        .select('id, title, start_datetime, end_datetime, venue_name, is_external')
+        .select('id, title, start_datetime, end_datetime, venue_name, is_external, ticket_price')
         .in('organizer_id', partnerIds)
         .in('status', ['active', 'hidden'])
         .or(eventsNotEndedBefore(manilaDayStartISO()))
@@ -56,19 +56,39 @@ export default async function CheckinPickerPage() {
 
     // An external event's attendees are on someone else's platform — there is
     // nobody here to check in.
-    const workable = (events ?? []).filter((e) => !e.is_external)
+    const local = (events ?? []).filter((e) => !e.is_external)
+
+    // FREE EVENTS ONLY. Typing an email is not authentication — anyone who knows
+    // an attendee's address could claim their seat. That is a fair trade for a
+    // free RSVP door and not for a ticketed one, which uses /scan (verifies a QR)
+    // or the box office (operated by staff). Mirrors event_is_free() server-side;
+    // the RPC refuses a paid event regardless, this just keeps them off the list.
+    const paidEventIds = new Set<string>()
+    if (local.length > 0) {
+        const { data: paidTiers } = await supabase
+            .from('ticket_tiers')
+            .select('event_id')
+            .in('event_id', local.map((e) => e.id))
+            .gt('price', 0)
+        paidTiers?.forEach((t) => paidEventIds.add(t.event_id))
+    }
+    const workable = local.filter(
+        (e) => !paidEventIds.has(e.id) && Number(e.ticket_price ?? 0) === 0,
+    )
 
     return (
         <Shell>
             <h1 className="text-2xl font-bold tracking-tight">Check-in desk</h1>
             <p className="text-sm text-muted-foreground">
-                Pick tonight&rsquo;s event, then hand the screen to your guests.
+                Free and RSVP events. Pick tonight&rsquo;s, then hand the screen to your guests.
             </p>
 
             <div className="mt-6 space-y-2">
                 {workable.length === 0 && (
                     <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
-                        No upcoming events to check in for.
+                        No upcoming free events to check in for. The check-in desk is
+                        for free and RSVP events — ticketed events use the scanner or
+                        the box office.
                     </p>
                 )}
                 {workable.map((e) => (

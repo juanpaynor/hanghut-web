@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
+import Link from 'next/link'
+import { UserCheck } from 'lucide-react'
 import { EventDashboardTabs } from '@/components/organizer/event-dashboard-tabs'
 import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
 import { getAuthUser, getPartner } from '@/lib/auth/cached'
@@ -138,11 +140,33 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         partnerPricing?.custom_percentage != null ? Number(partnerPricing.custom_percentage) : null
     ) / 100
 
+    // The check-in desk is a FREE-event tool: it admits people by typed email,
+    // which is not proof of a ticket. Ticketed events check in through the
+    // scanner or the box office, so the link simply isn't offered for them.
+    // Mirrors event_is_free() — kept in sync by both reading price > 0.
+    const isFreeEvent =
+        !tiers.some((t: { price: number | string | null }) => Number(t.price ?? 0) > 0) &&
+        Number((event as { ticket_price?: number | string | null }).ticket_price ?? 0) === 0
+
     return (
         <div className="p-8 pb-20">
-            <div className="mb-6">
-                <h1 className="text-3xl font-bold">{event.title}</h1>
-                <p className="text-muted-foreground">Manage your event, view stats, and edit details.</p>
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold">{event.title}</h1>
+                    <p className="text-muted-foreground">Manage your event, view stats, and edit details.</p>
+                </div>
+
+                {isFreeEvent && (
+                    <Link
+                        href={`/checkin/${event.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent"
+                    >
+                        <UserCheck className="h-4 w-4" />
+                        Open check-in desk
+                    </Link>
+                )}
             </div>
 
             <EventDashboardTabs
