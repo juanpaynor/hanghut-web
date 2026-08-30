@@ -617,7 +617,13 @@ export async function setPartnerCapabilities(partnerId: string, capabilities: st
 }
 
 /**
- * Set auto-approve payouts flag for a partner
+ * Set the auto-approve payouts flag for a partner.
+ *
+ * Writes `auto_approve_enabled` — the column request-payout actually reads. This
+ * used to write `auto_approve_payouts`, which NOTHING in the money path consults,
+ * so the toggle saved, the UI showed it on, and every payout still queued for
+ * manual review. Seven partners were granted auto-approve that way and none of
+ * them had it. `auto_approve_payouts` is now vestigial; do not reintroduce it.
  */
 export async function setAutoApprovePayouts(partnerId: string, autoApprove: boolean) {
     const supabase = await createClient()
@@ -625,7 +631,7 @@ export async function setAutoApprovePayouts(partnerId: string, autoApprove: bool
     const { error } = await supabase
         .from('partners')
         .update({
-            auto_approve_payouts: autoApprove,
+            auto_approve_enabled: autoApprove,
         })
         .eq('id', partnerId)
 

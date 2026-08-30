@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { EmbedEventCard } from '@/components/embed/embed-event-card'
 import { EmbedThemeWrapper, type EmbedTheme } from '@/components/embed/embed-theme-wrapper'
+import { eventsNotEndedBefore } from '@/lib/datetime'
 
 // Always render fresh — a ticketing widget must reflect the organizer's current
 // events immediately (adds/removes/edits). ISR caching served stale "old events".
@@ -38,7 +39,10 @@ export default async function EmbedStorefrontPage({
         .eq('organizer_id', partner.id)
         .eq('status', 'active')
         .neq('invite_only', true)
-        .gte('start_datetime', now)
+        // Still-running counts as upcoming — see eventsNotEndedBefore. This widget
+        // sits on the partner's OWN site, so a running event dropping out of it is
+        // their homepage saying the show isn't on.
+        .or(eventsNotEndedBefore(now))
         .order('start_datetime', { ascending: true })
         .limit(20)
 

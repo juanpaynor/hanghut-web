@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { manilaDayStartISO, runnableEventsFilter } from '@/lib/datetime'
+import { manilaDayStartISO, eventsNotEndedBefore } from '@/lib/datetime'
 import { redirect } from 'next/navigation'
 import { LazyWebScanner } from '@/components/scanner/lazy-scanner'
 
@@ -57,7 +57,7 @@ export default async function ScanPage() {
 
     // Everything the crew can still work: not finished yet, or finished earlier
     // today. Filtering on start_datetime dropped a multi-day event on its second
-    // morning — see runnableEventsFilter.
+    // morning — see eventsNotEndedBefore.
     const todayStart = manilaDayStartISO()
 
     const { data: events } = await supabase
@@ -65,7 +65,7 @@ export default async function ScanPage() {
         .select('id, title, start_datetime, end_datetime')
         .in('organizer_id', partnerIds)
         .in('status', ['active', 'hidden'])
-        .or(runnableEventsFilter(todayStart))
+        .or(eventsNotEndedBefore(todayStart))
         .order('start_datetime', { ascending: true })
 
     console.log('[ScanPage] Events Found:', events?.length)

@@ -6,6 +6,7 @@ import { PublicEventCard } from '@/components/events/public-event-card'
 import { Globe, Instagram, Facebook, Twitter, Calendar, Megaphone, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Metadata } from 'next'
+import { eventsNotEndedBefore, eventsEndedBefore } from '@/lib/datetime'
 import { Inter, Playfair_Display, Space_Mono } from 'next/font/google'
 import { Badge } from '@/components/ui/badge'
 import { BrandingProvider } from '@/components/storefront/branding-provider'
@@ -54,7 +55,10 @@ const getPartnerAndEvents = cache(async (slug: string) => {
             .eq('status', 'active')
             .neq('is_subscriber_only', true)
             .neq('invite_only', true)
-            .gte('start_datetime', now)
+            // Still-running counts as upcoming. `start_datetime >= now` dropped a
+            // multi-day event from its own brand page on day two, while the doors
+            // were open — see eventsNotEndedBefore.
+            .or(eventsNotEndedBefore(now))
             .order('start_datetime', { ascending: true })
     ]
 
@@ -67,7 +71,9 @@ const getPartnerAndEvents = cache(async (slug: string) => {
                 .eq('status', 'active')
                 .neq('is_subscriber_only', true)
                 .neq('invite_only', true)
-                .lt('start_datetime', now)
+                // The exact complement of the query above. `start_datetime < now`
+                // filed a RUNNING event under "past", which is worse than hiding it.
+                .or(eventsEndedBefore(now))
                 .order('start_datetime', { ascending: false })
                 .limit(12)
         )

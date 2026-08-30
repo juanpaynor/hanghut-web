@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { CalendarDays, ChevronRight } from 'lucide-react'
-import { runnableEventsFilter } from '@/lib/datetime'
+import { manilaDayStartISO, eventsNotEndedBefore } from '@/lib/datetime'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,13 +47,13 @@ export default async function BoxOfficePage() {
 
     // An event that technically ended an hour ago is still the one being worked —
     // and a multi-day event on its second morning still has its doors open.
-    // Filtering on start_datetime dropped the latter; see runnableEventsFilter.
+    // Filtering on start_datetime dropped the latter; see eventsNotEndedBefore.
     const { data: events } = await supabase
         .from('events')
         .select('id, title, start_datetime, end_datetime, venue_name, is_external')
         .in('organizer_id', partnerIds)
         .in('status', ['active', 'hidden'])
-        .or(runnableEventsFilter())
+        .or(eventsNotEndedBefore(manilaDayStartISO()))
         .order('start_datetime', { ascending: true })
 
     // An external event's tickets live on someone else's platform — there is

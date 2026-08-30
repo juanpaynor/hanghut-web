@@ -39,7 +39,8 @@ interface Partner {
     pass_fixed_to_customer: boolean
     pass_percentage_to_customer: boolean
     fixed_fee_per_ticket: number
-    auto_approve_payouts: boolean
+    /** The flag request-payout reads. See setAutoApprovePayouts. */
+    auto_approve_enabled: boolean
     created_at: string
     approved_at: string | null
     xendit_account_id: string | null
@@ -93,7 +94,7 @@ export function PartnerDetailModal({ partner, open, onOpenChange }: PartnerDetai
     const [pricingModel, setPricingModel] = useState(partner.pricing_model || 'standard')
     const [customPercentage, setCustomPercentage] = useState(partner.custom_percentage?.toString() || '2')
     const [adminNotes, setAdminNotes] = useState('')
-    const [autoApprovePayouts, setAutoApprovePayoutsState] = useState(partner.auto_approve_payouts || false)
+    const [autoApprovePayouts, setAutoApprovePayoutsState] = useState(partner.auto_approve_enabled || false)
     const [subscriptionsEnabled, setSubscriptionsEnabledState] = useState<boolean>((partner as any).subscriptions_enabled ?? false)
     const [merchEnabled, setMerchEnabledState] = useState<boolean>((partner as any).merch_enabled ?? false)
     const [useMainWallet, setUseMainWalletState] = useState<boolean>((partner as any).use_main_wallet ?? false)

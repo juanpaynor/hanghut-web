@@ -272,15 +272,31 @@ export function manilaDayStartISO(): string {
 }
 
 /**
- * Events a door team can still work right now: anything that has not finished
- * yet, plus anything that finished earlier today (they're still packing down),
- * plus open-ended events that started today.
+ * Events that had NOT finished as of `boundaryISO`, as a PostgREST `.or()` string.
+ * Open-ended events (no end_datetime) fall back to their start.
  *
- * Written as a PostgREST `.or()` string. The bug this replaces filtered on
- * `start_datetime >= today`, which silently dropped a MULTI-DAY event on its
- * second morning — Fuego Identity (Aug 29 11:00 → Aug 30 20:00) vanished from
- * the scanner and the box office at midnight while the doors were still open.
+ * The bug this exists to prevent: filtering on `start_datetime` alone answers
+ * "has it begun?", never "is it over?". Those look identical for a single-day
+ * event and diverge the moment one crosses midnight — Fuego Identity (Aug 29
+ * 11:00 → Aug 30 20:00) vanished from the scanner, the box office AND its own
+ * storefront on its second morning, with the doors still open.
+ *
+ * The boundary is a parameter because callers mean different things by "still on":
+ *  - door surfaces pass {@link manilaDayStartISO} — an event that ended at 6am is
+ *    still the one being packed down, so it belongs on the scanner all day;
+ *  - public listings pass `now` — a finished event is finished.
  */
-export function runnableEventsFilter(dayStartISO = manilaDayStartISO()): string {
-    return `end_datetime.gte.${dayStartISO},and(end_datetime.is.null,start_datetime.gte.${dayStartISO})`
+export function eventsNotEndedBefore(boundaryISO: string): string {
+    return `end_datetime.gte.${boundaryISO},and(end_datetime.is.null,start_datetime.gte.${boundaryISO})`
+}
+
+/**
+ * The exact complement of {@link eventsNotEndedBefore} — genuinely finished.
+ *
+ * Must stay the mirror image: a "past events" list built on `start_datetime <
+ * now` claims a RUNNING multi-day event has already happened, which is worse
+ * than merely hiding it.
+ */
+export function eventsEndedBefore(boundaryISO: string): string {
+    return `end_datetime.lt.${boundaryISO},and(end_datetime.is.null,start_datetime.lt.${boundaryISO})`
 }
