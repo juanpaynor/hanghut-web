@@ -256,3 +256,31 @@ export function formatEventShortWithEnd(
     if (!isMultiDayEvent(start, end)) return formatEventShort(start)
     return formatEventDayRange(start, end, 'short', { year: true })
 }
+
+/**
+ * Midnight tonight-just-gone in MANILA, as an ISO instant.
+ *
+ * Door surfaces (scanner, box office) want "today's events", and `new Date()`
+ * with `setHours(0,0,0,0)` gives midnight in the SERVER's zone — which on a UTC
+ * host is 8am Manila. An event that finished at 6am Manila was therefore already
+ * outside "today" for the crew still packing it down.
+ */
+export function manilaDayStartISO(): string {
+    const parts = PARTS_FORMAT.formatToParts(new Date())
+    const get = (type: string) => parts.find((p) => p.type === type)!.value
+    return manilaLocalToISO(`${get('year')}-${get('month')}-${get('day')}T00:00`)
+}
+
+/**
+ * Events a door team can still work right now: anything that has not finished
+ * yet, plus anything that finished earlier today (they're still packing down),
+ * plus open-ended events that started today.
+ *
+ * Written as a PostgREST `.or()` string. The bug this replaces filtered on
+ * `start_datetime >= today`, which silently dropped a MULTI-DAY event on its
+ * second morning — Fuego Identity (Aug 29 11:00 → Aug 30 20:00) vanished from
+ * the scanner and the box office at midnight while the doors were still open.
+ */
+export function runnableEventsFilter(dayStartISO = manilaDayStartISO()): string {
+    return `end_datetime.gte.${dayStartISO},and(end_datetime.is.null,start_datetime.gte.${dayStartISO})`
+}
