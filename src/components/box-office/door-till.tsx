@@ -210,6 +210,12 @@ export function DoorTill({
                     <Stat label="sold at door" value={String(soldUnits)} />
                 </div>
                 <Link
+                    href={`/checkin/${eventId}`}
+                    className="shrink-0 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+                >
+                    Check-in
+                </Link>
+                <Link
                     href="/scan"
                     className="shrink-0 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent"
                 >

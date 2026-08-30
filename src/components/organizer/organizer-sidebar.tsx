@@ -7,7 +7,7 @@ import {
     LayoutDashboard, CalendarDays, Wallet, Mail, Users, ScanLine,
     Settings, Code2, ShieldCheck, ExternalLink, LogOut, Megaphone,
     MousePointerClick, Crown, Compass, BookOpen, CalendarClock, UserSearch,
-    Puzzle, Link2, Shirt, Store,
+    Puzzle, Link2, Shirt, Store, UserCheck,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/auth/cached'
@@ -59,6 +59,10 @@ const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
             { label: 'Team',    href: '/organizer/team', icon: Users,   section: 'team' },
             { label: 'Scanner',    href: '/scan',        icon: ScanLine, section: 'scanner', external: true },
             { label: 'Box office', href: '/box-office',  icon: Store,    section: 'box-office', external: true },
+            // Self-service door desk. Sits with the other door tools rather than
+            // under Events: the people who open it are working a shift, not
+            // managing a listing, and often have no dashboard access at all.
+            { label: 'Check-in desk', href: '/checkin', icon: UserCheck, section: 'checkin', external: true },
         ],
     },
     {
@@ -88,6 +92,7 @@ const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
     team:          ['owner'],
     scanner:       ['owner', 'manager', 'scanner', 'cashier'],
     'box-office':  ['owner', 'manager', 'scanner', 'cashier'],
+    checkin:       ['owner', 'manager', 'scanner', 'cashier'],
     settings:      ['owner', 'manager'],
     developers:    ['owner'],
     embed:         ['owner', 'marketing'],
