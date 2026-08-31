@@ -23,7 +23,7 @@ serve(async (req) => {
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         )
 
-        const { table_id, schedule_id, quantity = 1, guest_details, success_url, failure_url } = await req.json()
+        const { table_id, schedule_id, quantity = 1, guest_details, success_url, failure_url, promo_code, source } = await req.json()
 
         // Auth. NOTE: experiences are account-only in practice —
         // experience_purchase_intents.user_id is NOT NULL, so a guest booking dies in
@@ -72,10 +72,35 @@ serve(async (req) => {
             p_quantity: quantity,
             p_guest_email: guest_details?.email ?? user?.email ?? null,
             p_guest_name: guest_details?.name ?? userProfile?.display_name ?? null,
-            p_guest_phone: guest_details?.phone ?? authPhone
+            p_guest_phone: guest_details?.phone ?? authPhone,
+            // Validated inside the RPC, not here: the discount and the amount we
+            // then ask Xendit for have to be decided in one place, under the same
+            // lock that reserves the slot.
+            p_promo_code: typeof promo_code === 'string' && promo_code.trim() ? promo_code.trim() : null,
+            // Whitelisted, so a caller cannot claim to be the app to unlock an
+            // app_only code.
+            p_source: source === 'app' ? 'app' : 'web',
         })
 
-        if (reserveError) throw new Error(reserveError.message)
+        if (reserveError) {
+            // Promo failures are the buyer's to fix, so they come back as a clear
+            // message and a code rather than a 500 the UI can only call "failed".
+            const PROMO_MESSAGES: Record<string, string> = {
+                PROMO_INVALID: "That code isn't valid for this experience.",
+                PROMO_EXPIRED: 'This code has expired.',
+                PROMO_NOT_STARTED: "This code isn't active yet.",
+                PROMO_LIMIT_REACHED: 'This code has been fully claimed.',
+                PROMO_APP_ONLY: 'This code only works in the HangHut app.',
+            }
+            const hit = Object.keys(PROMO_MESSAGES).find((k) => reserveError.message?.includes(k))
+            if (hit) {
+                return new Response(
+                    JSON.stringify({ error: PROMO_MESSAGES[hit], code: hit }),
+                    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+            throw new Error(reserveError.message)
+        }
 
         // Fetch created intent
         const { data: intent, error: fetchError } = await supabaseAdmin

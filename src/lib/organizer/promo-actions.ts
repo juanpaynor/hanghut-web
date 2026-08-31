@@ -169,3 +169,99 @@ export async function validatePromoCode(eventId: string, code: string, subtotal:
         promoId: promo.id
     }
 }
+
+/* ── Experiences ────────────────────────────────────────────────────────────
+ *
+ * A promo code targets an event OR an experience, never both — the
+ * promo_codes_one_target constraint enforces that in the database. These
+ * mirror the event functions rather than adding a branch to each: the column,
+ * the uniqueness error and the path to revalidate all differ, and threading a
+ * "kind" flag through every one of them made each function harder to read than
+ * the pair it replaced.
+ */
+
+export async function getExperiencePromoCodes(experienceId: string) {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+        .from('promo_codes')
+        .select('*')
+        .eq('experience_id', experienceId)
+        .order('created_at', { ascending: false })
+
+    if (error) {
+        console.error('Error fetching experience promo codes:', error)
+        return { data: [] as PromoCode[], error: 'Failed to load promo codes' }
+    }
+    return { data: (data ?? []) as PromoCode[], error: null }
+}
+
+export async function createExperiencePromoCode(experienceId: string, formData: FormData) {
+    const supabase = await createClient()
+
+    const code = formData.get('code') as string
+    const discount_type = formData.get('discount_type') as DiscountType
+    const discount_amount = parseFloat(formData.get('discount_amount') as string)
+    const usage_limit_raw = formData.get('usage_limit') as string
+    const expires_at_raw = formData.get('expires_at') as string
+    const app_only = formData.get('app_only') === 'true'
+
+    if (!code || code.length < 3) return { error: 'Code must be at least 3 characters' }
+    if (!(discount_amount > 0)) return { error: 'Discount amount must be positive' }
+    if (discount_type === 'percentage' && discount_amount > 100) {
+        return { error: 'Percentage cannot exceed 100%' }
+    }
+
+    const { error } = await supabase
+        .from('promo_codes')
+        .insert({
+            experience_id: experienceId,
+            event_id: null,
+            code: code.toUpperCase().trim(),
+            discount_type,
+            discount_amount,
+            usage_limit: usage_limit_raw ? parseInt(usage_limit_raw) : null,
+            expires_at: expires_at_raw || null,
+            is_active: true,
+            app_only,
+        })
+
+    if (error) {
+        console.error('Error creating experience promo code:', error)
+        if (error.code === '23505') {
+            return { error: 'This code already exists for this experience' }
+        }
+        return { error: 'Failed to create promo code' }
+    }
+
+    revalidatePath(`/organizer/experiences/${experienceId}/edit`)
+    return { success: true }
+}
+
+export async function toggleExperiencePromoCode(
+    codeId: string,
+    isActive: boolean,
+    experienceId: string
+) {
+    const supabase = await createClient()
+    const { error } = await supabase
+        .from('promo_codes').update({ is_active: isActive }).eq('id', codeId)
+
+    if (error) {
+        console.error('Error toggling experience promo code:', error)
+        return { error: 'Failed to update status' }
+    }
+    revalidatePath(`/organizer/experiences/${experienceId}/edit`)
+    return { success: true }
+}
+
+export async function deleteExperiencePromoCode(codeId: string, experienceId: string) {
+    const supabase = await createClient()
+    const { error } = await supabase.from('promo_codes').delete().eq('id', codeId)
+
+    if (error) {
+        console.error('Error deleting experience promo code:', error)
+        return { error: 'Failed to delete promo code' }
+    }
+    revalidatePath(`/organizer/experiences/${experienceId}/edit`)
+    return { success: true }
+}

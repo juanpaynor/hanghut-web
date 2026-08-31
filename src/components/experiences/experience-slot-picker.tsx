@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { format, parseISO, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isToday, isBefore } from 'date-fns'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -9,9 +9,16 @@ import Link from 'next/link'
 // hydration — a mismatch, and a wrong `next` for anyone who clicks early.
 import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Loader2, CalendarClock, Users, CheckCircle2, XCircle, ChevronLeft, ChevronRight, LogIn } from 'lucide-react'
+import { Loader2, CalendarClock, Users, CheckCircle2, XCircle, ChevronLeft, ChevronRight, LogIn, Tag, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
+
+/** What the SERVER said this code is worth. Never computed on the client. */
+interface AppliedPromo {
+    code: string
+    discount: number
+    total: number
+}
 
 interface Schedule {
     id: string
@@ -84,7 +91,57 @@ export function ExperienceSlotPicker({
 
     const selectedSlot = openSlots.find((s) => s.id === selectedScheduleId)
     const effectivePrice = selectedSlot?.price_per_person ?? basePricePerPerson
-    const totalPrice = effectivePrice * quantity
+    const listPrice = effectivePrice * quantity
+
+    // ── Promo code ────────────────────────────────────────────────────────────
+    // The applied discount is only ever what the SERVER returned. Recomputing it
+    // here would let the screen and the invoice disagree, and the invoice wins.
+    const [promoInput, setPromoInput] = useState('')
+    const [promo, setPromo] = useState<AppliedPromo | null>(null)
+    const [promoError, setPromoError] = useState<string | null>(null)
+    const [checkingPromo, setCheckingPromo] = useState(false)
+
+    // A code priced for 2 guests is wrong the moment they pick 3, and a stale
+    // discount on screen is worse than no discount at all.
+    useEffect(() => {
+        if (promo) { setPromo(null); setPromoError(null) }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [quantity, selectedScheduleId])
+
+    const applyPromo = async () => {
+        const code = promoInput.trim()
+        if (!code || checkingPromo) return
+        setCheckingPromo(true)
+        setPromoError(null)
+        try {
+            const supabase = createClient()
+            const { data, error } = await supabase.rpc('preview_experience_promo', {
+                p_table_id: tableId,
+                p_code: code,
+                p_quantity: quantity,
+                p_schedule_id: selectedScheduleId ?? null,
+                p_source: 'web',
+            })
+            if (error) throw error
+            if (data?.valid) {
+                setPromo({
+                    code: data.code,
+                    discount: Number(data.discount) || 0,
+                    total: Number(data.total) || 0,
+                })
+            } else {
+                setPromo(null)
+                setPromoError(data?.message ?? "That code isn't valid for this experience.")
+            }
+        } catch {
+            setPromo(null)
+            setPromoError('Could not check that code. Please try again.')
+        } finally {
+            setCheckingPromo(false)
+        }
+    }
+
+    const totalPrice = promo ? promo.total : listPrice
 
     // Calendar grid
     const calendarDays = useMemo(() => {
@@ -123,13 +180,24 @@ export function ExperienceSlotPicker({
                 quantity,
                 success_url: successUrl,
                 failure_url: failureUrl,
+                source: 'web',
             }
+            // Only the code travels — the server re-validates and re-prices it.
+            if (promo) body.promo_code = promo.code
 
             // No guest_details branch: booking is account-only, so the edge function
             // always receives an authenticated caller.
             const { data, error } = await supabase.functions.invoke('create-experience-intent', { body })
 
             if (error) throw new Error(error.message)
+            // A promo rejected at reserve time (someone claimed the last use while
+            // this buyer was deciding) must say so and clear itself, not fail with
+            // "Failed to create booking" and leave a dead discount on screen.
+            if (data?.code?.startsWith?.('PROMO_')) {
+                setPromo(null)
+                setPromoError(data.error ?? 'That code is no longer valid.')
+                throw new Error(data.error ?? 'Promo code is no longer valid')
+            }
             if (!data?.success) throw new Error(data?.error?.message ?? 'Failed to create booking')
 
             if (data.data?.payment_url) {
@@ -374,11 +442,76 @@ export function ExperienceSlotPicker({
                 </div>
             )}
 
-            {/* Price summary */}
+            {/* Promo code. Only offered once a slot is chosen — the discount is
+                priced against that slot and that party size. */}
+            {selectedScheduleId && isLoggedIn && (
+                <div className="animate-in fade-in duration-200">
+                    {promo ? (
+                        <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+                            <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-primary">
+                                <Tag className="h-4 w-4 shrink-0" />
+                                <span className="truncate">{promo.code} applied</span>
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => { setPromo(null); setPromoInput(''); setPromoError(null) }}
+                                className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
+                                aria-label="Remove promo code"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex gap-2">
+                            <input
+                                value={promoInput}
+                                onChange={(e) => { setPromoInput(e.target.value.toUpperCase()); setPromoError(null) }}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void applyPromo() } }}
+                                placeholder="Promo code"
+                                autoCapitalize="characters"
+                                autoComplete="off"
+                                spellCheck={false}
+                                className="h-10 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm uppercase tracking-wide outline-none focus:border-primary"
+                            />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="h-10 shrink-0"
+                                onClick={applyPromo}
+                                disabled={!promoInput.trim() || checkingPromo}
+                            >
+                                {checkingPromo ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Apply'}
+                            </Button>
+                        </div>
+                    )}
+                    {promoError && (
+                        <p role="alert" className="mt-1.5 text-xs text-destructive">{promoError}</p>
+                    )}
+                </div>
+            )}
+
+            {/* Price summary. Itemised once a discount applies, so the buyer can see
+                where the number came from rather than just a smaller total. */}
             {selectedScheduleId && (
-                <div className="flex justify-between items-baseline text-sm text-muted-foreground animate-in fade-in duration-200">
-                    <span>{symbol}{effectivePrice.toLocaleString()} × {quantity} guest{quantity !== 1 ? 's' : ''}</span>
-                    <span className="text-lg font-bold text-foreground">{symbol}{totalPrice.toLocaleString()}</span>
+                <div className="space-y-1 text-sm text-muted-foreground animate-in fade-in duration-200">
+                    <div className="flex items-baseline justify-between">
+                        <span>{symbol}{effectivePrice.toLocaleString()} × {quantity} guest{quantity !== 1 ? 's' : ''}</span>
+                        <span className={cn(promo && 'line-through opacity-60')}>
+                            {symbol}{listPrice.toLocaleString()}
+                        </span>
+                    </div>
+                    {promo && (
+                        <div className="flex items-baseline justify-between text-primary">
+                            <span>{promo.code}</span>
+                            <span>−{symbol}{promo.discount.toLocaleString()}</span>
+                        </div>
+                    )}
+                    <div className="flex items-baseline justify-between pt-1">
+                        <span className="font-medium text-foreground">Total</span>
+                        <span className="text-lg font-bold text-foreground">
+                            {symbol}{totalPrice.toLocaleString()}
+                        </span>
+                    </div>
                 </div>
             )}
 

@@ -16,15 +16,41 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
-import { createPromoCode, deletePromoCode, getPromoCodes, togglePromoCode, PromoCode } from '@/lib/organizer/promo-actions'
+import {
+    createPromoCode, deletePromoCode, getPromoCodes, togglePromoCode,
+    createExperiencePromoCode, deleteExperiencePromoCode,
+    getExperiencePromoCodes, toggleExperiencePromoCode,
+    PromoCode,
+} from '@/lib/organizer/promo-actions'
 import { format } from 'date-fns'
 
 interface PromoCodeManagerProps {
-    eventId: string
+    /** Exactly one of these. Mirrors promo_codes_one_target in the database. */
+    eventId?: string
+    experienceId?: string
     initialCodes: PromoCode[]
 }
 
-export function PromoCodeManager({ eventId, initialCodes }: PromoCodeManagerProps) {
+export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoCodeManagerProps) {
+    // Resolved once so the handlers below read identically for both targets —
+    // the alternative is a ternary at four separate call sites, which is exactly
+    // where a copy-paste sends an experience's code to an event.
+    const targetId = (experienceId ?? eventId)!
+    const isExperience = !!experienceId
+    const actions = isExperience
+        ? {
+              create: createExperiencePromoCode,
+              list: getExperiencePromoCodes,
+              toggle: toggleExperiencePromoCode,
+              remove: deleteExperiencePromoCode,
+          }
+        : {
+              create: createPromoCode,
+              list: getPromoCodes,
+              toggle: togglePromoCode,
+              remove: deletePromoCode,
+          }
+
     const [codes, setCodes] = useState<PromoCode[]>(initialCodes)
     const [isCreating, setIsCreating] = useState(false)
     const [isLoading, setIsLoading] = useState(false)
@@ -50,7 +76,7 @@ export function PromoCodeManager({ eventId, initialCodes }: PromoCodeManagerProp
         if (expiresAt) formData.append('expires_at', expiresAt)
         formData.append('app_only', appOnly ? 'true' : 'false')
 
-        const result = await createPromoCode(eventId, formData)
+        const result = await actions.create(targetId, formData)
 
         if (result.error) {
             toast({
@@ -75,12 +101,12 @@ export function PromoCodeManager({ eventId, initialCodes }: PromoCodeManagerProp
     }
 
     const refreshCodes = async () => {
-        const { data } = await getPromoCodes(eventId)
+        const { data } = await actions.list(targetId)
         if (data) setCodes(data)
     }
 
     const handleToggle = async (id: string, currentStatus: boolean) => {
-        const result = await togglePromoCode(id, !currentStatus, eventId)
+        const result = await actions.toggle(id, !currentStatus, targetId)
         if (result.success) {
             setCodes(codes.map(c => c.id === id ? { ...c, is_active: !currentStatus } : c))
         }
@@ -89,7 +115,7 @@ export function PromoCodeManager({ eventId, initialCodes }: PromoCodeManagerProp
     const handleDelete = async (id: string) => {
         if (!confirm('Are you sure you want to delete this promo code?')) return
 
-        const result = await deletePromoCode(id, eventId)
+        const result = await actions.remove(id, targetId)
         if (result.success) {
             setCodes(codes.filter(c => c.id !== id))
             toast({ title: "Deleted", description: "Promo code deleted" })

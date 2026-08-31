@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { getAuthUser, getPartner } from '@/lib/auth/cached'
 import { redirect, notFound } from 'next/navigation'
 import { ExperienceForm } from '@/components/organizer/experiences/experience-form'
+import { PromoCodeManager } from '@/components/organizer/promo-code-manager'
+import { getExperiencePromoCodes } from '@/lib/organizer/promo-actions'
 
 export default async function EditExperiencePage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params
@@ -22,6 +24,10 @@ export default async function EditExperiencePage({ params }: { params: Promise<{
 
     if (!experience) notFound()
 
+    // Ownership is already proven by the host_id filter above, so this can be
+    // fetched unguarded.
+    const { data: promoCodes } = await getExperiencePromoCodes(id)
+
     return (
         <div className="space-y-6">
             <div>
@@ -29,6 +35,14 @@ export default async function EditExperiencePage({ params }: { params: Promise<{
                 <p className="text-muted-foreground text-sm mt-0.5">{experience.title}</p>
             </div>
             <ExperienceForm partnerId={partner.id} experience={experience as any} />
+
+            <div className="border-t pt-6">
+                <h2 className="text-xl font-semibold mb-1">Promo codes</h2>
+                <p className="text-muted-foreground text-sm mb-4">
+                    Discounts guests can apply when booking this experience.
+                </p>
+                <PromoCodeManager experienceId={id} initialCodes={promoCodes} />
+            </div>
         </div>
     )
 }
