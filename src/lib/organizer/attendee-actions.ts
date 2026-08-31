@@ -507,3 +507,46 @@ export async function markIntentAsRefunded(intentId: string, eventId: string, re
     revalidatePath(`/organizer/events/${eventId}`)
     return { success: true, finalized: true, refundId: result.data?.id }
 }
+
+/**
+ * Every attendee matching `filters`, for CSV/PDF export.
+ *
+ * The client used to page through getEventAttendees itself, which worked but
+ * made one round trip per 200 rows — sequentially, from the browser. At a few
+ * hundred attendees that is slow; at the size we are onboarding for it is a
+ * spinner that looks broken, and a half-finished loop silently produces a short
+ * file with no error.
+ *
+ * Doing it in one action means the export either arrives whole or fails loudly.
+ * The paging still happens, just server-side and close to the database: a single
+ * huge .range() is not an option because PostgREST caps rows per request, so a
+ * naive "just ask for 50,000" would truncate exactly like the bug we are fixing.
+ */
+const EXPORT_CHUNK = 1000
+/** Refuses rather than silently truncating past this. */
+const EXPORT_MAX_ROWS = 50000
+
+export async function getAllEventAttendeesForExport(
+    eventId: string,
+    filters: AttendeeFilters = {}
+): Promise<{ attendees: Attendee[]; total: number; truncated: boolean }> {
+    const first = await getEventAttendees(eventId, { ...filters, page: 1, limit: EXPORT_CHUNK })
+    const all = [...first.attendees]
+    const total = first.total
+
+    const pages = Math.min(
+        Math.ceil(total / EXPORT_CHUNK),
+        Math.ceil(EXPORT_MAX_ROWS / EXPORT_CHUNK)
+    )
+
+    for (let p = 2; p <= pages; p++) {
+        const next = await getEventAttendees(eventId, { ...filters, page: p, limit: EXPORT_CHUNK })
+        // A short or empty page means the result set ended; stop rather than spin.
+        if (!next.attendees.length) break
+        all.push(...next.attendees)
+    }
+
+    // Reported back so the UI can say so out loud instead of handing over a file
+    // that quietly stops early — the exact failure this function exists to end.
+    return { attendees: all, total, truncated: all.length < total }
+}

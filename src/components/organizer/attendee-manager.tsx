@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Attendee, getEventAttendees, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getEventTiers, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters } from '@/lib/organizer/attendee-actions'
+import { Attendee, getEventAttendees, getAllEventAttendeesForExport, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getEventTiers, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters } from '@/lib/organizer/attendee-actions'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/hooks/use-debounce'
@@ -47,13 +47,6 @@ import { TicketPrintModal } from './ticket-print-modal'
 
 /** Rows per page. Shared by the fetch and the pager so the two can't drift. */
 const PAGE_SIZE = 20
-
-/**
- * Rows per request when exporting. Exports page through the SAME filtered
- * query as the table rather than reading the page in state — reading state
- * capped every export at PAGE_SIZE rows.
- */
-const EXPORT_PAGE_SIZE = 200
 
 interface AttendeeManagerProps {
     eventId: string
@@ -345,16 +338,22 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
      * Every attendee matching the CURRENT filters, not just the page on screen.
      * `attendees` holds a single page, so exporting from it silently truncated
      * the file — an event with 68 attendees exported 20 rows with no warning.
+     *
+     * One server call. This used to page from the browser, which meant a slow
+     * sequence of round trips and — worse — a loop that could stop early and
+     * still hand over a plausible-looking file. The server now returns whether
+     * it had to stop, so a short export says so instead of pretending.
      */
     const fetchAllForExport = async (): Promise<Attendee[]> => {
-        const first = await getEventAttendees(eventId, { ...filters, page: 1, limit: EXPORT_PAGE_SIZE })
-        const all = [...first.attendees]
-        const pages = Math.max(1, Math.ceil(first.total / EXPORT_PAGE_SIZE))
-        for (let p = 2; p <= pages; p++) {
-            const next = await getEventAttendees(eventId, { ...filters, page: p, limit: EXPORT_PAGE_SIZE })
-            // A short or empty page means we've run out; don't spin.
-            if (!next.attendees.length) break
-            all.push(...next.attendees)
+        const { attendees: all, total, truncated } =
+            await getAllEventAttendeesForExport(eventId, filters)
+
+        if (truncated) {
+            toast({
+                title: 'Export shortened',
+                description: `This export covers ${all.length} of ${total} attendees. Filter the list and export again to get the rest.`,
+                variant: 'destructive',
+            })
         }
         return all
     }
