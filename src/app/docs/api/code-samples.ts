@@ -1043,3 +1043,119 @@ res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http|
 promo = JSON.parse(res.body)['data']
 puts "Created: #{promo['code']} — #{promo['discount_amount']}% off"`,
 }
+
+// ─── Subscriptions ───
+// Fan subscriptions are RECURRING revenue, so the read endpoints are the ones
+// integrators actually need first: reconciling who is currently entitled to
+// what. Creation is not yet available (see the docs section).
+
+export const listSubscriptionTiersSamples: CodeSample = {
+    curl: `curl "https://www.hanghut.com/api/v1/subscription-tiers" \\
+  -H "Authorization: Bearer hh_live_your_key"`,
+    javascript: `const res = await fetch('https://www.hanghut.com/api/v1/subscription-tiers', {
+  headers: { 'Authorization': \`Bearer \${API_KEY}\` }
+});
+const { data } = await res.json();
+data.tiers.forEach(t => console.log(\`\${t.name} — PHP \${t.price_monthly}/mo\`));`,
+    python: `import requests
+
+res = requests.get(
+    "https://www.hanghut.com/api/v1/subscription-tiers",
+    headers={"Authorization": f"Bearer {API_KEY}"},
+)
+for tier in res.json()["data"]["tiers"]:
+    print(f"{tier['name']} — PHP {tier['price_monthly']}/mo")`,
+    php: `<?php
+$ch = curl_init("https://www.hanghut.com/api/v1/subscription-tiers");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer {$apiKey}"]);
+$data = json_decode(curl_exec($ch), true)["data"];
+foreach ($data["tiers"] as $tier) {
+    echo "{$tier['name']} — PHP {$tier['price_monthly']}/mo\\n";
+}`,
+    ruby: `require 'net/http'
+require 'json'
+
+uri = URI('https://www.hanghut.com/api/v1/subscription-tiers')
+req = Net::HTTP::Get.new(uri)
+req['Authorization'] = "Bearer #{api_key}"
+res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(req) }
+JSON.parse(res.body)['data']['tiers'].each do |tier|
+  puts "#{tier['name']} — PHP #{tier['price_monthly']}/mo"
+end`,
+}
+
+export const listSubscriptionsSamples: CodeSample = {
+    curl: `curl "https://www.hanghut.com/api/v1/subscriptions?status=active&page=1&per_page=20" \\
+  -H "Authorization: Bearer hh_live_your_key"`,
+    javascript: `const params = new URLSearchParams({ status: 'active', page: '1', per_page: '20' });
+const res = await fetch(\`https://www.hanghut.com/api/v1/subscriptions?\${params}\`, {
+  headers: { 'Authorization': \`Bearer \${API_KEY}\` }
+});
+const { data } = await res.json();
+console.log(\`\${data.meta.total} subscribers\`);`,
+    python: `import requests
+
+res = requests.get(
+    "https://www.hanghut.com/api/v1/subscriptions",
+    headers={"Authorization": f"Bearer {API_KEY}"},
+    params={"status": "active", "page": 1, "per_page": 20},
+)
+data = res.json()["data"]
+print(f"{data['meta']['total']} subscribers")`,
+    php: `<?php
+$query = http_build_query(["status" => "active", "page" => 1, "per_page" => 20]);
+$ch = curl_init("https://www.hanghut.com/api/v1/subscriptions?{$query}");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer {$apiKey}"]);
+$data = json_decode(curl_exec($ch), true)["data"];
+echo "{$data['meta']['total']} subscribers\\n";`,
+    ruby: `require 'net/http'
+require 'json'
+
+uri = URI('https://www.hanghut.com/api/v1/subscriptions')
+uri.query = URI.encode_www_form(status: 'active', page: 1, per_page: 20)
+req = Net::HTTP::Get.new(uri)
+req['Authorization'] = "Bearer #{api_key}"
+res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(req) }
+data = JSON.parse(res.body)['data']
+puts "#{data['meta']['total']} subscribers"`,
+}
+
+export const cancelSubscriptionSamples: CodeSample = {
+    curl: `curl -X POST "https://www.hanghut.com/api/v1/subscriptions/sub_id/cancel" \\
+  -H "Authorization: Bearer hh_live_your_key"`,
+    javascript: `const res = await fetch(
+  \`https://www.hanghut.com/api/v1/subscriptions/\${subscriptionId}/cancel\`,
+  { method: 'POST', headers: { 'Authorization': \`Bearer \${API_KEY}\` } }
+);
+if (res.status === 503) {
+  // Not yet available — see the note in the docs.
+  console.warn((await res.json()).error);
+}`,
+    python: `import requests
+
+res = requests.post(
+    f"https://www.hanghut.com/api/v1/subscriptions/{subscription_id}/cancel",
+    headers={"Authorization": f"Bearer {API_KEY}"},
+)
+if res.status_code == 503:
+    print(res.json()["error"])  # Not yet available`,
+    php: `<?php
+$ch = curl_init("https://www.hanghut.com/api/v1/subscriptions/{$subscriptionId}/cancel");
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer {$apiKey}"]);
+$body = curl_exec($ch);
+if (curl_getinfo($ch, CURLINFO_HTTP_CODE) === 503) {
+    echo json_decode($body, true)["error"] . "\\n";
+}`,
+    ruby: `require 'net/http'
+require 'json'
+
+uri = URI("https://www.hanghut.com/api/v1/subscriptions/#{subscription_id}/cancel")
+req = Net::HTTP::Post.new(uri)
+req['Authorization'] = "Bearer #{api_key}"
+res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(req) }
+puts JSON.parse(res.body)['error'] if res.code == '503'`,
+}

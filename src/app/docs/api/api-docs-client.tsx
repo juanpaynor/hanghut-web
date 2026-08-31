@@ -12,11 +12,67 @@ const SECTIONS = [
     { group: 'Checkout', items: [{ id: 'create-checkout', label: 'Create Session' }] },
     { group: 'Tickets', items: [{ id: 'verify-ticket', label: 'Verify Ticket' }, { id: 'check-in', label: 'Check In' }, { id: 'refund-ticket', label: 'Refund' }] },
     { group: 'Orders', items: [{ id: 'list-orders', label: 'List Orders' }] },
+    { group: 'Subscriptions', items: [{ id: 'list-subscription-tiers', label: 'List Tiers' }, { id: 'list-subscriptions', label: 'List Subscriptions' }, { id: 'get-subscription', label: 'Get Subscription' }, { id: 'cancel-subscription', label: 'Cancel' }] },
     { group: 'Webhooks', items: [{ id: 'webhooks', label: 'Overview' }, { id: 'register-webhook', label: 'Register' }] },
     { group: 'More', items: [{ id: 'analytics', label: 'Analytics' }, { id: 'promo-codes', label: 'Promo Codes' }] },
 ]
 
 /* ─── JSON responses ─── */
+const subscriptionTiersRes = `{
+  "data": {
+    "tiers": [
+      {
+        "id": "3f2a1b9c-...",
+        "name": "Backstage",
+        "description": "Early access to tickets and monthly livestreams",
+        "price_monthly": 250,
+        "is_active": true,
+        "perks": ["Early ticket access", "Monthly livestream"],
+        "created_at": "2026-02-11T08:14:22Z"
+      }
+    ]
+  }
+}`
+
+const subscriptionsRes = `{
+  "data": {
+    "subscriptions": [
+      {
+        "id": "9c4e7d21-...",
+        "status": "active",
+        "tier": {
+          "id": "3f2a1b9c-...",
+          "name": "Backstage",
+          "price_monthly": 250
+        },
+        "customer": {
+          "id": "b7d1f004-...",
+          "email": "juan@example.com",
+          "name": "Juan Dela Cruz"
+        },
+        "currency": "PHP",
+        "interval": "monthly",
+        "current_period_start": "2026-08-01T00:00:00Z",
+        "current_period_end": "2026-09-01T00:00:00Z",
+        "cancelled_at": null,
+        "created_at": "2026-06-01T09:12:00Z",
+        "updated_at": "2026-08-01T00:00:04Z"
+      }
+    ],
+    "meta": {
+      "page": 1,
+      "per_page": 20,
+      "total": 1,
+      "total_pages": 1,
+      "has_more": false
+    }
+  }
+}`
+
+const subscriptionWriteUnavailableRes = `{
+  "error": "Subscription management via API is not yet available."
+}`
+
 const listEventsRes = `{
   "data": {
     "events": [
@@ -225,6 +281,7 @@ export function ApiDocsClient() {
     const [lang, setLang] = useState<Lang>('curl')
     const [activeSection, setActiveSection] = useState('overview')
     const [mobileNav, setMobileNav] = useState(false)
+    const [navQuery, setNavQuery] = useState('')
     const mainRef = useRef<HTMLDivElement>(null)
 
     // Scroll tracking
@@ -241,9 +298,50 @@ export function ApiDocsClient() {
         return () => observer.disconnect()
     }, [])
 
-    const SidebarContent = () => (
+    // Filter the nav by endpoint name or group. A group whose NAME matches keeps
+    // all its items, so typing "subscriptions" shows the whole area rather than
+    // only the one item that happens to repeat the word.
+    const q = navQuery.trim().toLowerCase()
+    const visibleSections = !q
+        ? SECTIONS
+        : SECTIONS
+              .map(section => {
+                  const groupMatches = section.group.toLowerCase().includes(q)
+                  return {
+                      ...section,
+                      items: groupMatches
+                          ? section.items
+                          : section.items.filter(i => i.label.toLowerCase().includes(q)),
+                  }
+              })
+              .filter(section => section.items.length > 0)
+
+    // A VALUE, not a nested component. Declaring `const SidebarContent = () => ...`
+    // inside the render gives it a new identity every pass, so React unmounts and
+    // remounts the whole subtree — which would make the search input below lose
+    // focus on every keystroke. Rendering the JSX directly keeps the DOM stable.
+    const sidebarContent = (
         <div className="space-y-6 py-6">
-            {SECTIONS.map(section => (
+            <div className="px-3">
+                <label htmlFor="api-nav-search" className="sr-only">Search endpoints</label>
+                <input
+                    id="api-nav-search"
+                    value={navQuery}
+                    onChange={e => setNavQuery(e.target.value)}
+                    placeholder="Search endpoints…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="w-full rounded-lg border border-zinc-800/60 bg-[#0d1117] px-3 py-1.5 text-[13px] text-zinc-300 placeholder:text-zinc-600 outline-none focus:border-[#6c5ce7]/60"
+                />
+            </div>
+
+            {visibleSections.length === 0 && (
+                <p className="px-3 text-[13px] text-zinc-600">
+                    Nothing matches “{navQuery.trim()}”.
+                </p>
+            )}
+
+            {visibleSections.map(section => (
                 <div key={section.group}>
                     <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-600 mb-2 px-3">{section.group}</p>
                     <ul className="space-y-0.5">
@@ -305,7 +403,7 @@ export function ApiDocsClient() {
                 <div className="fixed inset-0 z-40 xl:hidden">
                     <div className="absolute inset-0 bg-black/60" onClick={() => setMobileNav(false)} />
                     <div className="absolute left-0 top-14 bottom-0 w-64 bg-[#0d1117] border-r border-zinc-800/60 overflow-y-auto px-3">
-                        <SidebarContent />
+                        {sidebarContent}
                     </div>
                 </div>
             )}
@@ -313,7 +411,7 @@ export function ApiDocsClient() {
             <div className="max-w-[1500px] mx-auto flex">
                 {/* ── Sidebar ── */}
                 <nav className="hidden xl:block w-56 shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto pl-6 pr-2 border-r border-zinc-800/40">
-                    <SidebarContent />
+                    {sidebarContent}
                 </nav>
 
                 {/* ── Main ── */}
@@ -746,6 +844,123 @@ export function ApiDocsClient() {
                     </section>
 
                     {/* ═══ PROMO CODES ═══ */}
+                    {/* ═══ SUBSCRIPTIONS ═══ */}
+                    <section id="list-subscription-tiers" className="scroll-mt-16 border-b border-zinc-800/40">
+                        <div className="grid lg:grid-cols-2">
+                            <div className="p-8 lg:p-12">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <MethodBadge method="GET" />
+                                    <code className="font-mono text-white text-lg">/subscription-tiers</code>
+                                </div>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">
+                                    Your subscription tiers, cheapest first. A tier is the plan a fan subscribes
+                                    to &mdash; the recurring counterpart to a ticket tier.
+                                </p>
+                                <AlertBox type="info">
+                                    <strong>Read-only.</strong> Tiers are created in your dashboard,
+                                    not through the API.
+                                </AlertBox>
+                            </div>
+                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
+                                <CodeBlock samples={samples.listSubscriptionTiersSamples} activeLang={lang} label="Request" />
+                                <ResponseBlock status={200} json={subscriptionTiersRes} />
+                            </div>
+                        </div>
+                    </section>
+
+                    <section id="list-subscriptions" className="scroll-mt-16 border-b border-zinc-800/40">
+                        <div className="grid lg:grid-cols-2">
+                            <div className="p-8 lg:p-12">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <MethodBadge method="GET" />
+                                    <code className="font-mono text-white text-lg">/subscriptions</code>
+                                </div>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">
+                                    Your fan subscriptions, newest first. This is the endpoint to reconcile
+                                    against: it tells you who is currently entitled to what.
+                                </p>
+                                <ParamTable title="Query Parameters" params={[
+                                    { name: 'status', type: 'string', description: 'Filter by status, e.g. "active", "grace_period", "cancelled"' },
+                                    { name: 'tier_id', type: 'uuid', description: 'Only subscriptions on this tier' },
+                                    { name: 'page', type: 'integer', description: 'Page number (default 1)' },
+                                    { name: 'per_page', type: 'integer', description: 'Results per page (default 20)' },
+                                ]} />
+                                <div className="mt-6">
+                                    <AlertBox type="warning">
+                                        <strong>Entitlement is a date, not a status.</strong> Treat a fan as
+                                        subscribed only while <code>current_period_end</code> is in the future.
+                                        A status of <code>active</code> on a lapsed period is not access, and{' '}
+                                        <code>grace_period</code> means payment failed but access has not been
+                                        withdrawn yet.
+                                    </AlertBox>
+                                </div>
+                            </div>
+                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
+                                <CodeBlock samples={samples.listSubscriptionsSamples} activeLang={lang} label="Request" />
+                                <ResponseBlock status={200} json={subscriptionsRes} />
+                            </div>
+                        </div>
+                    </section>
+
+                    <section id="get-subscription" className="scroll-mt-16 border-b border-zinc-800/40">
+                        <div className="grid lg:grid-cols-2">
+                            <div className="p-8 lg:p-12">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <MethodBadge method="GET" />
+                                    <code className="font-mono text-white text-lg">/subscriptions/:id</code>
+                                </div>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">
+                                    A single subscription, in the same shape as the list endpoint. Returns
+                                    <code className="mx-1">404</code> if it belongs to another partner &mdash; ownership is
+                                    never leaked as a <code>403</code>.
+                                </p>
+                                <StatusTable rows={[
+                                    { status: '200', desc: 'Subscription returned', color: 'bg-emerald-500' },
+                                    { status: '404', desc: 'Not found, or not yours', color: 'bg-red-500' },
+                                ]} />
+                            </div>
+                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
+                                <CodeBlock samples={samples.listSubscriptionsSamples} activeLang={lang} label="Request" />
+                                <ResponseBlock status={200} json={subscriptionsRes} />
+                            </div>
+                        </div>
+                    </section>
+
+                    <section id="cancel-subscription" className="scroll-mt-16 border-b border-zinc-800/40">
+                        <div className="grid lg:grid-cols-2">
+                            <div className="p-8 lg:p-12">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <MethodBadge method="POST" />
+                                    <code className="font-mono text-white text-lg">/subscriptions/:id/cancel</code>
+                                </div>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">
+                                    Cancels a subscription at the end of the paid period. The fan keeps access
+                                    until <code>current_period_end</code>.
+                                </p>
+                                <AlertBox type="warning">
+                                    <strong>Not available yet.</strong> This endpoint, and{' '}
+                                    <code>POST /subscriptions</code>, currently return{' '}
+                                    <code>503</code>. Recurring billing is not wired up, so creating or cancelling a
+                                    subscription through the API would change our records without changing what the
+                                    fan is actually charged. Both are documented here so you can build against them
+                                    now; the read endpoints above are live and unaffected.
+                                </AlertBox>
+                                <div className="mt-6">
+                                    <StatusTable rows={[
+                                        { status: '503', desc: 'Not yet available — current behaviour', color: 'bg-amber-500' },
+                                        { status: '200', desc: 'Cancelled, once enabled', color: 'bg-emerald-500' },
+                                        { status: '404', desc: 'Not found, or not yours', color: 'bg-red-500' },
+                                        { status: '409', desc: 'Already cancelled', color: 'bg-zinc-500' },
+                                    ]} />
+                                </div>
+                            </div>
+                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
+                                <CodeBlock samples={samples.cancelSubscriptionSamples} activeLang={lang} label="Request" />
+                                <ResponseBlock status={503} json={subscriptionWriteUnavailableRes} />
+                            </div>
+                        </div>
+                    </section>
+
                     <section id="promo-codes" className="scroll-mt-16 border-b border-zinc-800/40">
                         <div className="grid lg:grid-cols-2">
                             <div className="p-8 lg:p-12">
@@ -755,13 +970,27 @@ export function ApiDocsClient() {
                                 </div>
                                 <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">Create a promo code with percentage or fixed amount discounts, optional usage limits, and expiry.</p>
                                 <ParamTable title="Request Body" params={[
-                                    { name: 'event_id', type: 'uuid', required: true, description: 'Target event' },
-                                    { name: 'code', type: 'string', required: true, description: 'Promo code (min 3 chars)' },
+                                    { name: 'event_id', type: 'uuid', required: true, description: 'Target event. Codes are scoped to one event' },
+                                    { name: 'code', type: 'string', required: true, description: 'Promo code (min 3 chars). Stored and matched uppercase' },
                                     { name: 'discount_type', type: 'string', required: true, description: '"percentage" or "fixed_amount"' },
-                                    { name: 'discount_amount', type: 'number', required: true, description: 'Discount value' },
+                                    { name: 'discount_amount', type: 'number', required: true, description: 'Percent (max 100) or a peso amount' },
                                     { name: 'usage_limit', type: 'integer', description: 'Max uses (unlimited if omitted)' },
+                                    { name: 'starts_at', type: 'ISO 8601', description: 'Not redeemable before this. Active immediately if omitted' },
                                     { name: 'expires_at', type: 'ISO 8601', description: 'Expiry date' },
                                 ]} />
+                                <div className="mt-6 space-y-4">
+                                    <AlertBox type="info">
+                                        <strong>usage_count is derived, not stored by you.</strong> It counts
+                                        completed orders only, so a code sitting in an abandoned checkout is not
+                                        consumed and the count can go down if an order is voided.
+                                    </AlertBox>
+                                    <AlertBox type="warning">
+                                        <strong>Events only.</strong> Promo codes also exist for experiences, but
+                                        they are created in the dashboard and are not reachable through this
+                                        endpoint yet. Passing an experience id to <code>event_id</code> returns{' '}
+                                        <code>404</code>.
+                                    </AlertBox>
+                                </div>
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.createPromoSamples} activeLang={lang} label="Request" />
