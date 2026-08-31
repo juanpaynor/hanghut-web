@@ -108,10 +108,59 @@ export async function updateExperience(experienceId: string, data: {
     return { success: true as const }
 }
 
+/**
+ * Whether this experience can still be deleted, and why not if it can't.
+ *
+ * tables.id CASCADES into experience_purchase_intents, experience_transactions,
+ * experience_reviews, experience_schedules, messages, table_members,
+ * table_participants, activity_checkins and promo_codes. So a delete is not
+ * "remove a listing" — it silently erases paid bookings and money records with
+ * it. Anything that has ever taken money is cancelled, never deleted.
+ *
+ * Unpaid intents (pending/expired/failed) do NOT block: no money moved, and a
+ * abandoned checkout should not strand a listing forever.
+ */
+export async function getExperienceDeletability(experienceId: string) {
+    const supabase = await createClient()
+
+    const [{ count: paidCount }, { count: txCount }, { count: payoutCount }] = await Promise.all([
+        supabase
+            .from('experience_purchase_intents')
+            .select('id', { count: 'exact', head: true })
+            .eq('table_id', experienceId)
+            .eq('status', 'completed'),
+        supabase
+            .from('experience_transactions')
+            .select('id', { count: 'exact', head: true })
+            .eq('table_id', experienceId),
+        supabase
+            .from('payouts')
+            .select('id', { count: 'exact', head: true })
+            .eq('table_id', experienceId),
+    ])
+
+    const bookings = paidCount ?? 0
+    const blocked = bookings > 0 || (txCount ?? 0) > 0 || (payoutCount ?? 0) > 0
+
+    return {
+        canDelete: !blocked,
+        bookings,
+        reason: blocked
+            ? 'This experience has bookings, so it can no longer be deleted — deleting it would take the bookings and their payment records with it. Cancel it instead.'
+            : null,
+    }
+}
+
 export async function deleteExperience(experienceId: string) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' }
+
+    // Re-checked HERE, not just in the UI. The button can be hidden; the action
+    // is what actually protects the rows, and a booking can land between the
+    // page rendering and the click.
+    const { canDelete, reason } = await getExperienceDeletability(experienceId)
+    if (!canDelete) return { error: reason! }
 
     const { error } = await supabase
         .from('tables')
@@ -122,6 +171,61 @@ export async function deleteExperience(experienceId: string) {
     if (error) return { error: error.message }
 
     revalidatePath('/organizer/experiences')
+    return { success: true as const }
+}
+
+/**
+ * The safe alternative: keep every row, stop selling.
+ *
+ * Future OPEN slots are cancelled too — leaving them bookable would let someone
+ * reserve a slot on an experience the host has withdrawn. Past slots are left
+ * alone: they happened, and rewriting them would corrupt the history.
+ */
+export async function cancelExperience(experienceId: string) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { error } = await supabase
+        .from('tables')
+        .update({ status: 'cancelled' })
+        .eq('id', experienceId)
+        .eq('host_id', user.id)
+
+    if (error) return { error: error.message }
+
+    const { error: slotError } = await supabase
+        .from('experience_schedules')
+        .update({ status: 'cancelled' })
+        .eq('table_id', experienceId)
+        .eq('status', 'open')
+        .gt('start_time', new Date().toISOString())
+
+    // Non-fatal: the experience is already withdrawn from sale, and reporting
+    // failure here would suggest nothing happened.
+    if (slotError) console.error('Cancelled experience but not its slots:', slotError.message)
+
+    revalidatePath('/organizer/experiences')
+    revalidatePath(`/organizer/experiences/${experienceId}/edit`)
+    return { success: true as const }
+}
+
+/** Undo a cancel. Slots stay cancelled — the host re-opens the dates they want. */
+export async function reopenExperience(experienceId: string) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { error } = await supabase
+        .from('tables')
+        .update({ status: 'open' })
+        .eq('id', experienceId)
+        .eq('host_id', user.id)
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/organizer/experiences')
+    revalidatePath(`/organizer/experiences/${experienceId}/edit`)
     return { success: true as const }
 }
 

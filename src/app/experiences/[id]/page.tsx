@@ -35,6 +35,7 @@ async function getExperience(id: string) {
             included_items,
             requirements,
             is_experience,
+            status,
             created_at,
             experience_schedules(*)
         `)
@@ -78,6 +79,12 @@ export default async function ExperienceDetailPage({ params }: { params: Promise
     const exp = await getExperience(id)
 
     if (!exp) notFound()
+
+    // A cancelled experience must not stay bookable at its direct URL. The index
+    // already filters on status='open', so without this the listing disappeared
+    // while the page kept selling to anyone holding the link — which is most of
+    // the traffic an experience gets.
+    if ((exp as { status?: string }).status === 'cancelled') notFound()
 
     // Fetch host display name + profile photo + partner business name as fallback
     const [{ data: hostUser }, { data: hostPartner }] = await Promise.all([
