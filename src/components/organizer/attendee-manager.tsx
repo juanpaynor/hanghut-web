@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Attendee, getEventAttendees, getAllEventAttendeesForExport, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getEventTiers, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters } from '@/lib/organizer/attendee-actions'
+import { Attendee, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getEventTiers, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters } from '@/lib/organizer/attendee-actions'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
 import { useDebounce } from '@/hooks/use-debounce'
 import {
@@ -25,7 +26,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users, SlidersHorizontal, X } from 'lucide-react'
+import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users, SlidersHorizontal, X, MailWarning } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
@@ -179,6 +180,43 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
         if (s.seat != null) parts.push(`Seat ${s.seat}`)
         if (parts.length === 0 && s.label) return s.label
         return parts.length ? parts.join(' · ') : null
+    }
+
+    // ── Fix a mistyped checkout email ─────────────────────────────────────────
+    // Operates on the ORDER, not the single row: the wrong address was typed
+    // once at checkout and sits on the intent and every ticket under it.
+    const [fixEmailFor, setFixEmailFor] = useState<{ attendee: Attendee; name: string } | null>(null)
+    const [newEmail, setNewEmail] = useState('')
+    const [fixReason, setFixReason] = useState('')
+    const [fixingEmail, setFixingEmail] = useState(false)
+
+    const openFixEmail = (attendee: Attendee, name: string) => {
+        setFixEmailFor({ attendee, name })
+        setNewEmail('')
+        setFixReason('')
+    }
+
+    const submitFixEmail = async () => {
+        if (!fixEmailFor || fixingEmail) return
+        setFixingEmail(true)
+        const res = await correctOrderEmail(
+            fixEmailFor.attendee.id, newEmail.trim(), eventId, fixReason.trim() || undefined
+        )
+        setFixingEmail(false)
+
+        if (!res.ok) {
+            toast({ title: 'Could not update', description: res.error, variant: 'destructive' })
+            return
+        }
+        toast({
+            title: res.email_sent ? 'Ticket re-sent' : 'Address updated',
+            description: res.email_sent
+                ? `${res.tickets_moved} ticket${res.tickets_moved === 1 ? '' : 's'} now go to ${res.new_email}. The email is on its way.`
+                : res.message ?? 'The address was updated.',
+        })
+        setFixEmailFor(null)
+        const refreshed = await getEventAttendees(eventId, filters)
+        setAttendees(refreshed.attendees)
     }
 
     // Refund State
@@ -798,6 +836,10 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                                                             View answers
                                                         </DropdownMenuItem>
                                                     )}
+                                                    <DropdownMenuItem onClick={() => openFixEmail(attendee, name)}>
+                                                        <MailWarning className="w-4 h-4 mr-2" />
+                                                        Fix email &amp; resend
+                                                    </DropdownMenuItem>
                                                     <DropdownMenuSeparator />
                                                     {['valid', 'paid', 'checked_in'].includes(attendee.status) && (
                                                         <DropdownMenuItem
@@ -943,6 +985,76 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                                     <p className="mt-0.5 text-sm whitespace-pre-wrap">{a.answer}</p>
                                 </div>
                             ))}
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Fix a mistyped checkout email. */}
+            <Dialog open={!!fixEmailFor} onOpenChange={(o) => !o && setFixEmailFor(null)}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Fix email &amp; resend</DialogTitle>
+                    </DialogHeader>
+
+                    {fixEmailFor && (
+                        <div className="space-y-4">
+                            <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
+                                <p className="font-medium text-foreground">{fixEmailFor.name}</p>
+                                <p className="mt-0.5 break-all text-muted-foreground">
+                                    Currently going to{' '}
+                                    <span className="font-medium text-foreground">
+                                        {fixEmailFor.attendee.user?.email
+                                            || fixEmailFor.attendee.guest_info?.email
+                                            || 'no address on file'}
+                                    </span>
+                                </p>
+                            </div>
+
+                            <div>
+                                <Label htmlFor="fix-email">Correct email address</Label>
+                                <Input
+                                    id="fix-email"
+                                    type="email"
+                                    value={newEmail}
+                                    onChange={(e) => setNewEmail(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' && newEmail.trim()) { e.preventDefault(); void submitFixEmail() } }}
+                                    placeholder="name@example.com"
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    className="mt-1.5"
+                                />
+                            </div>
+
+                            <div>
+                                <Label htmlFor="fix-reason">Note (optional)</Label>
+                                <Input
+                                    id="fix-reason"
+                                    value={fixReason}
+                                    onChange={(e) => setFixReason(e.target.value)}
+                                    placeholder="e.g. typo at checkout, confirmed by phone"
+                                    className="mt-1.5"
+                                />
+                            </div>
+
+                            {/* Says plainly what this touches. An organizer changing a
+                                delivery address needs to know it covers the whole order
+                                and does not alter the buyer's login. */}
+                            <p className="rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                                This updates the whole order and re-sends the tickets to the new
+                                address. It does not change the buyer&rsquo;s account login, and the
+                                change is recorded against your name.
+                            </p>
+
+                            <div className="flex justify-end gap-2">
+                                <Button variant="outline" onClick={() => setFixEmailFor(null)} disabled={fixingEmail}>
+                                    Cancel
+                                </Button>
+                                <Button onClick={submitFixEmail} disabled={!newEmail.trim() || fixingEmail}>
+                                    {fixingEmail && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    Update &amp; resend
+                                </Button>
+                            </div>
                         </div>
                     )}
                 </DialogContent>

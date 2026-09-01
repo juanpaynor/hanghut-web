@@ -550,3 +550,49 @@ export async function getAllEventAttendeesForExport(
     // that quietly stops early — the exact failure this function exists to end.
     return { attendees: all, total, truncated: all.length < total }
 }
+
+/**
+ * Fix a mistyped checkout email and re-send the ticket.
+ *
+ * Scoped to the ORDER, not the single ticket row the organizer clicked: the
+ * wrong address was typed once at checkout and landed on the purchase intent
+ * and every ticket under it. Correcting one row would leave the order still
+ * wrong, and the next resend would go back to the bad address.
+ *
+ * Never changes users.email — for an account holder this overrides the delivery
+ * address on the order only. Changing someone's login from the organizer
+ * dashboard is a different, far more dangerous feature.
+ */
+export async function correctOrderEmail(
+    ticketId: string,
+    newEmail: string,
+    eventId: string,
+    reason?: string
+): Promise<
+    | { ok: true; tickets_moved: number; email_sent: boolean; new_email: string; old_email: string | null; message?: string }
+    | { ok: false; error: string }
+> {
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('correct_order_email', {
+        p_ticket_id: ticketId,
+        p_new_email: newEmail,
+        p_reason: reason || null,
+    })
+
+    if (error) {
+        // The RPC raises bare tokens so both clients can map them to their own
+        // copy rather than surfacing a Postgres message to an organizer.
+        const MESSAGES: Record<string, string> = {
+            INVALID_EMAIL: 'That doesn’t look like a valid email address.',
+            TICKET_NOT_FOUND: 'That ticket no longer exists.',
+            NOT_YOUR_EVENT: 'You don’t have permission to change this order.',
+            SAME_EMAIL: 'That’s already the address on this order.',
+        }
+        const hit = Object.keys(MESSAGES).find((k) => error.message?.includes(k))
+        console.error('correctOrderEmail failed:', error.message)
+        return { ok: false, error: hit ? MESSAGES[hit] : 'Could not update the email. Please try again.' }
+    }
+
+    revalidatePath(`/organizer/events/${eventId}`)
+    return data as Awaited<ReturnType<typeof correctOrderEmail>> & { ok: true }
+}
