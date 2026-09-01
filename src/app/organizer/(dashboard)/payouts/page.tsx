@@ -232,6 +232,28 @@ async function getTransactions(partnerId: string, from?: string, to?: string, se
     return { transactions: transactions || [], count: count || 0 }
 }
 
+// Summary totals for the Transactions tab, aggregated in Postgres over the WHOLE
+// filtered set. getTransactions above returns one page (10 rows); summing that page
+// in the browser while showing the full count beside it made the card read
+// "₱54,000 · Count 23" against a real gross of ₱149,000.
+async function getTransactionTotals(partnerId: string, from?: string, to?: string, search?: string) {
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('get_partner_transaction_totals', {
+        p_partner_id: partnerId,
+        p_from: from || null,
+        p_to: to ? `${to}T23:59:59` : null,
+        p_search: search || null,
+    })
+    const row = Array.isArray(data) ? data[0] : data
+    if (error || !row) return { count: 0, gross: 0, payout: 0, refunds: 0 }
+    return {
+        count: Number(row.txn_count || 0),
+        gross: Number(row.gross || 0),
+        payout: Number(row.payout || 0),
+        refunds: Number(row.refunds || 0),
+    }
+}
+
 // Helper to get wallet top-ups from the dedicated wallet_topups table
 async function getWalletTopUps(partnerId: string) {
     const supabase = await createClient()
@@ -407,11 +429,12 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
     if (!partnerId) return null
 
     // Parallel fetching
-    const [stats, payoutsResult, bankAccounts, transactionsResult, periodEarnings, walletInfo, topups, experienceTxns, merchTxns, feeConfig] = await Promise.all([
+    const [stats, payoutsResult, bankAccounts, transactionsResult, ticketTotals, periodEarnings, walletInfo, topups, experienceTxns, merchTxns, feeConfig] = await Promise.all([
         getPayoutStats(partnerId),
         getPayoutHistory(partnerId, from, to, payoutPage, 5),
         getBankAccounts(partnerId),
         getTransactions(partnerId, from, to, search, txPage, 10),
+        getTransactionTotals(partnerId, from, to, search),
         from && to ? getPeriodEarnings(partnerId, from, to) : Promise.resolve(null),
         getWalletInfo(partnerId),
         getWalletTopUps(partnerId),
@@ -430,6 +453,18 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
         ...merchTxns,
         ...topups,
     ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+    // Ticket sales come from the aggregate RPC (every page). Experience/merch/top-up
+    // rows are already fetched in full above, so they are added on top rather than
+    // re-queried. Refund-reversal rows (negative gross) stay excluded, matching the list.
+    const sideRows = [...experienceTxns, ...merchTxns, ...topups]
+        .filter((t: any) => Number(t.gross_amount) >= 0)
+    const totals = {
+        count: ticketTotals.count + sideRows.length,
+        gross: ticketTotals.gross + sideRows.reduce((s: number, t: any) => s + Number(t.gross_amount || 0), 0),
+        payout: ticketTotals.payout + sideRows.reduce((s: number, t: any) => s + Number(t.organizer_payout || 0), 0),
+        refunds: ticketTotals.refunds + sideRows.reduce((s: number, t: any) => s + Number(t.purchase_intent?.refunded_amount || 0), 0),
+    }
 
     return (
         <div className="space-y-8">
@@ -600,7 +635,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                         </div>
                         <SearchInput placeholder="Search event or ID..." />
                     </div>
-                    <TransactionsHistory transactions={transactions as any} totalCount={transactionCount} />
+                    <TransactionsHistory transactions={transactions as any} totalCount={transactionCount} totals={totals} />
                     <div className="flex items-center justify-between">
                         <p className="text-sm text-muted-foreground">
                             Showing {Math.min((txPage - 1) * 10 + 1, transactionCount)}–{Math.min(txPage * 10, transactionCount)} of {transactionCount} transactions

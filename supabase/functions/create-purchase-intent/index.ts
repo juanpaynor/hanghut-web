@@ -11,6 +11,31 @@ const corsHeaders = {
 const DEFAULT_PLATFORM_PCT = 2   // new standard commission (%)
 const DEFAULT_FIXED_FEE = 15     // per-ticket fixed booking fee (₱)
 
+// Xendit rejects a mobile_number that is not bare E.164 with a hard 400
+// API_VALIDATION_ERROR, which fails the whole checkout before the buyer ever
+// reaches a payment page. Buyers type "+63 967 246 7837", "0930 2262 977 ",
+// "(0917) 555-1234" — all legitimate, all rejected. Normalise here; on anything
+// unparseable fall back to the placeholder rather than losing the sale, since
+// Xendit only uses this for the receipt.
+const PLACEHOLDER_PHONE = '+639000000000'
+function toE164PH(raw: unknown): string {
+    if (typeof raw !== 'string') return PLACEHOLDER_PHONE
+    const trimmed = raw.trim()
+    // Remember the buyer's intent before stripping: a leading + means they already
+    // wrote a country code, so the PH local-prefix rules below must not apply.
+    const hadPlus = trimmed.startsWith('+')
+    let digits = trimmed.replace(/\D/g, '')
+    if (!digits) return PLACEHOLDER_PHONE
+    if (!hadPlus) {
+        // PH local forms: 09XXXXXXXXX (11 digits) and 9XXXXXXXXX (10).
+        if (digits.length === 11 && digits.startsWith('09')) digits = '63' + digits.slice(1)
+        else if (digits.length === 10 && digits.startsWith('9')) digits = '63' + digits
+    }
+    // E.164 caps at 15 digits; anything very short is a typo, not a number.
+    if (digits.length < 8 || digits.length > 15) return PLACEHOLDER_PHONE
+    return '+' + digits
+}
+
 serve(async (req) => {
     // Handle CORS preflight
     if (req.method === 'OPTIONS') {
@@ -569,7 +594,8 @@ serve(async (req) => {
                 // Was `user ? userProfile?.phone : guest_details?.phone` — and since no phone
                 // column exists, a signed-in buyer ALWAYS fell through to the dummy number.
                 // Checkout collects one from everyone, so use it in both cases.
-                mobile_number: (guest_details?.phone || '') || '+639000000000',
+                // Normalised: a space or dash in the number was a hard 400 from Xendit.
+                mobile_number: toE164PH(guest_details?.phone),
                 individual_detail: {
                     given_names: user ? (userProfile?.display_name?.split(' ')[0] || 'Customer') : (guest_details?.name?.split(' ')[0] || 'Guest'),
                     surname: (user ? (userProfile?.display_name?.split(' ').slice(1).join(' ')) : (guest_details?.name?.split(' ').slice(1).join(' '))) || '-',
@@ -628,10 +654,23 @@ serve(async (req) => {
                 })
                 .eq('id', intentId)
 
+            // Release the reserved inventory back to the pool. This branch used to
+            // skip it, so a payment-provider failure left its tickets 'reserved'
+            // forever: expire_stale_purchase_intents only sweeps intents still
+            // 'pending', and this intent is now 'failed', so nothing ever reclaimed
+            // them. On prod that leaked 34 seats out of KOOLCHELLA's allocation.
             await supabaseAdmin
-                .from('events')
-                .update({ tickets_sold: intent.event.tickets_sold - quantity })
-                .eq('id', event_id)
+                .from('tickets')
+                .update({ status: 'available', user_id: null, purchase_intent_id: null })
+                .eq('purchase_intent_id', intentId)
+                .eq('status', 'reserved')
+
+            // events.tickets_sold is NOT touched here. trg_sync_event_tickets_sold
+            // decrements it from the ticket rows released above. The old explicit
+            // `tickets_sold - quantity` was a second, uncoordinated writer AND a
+            // read-modify-write off a stale snapshot — under concurrent failures
+            // (exactly what an on-sale rush produces) the writes raced and the
+            // counter drifted away from the ticket table.
 
             throw new Error(`Payment provider error: ${xenditRawBody}`)
         }

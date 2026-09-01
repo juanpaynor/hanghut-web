@@ -37,6 +37,17 @@ export default async function PayoutDetailPage({ params }: PageProps) {
         .eq('payout_id', id)
         .order('created_at', { ascending: false })
 
+    // This page loads the payout's complete transaction set, so the summary is
+    // simply the sum of those rows — no aggregate query needed. Refund-reversal
+    // rows (negative gross) are excluded to match the list below.
+    const payoutSalesRows = (transactions || []).filter((t: any) => Number(t.gross_amount) >= 0)
+    const payoutTotals = {
+        count: payoutSalesRows.length,
+        gross: payoutSalesRows.reduce((s: number, t: any) => s + Number(t.gross_amount || 0), 0),
+        payout: payoutSalesRows.reduce((s: number, t: any) => s + Number(t.organizer_payout || 0), 0),
+        refunds: 0,
+    }
+
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'completed': return 'bg-green-500/10 text-green-600'
@@ -150,7 +161,13 @@ export default async function PayoutDetailPage({ params }: PageProps) {
                     Included Transactions
                 </h2>
                 {transactions && transactions.length > 0 ? (
-                    <TransactionsHistory transactions={transactions} totalCount={transactions.length} />
+                    <TransactionsHistory
+                        transactions={transactions}
+                        totalCount={transactions.length}
+                        // This page loads the payout's full transaction set (no
+                        // pagination), so the rows on screen ARE the whole set.
+                        totals={payoutTotals}
+                    />
                 ) : (
                     <Card className="p-8 text-center text-muted-foreground">
                         <p>No linked transactions found for this payout.</p>

@@ -39,12 +39,21 @@ interface Transaction {
     _type?: 'ticket' | 'topup' | 'experience'
 }
 
+/** Aggregated over every page of the current filter, not just the rows on screen. */
+interface TransactionTotals {
+    count: number
+    gross: number
+    payout: number
+    refunds: number
+}
+
 interface TransactionsHistoryProps {
     transactions: Transaction[]
     totalCount: number
+    totals: TransactionTotals
 }
 
-export function TransactionsHistory({ transactions, totalCount }: TransactionsHistoryProps) {
+export function TransactionsHistory({ transactions, totalCount, totals }: TransactionsHistoryProps) {
     const [selectedId, setSelectedId] = useState<string | null>(null)
 
     const handleExport = () => {
@@ -101,16 +110,19 @@ export function TransactionsHistory({ transactions, totalCount }: TransactionsHi
     // refund is surfaced from the intent's refunded_amount instead, so nothing double-counts.
     const salesTx = transactions.filter(t => Number(t.gross_amount) >= 0)
 
-    // Summary stats.
+    // Summary stats — these come from the server aggregated over the ENTIRE filtered
+    // set. They must never be recomputed from `transactions`, which holds only the
+    // current page: doing that put a one-page sum next to an all-pages Count, so a
+    // partner with ₱149,000 in sales saw "₱54,000 · Count 23".
     //  - Incoming = gross sales (what customers paid).
     //  - Fees = Incoming − gross payout (what platform/processing took on the sale). Derived
     //    this way because organizer_payout used different fee rules across eras, so summing
     //    the raw fee columns didn't equal the real deduction.
     //  - Refunds = amounts returned to customers (organizer shoulders the full amount).
     //  - Net Earnings = gross payout − refunds (what the organizer actually nets).
-    const totalIncoming = salesTx.reduce((sum, t) => sum + Number(t.gross_amount), 0)
-    const grossPayout = salesTx.reduce((sum, t) => sum + Number(t.organizer_payout), 0)
-    const totalRefunds = salesTx.reduce((sum, t) => sum + Number(t.purchase_intent?.refunded_amount || 0), 0)
+    const totalIncoming = totals.gross
+    const grossPayout = totals.payout
+    const totalRefunds = totals.refunds
     const totalFees = totalIncoming - grossPayout
     const totalNet = grossPayout - totalRefunds
 

@@ -80,8 +80,14 @@ serve(async (req) => {
           const resp = await supabase.functions.invoke('send-push', {
             body: payload.data,
           })
-          // 404 = no FCM token / unregistered device — permanent, don't retry
-          if (resp.error?.status === 404 || (resp.data as any)?.status === 404) {
+          // 404 = no FCM token / unregistered device — permanent, don't retry.
+          // supabase.functions.invoke wraps a non-2xx in a FunctionsHttpError and
+          // puts the status on error.context.status, NOT error.status — so the
+          // original check never matched and every token-less organizer burned all
+          // MAX_RETRIES (6 invocations, ~60s of queue time) per sale before being
+          // archived anyway.
+          const pushStatus = (resp.error as any)?.context?.status ?? (resp.error as any)?.status
+          if (pushStatus === 404 || (resp.data as any)?.status === 404) {
             console.warn(`🪣 Dead-lettering push msg ${msg.msg_id} — 404 (no FCM token)`)
             await supabase.rpc('pgmq_archive', { queue_name: QUEUE_NAME, msg_id: msg.msg_id })
             failCount++
