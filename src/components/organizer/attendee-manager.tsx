@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Attendee, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getEventTiers, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters } from '@/lib/organizer/attendee-actions'
+import { Attendee, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getEventTiers, getEventTierSales, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters, type TierSales } from '@/lib/organizer/attendee-actions'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
     DropdownMenu,
@@ -124,6 +125,12 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
 
     // Top-of-page stats (filter-independent)
     const [stats, setStats] = useState<{ attendees: number; checkedIn: number; revenue: number } | null>(null)
+    // Per-tier sales breakdown (how many bought each type, not just who scanned in)
+    const [tierSales, setTierSales] = useState<TierSales[] | null>(null)
+    const tierSoldTotal = useMemo(
+        () => (tierSales || []).reduce((sum, t) => sum + t.sold, 0),
+        [tierSales],
+    )
 
     // Registration answers dialog
     const [answersOpen, setAnswersOpen] = useState(false)
@@ -157,6 +164,7 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
         getAttendeeStats(eventId).then(setStats).catch(() => {})
         getEventPaymentMethods(eventId).then(setPaymentMethods).catch(() => {})
         getEventTiers(eventId).then(setTiers).catch(() => {})
+        getEventTierSales(eventId).then(setTierSales).catch(() => {})
     }, [eventId])
 
     async function openAnswers(attendee: Attendee, name: string) {
@@ -509,6 +517,67 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                     <p className="text-2xl font-bold mt-1">{stats ? `₱${stats.revenue.toLocaleString()}` : '—'}</p>
                 </div>
             </div>
+
+            {/* ── Sales by ticket type ──
+                The check-in tab answers "who walked in". This answers "what sold",
+                which is the question an organizer asks while the event is still on
+                sale. Sold counts valid + used tickets — the same set as the
+                Attendees stat above — so these rows always add up to it. */}
+            {tierSales && tierSales.length > 0 && (
+                <div className="rounded-xl border bg-card p-4">
+                    <div className="flex items-baseline justify-between gap-3">
+                        <p className="text-sm font-semibold">Sales by ticket type</p>
+                        <p className="text-xs text-muted-foreground">
+                            {tierSoldTotal.toLocaleString()} sold
+                        </p>
+                    </div>
+                    <div className="mt-3 space-y-3">
+                        {tierSales.map((t) => {
+                            const share = tierSoldTotal > 0 ? (t.sold / tierSoldTotal) * 100 : 0
+                            // Sell-through only means something when the tier has a
+                            // declared allocation; flat-price/legacy rows have none.
+                            const sellThrough = t.capacity && t.capacity > 0
+                                ? Math.min(100, (t.sold / t.capacity) * 100)
+                                : null
+                            return (
+                                <div key={t.tierId ?? t.name} className="space-y-1.5">
+                                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                                        <div className="flex items-baseline gap-2 min-w-0">
+                                            <span className="font-medium truncate">{t.name}</span>
+                                            {t.price !== null && (
+                                                <span className="text-xs text-muted-foreground shrink-0">
+                                                    ₱{t.price.toLocaleString()}
+                                                </span>
+                                            )}
+                                            {t.refunded > 0 && (
+                                                <Badge variant="outline" className="text-[10px] shrink-0">
+                                                    {t.refunded} refunded
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        <div className="flex items-baseline gap-3 tabular-nums shrink-0">
+                                            <span className="font-semibold">
+                                                {t.sold.toLocaleString()}
+                                                {t.capacity ? <span className="font-normal text-muted-foreground"> / {t.capacity.toLocaleString()}</span> : null}
+                                            </span>
+                                            <span className="text-xs text-muted-foreground w-20 text-right">
+                                                ₱{Math.round(t.revenue).toLocaleString()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <Progress value={sellThrough ?? share} className="h-1.5" />
+                                    <p className="text-[11px] text-muted-foreground">
+                                        {sellThrough !== null
+                                            ? `${Math.round(sellThrough)}% of allocation`
+                                            : `${Math.round(share)}% of tickets sold`}
+                                        {t.checkedIn > 0 && ` · ${t.checkedIn.toLocaleString()} checked in`}
+                                    </p>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* ── Filter bar ── */}
             <div className="space-y-3">

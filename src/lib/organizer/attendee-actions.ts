@@ -287,10 +287,46 @@ export async function getEventTiers(eventId: string): Promise<{ id: string; name
     const supabase = await createClient()
     const { data } = await supabase
         .from('ticket_tiers')
-        .select('id, name, display_order')
+        // ticket_tiers orders by sort_order — display_order is the
+        // registration_questions column and does not exist here, so this query
+        // errored out and the tier filter was silently always empty.
+        .select('id, name, sort_order')
         .eq('event_id', eventId)
-        .order('display_order', { ascending: true })
+        .order('sort_order', { ascending: true })
     return (data || []).map((t: any) => ({ id: t.id, name: t.name }))
+}
+
+/** One row per ticket tier: how many were actually bought, not just scanned. */
+export interface TierSales {
+    tierId: string | null
+    name: string
+    price: number | null
+    capacity: number | null
+    sold: number
+    checkedIn: number
+    refunded: number
+    revenue: number
+}
+
+/**
+ * Sales-side tier breakdown for the Attendees page. Aggregated in Postgres —
+ * `sold` counts valid + used tickets, the same set the Attendees stat counts, so
+ * the rows always add up to the number above them.
+ */
+export async function getEventTierSales(eventId: string): Promise<TierSales[]> {
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('get_event_tier_sales', { p_event_id: eventId })
+    if (error || !data) return []
+    return (data as any[]).map((r) => ({
+        tierId: r.tier_id ?? null,
+        name: r.tier_name || 'General Admission',
+        price: r.price === null ? null : Number(r.price),
+        capacity: r.quantity_total === null ? null : Number(r.quantity_total),
+        sold: Number(r.sold || 0),
+        checkedIn: Number(r.checked_in || 0),
+        refunded: Number(r.refunded || 0),
+        revenue: Number(r.revenue || 0),
+    }))
 }
 
 /** Top-of-page attendee stats (independent of the current filter/page). */

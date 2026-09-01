@@ -32,7 +32,8 @@ interface SalesDashboardProps {
             totalPlatformFees: number
             totalPaymentFees: number
             totalTicketsSold: number
-            totalCapacity: number
+            upcomingTicketsSold: number
+            upcomingCapacity: number
             activeEventsCount: number
             avgOrderValue: number
         }
@@ -49,9 +50,10 @@ export function SalesDashboardClient({ data }: SalesDashboardProps) {
     const [chartMode, setChartMode] = useState<'revenue' | 'tickets'>('revenue')
     const { metrics, velocityData, paceData, activeEvents, recentActivity } = data
 
-    // Calculate percent sold
-    const percentSold = metrics.totalCapacity > 0
-        ? Math.round((metrics.totalTicketsSold / metrics.totalCapacity) * 100)
+    // Sell-through is about inventory still on sale, so it uses the upcoming pair —
+    // measuring lifetime sales against upcoming capacity would run past 100%.
+    const percentSold = metrics.upcomingCapacity > 0
+        ? Math.round((metrics.upcomingTicketsSold / metrics.upcomingCapacity) * 100)
         : 0
 
     // Calculate Aggregate Tier Stats from active events
@@ -110,11 +112,20 @@ export function SalesDashboardClient({ data }: SalesDashboardProps) {
                                 <Ticket className="h-4 w-4" />
                             </span>
                         </div>
-                        <div className="mt-2 font-headline text-2xl font-bold tracking-tight">{metrics.totalTicketsSold}</div>
-                        <div className="mt-2 flex items-center gap-2">
-                            <Progress value={percentSold} className="h-1.5 flex-1" />
-                            <span className="text-xs text-muted-foreground tabular-nums">{percentSold}%</span>
-                        </div>
+                        <div className="mt-2 font-headline text-2xl font-bold tracking-tight">{metrics.totalTicketsSold.toLocaleString()}</div>
+                        {metrics.upcomingCapacity > 0 ? (
+                            <>
+                                <div className="mt-2 flex items-center gap-2">
+                                    <Progress value={percentSold} className="h-1.5 flex-1" />
+                                    <span className="text-xs text-muted-foreground tabular-nums">{percentSold}%</span>
+                                </div>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    {metrics.upcomingTicketsSold.toLocaleString()} of {metrics.upcomingCapacity.toLocaleString()} on sale now
+                                </p>
+                            </>
+                        ) : (
+                            <p className="mt-2 text-xs text-muted-foreground">All time</p>
+                        )}
                     </CardContent>
                 </Card>
 

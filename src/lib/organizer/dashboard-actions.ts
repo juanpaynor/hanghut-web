@@ -23,12 +23,17 @@ export async function getDashboardStats(partnerId: string) {
             .eq('partner_id', partnerId)
             .eq('status', 'completed'),
 
-        // 2. All active events with tiers
+        // 2. Every event that has ever been on sale, with tiers.
+        //    NOT .eq('status','active'): 'hidden' is an unlisted-but-selling event
+        //    and 'paused' is a live event with sales stopped. Filtering to 'active'
+        //    made a real partner's only event vanish from every count on this page
+        //    while its revenue still showed — headline figures that disagreed with
+        //    each other. Draft never sold; cancelled was voided.
         supabase
             .from('events')
             .select('id, title, capacity, tickets_sold, start_datetime, ticket_tiers(name, quantity_sold, quantity_total)')
             .eq('organizer_id', partnerId)
-            .eq('status', 'active')
+            .in('status', ['active', 'hidden', 'paused'])
             .order('start_datetime', { ascending: true }),
 
         // 3. Best past event (benchmark)
@@ -83,7 +88,9 @@ export async function getDashboardStats(partnerId: string) {
             .from('tickets')
             .select('tier_id')
             .in('event_id', eventIds)
-            .not('status', 'in', '("available","refunded")')
+            // valid + used only. The old exclusion list still let 'reserved'
+            // through, so abandoned checkouts counted as tier sales.
+            .in('status', ['valid', 'used'])
 
         if (tierTickets) {
             tierTickets.forEach((t: any) => {
@@ -120,8 +127,16 @@ export async function getDashboardStats(partnerId: string) {
 
     const uniqueOrders = new Set(transactions?.map(t => t.purchase_intent_id)).size
     const avgOrderValue = uniqueOrders > 0 ? totalRevenue / uniqueOrders : 0
-    const totalTicketsSold = events.reduce((sum, e) => sum + (e.tickets_sold || 0), 0)
-    const totalCapacity = events.reduce((sum, e) => sum + (e.capacity || 0), 0)
+
+    // Tickets Sold sits beside Gross Revenue, which is lifetime — so it has to be
+    // lifetime too. Counting only upcoming events made it read 0 next to a real
+    // six-figure revenue the moment a show finished. Sell-through is the one
+    // figure that genuinely belongs to upcoming inventory, so it gets its own pair.
+    const totalTicketsSold = (rawEvents || []).reduce(
+        (sum, e) => sum + (ticketCountMap.get(e.id) || 0), 0
+    )
+    const upcomingTicketsSold = events.reduce((sum, e) => sum + (e.tickets_sold || 0), 0)
+    const upcomingCapacity = events.reduce((sum, e) => sum + (e.capacity || 0), 0)
 
     // ─── SALES VELOCITY (Last 30 Days) ───────────────────────────────
 
@@ -197,7 +212,8 @@ export async function getDashboardStats(partnerId: string) {
             totalPlatformFees,
             totalPaymentFees,
             totalTicketsSold,
-            totalCapacity,
+            upcomingTicketsSold,
+            upcomingCapacity,
             activeEventsCount: events.length,
             avgOrderValue
         },
