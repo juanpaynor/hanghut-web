@@ -24,6 +24,8 @@ interface Payout {
     bank_account_name: string
     status: string
     requested_at: string
+    approved_at?: string | null
+    xendit_disbursement_id?: string | null
     partner: {
         id: string
         business_name: string
@@ -71,10 +73,19 @@ export function PayoutsClient({ payouts }: PayoutsClientProps) {
         }
     }
 
+    // Only a pending_request is actionable. An 'approved'/'processing' payout already
+    // has a live Xendit disbursement against it, so it must not sit in the approval
+    // queue offering Approve/Reject — Approve would be rejected by the edge function,
+    // and Reject would unlink its transactions and hand the money back to the
+    // organizer's available balance while Xendit is still sending it.
+    const actionable = payouts.filter((p) => p.status === 'pending_request')
+    const inFlight = payouts.filter((p) => p.status !== 'pending_request')
+
     return (
         <div className="space-y-6">
             <div className="text-sm text-muted-foreground">
-                {payouts.length} pending payout request{payouts.length !== 1 ? 's' : ''}
+                {actionable.length} awaiting approval
+                {inFlight.length > 0 && ` · ${inFlight.length} in flight with Xendit`}
             </div>
 
             <div className="rounded-md border border-border">
@@ -90,14 +101,14 @@ export function PayoutsClient({ payouts }: PayoutsClientProps) {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {payouts.length === 0 ? (
+                        {actionable.length === 0 ? (
                             <TableRow className="border-border">
                                 <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                                     No pending payout requests
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            payouts.map((payout) => (
+                            actionable.map((payout) => (
                                 <TableRow key={payout.id} className="border-border hover:bg-card/50">
                                     <TableCell>
                                         <div>
@@ -162,6 +173,61 @@ export function PayoutsClient({ payouts }: PayoutsClientProps) {
                     </TableBody>
                 </Table>
             </div>
+
+            {/* Already disbursed — visible for tracking, deliberately not actionable. */}
+            {inFlight.length > 0 && (
+                <div className="space-y-2">
+                    <h2 className="text-sm font-semibold">In flight with Xendit</h2>
+                    <p className="text-sm text-muted-foreground">
+                        Already approved and sent. These settle on Xendit&apos;s side — there is nothing to
+                        approve, and rejecting one would release the money back to the partner&apos;s balance
+                        while the transfer is still running.
+                    </p>
+                    <div className="rounded-md border border-border">
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="border-border hover:bg-card/50">
+                                    <TableHead className="text-muted-foreground">Partner</TableHead>
+                                    <TableHead className="text-muted-foreground">Amount</TableHead>
+                                    <TableHead className="text-muted-foreground">Approved</TableHead>
+                                    <TableHead className="text-muted-foreground">Disbursement</TableHead>
+                                    <TableHead className="text-muted-foreground">Status</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {inFlight.map((payout) => (
+                                    <TableRow key={payout.id} className="border-border hover:bg-card/50">
+                                        <TableCell>
+                                            <p className="text-slate-700 font-medium">
+                                                {payout.partner?.business_name || 'Unknown'}
+                                            </p>
+                                            <p className="text-muted-foreground text-sm">
+                                                {payout.partner?.user?.email}
+                                            </p>
+                                        </TableCell>
+                                        <TableCell className="text-slate-700 font-bold">
+                                            ₱{Number(payout.amount).toLocaleString()}
+                                        </TableCell>
+                                        <TableCell className="text-muted-foreground text-sm">
+                                            {payout.approved_at
+                                                ? format(new Date(payout.approved_at), 'MMM d, yyyy')
+                                                : '—'}
+                                        </TableCell>
+                                        <TableCell className="text-muted-foreground text-xs font-mono">
+                                            {payout.xendit_disbursement_id || '—'}
+                                        </TableCell>
+                                        <TableCell>
+                                            <Badge variant="outline" className="bg-blue-500/10 text-blue-500">
+                                                {payout.status.replace('_', ' ').toUpperCase()}
+                                            </Badge>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

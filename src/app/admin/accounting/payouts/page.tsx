@@ -22,7 +22,10 @@ async function getPendingPayouts() {
         )
       )
     `)
-        .in('status', ['pending_request', 'approved'])
+        // 'approved'/'processing' rows are fetched too, but the client renders them in
+        // a separate read-only table — they already have a live Xendit disbursement,
+        // so they are for tracking, not for actioning.
+        .in('status', ['pending_request', 'approved', 'processing'])
         .order('requested_at', { ascending: true })
 
     return payouts || []

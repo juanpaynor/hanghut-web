@@ -54,17 +54,37 @@ export async function approvePayout(payoutId: string) {
 export async function rejectPayout(payoutId: string, reason: string) {
     const supabase = await createClient()
 
-    const { error } = await supabase
+    // Only an un-actioned request may be rejected. Once approve-payout has fired
+    // there is a live Xendit disbursement against this row, and rejecting it would
+    // unlink the transactions below — handing the same money back to the partner's
+    // available balance while the transfer is still in flight, so it could be
+    // requested and paid a second time. approvePayout is already guarded this way
+    // inside the edge function; rejection was a bare UPDATE with no check at all.
+    const { data: updated, error } = await supabase
         .from('payouts')
         .update({
             status: 'rejected',
             rejection_reason: reason,
         })
         .eq('id', payoutId)
+        .eq('status', 'pending_request')
+        .select('id')
 
     if (error) {
         console.error('Error rejecting payout:', error)
         throw new Error('Failed to reject payout')
+    }
+
+    if (!updated || updated.length === 0) {
+        const { data: current } = await supabase
+            .from('payouts')
+            .select('status')
+            .eq('id', payoutId)
+            .single()
+        throw new Error(
+            `Cannot reject: this payout is already ${current?.status ?? 'actioned'}. `
+            + 'A disbursement may already be on its way to the partner.'
+        )
     }
 
     // Unlink transactions so funds return to available balance
