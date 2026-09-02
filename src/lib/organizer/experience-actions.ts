@@ -309,6 +309,49 @@ export async function deleteSlot(slotId: string) {
     return { success: true as const }
 }
 
+/**
+ * Manual booking override — the organizer books a guest onto a slot directly,
+ * without a checkout. Used for comps and door/walk-in sales.
+ *
+ * All the real work (capacity lock, ₱0-and-no-commission for COMP, the
+ * "money HangHut never received so write no ledger row" rule, and the guest
+ * confirmation email) lives in create_manual_experience_booking, shipped with
+ * offline sales. This just carries the host's session so can_manage_experience()
+ * can authorise it, and surfaces the RPC's own error text.
+ */
+export async function createManualExperienceBooking(data: {
+    schedule_id: string
+    quantity: number
+    guest_name: string
+    guest_email?: string | null
+    guest_phone?: string | null
+    payment_method?: 'COMP' | 'CASH' | 'TERMINAL' | 'BANK'
+    note?: string | null
+}) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    if (!data.guest_name?.trim()) return { error: 'A guest name is required' }
+    if (!data.quantity || data.quantity < 1) return { error: 'Guests must be at least 1' }
+
+    const { data: intentId, error } = await supabase.rpc('create_manual_experience_booking', {
+        p_schedule_id: data.schedule_id,
+        p_quantity: data.quantity,
+        p_guest_name: data.guest_name.trim(),
+        p_guest_email: data.guest_email?.trim() || null,
+        p_guest_phone: data.guest_phone?.trim() || null,
+        p_payment_method: data.payment_method || 'COMP',
+        p_note: data.note?.trim() || null,
+    })
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/organizer/experiences/calendar')
+    revalidatePath('/organizer/experiences/bookings')
+    return { success: true as const, intentId }
+}
+
 // ─────────────────────────────────────────────
 // HOST MESSAGING
 // ─────────────────────────────────────────────

@@ -58,12 +58,12 @@ function isOvernight(start: string, end: string): boolean {
     return (eh * 60 + em) <= (sh * 60 + sm)
 }
 import { useToast } from '@/hooks/use-toast'
-import { createSlot, cancelSlot, deleteSlot } from '@/lib/organizer/experience-actions'
+import { createSlot, cancelSlot, deleteSlot, createManualExperienceBooking } from '@/lib/organizer/experience-actions'
 import {
     format, startOfMonth, endOfMonth, eachDayOfInterval, getDay,
     addMonths, subMonths, isSameDay, isToday, isBefore, startOfDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, Plus, Ban, Trash2, Loader2, CalendarClock, Users, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Ban, Trash2, Loader2, CalendarClock, Users, X, UserPlus, Gift } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Schedule {
@@ -114,6 +114,15 @@ export function CalendarManager({ experiences, schedules }: Props) {
     const [endTime, setEndTime] = useState('12:00')
     const [maxGuests, setMaxGuests] = useState('8')
     const [priceOverride, setPriceOverride] = useState('')
+
+    // Manual booking (comp / door sale) form state — scoped to one slot at a time.
+    const [bookingSlotId, setBookingSlotId] = useState<string | null>(null)
+    const [bkName, setBkName] = useState('')
+    const [bkEmail, setBkEmail] = useState('')
+    const [bkPhone, setBkPhone] = useState('')
+    const [bkQty, setBkQty] = useState('1')
+    const [bkMethod, setBkMethod] = useState<'COMP' | 'CASH' | 'TERMINAL' | 'BANK'>('COMP')
+    const [bkNote, setBkNote] = useState('')
 
     const expMap = useMemo(() => Object.fromEntries(experiences.map(e => [e.id, e.title])), [experiences])
 
@@ -168,6 +177,44 @@ export function CalendarManager({ experiences, schedules }: Props) {
             setShowAddForm(false)
             setPriceOverride('')
             setMaxGuests('8')
+        })
+    }
+
+    const openBooking = (slotId: string) => {
+        setBookingSlotId(slotId)
+        setBkName(''); setBkEmail(''); setBkPhone(''); setBkQty('1'); setBkMethod('COMP'); setBkNote('')
+    }
+
+    const handleBook = (slot: Schedule) => {
+        if (!bkName.trim()) {
+            toast({ title: 'Guest name required', description: 'Enter a name for the booking.', variant: 'destructive' })
+            return
+        }
+        const qty = Number(bkQty) || 1
+        const spotsLeft = slot.max_guests - slot.current_guests
+        if (qty > spotsLeft) {
+            toast({ title: 'Not enough spots', description: `Only ${spotsLeft} left on this slot.`, variant: 'destructive' })
+            return
+        }
+        startTransition(async () => {
+            const result = await createManualExperienceBooking({
+                schedule_id: slot.id,
+                quantity: qty,
+                guest_name: bkName,
+                guest_email: bkEmail || null,
+                guest_phone: bkPhone || null,
+                payment_method: bkMethod,
+                note: bkNote || null,
+            })
+            if (result.error) {
+                toast({ title: 'Error', description: result.error, variant: 'destructive' })
+                return
+            }
+            toast({
+                title: bkMethod === 'COMP' ? 'Comp booking added' : 'Booking added',
+                description: bkEmail ? `Confirmation sent to ${bkEmail}` : undefined,
+            })
+            setBookingSlotId(null)
         })
     }
 
@@ -380,6 +427,8 @@ export function CalendarManager({ experiences, schedules }: Props) {
                                         const spotsLeft = slot.max_guests - slot.current_guests
                                         const canDelete = slot.current_guests === 0
                                         const canCancel = slot.status === 'open' || slot.status === 'full'
+                                        const canBook = slot.status === 'open' && spotsLeft > 0
+                                        const isBooking = bookingSlotId === slot.id
 
                                         return (
                                             <div key={slot.id} className="rounded-xl border border-border p-3 space-y-2">
@@ -409,7 +458,78 @@ export function CalendarManager({ experiences, schedules }: Props) {
                                                     )}
                                                 </div>
 
-                                                {(canCancel || canDelete) && (
+                                                {canBook && !isBooking && (
+                                                    <div className="pt-1">
+                                                        <Button size="sm" variant="outline" className="h-7 text-xs w-full text-primary border-primary/40 hover:bg-primary/5" onClick={() => openBooking(slot.id)} disabled={isPending}>
+                                                            <UserPlus className="h-3 w-3 mr-1" /> Book a guest
+                                                        </Button>
+                                                    </div>
+                                                )}
+
+                                                {/* Manual booking form — comps and door sales, no checkout */}
+                                                {isBooking && (
+                                                    <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2.5">
+                                                        <div className="flex items-center justify-between">
+                                                            <p className="text-xs font-semibold flex items-center gap-1">
+                                                                <UserPlus className="h-3.5 w-3.5" /> Book a guest
+                                                            </p>
+                                                            <button onClick={() => setBookingSlotId(null)} className="text-muted-foreground hover:text-foreground">
+                                                                <X className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="space-y-1">
+                                                            <Label className="text-xs">Guest name <span className="text-destructive">*</span></Label>
+                                                            <Input className="h-8 text-sm" placeholder="Full name" value={bkName} onChange={e => setBkName(e.target.value)} />
+                                                        </div>
+
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <div className="space-y-1">
+                                                                <Label className="text-xs">Guests</Label>
+                                                                <Input type="number" min={1} max={spotsLeft} className="h-8 text-sm" value={bkQty} onChange={e => setBkQty(e.target.value)} />
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <Label className="text-xs">Payment</Label>
+                                                                <Select value={bkMethod} onValueChange={(v) => setBkMethod(v as any)}>
+                                                                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                                                                    <SelectContent>
+                                                                        <SelectItem value="COMP">Comp (free)</SelectItem>
+                                                                        <SelectItem value="CASH">Cash</SelectItem>
+                                                                        <SelectItem value="TERMINAL">Card terminal</SelectItem>
+                                                                        <SelectItem value="BANK">Bank transfer</SelectItem>
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="space-y-1">
+                                                            <Label className="text-xs">Email <span className="text-muted-foreground font-normal">(sends a confirmation)</span></Label>
+                                                            <Input type="email" className="h-8 text-sm" placeholder="Optional" value={bkEmail} onChange={e => setBkEmail(e.target.value)} />
+                                                        </div>
+
+                                                        <div className="space-y-1">
+                                                            <Label className="text-xs">Phone</Label>
+                                                            <Input className="h-8 text-sm" placeholder="Optional" value={bkPhone} onChange={e => setBkPhone(e.target.value)} />
+                                                        </div>
+
+                                                        <div className="space-y-1">
+                                                            <Label className="text-xs">Note</Label>
+                                                            <Input className="h-8 text-sm" placeholder="Optional — e.g. VIP guest of the host" value={bkNote} onChange={e => setBkNote(e.target.value)} />
+                                                        </div>
+
+                                                        {bkMethod === 'COMP' && (
+                                                            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                                                <Gift className="h-3 w-3" /> Free booking — no charge, no commission.
+                                                            </p>
+                                                        )}
+
+                                                        <Button size="sm" className="w-full h-8" onClick={() => handleBook(slot)} disabled={isPending || !bkName.trim()}>
+                                                            {isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Booking…</> : 'Add booking'}
+                                                        </Button>
+                                                    </div>
+                                                )}
+
+                                                {(canCancel || canDelete) && !isBooking && (
                                                     <div className="flex gap-2 pt-1">
                                                         {canCancel && (
                                                             <Button size="sm" variant="outline" className="h-7 text-xs flex-1 text-muted-foreground hover:text-destructive hover:border-destructive" onClick={() => handleCancel(slot.id)} disabled={isPending}>
