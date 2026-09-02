@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { motion, useReducedMotion } from 'motion/react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Minus, Plus, Loader2, Check, Star, Crown, Ticket } from 'lucide-react'
+import { Minus, Plus, Loader2, Check, Star, Crown, Ticket, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fireConfetti } from '@/lib/utils/confetti'
 import { trackEventInteraction } from '@/lib/analytics/track-event'
@@ -75,16 +75,23 @@ export function InlineTierList({
     const asList = display?.display === 'list'
 
     const soldOutOf = (t: any) => Number(t.quantity_sold) >= Number(t.quantity_total)
+    // Organizer locked this tier (is_active = false). Enforced server-side too.
+    const lockedOf = (t: any) => t.is_active === false
+    const unbuyable = (t: any) => soldOutOf(t) || lockedOf(t)
 
-    // Active tiers, sorted; optionally drop sold-out ones.
+    // Tiers to display, sorted; optionally drop sold-out ones.
+    // A locked tier is included ONLY when the organizer asked for it to stay
+    // visible — otherwise it disappears exactly as before.
     const activeTiers = useMemo(() => {
-        let list = (tiers || []).filter((t: any) => t.is_active !== false)
+        let list = (tiers || []).filter(
+            (t: any) => t.is_active !== false || t.show_when_locked === true
+        )
         if (!showSoldOut) list = list.filter((t: any) => !soldOutOf(t))
         return list.sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0) || a.price - b.price)
     }, [tiers, showSoldOut])
 
-    // Default selection = first tier that isn't sold out.
-    const firstSelectable = activeTiers.find((t: any) => !soldOutOf(t)) || activeTiers[0] || null
+    // Default selection = first tier that can actually be bought.
+    const firstSelectable = activeTiers.find((t: any) => !unbuyable(t)) || null
     const [selectedTierId, setSelectedTierId] = useState<string | null>(firstSelectable?.id ?? null)
     const [quantity, setQuantity] = useState(minTickets)
     const [isLoading, setIsLoading] = useState(false)
@@ -96,7 +103,7 @@ export function InlineTierList({
     const selectedSoldOut = isSoldOut || (selectedTier ? soldOutOf(selectedTier) : false)
 
     const selectTier = (t: any) => {
-        if (soldOutOf(t)) return
+        if (unbuyable(t)) return
         setSelectedTierId(t.id)
         setQuantity(t.min_per_order || minTickets)
     }
@@ -128,6 +135,8 @@ export function InlineTierList({
                 >
                     {activeTiers.map((tier: any) => {
                         const tSoldOut = soldOutOf(tier)
+                        const tLocked = lockedOf(tier)
+                        const tOff = tSoldOut || tLocked
                         const selected = selectedTierId === tier.id
                         const accent = tier.accent_color as string | undefined
                         const remaining = Math.max(Number(tier.quantity_total) - Number(tier.quantity_sold), 0)
@@ -137,15 +146,16 @@ export function InlineTierList({
                                 type="button"
                                 key={tier.id}
                                 variants={item}
-                                whileTap={reduce || tSoldOut ? undefined : { scale: 0.985 }}
+                                whileTap={reduce || tOff ? undefined : { scale: 0.985 }}
                                 onClick={() => selectTier(tier)}
-                                disabled={tSoldOut}
+                                disabled={tOff}
                                 aria-pressed={selected}
                                 style={selected && accent ? { borderColor: accent } : undefined}
                                 className={cn(
                                     'group relative text-left rounded-xl border-2 p-4 transition-colors',
                                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-                                    tSoldOut ? 'opacity-55 cursor-not-allowed' : 'cursor-pointer hover:border-primary/50',
+                                    tOff ? 'opacity-55 cursor-not-allowed' : 'cursor-pointer hover:border-primary/50',
+                                    tLocked && 'grayscale',
                                     selected ? 'border-primary bg-primary/5' : 'border-border',
                                     tier.highlight && !selected && 'ring-1 ring-primary/30',
                                     asList && 'flex items-center justify-between gap-4'
@@ -182,7 +192,17 @@ export function InlineTierList({
                                         {accent && <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />}
                                         <span className="font-bold">{tier.name}</span>
                                         {tSoldOut && <Badge variant="destructive" className="text-[10px] h-5">Sold Out</Badge>}
+                                        {tLocked && !tSoldOut && (
+                                            <Badge variant="secondary" className="gap-1 text-[10px] h-5">
+                                                <Lock className="h-3 w-3" /> Not on sale
+                                            </Badge>
+                                        )}
                                     </div>
+                                    {tLocked && tier.lock_note && (
+                                        <p className="mt-1 text-xs font-medium text-muted-foreground">
+                                            {tier.lock_note}
+                                        </p>
+                                    )}
                                     {tier.description && (
                                         <p className="mt-1 text-sm text-muted-foreground">{tier.description}</p>
                                     )}

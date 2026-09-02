@@ -61,13 +61,15 @@ export function TicketSelector({
     const [quantity, setQuantity] = useState(minTickets)
     const [isLoading, setIsLoading] = useState(false)
 
-    // Sort active tiers by price
-    const activeTiers = tiers?.filter((t: any) => t.is_active !== false)
+    // Locked tiers (is_active = false) stay in the list only when the organizer
+    // chose to keep them visible; either way they can't be selected or bought.
+    const lockedOf = (t: any) => t.is_active === false
+    const activeTiers = tiers?.filter((t: any) => t.is_active !== false || t.show_when_locked === true)
         .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0) || a.price - b.price) || []
 
-    // Default to first tier if exists
+    // Default to the first tier that can actually be bought.
     const [selectedTierId, setSelectedTierId] = useState<string | null>(
-        activeTiers.length > 0 ? activeTiers[0].id : null
+        activeTiers.find((t: any) => !lockedOf(t))?.id ?? null
     )
 
     const selectedTier = activeTiers.find((t: any) => t.id === selectedTierId)
@@ -137,6 +139,8 @@ export function TicketSelector({
                         >
                             {activeTiers.map((tier: any) => {
                                 const isSoldOut = tier.quantity_sold >= tier.quantity_total
+                                const isLocked = lockedOf(tier)
+                                const isOff = isSoldOut || isLocked
                                 return (
                                     <Label
                                         key={tier.id}
@@ -144,16 +148,23 @@ export function TicketSelector({
                                         className={cn(
                                             "flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all hover:bg-muted/50",
                                             selectedTierId === tier.id ? "border-primary bg-primary/5" : "border-border",
-                                            isSoldOut ? "opacity-50 cursor-not-allowed" : ""
+                                            isOff ? "opacity-50 cursor-not-allowed" : "",
+                                            isLocked ? "grayscale" : ""
                                         )}
                                     >
                                         <div className="flex items-center gap-3">
-                                            <RadioGroupItem value={tier.id} id={tier.id} disabled={isSoldOut} />
+                                            <RadioGroupItem value={tier.id} id={tier.id} disabled={isOff} />
                                             <div>
                                                 <div className="font-bold flex items-center gap-2">
                                                     {tier.name}
                                                     {isSoldOut && <Badge variant="destructive" className="text-[10px] h-5">Sold Out</Badge>}
+                                                    {isLocked && !isSoldOut && (
+                                                        <Badge variant="secondary" className="text-[10px] h-5">Not on sale</Badge>
+                                                    )}
                                                 </div>
+                                                {isLocked && tier.lock_note && (
+                                                    <div className="text-xs font-medium text-muted-foreground">{tier.lock_note}</div>
+                                                )}
                                                 {tier.description && (
                                                     <div className="text-xs text-muted-foreground">{tier.description}</div>
                                                 )}

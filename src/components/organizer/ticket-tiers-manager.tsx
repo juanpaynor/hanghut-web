@@ -126,6 +126,8 @@ export function TicketTiersManager({
         min_per_order: '1',
         max_per_order: '10',
         is_active: true,
+        show_when_locked: false,
+        lock_note: '',
         perks: [] as string[],
         highlight: false,
         badge_label: '',
@@ -144,6 +146,8 @@ export function TicketTiersManager({
             min_per_order: '1',
             max_per_order: '10',
             is_active: true,
+            show_when_locked: false,
+            lock_note: '',
             perks: [],
             highlight: false,
             badge_label: '',
@@ -169,6 +173,8 @@ export function TicketTiersManager({
             min_per_order: tier.min_per_order.toString(),
             max_per_order: tier.max_per_order.toString(),
             is_active: tier.is_active,
+            show_when_locked: (tier as any).show_when_locked ?? false,
+            lock_note: (tier as any).lock_note ?? '',
             perks: Array.isArray(tier.perks) ? tier.perks : [],
             highlight: !!tier.highlight,
             badge_label: tier.badge_label || '',
@@ -228,6 +234,8 @@ export function TicketTiersManager({
                 min_per_order: parseInt(formData.min_per_order),
                 max_per_order: parseInt(formData.max_per_order),
                 is_active: formData.is_active,
+                show_when_locked: formData.show_when_locked,
+                lock_note: formData.lock_note.trim() || null,
                 sort_order: editingTier ? editingTier.sort_order : tiers.length,
                 // Presentation
                 perks: formData.perks,
@@ -423,7 +431,9 @@ export function TicketTiersManager({
                                                 <Badge variant="outline" className="text-[10px] h-5">{tier.badge_label}</Badge>
                                             )}
                                             {!tier.is_active && (
-                                                <Badge variant="secondary">Inactive</Badge>
+                                                <Badge variant="secondary">
+                                                    {(tier as any).show_when_locked ? 'Locked · shown' : 'Locked · hidden'}
+                                                </Badge>
                                             )}
                                             {tier.quantity_sold >= tier.quantity_total && (
                                                 <Badge variant="destructive">Sold Out</Badge>
@@ -745,20 +755,64 @@ export function TicketTiersManager({
 
                         <Separator />
 
-                        <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                                <Label htmlFor="active">Active</Label>
-                                <p className="text-sm text-muted-foreground">
-                                    Inactive tiers won&apos;t be available for purchase
-                                </p>
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <Label htmlFor="active">On sale</Label>
+                                    <p className="text-sm text-muted-foreground">
+                                        Turn off to stop this tier selling. Buyers can&apos;t check out
+                                        with it either way.
+                                    </p>
+                                </div>
+                                <Switch
+                                    id="active"
+                                    checked={formData.is_active}
+                                    onCheckedChange={(checked) =>
+                                        setFormData({ ...formData, is_active: checked })
+                                    }
+                                />
                             </div>
-                            <Switch
-                                id="active"
-                                checked={formData.is_active}
-                                onCheckedChange={(checked) =>
-                                    setFormData({ ...formData, is_active: checked })
-                                }
-                            />
+
+                            {/* Only meaningful while locked — hidden otherwise so the
+                                dialog doesn't ask about a state that isn't in play. */}
+                            {!formData.is_active && (
+                                <div className="space-y-3 rounded-lg border bg-muted/40 p-3">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div className="space-y-0.5">
+                                            <Label htmlFor="show_when_locked">Still show it on the event page</Label>
+                                            <p className="text-sm text-muted-foreground">
+                                                Greyed out and unbuyable, instead of disappearing.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            id="show_when_locked"
+                                            checked={formData.show_when_locked}
+                                            onCheckedChange={(checked) =>
+                                                setFormData({ ...formData, show_when_locked: checked })
+                                            }
+                                        />
+                                    </div>
+
+                                    {formData.show_when_locked && (
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="lock_note">Note for buyers</Label>
+                                            <Input
+                                                id="lock_note"
+                                                value={formData.lock_note}
+                                                maxLength={80}
+                                                placeholder="e.g. Opens Friday 6PM"
+                                                onChange={(e) =>
+                                                    setFormData({ ...formData, lock_note: e.target.value })
+                                                }
+                                            />
+                                            <p className="text-[11px] text-muted-foreground">
+                                                Shown on the greyed-out tier. Leave blank for a plain
+                                                &ldquo;Not on sale&rdquo; label.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
 

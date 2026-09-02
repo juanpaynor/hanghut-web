@@ -1,5 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// Pinned, not floating `@2`: on 2026-09-02 the float resolved to 2.113.0, whose
+// postgrest-js submodule 404s on esm.sh, and EVERY edge function using `@2`
+// became undeployable with no change on our side. A pin makes deploys
+// reproducible instead of dependent on a CDN's latest build.
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.0'
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -195,13 +199,48 @@ serve(async (req) => {
         if (tier_id) {
             const { data: tier, error: tierError } = await supabaseClient
                 .from('ticket_tiers')
-                .select('price, name, quantity_sold, quantity_total, events(organizer_id)')
+                .select('price, name, quantity_sold, quantity_total, is_active, sales_start, sales_end, events(organizer_id)')
                 .eq('id', tier_id)
                 .eq('event_id', event_id)
                 .single()
 
             if (tierError || !tier) {
                 return new Response(JSON.stringify({ success: false, error: { message: 'Invalid Ticket Tier' } }), { status: 400, headers: corsHeaders })
+            }
+
+            // The organizer's lock. Every buyer surface hides an inactive tier and the
+            // tier manager promises "Inactive tiers won't be available for purchase",
+            // but this path never checked — so a locked tier stayed purchasable by
+            // anyone still holding its id: a stale tab, a bookmarked checkout, the
+            // embed widget, a replayed request. /api/v1/checkouts already enforced
+            // this, so the two checkout paths disagreed about whether a lock meant
+            // anything.
+            //
+            // `=== false` (not `!tier.is_active`) deliberately: NULL means "never
+            // configured", which the buyer-side filters treat as active. Blocking on
+            // null would silently close tiers that were only ever meant to be open.
+            if (tier.is_active === false) {
+                return new Response(
+                    JSON.stringify({ success: false, error: { code: 'TIER_LOCKED', message: 'This ticket type is not on sale right now.' } }),
+                    { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+
+            // Scheduled window. Columns already exist and the save path accepts them
+            // (no UI yet, 0 rows set), so enforcing now costs nothing today and means
+            // a future "sales open/close at" picker is a pure frontend change.
+            const nowMs = Date.now()
+            if (tier.sales_start && new Date(tier.sales_start).getTime() > nowMs) {
+                return new Response(
+                    JSON.stringify({ success: false, error: { code: 'TIER_NOT_YET_ON_SALE', message: 'Sales for this ticket type have not opened yet.' } }),
+                    { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+            if (tier.sales_end && new Date(tier.sales_end).getTime() < nowMs) {
+                return new Response(
+                    JSON.stringify({ success: false, error: { code: 'TIER_SALES_CLOSED', message: 'Sales for this ticket type have closed.' } }),
+                    { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
             }
 
             if (tier.quantity_sold + quantity > tier.quantity_total) {

@@ -105,6 +105,13 @@ export default async function CheckoutPage({
 
     if (tierId) {
         tierToUse = event.ticket_tiers?.find((t: any) => t.id === tierId) || null
+        // A locked tier is still reachable directly — a stale tab, a bookmarked
+        // checkout URL, the embed widget. create-purchase-intent rejects it with
+        // TIER_LOCKED, but bounce here so the buyer reads the reason on the event
+        // page instead of filling in a form that was always going to fail.
+        if (tierToUse && tierToUse.is_active === false) {
+            redirect(`/events/${eventId}?error=tier_locked`)
+        }
     }
 
     // Fallback: If no tierId specified, check if event has tiers and use the first one (General Admission usually)

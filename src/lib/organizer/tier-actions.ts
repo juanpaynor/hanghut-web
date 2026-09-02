@@ -13,6 +13,10 @@ export async function createTicketTier(eventId: string, tierData: {
     sales_start?: string
     sales_end?: string
     is_active: boolean
+    /** When is_active is false: show the tier greyed out instead of hiding it. */
+    show_when_locked?: boolean
+    /** Buyer-facing reason shown on a locked, visible tier. */
+    lock_note?: string | null
     sort_order: number
     // Presentation fields (inline tier showcase)
     perks?: string[]
@@ -94,6 +98,8 @@ export async function updateTicketTier(tierId: string, tierData: {
     sales_start?: string
     sales_end?: string
     is_active?: boolean
+    show_when_locked?: boolean
+    lock_note?: string | null
     sort_order?: number
     // Presentation fields (inline tier showcase)
     perks?: string[]
