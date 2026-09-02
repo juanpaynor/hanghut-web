@@ -15,6 +15,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
  * retried after a successful Resend call (idempotency-key dedup) records and
  * counts nothing extra.
  *
+ * Phase 5: an optional `tokens` map on the batch message (+ per-recipient
+ * first_name) is substituted into {{token}} placeholders in the subject/html
+ * before send. Manual campaigns omit tokens → no-op.
+ *
  * Triggered by pg_cron every 10s. verify_jwt = true (cron passes service role).
  * ============================================================================
  */
@@ -31,17 +35,36 @@ const VISIBILITY_TIMEOUT = 120   // seconds a claimed message is hidden from oth
 const MAX_RETRIES = 3            // dead-letter a batch after this many failed Resend attempts
 const RESEND_SPACING_MS = 700    // gap between Resend calls to respect rate limits
 
-interface Recipient { email: string; unsubscribe_token?: string | null }
+interface Recipient { email: string; unsubscribe_token?: string | null; first_name?: string | null }
+
+// Resend's batch endpoint rejects the WHOLE batch with 422 if a single `to` is
+// malformed. Buyer-typed checkout emails routinely contain junk ("hs",
+// "someone@yahoo.com m"), so one typo used to hold an entire campaign hostage:
+// a 47-recipient KOOLCHELLA send burned every retry and was about to dead-letter
+// all 47 as failed because 2 addresses were unusable. Drop the undeliverable
+// ones, send to the rest, and count the dropped ones as failed.
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+function isDeliverable(r: Recipient | undefined | null): boolean {
+    return !!r && typeof r.email === "string" && EMAIL_RE.test(r.email.trim())
+}
+
 interface BatchMessage {
     campaign_id: string
     partner_id: string
     sender_name: string
     batch_index: number
     recipients: Recipient[]
+    tokens?: Record<string, string>
 }
 
 function sanitizeSenderName(name: string): string {
     return name.toLowerCase().replace(/[^a-z0-9]/g, "")
+}
+
+// Replace {{token}} placeholders with provided values; unknown tokens are left
+// untouched so plain campaigns with literal braces are unaffected.
+function applyTokens(text: string, tokens: Record<string, string>): string {
+    return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => (k in tokens ? tokens[k] : m))
 }
 
 async function hmacHex(key: string, msg: string): Promise<string> {
@@ -98,6 +121,7 @@ serve(async () => {
     for (const msg of messages) {
         const batch = msg.message as BatchMessage
         const { campaign_id, partner_id, sender_name, batch_index, recipients } = batch || {}
+        const tokens = batch?.tokens || {}
 
         // Guard against malformed / orphaned messages.
         if (!campaign_id || !Array.isArray(recipients) || recipients.length === 0) {
@@ -109,16 +133,39 @@ serve(async () => {
         // Dead-letter poison batches, counting as failed only the recipients not
         // already recorded (avoids double-counting a rare succeeded-but-undeleted batch).
         if (msg.read_ct > MAX_RETRIES) {
+            const sendable = recipients.filter(isDeliverable)
             const { count: already } = await supabase
                 .from('email_sends')
                 .select('*', { count: 'exact', head: true })
                 .eq('campaign_id', campaign_id)
-                .in('recipient', recipients.map(r => r.email))
-            const failedDelta = recipients.length - (already ?? 0)
+                .in('recipient', sendable.map(r => r.email))
+            const failedDelta = sendable.length - (already ?? 0)
             console.warn(`🪣 Dead-lettering batch ${msg.msg_id} after ${msg.read_ct} attempts; counting ${failedDelta} failed`)
             if (failedDelta > 0) {
                 await supabase.rpc('finalize_email_batch', { p_campaign_id: campaign_id, p_sent: 0, p_failed: failedDelta })
             }
+            await supabase.rpc('pgmq_archive', { queue_name: QUEUE_NAME, msg_id: msg.msg_id })
+            continue
+        }
+
+        // Split off addresses Resend would reject, BEFORE they can poison the batch.
+        // Counted as failed once, on the first attempt only (read_ct === 1), so a
+        // later retry of the same message can't double-count them.
+        const deliverable = recipients.filter(isDeliverable)
+        const undeliverable = recipients.filter((r) => !isDeliverable(r))
+        if (undeliverable.length > 0) {
+            console.warn(
+                `⚠️ Batch ${batch_index} of campaign ${campaign_id}: dropping ${undeliverable.length} `
+                + `invalid recipient(s): ${undeliverable.map((r) => JSON.stringify(r?.email)).join(', ')}`
+            )
+            if (msg.read_ct === 1) {
+                await supabase.rpc('finalize_email_batch', {
+                    p_campaign_id: campaign_id, p_sent: 0, p_failed: undeliverable.length,
+                })
+            }
+        }
+        if (deliverable.length === 0) {
+            console.warn(`⚠️ Batch ${msg.msg_id} has no deliverable recipients; archiving`)
             await supabase.rpc('pgmq_archive', { queue_name: QUEUE_NAME, msg_id: msg.msg_id })
             continue
         }
@@ -137,7 +184,7 @@ serve(async () => {
         try {
             const fromAddress = `${sender_name} <${sanitizeSenderName(sender_name)}@${MARKETING_FROM_DOMAIN}>`
 
-            const payloads = await Promise.all(recipients.map(async (sub) => {
+            const payloads = await Promise.all(deliverable.map(async (sub) => {
                 let unsubscribeUrl: string
                 if (sub.unsubscribe_token) {
                     unsubscribeUrl = `https://hanghut.com/unsubscribe?token=${sub.unsubscribe_token}`
@@ -152,11 +199,13 @@ serve(async () => {
                         <p><a href="${unsubscribeUrl}" style="color: #666; text-decoration: underline;">Unsubscribe</a> from these emails.</p>
                     </div>
                 `
+                // Per-recipient token set (first_name) merged over campaign-level tokens.
+                const merged = { ...tokens, first_name: sub.first_name || tokens.first_name || "" }
                 return {
                     from: fromAddress,
-                    to: sub.email,
-                    subject: campaign.subject,
-                    html: campaign.html + footerHtml,
+                    to: sub.email.trim(),
+                    subject: applyTokens(campaign.subject, merged),
+                    html: applyTokens(campaign.html, merged) + footerHtml,
                     headers: { 'List-Unsubscribe': `<${unsubscribeUrl}>` },
                 }
             }))
@@ -182,10 +231,10 @@ serve(async () => {
 
             // Record per-recipient sends; ON CONFLICT DO NOTHING makes this
             // idempotent. The count of NEW rows is what we advance the tally by.
-            const sendRows = recipients.map((sub, idx) => ({
+            const sendRows = deliverable.map((sub, idx) => ({
                 campaign_id,
                 partner_id,
-                recipient: sub.email,
+                recipient: sub.email.trim(),
                 resend_id: result.data?.[idx]?.id ?? null,
                 status: 'sent',
             }))
