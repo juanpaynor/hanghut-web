@@ -123,9 +123,16 @@ export function TicketOrderView({
     const isEventBg = background === 'event' && !!headerImage
 
     // Page background per host choice.
+    //
+    // 'event' paints a blurred copy of the image behind the page as a fixed layer,
+    // so the wrapper itself must stay TRANSPARENT in that mode. It used to get
+    // `bg-background` — an opaque fill painted directly over the backdrop layer —
+    // so picking the event background rendered the image into the DOM and then
+    // covered it completely. Falls back to the neutral wash when the event has no
+    // image to show.
     const pageClass =
         background === 'default' ? 'bg-muted/30' :
-        background === 'event' ? 'bg-background' : ''
+        background === 'event' ? (isEventBg ? '' : 'bg-muted/30') : ''
     const pageStyle: React.CSSProperties | undefined =
         background === 'brand' && accent
             ? { background: `linear-gradient(180deg, ${accent}22, ${accent}0a)` }
@@ -325,12 +332,14 @@ export function TicketOrderView({
             {isEventBg && (
                 <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={headerImage!} alt="" aria-hidden className="fixed inset-0 -z-10 h-full w-full object-cover" style={{ filter: 'blur(28px) brightness(0.55)', transform: 'scale(1.15)' }} />
-                    <div aria-hidden className="fixed inset-0 -z-10 bg-black/30" />
+                    {/* z-0 backdrop + z-10 content, rather than a negative z-index:
+                        an ancestor's own background paints over -z-10 children. */}
+                    <img src={headerImage!} alt="" aria-hidden className="fixed inset-0 z-0 h-full w-full object-cover" style={{ filter: 'blur(28px) brightness(0.55)', transform: 'scale(1.15)' }} />
+                    <div aria-hidden className="fixed inset-0 z-0 bg-black/30" />
                 </>
             )}
 
-            <div className="relative mx-auto w-full max-w-md space-y-4">
+            <div className="relative z-10 mx-auto w-full max-w-md space-y-4">
                 {/* Event header */}
                 <div className="overflow-hidden rounded-2xl border bg-background shadow-sm">
                     {showBanner && (
