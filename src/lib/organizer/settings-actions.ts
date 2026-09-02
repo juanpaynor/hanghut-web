@@ -60,7 +60,7 @@ const profileSchema = z.object({
         ticket: z.object({
             message: z.string().nullable().optional(),
             banner_url: z.string().nullable().optional(),
-            template: z.enum(['classic', 'boarding', 'minimal']).optional(),
+            template: z.enum(['classic', 'boarding', 'minimal', 'stub']).optional(),
             theme: z.enum(['light', 'dark']).optional(),
             background: z.enum(['default', 'brand', 'event']).optional(),
             show_pdf: z.boolean().optional(),

@@ -88,7 +88,7 @@ interface PartnerSettingsFormProps {
             ticket?: {
                 message?: string
                 banner_url?: string
-                template?: 'classic' | 'boarding' | 'minimal'
+                template?: 'classic' | 'boarding' | 'minimal' | 'stub'
                 theme?: 'light' | 'dark'
                 background?: 'default' | 'brand' | 'event'
                 show_pdf?: boolean
@@ -1287,11 +1287,12 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                             {/* Template */}
                             <div className="space-y-2">
                                 <Label>Ticket style</Label>
-                                <div className="grid grid-cols-3 gap-2">
+                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                                     {([
                                         { v: 'classic', label: 'Classic', hint: 'Banner + QR' },
                                         { v: 'boarding', label: 'Boarding pass', hint: 'Stub + perforation' },
                                         { v: 'minimal', label: 'Minimal', hint: 'QR only' },
+                                        { v: 'stub', label: 'Concert stub', hint: 'Tier band + event details' },
                                     ] as const).map((opt) => (
                                         <button
                                             key={opt.v}
