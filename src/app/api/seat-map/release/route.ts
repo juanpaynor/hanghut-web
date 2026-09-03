@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { publishSeatEvent } from '@/lib/seat-map/realtime-server'
 
 /**
  * POST /api/seat-map/release   body: { sessionId: string, seatIds: string[] }
@@ -11,13 +12,13 @@ import { createClient } from '@supabase/supabase-js'
  * a normal fetch/rpc can be cancelled.
  */
 export async function POST(req: Request) {
-    let body: { sessionId?: string; seatIds?: string[] }
+    let body: { sessionId?: string; seatIds?: string[]; origin?: string }
     try {
         body = await req.json()
     } catch {
         return NextResponse.json({ error: 'bad body' }, { status: 400 })
     }
-    const { sessionId, seatIds } = body
+    const { sessionId, seatIds, origin } = body
     if (!sessionId || !Array.isArray(seatIds) || seatIds.length === 0) {
         return NextResponse.json({ ok: true, released: 0 })
     }
@@ -30,11 +31,21 @@ export async function POST(req: Request) {
 
     // A session can only release its OWN holds (release_seat_hold matches on
     // session_id), so this is safe to expose without auth.
-    await Promise.all(
-        seatIds.slice(0, 50).map((id) =>
+    const ids = seatIds.slice(0, 50)
+    const [, routing] = await Promise.all([
+        Promise.all(ids.map((id) =>
             supabase.rpc('release_seat_hold', { p_seat_id: id, p_session_id: sessionId })
-        )
-    )
+        )),
+        supabase.from('seats').select('id, section_id, event_id').in('id', ids),
+    ])
+
+    // Freed seats are announced too. A release that nobody hears is the worse
+    // half of the pair: the seat is genuinely available again but every other
+    // buyer's map keeps it greyed out until their next poll, so a released seat
+    // looks taken for longer than it actually is.
+    for (const row of routing.data ?? []) {
+        publishSeatEvent(row.event_id, row.section_id, 'released', row.id, origin)
+    }
 
     return NextResponse.json({ ok: true, released: seatIds.length })
 }

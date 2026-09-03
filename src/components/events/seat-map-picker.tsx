@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { Loader2, Minus, Plus, RotateCcw, ArrowLeft, Armchair } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { sectionChannel } from '@/lib/seat-map/realtime'
 import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
 
 // ─── RPC payload types (shared contract with the Flutter app) ───────────────
@@ -166,6 +167,15 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         sessionIdRef.current = sid
         setSessionId(sid)
     }, [])
+
+    // Per-TAB tag used only to recognise and discard our own broadcast echoes.
+    // Deliberately NOT the session id: that is the credential for releasing a
+    // hold and must never go over a public channel. This confers nothing, and it
+    // is per tab so two tabs of the same buyer still correctly inform each other.
+    const originRef = useRef<string>('')
+    if (!originRef.current && typeof crypto !== 'undefined') {
+        originRef.current = crypto.randomUUID()
+    }
 
     // Release held seats when the picker closes WITHOUT continuing to checkout
     // (abandoned holds would otherwise block other buyers for the 12-min TTL).
@@ -332,6 +342,90 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     }, [loadAll, refreshStatus])
 
     // Live updates: booked seats grey out as other buyers complete payment
+    // ── Live hold updates (Ably, per active section) ─────────────────────────
+    // The postgres_changes subscription below covers `seats` status, which only
+    // moves when a seat is BOOKED — the rarest event here. Holds are the frequent,
+    // contended thing and produce no row change worth fanning out event-wide, so
+    // they ride a per-section Ably channel instead.
+    //
+    // This is advisory. Every path stays correct if a message is lost, duplicated
+    // or late: the 3s poll reconciles, and Postgres decides the winner at
+    // UNIQUE(seat_id) regardless. So failures here are swallowed and the picker
+    // simply refreshes at poll speed instead of instantly.
+    useEffect(() => {
+        if (!activeSection) return   // overview shows counts, not individual seats
+        let cancelled = false
+        let realtime: EventSource | null = null
+
+        void (async () => {
+            try {
+                // Native EventSource against Ably's SSE endpoint, NOT the Ably SDK.
+                // The SDK ships prebuilt bundles that Next's SWC loader cannot
+                // parse ("'super' keyword outside a method"), and we would be
+                // pulling in a websocket client, presence, history and encryption
+                // to receive a two-field message. EventSource costs no bundle,
+                // reconnects on its own, and cannot publish even in principle —
+                // so subscribe-only becomes a property of the transport rather
+                // than only of the token's capability.
+                const tokenRes = await fetch(`/api/seat-map/realtime-token?eventId=${eventId}`)
+                if (!tokenRes.ok || cancelled) return
+                const { token } = await tokenRes.json()
+                if (!token || cancelled) return
+
+                const channelName = sectionChannel(eventId, activeSection)
+                const url = `https://realtime.ably.io/sse?v=1.2`
+                    + `&channels=${encodeURIComponent(channelName)}`
+                    + `&accessToken=${encodeURIComponent(token)}`
+                realtime = new EventSource(url)
+
+                const applySeat = (seatId: string, status: 'held' | 'available' | 'booked') => {
+                    const prev = statusRef.current
+                    if (!prev) return
+                    const taken = (prev.taken ?? []).filter((t: any) => t.id !== seatId)
+                    if (status !== 'available') taken.push({ id: seatId, status })
+                    statusRef.current = { ...prev, taken }
+                    remerge()
+                }
+
+                realtime.onmessage = (ev: MessageEvent) => {
+                    try {
+                        const envelope = JSON.parse(ev.data)
+                        // Ably SSE wraps the message; `data` is the published
+                        // payload, itself JSON-encoded.
+                        const payload = typeof envelope.data === 'string'
+                            ? JSON.parse(envelope.data)
+                            : envelope.data
+                        const id = payload?.seatId
+                        if (!id) return
+
+                        // Discard our OWN echo. Every publisher is also a
+                        // subscriber, so taking a seat broadcasts "held" back to
+                        // us. The previous check — "is it in my selection?" — was
+                        // timing-dependent: unpick fast enough and the echo landed
+                        // after the selection was gone, so we greyed out a seat we
+                        // had just freed and could not pick it again.
+                        if (payload.origin && payload.origin === originRef.current) return
+
+                        if (envelope.name === 'held') {
+                            applySeat(id, 'held')
+                        } else if (envelope.name === 'released') {
+                            applySeat(id, 'available')
+                        } else if (envelope.name === 'booked') {
+                            applySeat(id, 'booked')
+                        }
+                    } catch { /* malformed frame: the poll still reconciles */ }
+                }
+            } catch {
+                /* advisory transport: fall back to the poll */
+            }
+        })()
+
+        return () => {
+            cancelled = true
+            try { realtime?.close() } catch { /* noop */ }
+        }
+    }, [eventId, activeSection, remerge])
+
     useEffect(() => {
         const supabase = createClient()
         const channel = supabase
@@ -542,11 +636,11 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         zoomToSection(loaded ?? section)
     }, [loadSection, zoomToSection])
 
-    // Outstanding `hold_seat` writes. The select below is optimistic — the
-    // selection count moves before the hold row exists — so without this the
-    // countdown's re-sync raced the insert, read back "no hold", and reported a
-    // released seat on the buyer's FIRST tap. See useSeatHoldTimer.
-    const [pendingHolds, setPendingHolds] = useState(0)
+    // Seats with a hold request in flight. Rendered as pending so the tap feels
+    // answered, WITHOUT claiming the seat is the buyer's before the server says
+    // so. Doubles as the value fed to useSeatHoldTimer, which must not read a
+    // missing hold as an expiry while one is still being written.
+    const [pendingSeatIds, setPendingSeatIds] = useState<string[]>([])
 
     // Hold countdown. On expiry the server has already released the seats (every
     // availability check filters on expires_at > now()), so the UI's job is only
@@ -566,7 +660,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         sessionId,
         selectedSeatIds.length,
         handleHoldExpired,
-        pendingHolds,
+        pendingSeatIds.length,
     )
 
     const handleSeatTap = useCallback((seat: MapSeat) => {
@@ -591,9 +685,15 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                 }
                 remerge()
             }
-            // .then() is required — the supabase builder is lazy, so `void rpc(...)`
-            // never sent the request and the hold lingered until its TTL.
-            supabase.rpc('release_seat_hold', { p_seat_id: seat.id, p_session_id: sid }).then(undefined, () => {})
+            // Via the ROUTE, not the RPC directly. The raw RPC frees the hold in
+            // Postgres but announces nothing, so every other buyer kept seeing the
+            // seat as taken until their next poll — the release half of the pair
+            // was silent. The route publishes 'released'.
+            void fetch('/api/seat-map/release', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId: sid, seatIds: [seat.id], origin: originRef.current }),
+            }).catch(() => { /* advisory; the TTL and the poll both still cover us */ })
             return
         }
 
@@ -613,21 +713,48 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
             return
         }
 
-        // Optimistic select, then take a server-side hold; roll back if another
-        // buyer beat us to it (hold_seat returns false when already held/taken).
-        setSelectedSeatIds(prev => [...prev, seat.id])
-        setPendingHolds(n => n + 1)
-        supabase.rpc('hold_seat', { p_seat_id: seat.id, p_session_id: sid }).then(({ data, error }) => {
-            if (error || data !== true) {
-                setSelectedSeatIds(prev => prev.filter(id => id !== seat.id))
-                toast({ title: 'Seat just taken', description: `${seat.label} was grabbed by another buyer.` })
-                refreshStatus()
+        // ── The tap is a REQUEST, not a state change. ────────────────────────
+        // We do NOT select optimistically. Seat selection is inherently
+        // CONTENDED — you may genuinely not get it — so guessing creates a
+        // shadow copy of hold state that then has to be reconciled with the
+        // server, and every reconciliation bug this system has had came from
+        // exactly that: the phantom "your seats were released" on a first tap,
+        // and a section reading "sold out" because of the buyer's own hold.
+        //
+        // Selecting only AFTER the server confirms means selectedSeatIds can
+        // never describe a hold that does not exist. There is nothing left to
+        // reconcile, so the race cannot occur rather than being defended against.
+        //
+        // The cost is one round trip before the seat fills in; the seat renders
+        // as pending meanwhile, which reads as responsive and — unlike an
+        // optimistic fill — is honest about the fact that it is not yours yet.
+        if (pendingSeatIds.includes(seat.id)) return   // ignore double taps
+        setPendingSeatIds(prev => [...prev, seat.id])
+
+        void (async () => {
+            try {
+                const res = await fetch('/api/seat-map/hold', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ seatId: seat.id, sessionId: sid, origin: originRef.current }),
+                })
+                const data = await res.json().catch(() => null)
+
+                if (!res.ok || !data?.held) {
+                    // hold_seat returns false for "already held" AND for "at the
+                    // per-order cap" — both mean the buyer did not get it.
+                    toast({ title: 'Seat just taken', description: `${seat.label} was grabbed by another buyer.` })
+                    refreshStatus()
+                    return
+                }
+                setSelectedSeatIds(prev => prev.includes(seat.id) ? prev : [...prev, seat.id])
+            } catch {
+                toast({ title: "Couldn't hold that seat", description: 'Check your connection and try again.' })
+            } finally {
+                setPendingSeatIds(prev => prev.filter(id => id !== seat.id))
             }
-            // Always decrement, both paths — a rejected hold that left this
-            // pinned above zero would suppress every real expiry from then on.
-            setPendingHolds(n => n - 1)
-        }, () => setPendingHolds(n => n - 1))
-    }, [selectedSeatIds, allSeats, toast, maxPerOrder, refreshStatus, remerge])
+        })()
+    }, [selectedSeatIds, pendingSeatIds, allSeats, toast, maxPerOrder, refreshStatus, remerge])
 
     const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
         e.evt.preventDefault()
@@ -685,9 +812,13 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     const sectionFill = (section: MapSection) =>
         (section.tier_id && tierColors.get(section.tier_id)) || section.color
 
-    // Seat dot fill by status/selection
+    // Seat dot fill by status/selection. A seat with a hold request in flight
+    // takes the SELECTED colour but stays dimmed and un-grown below — it reads as
+    // "claiming this", not as "yours", because it may still be lost to another
+    // buyer. Showing it as fully selected would be the optimistic lie all over
+    // again, just in paint instead of state.
     const seatFill = (seat: MapSeat) => {
-        if (selectedSeatIds.includes(seat.id)) return SELECTED_COLOR
+        if (selectedSeatIds.includes(seat.id) || pendingSeatIds.includes(seat.id)) return SELECTED_COLOR
         if (seat.status !== 'available') return TAKEN_COLOR
         return (seat.tier_id && tierColors.get(seat.tier_id)) || '#6366f1'
     }
@@ -788,6 +919,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                             appear once the dots are big enough on screen to fit them. */}
                         {activeSectionData?.seats.map(seat => {
                             const isSel = selectedSeatIds.includes(seat.id)
+                            const isPending = pendingSeatIds.includes(seat.id)
                             const r = isSel ? activeSeatRadius * 1.15 : activeSeatRadius
                             return (
                                 <Group key={seat.id} x={seat.x} y={seat.y}>
@@ -796,7 +928,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                                         fill={seatFill(seat)}
                                         stroke="#ffffff"
                                         strokeWidth={Math.max(0.75, activeSeatRadius * (isSel ? 0.3 : 0.16))}
-                                        opacity={seat.status === 'available' || isSel ? 1 : 0.5}
+                                        opacity={isPending ? 0.55 : (seat.status === 'available' || isSel ? 1 : 0.5)}
                                         shadowColor={isSel ? '#0f172a' : undefined}
                                         shadowBlur={isSel ? activeSeatRadius * 0.8 : 0}
                                         shadowOpacity={isSel ? 0.5 : 0}
@@ -809,7 +941,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                                             const pos = stage?.getPointerPosition()
                                             if (pos) setHoveredSeat({ seat, screenX: pos.x, screenY: pos.y })
                                             const container = stage?.container()
-                                            if (container) container.style.cursor = seat.status === 'available' || isSel ? 'pointer' : 'not-allowed'
+                                            if (container) container.style.cursor = isPending ? 'progress' : (seat.status === 'available' || isSel ? 'pointer' : 'not-allowed')
                                         }}
                                         onMouseMove={(e) => {
                                             const stage = e.target.getStage()

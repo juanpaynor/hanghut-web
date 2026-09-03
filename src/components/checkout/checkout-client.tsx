@@ -136,6 +136,31 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         setSeatSessionId(sessionStorage.getItem('hh_seat_session'))
     }, [selectedSeatIds.length])
 
+    // Release the seats if the buyer leaves checkout WITHOUT going to pay.
+    //
+    // Until now only the picker did this, so closing the tab on the payment step
+    // held the seats for the full TTL — and on a map where a section is one couch
+    // that is a whole section dark for a quarter of an hour.
+    //
+    // Guarded two ways, because releasing a seat out from under someone who IS
+    // paying would be far worse than holding one too long:
+    //  1. leavingToPayRef is set immediately before every redirect to Xendit or
+    //     the success page, so the successful path never releases.
+    //  2. It targets the PICKER session, and assign_seats_to_intent re-keys the
+    //     hold to the intent id the moment an intent is created — so once payment
+    //     is genuinely under way this cannot match anything even if it did fire.
+    const leavingToPayRef = useRef(false)
+    useEffect(() => () => {
+        if (leavingToPayRef.current || selectedSeatIds.length === 0) return
+        const sid = typeof window !== 'undefined' ? sessionStorage.getItem('hh_seat_session') : null
+        if (!sid) return
+        try {
+            const payload = JSON.stringify({ sessionId: sid, seatIds: selectedSeatIds })
+            navigator.sendBeacon('/api/seat-map/release', new Blob([payload], { type: 'application/json' }))
+        } catch { /* best-effort; the TTL still backstops it */ }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
     const { secondsLeft: holdSecondsLeft, expired: seatHoldExpired } = useSeatHoldTimer(
         seatSessionId,
         selectedSeatIds.length,
@@ -481,6 +506,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             if (data.data?.free) {
                 // Free ticket — already confirmed, go straight to success
                 console.log('✅ [CHECKOUT] Free ticket confirmed, redirecting to success')
+                leavingToPayRef.current = true
                 const successUrl = `${window.location.origin}/checkout/success?intent_id=${data.data.intent_id}`
                 if (isEmbed && window.self !== window.top) {
                     window.parent.postMessage({ type: 'HANGHUT_REDIRECT_PARENT', url: successUrl }, '*')
@@ -489,6 +515,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 }
             } else if (data.data?.payment_url) {
                 console.log('✅ [CHECKOUT] Payment URL received, redirecting to:', data.data.payment_url)
+                leavingToPayRef.current = true
 
                 // If we're inside an embed iframe, ask the parent window to redirect
                 if (isEmbed && window.self !== window.top) {

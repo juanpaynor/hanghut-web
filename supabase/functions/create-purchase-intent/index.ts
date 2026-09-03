@@ -704,6 +704,22 @@ serve(async (req) => {
                 .eq('purchase_intent_id', intentId)
                 .eq('status', 'reserved')
 
+            // The SEAT too, for the same reason. assign_seats_to_intent parked a
+            // seat_holds row keyed by the intent id with an 18-minute TTL — long
+            // deliberately, so a LIVE checkout is never cut off mid-payment. This
+            // checkout is not live; it just died at the payment provider. Without
+            // this the ticket went back on sale while the seat stayed dark for the
+            // full 18 minutes, and on a map where one section is one couch that
+            // reads as a whole section sold out for a quarter of an hour.
+            //
+            // expire_stale_purchase_intents does the same release for ABANDONED
+            // intents, but only ever sees rows still 'pending' — this one is now
+            // 'failed', so nothing else would ever reclaim the seat.
+            await supabaseAdmin
+                .from('seat_holds')
+                .delete()
+                .eq('session_id', intentId)
+
             // events.tickets_sold is NOT touched here. trg_sync_event_tickets_sold
             // decrements it from the ticket rows released above. The old explicit
             // `tickets_sold - quantity` was a second, uncoordinated writer AND a
