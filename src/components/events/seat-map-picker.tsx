@@ -408,6 +408,26 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         return sec ? computeSeatRadius(sec.seats) : 6
     }, [activeSection, mapData])
 
+    // Seats THIS buyer is holding, counted per section.
+    //
+    // get_event_seat_status takes no session id on purpose — it carries no user
+    // context so the CDN can serve one shared copy during an on-sale. The cost is
+    // that it subtracts EVERY live hold from available_count, including our own.
+    // A section where the buyer holds the last seat therefore comes back as 0,
+    // renders "Sold out", greys out, and stops accepting taps — locking them out
+    // of a seat they are currently holding. Credit our own holds back locally,
+    // where we know which ones are ours.
+    const ownHeldBySection = useMemo(() => {
+        const counts = new Map<string, number>()
+        if (!mapData || selectedSeatIds.length === 0) return counts
+        const mine = new Set(selectedSeatIds)
+        mapData.sections.forEach(sec => {
+            const n = sec.seats.reduce((acc, seat) => acc + (mine.has(seat.id) ? 1 : 0), 0)
+            if (n > 0) counts.set(sec.id, n)
+        })
+        return counts
+    }, [mapData, selectedSeatIds])
+
     const selectedSeats = selectedSeatIds.map(id => allSeats.get(id)).filter(Boolean) as MapSeat[]
     const selectedTierId = selectedSeats[0]?.tier_id ?? null
     const selectedTier = selectedTierId ? tierById.get(selectedTierId) : null
@@ -743,7 +763,10 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                         {/* Section polygons */}
                         {mapData.sections.map(section => {
                             const isActive = section.id === activeSection
-                            const soldOut = section.available_count === 0
+                            // Our own holds are ours to take back, so they count as available.
+                            const availableCount =
+                                section.available_count + (ownHeldBySection.get(section.id) ?? 0)
+                            const soldOut = availableCount === 0
                             const center = sectionCenter(section.polygon_points)
                             return (
                                 <SectionShape
@@ -752,6 +775,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                                     fill={sectionFill(section)}
                                     isActive={isActive}
                                     soldOut={soldOut}
+                                    availableCount={availableCount}
                                     center={center}
                                     showLabel={!activeSection || isActive}
                                     onTap={() => !soldOut && handleSectionTap(section)}
@@ -1012,6 +1036,7 @@ function SectionShape({
     fill,
     isActive,
     soldOut,
+    availableCount,
     center,
     showLabel,
     onTap,
@@ -1020,6 +1045,8 @@ function SectionShape({
     fill: string
     isActive: boolean
     soldOut: boolean
+    /** available_count with the buyer's OWN holds credited back — not section.available_count. */
+    availableCount: number
     center: { x: number; y: number }
     showLabel: boolean
     onTap: () => void
@@ -1056,7 +1083,7 @@ function SectionShape({
                         y={center.y + 4}
                         width={140}
                         align="center"
-                        text={soldOut ? 'Sold out' : `${section.available_count} left`}
+                        text={soldOut ? 'Sold out' : `${availableCount} left`}
                         fontSize={11}
                         fill="#64748b"
                         listening={false}

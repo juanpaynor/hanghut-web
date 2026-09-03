@@ -65,8 +65,17 @@ BEGIN
 END
 $mig$;
 
--- seat_holds.expires_at's column DEFAULT was 12 minutes while every caller passed
--- an explicit 10. Move it in step so a direct insert that omits the column cannot
--- hand out a hold shorter than the payment window it is meant to protect.
-ALTER TABLE public.seat_holds
-    ALTER COLUMN expires_at SET DEFAULT (now() + interval '18 minutes');
+-- seat_holds.expires_at's column DEFAULT stays at 12 minutes ON PURPOSE.
+--
+-- It governs `hold_seat` — the BROWSE hold taken when a buyer taps a seat in the
+-- picker. That hold has no payment behind it, so it does not need to outlive the
+-- payment window; it only needs to survive someone deciding. Raising it to 18
+-- would make an abandoned selection block other buyers 50% longer for no gain,
+-- which matters most on exactly the busy on-sale where seats are scarce.
+--
+-- Only the CHECKOUT hold (assign_seats_to_intent, above) goes to 18, because a
+-- buyer is actively paying behind it. The two are different things and the fact
+-- that one column default backs one of them is easy to conflate — hence this note.
+--
+-- (An earlier revision of this migration did set 18 here. It was reverted the
+-- same day after an abandoned browse hold was observed sitting for 18 minutes.)
