@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -40,9 +40,14 @@ interface Props {
     heading?: string
     subheading?: string
     savedNoun?: string
+    // Controlled mode (create wizard): emit changes to the parent and hide the
+    // Save button, since the parent persists the questions when the event is
+    // created rather than saving them here against an event that doesn't exist yet.
+    onChange?: (questions: RegistrationQuestion[]) => void
+    hideSave?: boolean
 }
 
-export function RegistrationQuestionsManager({ eventId, initialQuestions, saveFn, heading, subheading }: Props) {
+export function RegistrationQuestionsManager({ eventId, initialQuestions, saveFn, heading, subheading, onChange, hideSave }: Props) {
     const { toast } = useToast()
     const [questions, setQuestions] = useState<RegistrationQuestion[]>(
         initialQuestions.length > 0
@@ -50,6 +55,12 @@ export function RegistrationQuestionsManager({ eventId, initialQuestions, saveFn
             : []
     )
     const [isSaving, setIsSaving] = useState(false)
+
+    // Controlled mode: keep the parent in sync so it can persist on event create.
+    useEffect(() => {
+        if (onChange) onChange(questions)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [questions])
 
     const addQuestion = () => {
         setQuestions(prev => [
@@ -137,9 +148,11 @@ export function RegistrationQuestionsManager({ eventId, initialQuestions, saveFn
                         {subheading ?? 'Attendees will answer these questions before completing their registration.'}
                     </p>
                 </div>
-                <Button onClick={handleSave} disabled={isSaving}>
-                    {isSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : 'Save Questions'}
-                </Button>
+                {!hideSave && (
+                    <Button onClick={handleSave} disabled={isSaving}>
+                        {isSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : 'Save Questions'}
+                    </Button>
+                )}
             </div>
 
             {questions.length === 0 ? (

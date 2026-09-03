@@ -228,6 +228,42 @@ export async function createEvent(formData: FormData) {
             }
         }
 
+        // 6. Registration questions built in the create wizard (optional). Same
+        //    shape as saveRegistrationQuestions; non-fatal so a bad payload never
+        //    sinks the event — the organizer can still add questions from the
+        //    dashboard afterwards.
+        try {
+            const rawQ = formData.get('registration_questions') as string | null
+            if (rawQ) {
+                const parsed = JSON.parse(rawQ)
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    const qRows = parsed
+                        .filter((q: any) => q && typeof q.label === 'string' && q.label.trim())
+                        .map((q: any, i: number) => {
+                            const opts = Array.isArray(q.options)
+                                ? q.options.filter((o: any) => typeof o === 'string' && o.trim())
+                                : []
+                            return {
+                                event_id: event.id,
+                                label: String(q.label).trim(),
+                                question_type: q.question_type,
+                                options: opts.length > 0 ? opts : null,
+                                is_required: !!q.is_required,
+                                display_order: Number.isFinite(q.display_order) ? q.display_order : i,
+                            }
+                        })
+                    if (qRows.length > 0) {
+                        const { error: qError } = await adminSupabase
+                            .from('registration_questions')
+                            .insert(qRows)
+                        if (qError) console.error('Registration question creation error:', qError)
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Question payload parse error:', e)
+        }
+
         revalidatePath('/organizer/events')
         return { success: true, eventId: event.id }
 

@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair, Plus, Trash2, Check, Copy, ExternalLink, Code2, Send } from 'lucide-react'
 import { createEvent, updateEvent } from '@/lib/organizer/event-actions'
+import { RegistrationQuestionsManager, RegistrationQuestion } from '@/components/organizer/registration-questions-manager'
 import { isoToManilaLocal, manilaLocalToISO, formatInManila } from '@/lib/datetime'
 import { GooglePlacesAutocomplete } from '@/components/organizer/google-places-autocomplete'
 import { useToast } from '@/hooks/use-toast'
@@ -184,18 +185,28 @@ export function EventForm({
         setTiers(t => t.map(x => (x.id === id ? { ...x, [field]: value } : x)))
     const removeTier = (id: string) => setTiers(t => (t.length > 1 ? t.filter(x => x.id !== id) : t))
 
+    // Attendee questions collected in the create wizard (optional). Persisted by
+    // createEvent once the event id exists. Editing keeps using the dashboard tab.
+    const [questions, setQuestions] = useState<RegistrationQuestion[]>([])
+    // Gates the questions editor's mount until the draft is restored, so it seeds
+    // from the restored questions rather than an empty list (it reads its initial
+    // value once on mount and ignores later prop changes).
+    const [hydrated, setHydrated] = useState(false)
+
     useEffect(() => {
-        if (isEditing) { hydratedRef.current = true; return }
+        if (isEditing) { hydratedRef.current = true; setHydrated(true); return }
         try {
             const raw = localStorage.getItem(AUTOSAVE_KEY)
             if (raw) {
-                const { __tiers, ...saved } = JSON.parse(raw)
+                const { __tiers, __questions, ...saved } = JSON.parse(raw)
                 setFormData(prev => ({ ...prev, ...saved, cover_image: null, additional_images: [] }))
                 if (saved.description_html) setDescKey(k => k + 1)
                 if (Array.isArray(__tiers) && __tiers.length) setTiers(__tiers)
+                if (Array.isArray(__questions) && __questions.length) setQuestions(__questions)
             }
         } catch { /* ignore corrupt autosave */ }
         hydratedRef.current = true
+        setHydrated(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
@@ -204,9 +215,9 @@ export function EventForm({
         try {
             const { cover_image, additional_images, ...rest } = formData
             void cover_image; void additional_images
-            localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ ...rest, __tiers: tiers }))
+            localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ ...rest, __tiers: tiers, __questions: questions }))
         } catch { /* storage unavailable — non-fatal */ }
-    }, [formData, tiers, isEditing])
+    }, [formData, tiers, questions, isEditing])
 
     // Calculate pricing preview. The ₱15 booking fee and the % commission can each be
     // passed to the customer or absorbed by the organizer, independently.
@@ -240,9 +251,11 @@ export function EventForm({
     // seat-map note); GA has nothing extra to configure, so it skips it.
     if (isAssignedSeating) stepKeys.push('seating')
     if (sellMode !== 'external') stepKeys.push('settings')
+    // Attendee questions apply to any internal (ticketed or RSVP) event, not external.
+    if (sellMode !== 'external') stepKeys.push('questions')
     stepKeys.push('details')
     const STEP_TITLE: Record<string, string> = {
-        basics: 'Basics', when: 'When & where', sell: 'Tickets', seating: 'Seating', settings: 'Settings', details: 'Details',
+        basics: 'Basics', when: 'When & where', sell: 'Tickets', seating: 'Seating', settings: 'Settings', questions: 'Questions', details: 'Details',
     }
     const curStepIdx = Math.min(wizardStep, stepKeys.length - 1)
     const curKey = stepKeys[curStepIdx]
@@ -573,6 +586,28 @@ export function EventForm({
                         sort_order: i,
                     }))
                 formDataToSend.append('tiers', JSON.stringify(tierPayload))
+            }
+
+            // Attendee questions built in the create wizard (optional). Sanitized
+            // here: drop unlabeled questions and choice questions with < 2 options,
+            // so a half-filled question never reaches the buyer.
+            if (!isEditing && formData.ticketing_type !== 'external') {
+                const questionPayload = questions
+                    .filter(q => q.label.trim())
+                    .map((q, i) => {
+                        const opts = (q.options || []).map(o => o.trim()).filter(Boolean)
+                        return {
+                            label: q.label.trim(),
+                            question_type: q.question_type,
+                            options: opts,
+                            is_required: q.is_required,
+                            display_order: i,
+                        }
+                    })
+                    .filter(q => !['single_choice', 'multi_choice'].includes(q.question_type) || q.options.length >= 2)
+                if (questionPayload.length > 0) {
+                    formDataToSend.append('registration_questions', JSON.stringify(questionPayload))
+                }
             }
 
             // Only send organizer_id for create, backend handles auth for update
@@ -1660,6 +1695,21 @@ export function EventForm({
                 )}
 
                     </div>
+                    {!isEditing && (
+                    <div id="sec-questions" className={`scroll-mt-24 ${stepCls('questions')}`}>
+                        <Card className="p-6">
+                            {hydrated && (
+                                <RegistrationQuestionsManager
+                                    initialQuestions={questions}
+                                    onChange={setQuestions}
+                                    hideSave
+                                    heading="Attendee questions (optional)"
+                                    subheading="Ask attendees for extra details when they register — dietary needs, t-shirt size, company, emergency contact, anything you need. Leave this blank to skip it; you can always add or edit questions later from the event's dashboard."
+                                />
+                            )}
+                        </Card>
+                    </div>
+                    )}
                     <div id="sec-details" className={`scroll-mt-24 ${stepCls('details')}`}>
                 {/* Media & Images */}
                 <Card className="p-6">
