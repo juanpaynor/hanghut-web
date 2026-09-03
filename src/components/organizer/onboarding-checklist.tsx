@@ -22,15 +22,17 @@ type Step = {
 export async function OnboardingChecklist({ partnerId, kycStatus }: { partnerId: string; kycStatus: string | null }) {
     const supabase = await createClient()
 
-    const [{ count: eventCount }, { data: partner }] = await Promise.all([
+    const [{ count: eventCount }, { count: bankAccountCount }] = await Promise.all([
         supabase.from('events').select('id', { count: 'exact', head: true }).eq('organizer_id', partnerId),
-        supabase.from('partners').select('bank_account_number, xendit_cards_gcash_live').eq('id', partnerId).maybeSingle(),
+        // Payout destinations live in bank_accounts — partners.bank_account_number is a
+        // legacy column the organizer payout flow never writes.
+        supabase.from('bank_accounts').select('id', { count: 'exact', head: true }).eq('partner_id', partnerId),
     ])
 
     const verified = kycStatus === 'verified'
     const inReview = kycStatus === 'pending_review' || kycStatus === 'submitted'
     const hasEvent = (eventCount ?? 0) > 0
-    const hasPayout = !!partner?.bank_account_number
+    const hasPayout = (bankAccountCount ?? 0) > 0
 
     const steps: Step[] = [
         {
