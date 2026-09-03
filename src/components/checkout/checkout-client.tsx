@@ -161,6 +161,33 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
+    // Explicit cancel. This is the PRIMARY way seats get released when a buyer
+    // backs out, because the unmount beacon below is not a mechanism you can rely
+    // on: React only runs cleanup on client-side unmount, so it never fires on a
+    // tab close, a full page navigation, or a phone backgrounding the browser.
+    // Worse, this page had no cancel control at all, so the only ways out were
+    // exactly the ones the beacon cannot see — and the seats sat held for the
+    // rest of their TTL.
+    //
+    // Awaited on purpose: the release must land before we navigate away, or we
+    // are back to relying on teardown.
+    const [cancelling, setCancelling] = useState(false)
+    const cancelAndLeave = async () => {
+        setCancelling(true)
+        const sid = typeof window !== 'undefined' ? sessionStorage.getItem('hh_seat_session') : null
+        if (sid && selectedSeatIds.length > 0) {
+            try {
+                await fetch('/api/seat-map/release', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: sid, seatIds: selectedSeatIds }),
+                })
+            } catch { /* fall through — the TTL still backstops it */ }
+        }
+        leavingToPayRef.current = true   // released already; don't double-fire on unmount
+        router.push(`/events/${event.id}`)
+    }
+
     const { secondsLeft: holdSecondsLeft, expired: seatHoldExpired } = useSeatHoldTimer(
         seatSessionId,
         selectedSeatIds.length,
@@ -593,10 +620,20 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 {/* Seat hold countdown — same session id the picker held under, so
                     this continues that timer rather than starting a new one. */}
                 {selectedSeatIds.length > 0 && (
-                    <SeatHoldTimer
-                        secondsLeft={holdSecondsLeft}
-                        label="Your seats are held for"
-                    />
+                    <div className="space-y-2">
+                        <SeatHoldTimer
+                            secondsLeft={holdSecondsLeft}
+                            label="Your seats are held for"
+                        />
+                        <button
+                            type="button"
+                            onClick={cancelAndLeave}
+                            disabled={cancelling}
+                            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+                        >
+                            {cancelling ? 'Releasing your seats…' : 'Cancel and release my seats'}
+                        </button>
+                    </div>
                 )}
 
                 {/* 1. Account / Guest Info */}
