@@ -40,6 +40,20 @@ export function useSeatHoldTimer(
     /** Number of seats currently selected — changing this triggers a re-sync. */
     selectionCount: number,
     onExpire?: () => void,
+    /**
+     * How many hold writes are in flight right now.
+     *
+     * The picker selects optimistically: it bumps the selection and only THEN
+     * fires `hold_seat`. That made selectionCount change before the hold row
+     * existed, so the re-sync below raced the insert and came back null — which
+     * this hook could not distinguish from a real expiry, so the buyer's first
+     * tap was answered with "your seats were released" and cleared. While a
+     * write is outstanding, a null result means "not created yet", not "gone".
+     *
+     * Defaults to 0, so checkout — which never creates holds, it inherits them —
+     * keeps its existing behaviour: a null there IS a genuine expiry.
+     */
+    pendingMutations: number = 0,
 ) {
     const [hold, setHold] = useState<HoldState>({ expiresAt: null, skewMs: 0, seatsHeld: 0, loaded: false })
     const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
@@ -75,7 +89,7 @@ export function useSeatHoldTimer(
 
     // Re-sync on mount, whenever the selection changes, and when the tab regains
     // focus (background tabs throttle setInterval, so the local tick goes stale).
-    useEffect(() => { void sync() }, [sync, selectionCount])
+    useEffect(() => { void sync() }, [sync, selectionCount, pendingMutations])
     useEffect(() => {
         const onVisible = () => { if (document.visibilityState === 'visible') void sync() }
         document.addEventListener('visibilitychange', onVisible)
@@ -95,7 +109,7 @@ export function useSeatHoldTimer(
             // never existed both arrive as null. Treat it as expiry once the
             // buyer actually has a selection, otherwise the countdown silently
             // stops mattering the moment the tab is backgrounded and refocused.
-            if (hold.loaded && selectionCount > 0 && !firedRef.current) {
+            if (hold.loaded && selectionCount > 0 && pendingMutations === 0 && !firedRef.current) {
                 firedRef.current = true
                 onExpireRef.current?.()
             }
@@ -113,7 +127,7 @@ export function useSeatHoldTimer(
         tick()
         const id = setInterval(tick, 1000)
         return () => clearInterval(id)
-    }, [hold.expiresAt, hold.skewMs, hold.loaded, selectionCount])
+    }, [hold.expiresAt, hold.skewMs, hold.loaded, selectionCount, pendingMutations])
 
     return {
         secondsLeft,
@@ -125,7 +139,7 @@ export function useSeatHoldTimer(
          * `secondsLeft === 0`: secondsLeft is null for a lapsed hold, and
          * `null === 0` is false, which fails open.
          */
-        expired: hold.loaded && selectionCount > 0
+        expired: hold.loaded && selectionCount > 0 && pendingMutations === 0
             && (hold.expiresAt === null || secondsLeft === 0),
         hasHold: hold.expiresAt !== null,
         loaded: hold.loaded,

@@ -522,6 +522,12 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         zoomToSection(loaded ?? section)
     }, [loadSection, zoomToSection])
 
+    // Outstanding `hold_seat` writes. The select below is optimistic — the
+    // selection count moves before the hold row exists — so without this the
+    // countdown's re-sync raced the insert, read back "no hold", and reported a
+    // released seat on the buyer's FIRST tap. See useSeatHoldTimer.
+    const [pendingHolds, setPendingHolds] = useState(0)
+
     // Hold countdown. On expiry the server has already released the seats (every
     // availability check filters on expires_at > now()), so the UI's job is only
     // to stop showing a selection the buyer no longer owns.
@@ -540,6 +546,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         sessionId,
         selectedSeatIds.length,
         handleHoldExpired,
+        pendingHolds,
     )
 
     const handleSeatTap = useCallback((seat: MapSeat) => {
@@ -589,13 +596,17 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         // Optimistic select, then take a server-side hold; roll back if another
         // buyer beat us to it (hold_seat returns false when already held/taken).
         setSelectedSeatIds(prev => [...prev, seat.id])
+        setPendingHolds(n => n + 1)
         supabase.rpc('hold_seat', { p_seat_id: seat.id, p_session_id: sid }).then(({ data, error }) => {
             if (error || data !== true) {
                 setSelectedSeatIds(prev => prev.filter(id => id !== seat.id))
                 toast({ title: 'Seat just taken', description: `${seat.label} was grabbed by another buyer.` })
                 refreshStatus()
             }
-        })
+            // Always decrement, both paths — a rejected hold that left this
+            // pinned above zero would suppress every real expiry from then on.
+            setPendingHolds(n => n - 1)
+        }, () => setPendingHolds(n => n - 1))
     }, [selectedSeatIds, allSeats, toast, maxPerOrder, refreshStatus, remerge])
 
     const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
