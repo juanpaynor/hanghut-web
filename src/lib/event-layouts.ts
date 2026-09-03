@@ -30,6 +30,12 @@ export type EventLayoutId =
     | 'editorial'
     | 'cinematic'
     | 'boutique'
+    // Poster-first set — each renders its own branch in events/[id]/page.tsx and
+    // needs no "bones" CSS, so LAYOUT_CSS deliberately has no entry for them.
+    | 'stack'
+    | 'split'
+    | 'marquee'
+    | 'stub'
 
 /** The four skeletons that ship their own bespoke hero branch. */
 export const NEW_LAYOUTS: EventLayoutId[] = ['broadside', 'editorial', 'cinematic', 'boutique']

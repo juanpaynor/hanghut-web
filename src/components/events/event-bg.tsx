@@ -4,6 +4,12 @@ import { useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
 
 export type BgStyle = 'default' | 'particles' | 'noise' | 'gradient-mesh' | 'parallax' | 'custom-image' | 'cover-blur'
+  // Cover-driven grounds. Every event has a cover image (it's required at create
+  // time), so the background is built FROM the artwork rather than from an
+  // abstract palette — the colours are the poster's own, for free.
+  | 'cover-full' | 'spotlight'
+  // The one deliberately non-image ground, for invitations and dinners.
+  | 'paper'
 
 function hexToRgb(hex: string): [number, number, number] {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
@@ -292,10 +298,13 @@ function CoverBlurBg({ coverImageUrl, themeColor }: { coverImageUrl?: string; th
                 alt=""
                 aria-hidden
                 className="absolute inset-[-12%] w-[124%] h-[124%] object-cover"
-                style={{ filter: 'blur(64px) saturate(1.35) brightness(0.75)', transform: 'scale(1.05)' }}
+                style={{ filter: 'blur(64px) saturate(1.45) brightness(0.9)', transform: 'scale(1.05)' }}
             />
-            {/* Scrim: readable text everywhere, artwork glowing through */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/45 to-black/70" />
+            {/* Scrim: readable text everywhere, artwork glowing through. Kept
+                deliberately light — the old values (brightness .75 under a
+                35/45/70 black ramp) stacked into a muddy near-black that threw
+                away the very colour this style exists to show. */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-black/35 to-black/60" />
         </>
     )
 }
@@ -311,6 +320,80 @@ function CustomImageBg({ bgImageUrl }: { bgImageUrl?: string }) {
       <img src={bgImageUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
       <div className="absolute inset-0 bg-black/40" />
     </>
+  )
+}
+
+// ─── Cover-driven grounds ─────────────────────────────────────────────────────
+/**
+ * Backgrounds built from the event's own poster.
+ *
+ * An earlier pass here used abstract grounds tinted with the accent colour. On a
+ * page whose accent happened to be a dull green that produced a muddy dark
+ * screen while the actual artwork sat unused a few hundred pixels away. Every
+ * event has a cover image (required at create time), so the honest source for a
+ * background is that image.
+ */
+
+/** The poster itself, full-bleed and sharp, under a scrim that keeps text legible. */
+function CoverFullBg({ coverImageUrl, themeColor }: { coverImageUrl?: string; themeColor: string }) {
+  if (!coverImageUrl) {
+    const [r, g, b] = hexToRgb(themeColor)
+    return <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse 80% 60% at 50% 30%, rgba(${r},${g},${b},0.45) 0%, transparent 70%), #0a0a12` }} />
+  }
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={coverImageUrl}
+        alt=""
+        aria-hidden
+        className="absolute inset-0 w-full h-full object-cover"
+        style={{ filter: 'saturate(1.1)' }}
+      />
+      {/* Enough scrim to read body copy over a busy poster, no more. */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/55 to-black/75" />
+    </>
+  )
+}
+
+/** Blurred poster with a vignette: centre stays bright, edges fall away. */
+function SpotlightBg({ coverImageUrl, themeColor }: { coverImageUrl?: string; themeColor: string }) {
+  if (!coverImageUrl) {
+    const [r, g, b] = hexToRgb(themeColor)
+    return <div className="absolute inset-0" style={{ background: `radial-gradient(58% 50% at 50% 28%, rgba(${r},${g},${b},0.35) 0%, transparent 70%), #0C0B10` }} />
+  }
+  return (
+    <>
+      <div className="absolute inset-0 bg-[#08070d]" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={coverImageUrl}
+        alt=""
+        aria-hidden
+        className="absolute inset-[-12%] w-[124%] h-[124%] object-cover"
+        style={{ filter: 'blur(72px) saturate(1.5) brightness(1.05)', transform: 'scale(1.05)' }}
+      />
+      <div
+        className="absolute inset-0"
+        style={{ background: 'radial-gradient(62% 55% at 50% 32%, transparent 0%, rgba(0,0,0,0.55) 68%, rgba(0,0,0,0.85) 100%)' }}
+      />
+    </>
+  )
+}
+
+/** Warm light ground — the one option that deliberately isn't the poster. */
+function PaperBg() {
+  return (
+    <div className="absolute inset-0" style={{ background: '#F6F1E8' }}>
+      <div
+        className="absolute inset-0"
+        style={{
+          opacity: 0.5,
+          backgroundImage: 'radial-gradient(#C9BFAC 0.5px, transparent 0.6px)',
+          backgroundSize: '4px 4px',
+        }}
+      />
+    </div>
   )
 }
 
@@ -350,6 +433,12 @@ export function EventPageBackground({
         <ParallaxBg coverImageUrl={coverImageUrl} />
       ) : bgStyle === 'cover-blur' ? (
         <CoverBlurBg coverImageUrl={coverImageUrl} themeColor={accent} />
+      ) : bgStyle === 'cover-full' ? (
+        <CoverFullBg coverImageUrl={coverImageUrl} themeColor={accent} />
+      ) : bgStyle === 'spotlight' ? (
+        <SpotlightBg coverImageUrl={coverImageUrl} themeColor={accent} />
+      ) : bgStyle === 'paper' ? (
+        <PaperBg />
       ) : null}
 
       {/* When a video is playing under particles/mesh/noise, darken it first so effects read */}

@@ -21,6 +21,7 @@ import { DraggableVideoCropper } from "@/components/ui/draggable-video-cropper"
 import { EventDesignGallery } from "@/components/organizer/event-design-gallery"
 import type { EventDesignTemplate } from "@/lib/event-design-templates"
 import { MAXIMALIST_PRESET_CSS } from "@/lib/storefront-custom-css"
+import { BgPreview, LayoutPreview } from "@/components/organizer/design-option-preview"
 import { cn } from "@/lib/utils"
 
 // Two-pane section nav — one calm screen at a time instead of a 7-card scroll.
@@ -197,6 +198,10 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
     }
     const [bgStyle, setBgStyle] = useState<string>(initialData.layout_config?.bg_style || 'default')
     const [pageLayout, setPageLayout] = useState<string>(initialData.layout_config?.page_layout || 'default')
+    // Superseded background styles / layouts are hidden until asked for, so the
+    // picker shows the recommended set without stranding events already on them.
+    const [showLegacyBg, setShowLegacyBg] = useState(false)
+    const [showLegacyLayout, setShowLegacyLayout] = useState(false)
     const [showCountdown, setShowCountdown] = useState<boolean>(initialData.layout_config?.show_countdown ?? false)
     const [countdownLabel, setCountdownLabel] = useState<string>(initialData.layout_config?.countdown_label || 'Event starts in')
     const [showSocialProof, setShowSocialProof] = useState<boolean>(initialData.layout_config?.show_social_proof ?? false)
@@ -819,30 +824,50 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                 <Label className="text-sm font-semibold">Background Style</Label>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                     {[
-                                        { value: 'default',       label: 'Default',        emoji: '⬜', desc: 'Clean & minimal' },
-                                        { value: 'cover-blur',    label: 'Cover Glow',     emoji: '🌆', desc: 'Blurred echo of your poster' },
-                                        { value: 'particles',     label: 'Particles',      emoji: '✦',  desc: 'Floating dots' },
-                                        { value: 'gradient-mesh', label: 'Gradient Mesh',  emoji: '🌈', desc: 'Animated blobs' },
-                                        { value: 'noise',         label: 'Film Grain',     emoji: '📷', desc: 'Textured overlay' },
-                                        { value: 'parallax',      label: 'Parallax',       emoji: '🏔️', desc: 'Depth on scroll' },
-                                        { value: 'custom-image',  label: 'Custom Image',   emoji: '🖼️', desc: 'Your own photo' },
-                                    ].map(opt => (
+                                        { value: 'cover-blur',    label: 'Cover Glow',   desc: 'Your poster, blurred large — its colours fill the page' },
+                                        { value: 'cover-full',    label: 'Cover Full',   desc: 'Your poster full-bleed behind everything' },
+                                        { value: 'spotlight',     label: 'Spotlight',    desc: 'Your poster, lit in the middle and falling off at the edges' },
+                                        { value: 'default',       label: 'Clean',        desc: 'Neutral ground, artwork stays in the page' },
+                                        { value: 'paper',         label: 'Paper',        desc: 'Warm off-white with a print tooth' },
+                                        { value: 'custom-image',  label: 'Custom Image', desc: 'A different photo of your own' },
+                                        // Superseded, but still selectable for events already using them.
+                                        { value: 'particles',     label: 'Particles',      desc: 'Floating dots', legacy: true },
+                                        { value: 'gradient-mesh', label: 'Gradient Mesh',  desc: 'Animated blobs', legacy: true },
+                                        { value: 'noise',         label: 'Film Grain',     desc: 'Textured overlay', legacy: true },
+                                        { value: 'parallax',      label: 'Parallax',       desc: 'Depth on scroll', legacy: true },
+                                    ]
+                                        // Retired styles stay in the list only while selected, so a live
+                                        // event never silently loses the look it was published with.
+                                        .filter(opt => !opt.legacy || bgStyle === opt.value || showLegacyBg)
+                                        .map(opt => (
                                         <button
                                             key={opt.value}
                                             type="button"
                                             onClick={() => setBgStyle(opt.value)}
-                                            className={`p-3 rounded-xl border-2 text-left transition-all ${
+                                            className={`p-2 rounded-xl border-2 text-left transition-all ${
                                                 bgStyle === opt.value
                                                     ? 'border-primary bg-primary/5 shadow-sm'
                                                     : 'border-border hover:border-primary/50 hover:bg-muted/50'
                                             }`}
                                         >
-                                            <div className="text-2xl mb-1">{opt.emoji}</div>
-                                            <div className="font-semibold text-sm">{opt.label}</div>
-                                            <div className="text-xs text-muted-foreground">{opt.desc}</div>
+                                            <BgPreview value={opt.value} accent={form.watch('theme_color') || '#4E47DC'} cover={initialData.cover_image_url || undefined} />
+                                            <div className="font-semibold text-sm mt-2 flex items-center gap-1.5">
+                                                {opt.label}
+                                                {opt.legacy && <span className="text-[10px] font-normal text-muted-foreground border rounded px-1">old</span>}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground leading-snug">{opt.desc}</div>
                                         </button>
                                     ))}
                                 </div>
+                                {!showLegacyBg && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowLegacyBg(true)}
+                                        className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                                    >
+                                        Show older background styles
+                                    </button>
+                                )}
 
                                 {/* Custom image uploader — only shown when custom-image selected */}
                                 {bgStyle === 'custom-image' && (
@@ -901,32 +926,51 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                             {/* Page Layout */}
                             <div className="space-y-3">
                                 <Label className="text-sm font-semibold">Page Layout</Label>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                     {[
-                                        { value: 'default',   label: 'Default',   emoji: '📄', desc: 'Classic cards, works for anything' },
-                                        { value: 'broadside', label: 'Broadside', emoji: '🅱️', desc: 'Brutalist gig poster — no cards, giant type' },
-                                        { value: 'editorial', label: 'Editorial', emoji: '📰', desc: 'Magazine spread — poster beside the story' },
-                                        { value: 'cinematic', label: 'Cinematic', emoji: '🎬', desc: 'Full-bleed poster, content floats in glass' },
-                                        { value: 'boutique',  label: 'Boutique',  emoji: '✉️', desc: 'Centered invitation, all whitespace' },
-                                        { value: 'poster',    label: 'Poster',    emoji: '🎭', desc: 'Full-screen centered hero' },
-                                        { value: 'minimal',   label: 'Minimal',   emoji: '🔲', desc: 'Single column, no clutter' },
-                                    ].map(opt => (
+                                        { value: 'default',   label: 'Default',  desc: 'Poster beside a ticket card' },
+                                        { value: 'poster',    label: 'Poster',   desc: 'Full-bleed artwork, content at the foot' },
+                                        { value: 'stack',     label: 'Stack',    desc: 'One column with a sticky buy bar — phone first' },
+                                        { value: 'split',     label: 'Split',    desc: 'Poster held on one side while details scroll' },
+                                        { value: 'marquee',   label: 'Marquee',  desc: 'Name at billboard scale, artwork inset' },
+                                        { value: 'stub',      label: 'Stub',     desc: 'Shaped like a torn ticket, perforated edge' },
+                                        // Superseded, but still selectable for events already using them.
+                                        { value: 'minimal',   label: 'Minimal',   desc: 'Single column, no clutter', legacy: true },
+                                        { value: 'broadside', label: 'Broadside', desc: 'Brutalist gig poster — no cards, giant type', legacy: true },
+                                        { value: 'editorial', label: 'Editorial', desc: 'Magazine spread — poster beside the story', legacy: true },
+                                        { value: 'cinematic', label: 'Cinematic', desc: 'Full-bleed poster, content floats in glass', legacy: true },
+                                        { value: 'boutique',  label: 'Boutique',  desc: 'Centered invitation, all whitespace', legacy: true },
+                                    ]
+                                        .filter(opt => !opt.legacy || pageLayout === opt.value || showLegacyLayout)
+                                        .map(opt => (
                                         <button
                                             key={opt.value}
                                             type="button"
                                             onClick={() => setPageLayout(opt.value)}
-                                            className={`p-3 rounded-xl border-2 text-left transition-all ${
+                                            className={`p-2 rounded-xl border-2 text-left transition-all ${
                                                 pageLayout === opt.value
                                                     ? 'border-primary bg-primary/5 shadow-sm'
                                                     : 'border-border hover:border-primary/50 hover:bg-muted/50'
                                             }`}
                                         >
-                                            <div className="text-2xl mb-1">{opt.emoji}</div>
-                                            <div className="font-semibold text-sm">{opt.label}</div>
-                                            <div className="text-xs text-muted-foreground">{opt.desc}</div>
+                                            <LayoutPreview value={opt.value} accent={form.watch('theme_color') || '#4E47DC'} cover={initialData.cover_image_url || undefined} />
+                                            <div className="font-semibold text-sm mt-2 flex items-center gap-1.5">
+                                                {opt.label}
+                                                {opt.legacy && <span className="text-[10px] font-normal text-muted-foreground border rounded px-1">old</span>}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground leading-snug">{opt.desc}</div>
                                         </button>
                                     ))}
                                 </div>
+                                {!showLegacyLayout && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowLegacyLayout(true)}
+                                        className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                                    >
+                                        Show older layouts
+                                    </button>
+                                )}
                             </div>
 
                             {/* Fonts */}

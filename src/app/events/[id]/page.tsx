@@ -427,7 +427,7 @@ export default async function PublicEventPage({
     // param wins over the saved value; absent → saved value. `?? ` keeps `''`-safe.
     const ov = <T,>(v: T | undefined, saved: T): T => (isPreview && v !== undefined ? v : saved)
     const bgStyle: BgStyle = ov(sp.hh_bg as BgStyle | undefined, event.layout_config?.bg_style || 'default')
-    const pageLayout: 'default' | 'poster' | 'minimal' | 'broadside' | 'editorial' | 'cinematic' | 'boutique' =
+    const pageLayout: 'default' | 'poster' | 'minimal' | 'broadside' | 'editorial' | 'cinematic' | 'boutique' | 'stack' | 'split' | 'marquee' | 'stub' =
         ov(sp.hh_layout as any, event.layout_config?.page_layout || 'default')
     // Art-directed theme: restyles cards/badges/buttons/headers via injected CSS
     const pageTheme: string = ov(sp.hh_theme, event.layout_config?.theme || 'classic')
@@ -477,8 +477,16 @@ export default async function PublicEventPage({
     // Color overrides
     const textColor: string  = event.layout_config?.text_color  || ''
     const headingColor: string = event.layout_config?.heading_color || ''
-    // Whether a dark bg is active — drives glass card mode
-    const isDarkBg = bgStyle !== 'default'
+    // Whether a dark bg is active — drives glass card mode and light text.
+    //
+    // This used to be `bgStyle !== 'default'`, which held only while every
+    // non-default background happened to be dark. 'paper' is a LIGHT ground, so
+    // the set is now explicit: getting this wrong paints white text on cream.
+    const DARK_BG_STYLES = new Set<string>([
+        'particles', 'gradient-mesh', 'noise', 'parallax', 'cover-blur', 'custom-image',
+        'cover-full', 'spotlight',
+    ])
+    const isDarkBg = DARK_BG_STYLES.has(bgStyle)
 
     // A text colour set only as `color` on the root reaches nothing: every element
     // carrying a Tailwind colour class (text-foreground, text-muted-foreground, …)
@@ -1655,6 +1663,263 @@ export default async function PublicEventPage({
                     eventId={event.id}
                     label={rsvpMode ? rsvpLabel : undefined}
                 />
+            </div>
+        )
+    }
+
+    // ─── POSTER-FIRST LAYOUTS (stack / split / marquee / stub) ───────────────
+    // Every one of these keeps the real cover image on screen. The older
+    // art-directed layouts (broadside/editorial/cinematic/boutique) fill their
+    // artwork slot with a gradient, which is why they read as coloured
+    // rectangles; these don't repeat that.
+    if (pageLayout === 'stack' || pageLayout === 'split' || pageLayout === 'marquee' || pageLayout === 'stub') {
+        const FixedBg = () =>
+            bgStyle !== 'default' ? (
+                <EventPageBackground
+                    bgStyle={bgStyle}
+                    themeColor={event.theme_color || '#6366f1'}
+                    coverImageUrl={event.cover_image_url || undefined}
+                    bgImageUrl={bgImageUrl}
+                    videoUrl={event.video_url ? (getYouTubeEmbedUrl(event.video_url) ? undefined : event.video_url) : undefined}
+                    className="fixed inset-0 z-0"
+                />
+            ) : null
+
+        // Marquee is a poster-hall look, so it commits to a dark ground the way
+        // `poster` and `cinematic` already do. The rest follow the chosen ground.
+        const forceDark = pageLayout === 'marquee'
+        const onDark = forceDark || isDarkBg
+
+        const Header = () => (
+            <header className={cn(
+                'relative z-30 w-full',
+                onDark ? 'text-white' : 'border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60',
+                pageLayout === 'marquee' ? '' : 'sticky top-0',
+            )}>
+                <div className="container mx-auto px-4 flex h-16 items-center justify-between">
+                    {event.organizer ? (
+                        <a href={`https://${event.organizer.slug}.hanghut.com`} className="flex items-center gap-3 font-bold hover:opacity-80 transition-opacity">
+                            {event.organizer.profile_photo_url ? (
+                                <div className={cn('relative w-8 h-8 rounded-full overflow-hidden border', onDark ? 'border-white/30' : 'border-border')}>
+                                    <Image src={event.organizer.profile_photo_url} alt={event.organizer.business_name} fill className="object-cover" />
+                                </div>
+                            ) : (
+                                <div className={cn('w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm', onDark ? 'bg-white/20 text-white' : 'bg-primary text-primary-foreground')}>
+                                    {event.organizer.business_name.charAt(0)}
+                                </div>
+                            )}
+                            <span className="truncate max-w-[180px] text-base">{event.organizer.business_name}</span>
+                        </a>
+                    ) : (
+                        <Link href="/" className="font-bold text-xl">HANGHUT</Link>
+                    )}
+                    <ShareButton title={event.title} description={event.description} eventId={event.id} dark={onDark} />
+                </div>
+            </header>
+        )
+
+        const TitleBlock = ({ size = 'lg' }: { size?: 'lg' | 'xl' }) => (
+            <div className="space-y-3">
+                <div className="flex gap-2 flex-wrap">
+                    <Badge data-hh-badge variant="secondary">{event.event_type || 'Event'}</Badge>
+                    {event.is_featured && <Badge data-hh-badge className="bg-yellow-500 text-white">Featured</Badge>}
+                </div>
+                <h1
+                    data-hh-title
+                    className={cn('font-black leading-[1.05] tracking-tight', size === 'xl' ? 'text-4xl md:text-6xl' : 'text-3xl md:text-4xl')}
+                    style={{ fontFamily: 'var(--font-heading)' }}
+                >
+                    {event.title}
+                </h1>
+                <div className={cn('flex items-center gap-2 text-sm pt-1 flex-wrap', onDark ? 'text-white/70' : 'text-muted-foreground')}>
+                    <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{whenFull}</span>
+                    {event.venue_name && (
+                        <>
+                            <span>·</span>
+                            <span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{event.venue_name}</span>
+                        </>
+                    )}
+                </div>
+            </div>
+        )
+
+        const Extras = () => (
+            <>
+                {showCountdown && <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />}
+                {showSocialProof && recentNames.length > 0 && <SocialProofTicker names={recentNames} />}
+            </>
+        )
+
+        const Sections = () => (
+            <>
+                {mainContentOrder.map(sectionId => (
+                    <div key={sectionId}>{renderSection(sectionId)}</div>
+                ))}
+            </>
+        )
+
+        const StickyBuyBar = () => (
+            <MobileTicketButton
+                showTickets={showTickets}
+                isSoldOut={isSoldOut}
+                isExternal={event.is_external}
+                externalUrl={externalRedirectUrl}
+                eventId={event.id}
+                label={rsvpMode ? rsvpLabel : undefined}
+            />
+        )
+
+        const rootCls = cn(
+            'min-h-screen pb-24 relative',
+            forceDark ? 'bg-black' : !isDarkBg && 'bg-background',
+            onDark && !textColor && 'text-white',
+        )
+
+        // ── STACK: one column, poster at full width, buy bar pinned. Phone-first.
+        if (pageLayout === 'stack') {
+            return (
+                <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="stack" className={rootCls} style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+                    <EventViewTracker eventId={event.id} />
+                    <PageHead />
+                    <FixedBg />
+                    <div className="relative z-10">
+                        <Header />
+                        {event.cover_image_url && (
+                            <div className="relative w-full aspect-[4/3] sm:aspect-[16/9] max-h-[68vh] overflow-hidden">
+                                <Image src={event.cover_image_url} alt={event.title} fill priority sizes="100vw" className="object-cover" />
+                            </div>
+                        )}
+                        <main className="container mx-auto px-4 max-w-2xl py-8 space-y-8">
+                            <TitleBlock />
+                            <Extras />
+                            {showTickets && <TicketsSection />}
+                            <Sections />
+                        </main>
+                    </div>
+                    <StickyBuyBar />
+                </div>
+            )
+        }
+
+        // ── SPLIT: poster held on one side while the details scroll past it.
+        if (pageLayout === 'split') {
+            return (
+                <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="split" className={rootCls} style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+                    <EventViewTracker eventId={event.id} />
+                    <PageHead />
+                    <FixedBg />
+                    <div className="relative z-10 lg:flex lg:items-start">
+                        {/* Poster pane — sticky on desktop, plain banner on mobile */}
+                        <div className="lg:w-[46%] lg:sticky lg:top-0 lg:h-screen shrink-0">
+                            {event.cover_image_url ? (
+                                <div className="relative w-full aspect-[4/3] lg:aspect-auto lg:h-full overflow-hidden">
+                                    <Image src={event.cover_image_url} alt={event.title} fill priority sizes="(max-width:1024px) 100vw, 46vw" className="object-cover" />
+                                </div>
+                            ) : (
+                                <div className="w-full aspect-[4/3] lg:h-full bg-gradient-to-br from-zinc-800 to-black" />
+                            )}
+                        </div>
+                        {/* Content pane */}
+                        <div className="lg:w-[54%] min-w-0">
+                            <Header />
+                            <main className="px-4 lg:px-12 py-10 lg:py-16 max-w-2xl space-y-8">
+                                <TitleBlock />
+                                <Extras />
+                                {showTickets && <TicketsSection />}
+                                <Sections />
+                            </main>
+                        </div>
+                    </div>
+                    <StickyBuyBar />
+                </div>
+            )
+        }
+
+        // ── MARQUEE: the name at billboard scale, artwork inset beside it.
+        if (pageLayout === 'marquee') {
+            return (
+                <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="marquee" className={rootCls} style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+                    <EventViewTracker eventId={event.id} />
+                    <PageHead />
+                    <FixedBg />
+                    <div className="relative z-10">
+                        <Header />
+                        <section className="container mx-auto px-4 pt-8 pb-14 max-w-6xl">
+                            <p className="text-xs sm:text-sm uppercase tracking-[0.25em] text-white/55 font-medium">
+                                {whenCompact}{event.venue_name ? ` — ${event.venue_name}` : ''}
+                            </p>
+                            <h1
+                                data-hh-title
+                                className="font-black uppercase tracking-[-0.04em] leading-[0.82] mt-4 break-words"
+                                style={{ fontSize: 'clamp(2.75rem, 12vw, 10rem)', fontFamily: 'var(--font-heading)' }}
+                            >
+                                {event.title}
+                            </h1>
+                            <div className="mt-10 grid gap-8 md:grid-cols-[1fr_minmax(0,22rem)] md:items-end">
+                                <div className="space-y-6 order-2 md:order-1">
+                                    <Extras />
+                                    {showTickets && <TicketsSection />}
+                                </div>
+                                {event.cover_image_url && (
+                                    <div className="relative w-full aspect-square overflow-hidden rounded-sm order-1 md:order-2">
+                                        <Image src={event.cover_image_url} alt={event.title} fill priority sizes="(max-width:768px) 100vw, 22rem" className="object-cover" />
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                        {/* Content drops onto a light panel so long copy stays readable */}
+                        <div className="relative z-20 bg-background text-foreground rounded-t-3xl shadow-2xl">
+                            <div className="container mx-auto px-4 py-16 max-w-3xl">
+                                <Sections />
+                            </div>
+                        </div>
+                    </div>
+                    <StickyBuyBar />
+                </div>
+            )
+        }
+
+        // ── STUB: the page shaped like the thing it sells.
+        return (
+            <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="stub" className={rootCls} style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+                <EventViewTracker eventId={event.id} />
+                <PageHead />
+                <FixedBg />
+                <div className="relative z-10">
+                    <Header />
+                    <main className="container mx-auto px-4 py-10 max-w-3xl">
+                        <div className="bg-card text-card-foreground rounded-2xl overflow-hidden shadow-2xl border">
+                            {event.cover_image_url && (
+                                <div className="relative w-full aspect-[16/9] overflow-hidden">
+                                    <Image src={event.cover_image_url} alt={event.title} fill priority sizes="(max-width:768px) 100vw, 48rem" className="object-cover" />
+                                </div>
+                            )}
+                            <div className="p-6 sm:p-8 space-y-6">
+                                <TitleBlock />
+                                <Extras />
+                            </div>
+
+                            {/* Perforation — the tear line between ticket and stub */}
+                            <div className="relative" aria-hidden="true">
+                                <div className="border-t-2 border-dashed border-border mx-6" />
+                                <span className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 top-0 bg-card px-3 text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground">
+                                    Admit One
+                                </span>
+                            </div>
+
+                            {showTickets && (
+                                <div className="p-6 sm:p-8 bg-muted/40">
+                                    <TicketsSection />
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="mt-12">
+                            <Sections />
+                        </div>
+                    </main>
+                </div>
+                <StickyBuyBar />
             </div>
         )
     }

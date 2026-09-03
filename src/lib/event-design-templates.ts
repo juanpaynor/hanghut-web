@@ -23,8 +23,8 @@ export type EventDesignTemplate = {
     /** Art-directed theme applied to the public page (layout_config.theme) */
     theme: EventThemeId
     theme_color: string
-    bg_style: 'default' | 'particles' | 'gradient-mesh' | 'noise' | 'parallax' | 'cover-blur'
-    page_layout: 'default' | 'poster' | 'minimal' | 'broadside' | 'editorial' | 'cinematic' | 'boutique'
+    bg_style: 'default' | 'particles' | 'gradient-mesh' | 'noise' | 'parallax' | 'cover-blur' | 'cover-full' | 'spotlight' | 'paper'
+    page_layout: 'default' | 'poster' | 'minimal' | 'broadside' | 'editorial' | 'cinematic' | 'boutique' | 'stack' | 'split' | 'marquee' | 'stub'
     font_heading: string
     font_body: string
     heading_color: string | null
