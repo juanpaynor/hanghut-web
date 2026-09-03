@@ -33,6 +33,13 @@ interface HoldState {
     skewMs: number
     seatsHeld: number
     loaded: boolean
+    /**
+     * True only when the sync that produced this snapshot COMPLETED with no hold
+     * write outstanding. A snapshot taken while `hold_seat` was still in flight
+     * says nothing about whether a hold exists, so it must never be read as an
+     * expiry — see the guard in the tick effect.
+     */
+    syncedClean: boolean
 }
 
 export function useSeatHoldTimer(
@@ -55,7 +62,10 @@ export function useSeatHoldTimer(
      */
     pendingMutations: number = 0,
 ) {
-    const [hold, setHold] = useState<HoldState>({ expiresAt: null, skewMs: 0, seatsHeld: 0, loaded: false })
+    const [hold, setHold] = useState<HoldState>({ expiresAt: null, skewMs: 0, seatsHeld: 0, loaded: false, syncedClean: false })
+    // Read inside the async sync below without re-creating it on every change.
+    const pendingRef = useRef(pendingMutations)
+    pendingRef.current = pendingMutations
     const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
     // Ref so the ticking effect never re-subscribes when the parent passes a new closure.
     const onExpireRef = useRef(onExpire)
@@ -64,7 +74,7 @@ export function useSeatHoldTimer(
 
     const sync = useCallback(async () => {
         if (!sessionId) {
-            setHold({ expiresAt: null, skewMs: 0, seatsHeld: 0, loaded: true })
+            setHold({ expiresAt: null, skewMs: 0, seatsHeld: 0, loaded: true, syncedClean: true })
             return
         }
         const supabase = createClient()
@@ -83,6 +93,8 @@ export function useSeatHoldTimer(
             skewMs: serverNow - Date.now(),
             seatsHeld: Number((data as any).seats_held ?? 0),
             loaded: true,
+            // Trustworthy only if nothing was being written while this resolved.
+            syncedClean: pendingRef.current === 0,
         })
         if (expiresAtRaw) firedRef.current = false
     }, [sessionId])
@@ -109,7 +121,12 @@ export function useSeatHoldTimer(
             // never existed both arrive as null. Treat it as expiry once the
             // buyer actually has a selection, otherwise the countdown silently
             // stops mattering the moment the tab is backgrounded and refocused.
-            if (hold.loaded && selectionCount > 0 && pendingMutations === 0 && !firedRef.current) {
+            // `pendingMutations === 0` alone is NOT enough: when a hold write
+            // settles, this effect re-runs immediately against the snapshot taken
+            // BEFORE the write landed — still null — and the fresh sync has not
+            // resolved yet. Requiring syncedClean makes the verdict wait for a
+            // sync that actually observed a quiet moment.
+            if (hold.loaded && hold.syncedClean && selectionCount > 0 && pendingMutations === 0 && !firedRef.current) {
                 firedRef.current = true
                 onExpireRef.current?.()
             }
@@ -127,7 +144,7 @@ export function useSeatHoldTimer(
         tick()
         const id = setInterval(tick, 1000)
         return () => clearInterval(id)
-    }, [hold.expiresAt, hold.skewMs, hold.loaded, selectionCount, pendingMutations])
+    }, [hold.expiresAt, hold.skewMs, hold.loaded, hold.syncedClean, selectionCount, pendingMutations])
 
     return {
         secondsLeft,
@@ -139,7 +156,7 @@ export function useSeatHoldTimer(
          * `secondsLeft === 0`: secondsLeft is null for a lapsed hold, and
          * `null === 0` is false, which fails open.
          */
-        expired: hold.loaded && selectionCount > 0 && pendingMutations === 0
+        expired: hold.loaded && hold.syncedClean && selectionCount > 0 && pendingMutations === 0
             && (hold.expiresAt === null || secondsLeft === 0),
         hasHold: hold.expiresAt !== null,
         loaded: hold.loaded,
