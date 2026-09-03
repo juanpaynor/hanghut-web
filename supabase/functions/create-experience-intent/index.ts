@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.0'
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -23,7 +23,7 @@ serve(async (req) => {
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         )
 
-        const { table_id, schedule_id, quantity = 1, guest_details, success_url, failure_url, promo_code, source } = await req.json()
+        const { table_id, schedule_id, quantity = 1, guest_details, success_url, failure_url, promo_code, source, answers } = await req.json()
 
         // Auth. NOTE: experiences are account-only in practice —
         // experience_purchase_intents.user_id is NOT NULL, so a guest booking dies in
@@ -100,6 +100,19 @@ serve(async (req) => {
                 )
             }
             throw new Error(reserveError.message)
+        }
+
+        // Persist custom booking answers on the reserved intent. Additive and
+        // non-fatal: answers are not money, so a write failure logs and continues
+        // rather than blocking a paid booking. reserve_experience is untouched.
+        if (Array.isArray(answers) && answers.length > 0) {
+            const { error: answersError } = await supabaseAdmin
+                .from('experience_purchase_intents')
+                .update({ answers })
+                .eq('id', intentId)
+            if (answersError) {
+                console.error('⚠️ Failed to store booking answers (continuing):', answersError.message)
+            }
         }
 
         // Fetch created intent

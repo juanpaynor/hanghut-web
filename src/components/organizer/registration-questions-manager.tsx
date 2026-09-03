@@ -32,11 +32,17 @@ const QUESTION_TYPE_LABELS: Record<RegistrationQuestion['question_type'], string
 }
 
 interface Props {
-    eventId: string
+    eventId?: string
     initialQuestions: RegistrationQuestion[]
+    // Injectable so the same editor can drive experiences (saveExperienceQuestions)
+    // as well as events. Defaults preserve the original event behaviour.
+    saveFn?: (questions: RegistrationQuestion[]) => Promise<{ error?: string; success?: boolean; questions?: RegistrationQuestion[] }>
+    heading?: string
+    subheading?: string
+    savedNoun?: string
 }
 
-export function RegistrationQuestionsManager({ eventId, initialQuestions }: Props) {
+export function RegistrationQuestionsManager({ eventId, initialQuestions, saveFn, heading, subheading }: Props) {
     const { toast } = useToast()
     const [questions, setQuestions] = useState<RegistrationQuestion[]>(
         initialQuestions.length > 0
@@ -105,7 +111,9 @@ export function RegistrationQuestionsManager({ eventId, initialQuestions }: Prop
         }
 
         setIsSaving(true)
-        const result = await saveRegistrationQuestions(eventId, questions)
+        const result = saveFn
+            ? await saveFn(questions)
+            : await saveRegistrationQuestions(eventId!, questions)
         setIsSaving(false)
 
         if (result.error) {
@@ -124,9 +132,9 @@ export function RegistrationQuestionsManager({ eventId, initialQuestions }: Prop
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h3 className="text-xl font-semibold">Registration Questions</h3>
+                    <h3 className="text-xl font-semibold">{heading ?? 'Registration Questions'}</h3>
                     <p className="text-sm text-muted-foreground mt-1">
-                        Attendees will answer these questions before completing their registration.
+                        {subheading ?? 'Attendees will answer these questions before completing their registration.'}
                     </p>
                 </div>
                 <Button onClick={handleSave} disabled={isSaving}>

@@ -8,6 +8,7 @@ import type { Metadata } from 'next'
 import { ExperienceHeroCarousel } from '@/components/experiences/experience-hero-carousel'
 import { ExperienceSlotPicker } from '@/components/experiences/experience-slot-picker'
 import { LoginNudge } from '@/components/shared/login-nudge'
+import { getExperienceQuestions } from '@/lib/organizer/experience-question-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -152,6 +153,7 @@ export default async function ExperienceDetailPage({ params }: { params: Promise
 
     const images: string[] = (exp.images as string[]) ?? []
     const schedules = exp.experience_schedules ?? []
+    const bookingQuestions = await getExperienceQuestions(id)
     const hostName: string = hostUser?.display_name ?? hostPartner?.business_name ?? 'Your Host'
     const hostAvatarUrl: string | null = hostPhotoUrl ?? exp.host_avatar_url ?? hostUser?.avatar_url ?? null
     const typeLabel = EXPERIENCE_TYPE_LABELS[exp.experience_type ?? ''] ?? 'Experience'
@@ -501,6 +503,7 @@ export default async function ExperienceDetailPage({ params }: { params: Promise
                                                 successUrl={successUrl}
                                                 failureUrl={failureUrl}
                                                 isLoggedIn={isLoggedIn}
+                                                questions={bookingQuestions as any}
                                             />
 
                                             {/* Refund policy.

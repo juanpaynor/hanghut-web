@@ -29,6 +29,17 @@ interface Booking {
     checked_in_at: string | null
     table: { id: string; title: string } | null
     schedule: { start_time: string; end_time: string | null } | null
+    answers?: { question_id: string; label: string; answer: string }[] | null
+}
+
+// A multi_choice answer is stored as a JSON array string; everything else is plain.
+function displayAnswer(raw: string): string {
+    if (!raw) return '—'
+    try {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) return parsed.join(', ')
+    } catch { /* plain string */ }
+    return raw
 }
 
 interface Props {
@@ -229,6 +240,21 @@ export function BookingsManager({ bookings }: Props) {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Custom question answers */}
+                                    {booking.answers && booking.answers.length > 0 && (
+                                        <div className="space-y-2 pt-2 border-t border-border">
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Answers</p>
+                                            <div className="space-y-2">
+                                                {booking.answers.map((a, i) => (
+                                                    <div key={a.question_id || i} className="text-sm">
+                                                        <span className="text-muted-foreground">{a.label}: </span>
+                                                        <span className="font-medium">{displayAnswer(a.answer)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Actions */}
                                     <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border">

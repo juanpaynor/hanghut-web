@@ -6,6 +6,8 @@ import { PromoCodeManager } from '@/components/organizer/promo-code-manager'
 import { getExperiencePromoCodes } from '@/lib/organizer/promo-actions'
 import { ExperienceDangerZone } from '@/components/organizer/experiences/experience-danger-zone'
 import { getExperienceDeletability } from '@/lib/organizer/experience-actions'
+import { ExperienceQuestionsManager } from '@/components/organizer/experiences/experience-questions-manager'
+import { getExperienceQuestions } from '@/lib/organizer/experience-question-actions'
 
 export default async function EditExperiencePage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params
@@ -28,9 +30,10 @@ export default async function EditExperiencePage({ params }: { params: Promise<{
 
     // Ownership is already proven by the host_id filter above, so this can be
     // fetched unguarded.
-    const [{ data: promoCodes }, deletability] = await Promise.all([
+    const [{ data: promoCodes }, deletability, questions] = await Promise.all([
         getExperiencePromoCodes(id),
         getExperienceDeletability(id),
+        getExperienceQuestions(id),
     ])
 
     return (
@@ -47,6 +50,10 @@ export default async function EditExperiencePage({ params }: { params: Promise<{
                     Discounts guests can apply when booking this experience.
                 </p>
                 <PromoCodeManager experienceId={id} initialCodes={promoCodes} />
+            </div>
+
+            <div className="border-t pt-6">
+                <ExperienceQuestionsManager tableId={id} initialQuestions={questions} />
             </div>
 
             <div className="border-t pt-6">

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Loader2, CalendarClock, Users, CheckCircle2, XCircle, ChevronLeft, ChevronRight, LogIn, Tag, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
+import { RegistrationQuestionsForm, QuestionForForm, RegistrationAnswer } from '@/components/events/registration-questions-form'
 
 /** What the SERVER said this code is worth. Never computed on the client. */
 interface AppliedPromo {
@@ -39,6 +40,7 @@ interface ExperienceSlotPickerProps {
     isLoggedIn?: boolean
     successUrl: string
     failureUrl: string
+    questions?: QuestionForForm[]
 }
 
 export function ExperienceSlotPicker({
@@ -49,12 +51,14 @@ export function ExperienceSlotPicker({
     isLoggedIn = true,
     successUrl,
     failureUrl,
+    questions = [],
 }: ExperienceSlotPickerProps) {
     const { toast } = useToast()
     const pathname = usePathname()
     const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
     const [quantity, setQuantity] = useState(1)
     const [loading, setLoading] = useState(false)
+    const [questionsOpen, setQuestionsOpen] = useState(false)
     const [selectedDate, setSelectedDate] = useState<Date | null>(null)
     const [calendarMonth, setCalendarMonth] = useState(() => {
         // Initialize to the month of the first future open slot
@@ -153,6 +157,8 @@ export function ExperienceSlotPicker({
         return [...padding, ...days]
     }, [calendarMonth])
 
+    // Book click: validate, then gate on the questions form if the host set any.
+    // The answers come back through the modal's onComplete → submitBooking.
     const handleBook = async () => {
         if (!selectedScheduleId) {
             toast({ title: 'Select a slot', description: 'Please choose an available time slot.', variant: 'destructive' })
@@ -170,6 +176,17 @@ export function ExperienceSlotPicker({
             return
         }
 
+        if (questions.length > 0) {
+            setQuestionsOpen(true)
+            return
+        }
+
+        submitBooking([])
+    }
+
+    const submitBooking = async (answers: RegistrationAnswer[]) => {
+        if (!selectedScheduleId) return
+
         setLoading(true)
         const supabase = createClient()
 
@@ -184,6 +201,7 @@ export function ExperienceSlotPicker({
             }
             // Only the code travels — the server re-validates and re-prices it.
             if (promo) body.promo_code = promo.code
+            if (answers.length > 0) body.answers = answers
 
             // No guest_details branch: booking is account-only, so the edge function
             // always receives an authenticated caller.
@@ -533,6 +551,17 @@ export function ExperienceSlotPicker({
                     `Book Now · ${symbol}${totalPrice.toLocaleString()}`
                 )}
             </Button>
+
+            {questions.length > 0 && (
+                <RegistrationQuestionsForm
+                    eventId={tableId}
+                    questions={questions}
+                    isOpen={questionsOpen}
+                    onClose={() => setQuestionsOpen(false)}
+                    onComplete={(answers) => { setQuestionsOpen(false); submitBooking(answers) }}
+                    isLoading={loading}
+                />
+            )}
         </div>
     )
 }

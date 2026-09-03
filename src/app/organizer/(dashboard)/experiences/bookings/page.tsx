@@ -24,7 +24,7 @@ export default async function ExperienceBookingsPage() {
             .from('experience_purchase_intents')
             .select(`
                 id, quantity, total_amount, guest_name, guest_email, guest_phone,
-                created_at, status, check_in_status, checked_in_at,
+                created_at, status, check_in_status, checked_in_at, answers,
                 table:tables!table_id(id, title),
                 schedule:experience_schedules!schedule_id(start_time, end_time)
             `)
