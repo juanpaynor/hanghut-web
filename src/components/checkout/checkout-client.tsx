@@ -335,18 +335,28 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             }
 
             // ── STEP 2: Create purchase intent ──
-            // Release the picker's browsing-session holds first: assign_seats_to_intent
-            // rejects seats held by any OTHER session, so the buyer's own selection
-            // hold would block their own checkout. Assign re-holds them (under the
-            // intent id) within the same statement, so the unheld window is ~ms.
-            if (selectedSeatIds.length > 0) {
-                const seatSession = typeof window !== 'undefined' ? sessionStorage.getItem('hh_seat_session') : null
-                if (seatSession) {
-                    await Promise.all(selectedSeatIds.map(id =>
-                        supabase.rpc('release_seat_hold', { p_seat_id: id, p_session_id: seatSession })
-                    ))
-                }
-            }
+            // We do NOT release the picker's holds here any more.
+            //
+            // This used to release them first, because an older assign_seats_to_intent
+            // could not tell the buyer's own hold from a competitor's and so rejected
+            // their own seats. That is no longer true, and the release had become
+            // actively harmful: assign_seats_to_intent now VERIFIES the buyer still
+            // holds every named seat under p_session_id and raises SEATS_EXPIRED if
+            // not — so releasing first destroyed the exact evidence the check demands,
+            // and every seated checkout that reached it failed with SEATS_EXPIRED.
+            //
+            // The RPC is self-sufficient: its availability scan already ignores holds
+            // belonging to p_session_id ("not a competitor with itself"), and it
+            // deletes the picker hold itself before re-holding the seat under the
+            // intent id — atomically, in one statement, with no unheld window at all.
+            //
+            // Read the session id straight from sessionStorage rather than the
+            // hydrated state below. If that state had not populated yet the payload
+            // omitted seat_session_id, which silently SKIPPED the server-side hold
+            // check — failing open on precisely the case it exists to catch.
+            const seatSessionForIntent = selectedSeatIds.length > 0
+                ? ((typeof window !== 'undefined' ? sessionStorage.getItem('hh_seat_session') : null) ?? seatSessionId)
+                : null
 
             const requestPayload: any = {
                 event_id: event.id,
@@ -357,7 +367,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 // verify the buyer STILL holds them — assign_seats_to_intent can
                 // otherwise only see whether someone ELSE does, which lets a buyer
                 // on a lapsed hold take seats already released back to the pool.
-                seat_session_id: selectedSeatIds.length > 0 ? (seatSessionId || undefined) : undefined,
+                seat_session_id: seatSessionForIntent || undefined,
                 guest_details: !effectiveUser ? guestDetails : undefined,
                 promo_code: appliedPromo ? appliedPromo.code : undefined,
                 subscribed_to_newsletter: newsletterSubscribed,
