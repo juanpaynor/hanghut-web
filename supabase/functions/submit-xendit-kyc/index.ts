@@ -7,7 +7,7 @@ const corsHeaders = {
 }
 
 /**
- * submit-xendit-kyc  (v26 — required address.street_line2; LEGACY Account Holder API)
+ * submit-xendit-kyc  (v27 — resubmission unlocked + per-field failure reasons; LEGACY Account Holder API)
  *
  * Doc types + industry code aligned to Xendit's official PH requirements table,
  * VALIDATED against the Xendit dev sandbox (POST /account_holders → HTTP 200):
@@ -46,6 +46,9 @@ const LEGACY_DOC_TYPE: Record<string, string> = {
     PH_NOTARIZED_PARTNER_CERTIFICATE: 'NOTARIZED_PARTNER_CERTIFICATE_DOCUMENT',
     PH_GIS: 'LATEST_GIS_DOCUMENT',
     SERVICE_AGREEMENT: 'SERVICE_AGREEMENT_DOCUMENT',
+    // Xendit's slot for "the use case and payment flow". Its absence is a named
+    // rejection reason, not an optional extra.
+    BUSINESS_PROOF: 'BUSINESS_PROOF_DOCUMENT',
 }
 
 // authorized person's selected ID type -> Xendit primary ID document type
@@ -69,6 +72,24 @@ function toStoragePath(stored: string): string {
         if (idx !== -1) return stored.slice(idx + marker.length).split('?')[0]
     }
     return stored
+}
+
+/**
+ * Collapse Xendit's per-field failure list into ONE readable line for the existing
+ * single-text kyc_rejection_reason column. The structured list is kept verbatim in
+ * kyc_failure_reasons; this is only so surfaces that render a sentence still say
+ * something true instead of falling back to "Document mismatch".
+ */
+function summarizeReasons(reasons: unknown[]): string | null {
+    if (!Array.isArray(reasons) || reasons.length === 0) return null
+    const parts = reasons.map((r: any) => {
+        const field = typeof r?.field === 'string'
+            ? r.field.replace(/_DOCUMENT$/, '').replace(/_/g, ' ').toLowerCase()
+            : ''
+        const msg = typeof r?.message === 'string' ? r.message.trim() : ''
+        return field && msg ? `${field}: ${msg}` : (msg || field)
+    }).filter(Boolean)
+    return parts.length ? parts.join(' • ').slice(0, 2000) : null
 }
 
 function json(body: unknown, status = 200) {
@@ -113,11 +134,86 @@ serve(async (req: Request) => {
         }
         if (!isAdmin && partner.user_id !== user.id) return json({ error: 'Unauthorized' }, 403)
 
-        if (partner.kyc_status === 'submitted' || partner.kyc_status === 'verified') {
-            return json({ success: true, message: `KYC already ${partner.kyc_status}`, kyc_status: partner.kyc_status, already_submitted: true })
+        const authHeader = `Basic ${btoa(xenditKey + ':')}`
+
+        // ── May this partner submit right now? ────────────────────────────────
+        //
+        // 'verified' is final. Re-opening a live partner would strip capabilities.
+        if (partner.kyc_status === 'verified') {
+            return json({ success: true, message: 'KYC already verified', kyc_status: 'verified', already_submitted: true })
         }
 
-        const authHeader = `Basic ${btoa(xenditKey + ':')}`
+        // 'submitted' USED to be a hard stop as well, and that silently stranded every
+        // resubmission. Xendit bounces a submission by setting the account holder's
+        // kyc.status to AWAITING_RESUBMISSION and listing per-field failure_reasons — it
+        // deletes nothing, so from our side the record still looks sent. We learn about
+        // the bounce from a webhook, and when that webhook does not arrive the partner is
+        // locked out of the one action that would fix it. That is not hypothetical: THE
+        // KOOLPALS was bounced on 2026-08-23 and still read 'submitted', reason null,
+        // twelve days later, with nobody told which six documents to fix.
+        //
+        // So the local column is no longer the gate. Whenever we already hold an account
+        // holder id, ASK XENDIT what state the submission is really in. The webhook
+        // becomes an optimisation rather than the only way to find out we were rejected.
+        if (partner.kyc_status === 'submitted') {
+            const holderId = partner.xendit_account_holder_id as string | null
+
+            // No holder id means the submission never reached Xendit at all — there is
+            // nothing in flight to protect, so fall through and let it retry.
+            if (holderId) {
+                let remoteStatus = ''
+                let remoteReasons: unknown[] = []
+                try {
+                    const probe = await fetch(`${XENDIT_API}/account_holders/${holderId}`, {
+                        headers: { Authorization: authHeader },
+                    })
+                    if (probe.ok) {
+                        const body = await probe.json()
+                        remoteStatus = String(body?.kyc?.status || '').toUpperCase()
+                        remoteReasons = Array.isArray(body?.kyc?.failure_reasons) ? body.kyc.failure_reasons : []
+                    } else {
+                        console.error(`⚠️ account_holder probe returned ${probe.status}`)
+                    }
+                } catch (e) {
+                    console.error('⚠️ could not read remote KYC status:', e)
+                }
+
+                console.log(`🔎 remote KYC for ${partner_id}: ${remoteStatus || 'unknown'} (${remoteReasons.length} failure reasons)`)
+
+                if (/PASS|VERIFIED/.test(remoteStatus)) {
+                    // The webhook missed a SUCCESS. Record it rather than re-submitting.
+                    await supabaseAdmin.from('partners').update({
+                        kyc_status: 'verified', kyc_failure_reasons: null, kyc_rejection_reason: null,
+                    }).eq('id', partner_id)
+                    return json({
+                        success: true, message: 'KYC already verified (synced from provider)',
+                        kyc_status: 'verified', already_submitted: true,
+                    })
+                }
+
+                if (/RESUBMISSION|FAIL|REJECT/.test(remoteStatus)) {
+                    // Persist exactly what Xendit is asking for so the form can show it
+                    // field by field, then FALL THROUGH and rebuild the submission.
+                    await supabaseAdmin.from('partners').update({
+                        kyc_status: 'resubmission_required',
+                        kyc_failure_reasons: remoteReasons,
+                        kyc_rejection_reason: summarizeReasons(remoteReasons),
+                    }).eq('id', partner_id)
+                    console.log(`♻️ ${partner_id} awaiting resubmission — proceeding with a fresh submission`)
+                } else {
+                    // Genuinely in flight (PENDING / NOT_VERIFIED), or Xendit was
+                    // unreachable. Keep the guard: re-sending now would only re-queue the
+                    // same documents, and on an unreadable probe the safe answer is "wait".
+                    return json({
+                        success: true,
+                        message: remoteStatus
+                            ? `KYC is still under review at the provider (${remoteStatus}).`
+                            : 'KYC already submitted and still under review.',
+                        kyc_status: partner.kyc_status, already_submitted: true,
+                    })
+                }
+            }
+        }
 
         // A missing sub-account used to be a hard 400 (NO_SUBACCOUNT) here, because the
         // sub-account is normally created in approvePartner() at approval time. Partners
@@ -491,9 +587,14 @@ serve(async (req: Request) => {
             return json({ error: 'Account holder created but link failed', account_holder_id: accountHolderId, details: linkData, code: 'LINK_FAILED' }, linkRes.status)
         }
 
+        // A fresh submission supersedes whatever Xendit last complained about. Leaving
+        // the old failures in place would keep showing the partner problems they have
+        // just fixed, and the next verdict overwrites them anyway.
         await supabaseAdmin.from('partners').update({
             kyc_status: 'submitted',
             xendit_account_holder_id: accountHolderId,
+            kyc_failure_reasons: null,
+            kyc_rejection_reason: null,
         }).eq('id', partner_id)
 
         await supabaseAdmin.from('partner_gateway_accounts').upsert({

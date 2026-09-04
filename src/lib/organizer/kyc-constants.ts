@@ -140,6 +140,11 @@ export const BUSINESS_DOC_TYPES = {
     PH_ARTICLES_OF_PARTNERSHIP: 'PH_ARTICLES_OF_PARTNERSHIP',        // partnership
     PH_NOTARIZED_PARTNER_CERTIFICATE: 'PH_NOTARIZED_PARTNER_CERTIFICATE', // partnership
     SERVICE_AGREEMENT: 'SERVICE_AGREEMENT',                          // all entities
+    // "Use case and payment flow" — Xendit asks for this as BUSINESS_PROOF_DOCUMENT
+    // and bounces submissions that omit it. Applies to EVERY entity type: it is not
+    // a registration record, it is evidence that the business actually trades and
+    // that money moves the way the application claims it does.
+    BUSINESS_PROOF: 'BUSINESS_PROOF',
     OFFICE_ADDRESS_PROOF: 'OFFICE_ADDRESS_PROOF',
     // business_license_documents — Required for PH. Xendit PH support confirmed
     // the Mayor's Permit is what satisfies it for a Philippine corporation.

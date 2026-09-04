@@ -44,11 +44,11 @@ export default async function VerificationPage({
     const { data: partner } = await supabase
         .from('partners')
         .select(`
-            id, kyc_status, kyc_rejection_reason, business_name, business_type, xendit_cards_gcash_live,
+            id, kyc_status, kyc_rejection_reason, kyc_failure_reasons, business_name, business_type, xendit_cards_gcash_live,
             representative_name, contact_number, nationality, place_of_birth, work_email,
             street_line1, street_line2, city, province_state, postal_code,
             tax_id, registration_number, legal_entity_address,
-            business_description, shareholders_include_corporate_entity,
+            business_description, shareholders_include_corporate_entity, social_links,
             kyc_submitted_by_admin, kyc_submitted_at,
             business_industry_subcategory, business_establishment_date,
             business_intents, business_source_of_funds, business_average_monthly_basket_size,
@@ -66,6 +66,10 @@ export default async function VerificationPage({
     }
 
     const status = partner.kyc_status || 'not_started'
+
+    // Per-document failures from the payment provider, when we have them.
+    const kycReasons: { field?: string; message?: string }[] =
+        Array.isArray(partner.kyc_failure_reasons) ? (partner.kyc_failure_reasons as any) : []
 
     // A partner may only edit while the form is actionable. An admin acting on
     // their behalf must be able to edit at ANY status — the case this exists for
@@ -163,6 +167,44 @@ export default async function VerificationPage({
                 </Card>
             )}
 
+            {/* Xendit rejects PER DOCUMENT, so show it per document. Collapsing six
+                distinct problems into one sentence is what left partners guessing
+                which file to re-upload. Falls back to the sentence when the
+                structured list is absent (older rejections, or a provider that
+                only sent prose). */}
+            {(() => {
+                const reasons = kycReasons
+                if (reasons.length === 0) return null
+                if (status !== 'resubmission_required' && status !== 'rejected') return null
+                return (
+                    <Card className="bg-amber-50 border-amber-200 mb-6">
+                        <CardHeader>
+                            <CardTitle className="text-amber-900 text-base">
+                                {reasons.length} {reasons.length === 1 ? 'item needs' : 'items need'} attention
+                            </CardTitle>
+                            <CardDescription className="text-amber-800">
+                                Fix each of these, then submit again.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="pt-0">
+                            <ul className="space-y-3">
+                                {reasons.map((r, i) => (
+                                    <li key={i} className="text-sm">
+                                        <span className="font-medium text-amber-900">
+                                            {(r.field || 'Submission')
+                                                .replace(/_DOCUMENT$/, '')
+                                                .replace(/_/g, ' ')
+                                                .replace(/\b\w/g, c => c.toUpperCase())}
+                                        </span>
+                                        <p className="text-amber-800 mt-0.5">{r.message}</p>
+                                    </li>
+                                ))}
+                            </ul>
+                        </CardContent>
+                    </Card>
+                )
+            })()}
+
             {status === 'resubmission_required' && (
                 <Card className="bg-amber-50 border-amber-200 mb-6">
                     <CardHeader className="flex flex-row items-center gap-4 space-y-0">
@@ -172,7 +214,7 @@ export default async function VerificationPage({
                         <div>
                             <CardTitle className="text-amber-800">Additional Information Needed</CardTitle>
                             <CardDescription className="text-amber-700">
-                                Our payment provider needs more from your submission. {partner.kyc_rejection_reason || 'Please review and resubmit.'}
+                                Our payment provider needs more from your submission. {kycReasons.length > 0 ? 'The items above show exactly what to fix.' : (partner.kyc_rejection_reason || 'Please review and resubmit.')}
                             </CardDescription>
                         </div>
                     </CardHeader>
@@ -188,7 +230,7 @@ export default async function VerificationPage({
                         <div>
                             <CardTitle className="text-red-800">Verification Rejected</CardTitle>
                             <CardDescription className="text-red-700">
-                                Please update your submission. Reason: {partner.kyc_rejection_reason || 'Document mismatch'}
+                                Please update your submission. {kycReasons.length > 0 ? 'The items above show exactly what to fix.' : `Reason: ${partner.kyc_rejection_reason || 'Document mismatch'}`}
                             </CardDescription>
                         </div>
                     </CardHeader>

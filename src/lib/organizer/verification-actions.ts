@@ -53,6 +53,8 @@ type BusinessProfile = {
     registration_number?: string
     /** Factual business description for KYC review (not storefront copy). */
     business_description?: string
+    /** Public site the provider will open and check. Stored on social_links.website. */
+    website?: string
     /** Drives whether a shareholding-chart document is also required. */
     shareholders_include_corporate_entity?: boolean
 }
@@ -105,7 +107,7 @@ export async function submitKYCVerification(
         actingAsAdmin = true
     }
 
-    const partnerQuery = adminSupabase.from('partners').select('id, business_type')
+    const partnerQuery = adminSupabase.from('partners').select('id, business_type, social_links')
     const { data: partner } = requestedPartnerId
         ? await partnerQuery.eq('id', requestedPartnerId).single()
         : await partnerQuery.eq('user_id', user.id).single()
@@ -176,6 +178,9 @@ export async function submitKYCVerification(
             : null,
         kyc_status: 'pending_review',
         kyc_rejection_reason: null,
+        // The itemised provider failures describe the PREVIOUS submission. Leaving
+        // them would show the partner problems they have just addressed.
+        kyc_failure_reasons: null,
         // New in the /account_verification API — see kyc-constants.
         business_description: business.business_description?.trim() || null,
         shareholders_include_corporate_entity:
@@ -188,6 +193,18 @@ export async function submitKYCVerification(
         kyc_submitted_by_admin: actingAsAdmin,
         kyc_submitted_by: user.id,
         kyc_submitted_at: new Date().toISOString(),
+    }
+
+    // The website lives on social_links alongside instagram/facebook, which is where
+    // the storefront and submit-xendit-kyc both already read it from. Merge rather
+    // than assign: writing the object wholesale would silently drop every other link
+    // the partner has set.
+    if (typeof business.website === 'string') {
+        const trimmed = business.website.trim()
+        const current = (partner.social_links as Record<string, unknown>) || {}
+        updateData.social_links = trimmed
+            ? { ...current, website: trimmed }
+            : Object.fromEntries(Object.entries(current).filter(([k]) => k !== 'website'))
     }
 
     // TIN gates the Xendit cards capability; blank means "leave what's there"

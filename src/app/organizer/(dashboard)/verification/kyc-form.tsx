@@ -46,6 +46,8 @@ type Stakeholder = {
 export type KYCExistingData = {
     business_type?: string
     business_name?: string
+    /** Partner's public links; the KYC website lives at social_links.website. */
+    social_links?: Record<string, string> | null
     business_industry_subcategory?: string
     business_establishment_date?: string
     business_intents?: string[]
@@ -234,10 +236,20 @@ const SECRETARY_CERT_TEMPLATE_URL =
 // Mayor's Permit satisfies it — it was never collected, so no partner has one.
 const MAYORS_PERMIT_SLOT = { type: 'PH_MAYORS_PERMIT', label: "Mayor's Permit", hint: 'Current business permit from your city or municipality' }
 const SERVICE_AGREEMENT_SLOT = { type: 'SERVICE_AGREEMENT', label: 'Service Agreement', hint: 'Signed Xendit Service Agreement (HangHut as your platform)' }
+// Xendit rejects submissions with "Please provide the use case and payment flow"
+// against BUSINESS_PROOF_DOCUMENT. Required for EVERY entity type — a registration
+// certificate proves the company exists; this proves it trades, and that money moves
+// the way the application says it does.
+const BUSINESS_PROOF_SLOT = {
+    type: 'BUSINESS_PROOF',
+    label: 'Use Case & Payment Flow',
+    hint: 'One PDF showing what you sell and how a customer pays for it end to end: your page, choosing a ticket, checkout, the payment screen, and the confirmation they receive. Screenshots are fine.',
+}
 function businessDocSlots(entity: string): { type: string; label: string; hint: string; templateUrl?: string }[] {
     if (entity === 'sole_proprietorship') return [
         { type: 'PH_DTI_CERTIFICATE_REGISTRATION', label: 'DTI Registration', hint: 'DTI business name registration' },
         { type: 'PH_BIR_2303', label: 'BIR Form 2303', hint: 'BIR Certificate of Registration' },
+        BUSINESS_PROOF_SLOT,
         SERVICE_AGREEMENT_SLOT,
     ]
     if (entity === 'corporation') return [
@@ -253,6 +265,7 @@ function businessDocSlots(entity: string): { type: string; label: string; hint: 
         },
         { type: 'PH_GIS', label: 'Latest GIS', hint: 'Most recent General Information Sheet filed with SEC' },
         MAYORS_PERMIT_SLOT,
+        BUSINESS_PROOF_SLOT,
         SERVICE_AGREEMENT_SLOT,
     ]
     if (entity === 'partnership') return [
@@ -261,9 +274,10 @@ function businessDocSlots(entity: string): { type: string; label: string; hint: 
         { type: 'PH_ARTICLES_OF_PARTNERSHIP', label: 'Articles of Partnership', hint: 'Notarized Articles of Partnership' },
         { type: 'PH_NOTARIZED_PARTNER_CERTIFICATE', label: "Notarized Partner's Certificate", hint: 'Notarized certificate authorizing the representative' },
         MAYORS_PERMIT_SLOT,
+        BUSINESS_PROOF_SLOT,
         SERVICE_AGREEMENT_SLOT,
     ]
-    return [SERVICE_AGREEMENT_SLOT] // individual: service agreement + person ID/selfie
+    return [BUSINESS_PROOF_SLOT, SERVICE_AGREEMENT_SLOT] // individual: + person ID/selfie
 }
 /**
  * Person document slots depend on the ID they chose.
@@ -326,6 +340,7 @@ export function KYCVerificationForm({ existingData, adminPartnerId }: {
     // this field, which is why it is null on every partner created before now.
     const [registrationNumber, setRegistrationNumber] = useState(ex.registration_number || '')
     const [businessDescription, setBusinessDescription] = useState(ex.business_description || '')
+    const [website, setWebsite] = useState(((ex.social_links as any) || {}).website || '')
     // Drives whether a shareholding-chart document is also required, so it has to
     // be answered before we can tell the partner which documents to bring.
     const [corporateShareholders, setCorporateShareholders] = useState<boolean | null>(
@@ -404,6 +419,7 @@ export function KYCVerificationForm({ existingData, adminPartnerId }: {
             tax_id: taxId.trim() || undefined,
             registration_number: registrationNumber.trim() || undefined,
             business_description: businessDescription.trim() || undefined,
+            website: website.trim() || undefined,
             shareholders_include_corporate_entity: corporateShareholders ?? undefined,
             business_address: bizAddress,
             // "Same as business" is stored explicitly rather than left null, so the
@@ -551,6 +567,25 @@ export function KYCVerificationForm({ existingData, adminPartnerId }: {
                         />
                         <p className="text-xs text-muted-foreground">
                             A plain description for the compliance reviewer — not marketing copy.
+                        </p>
+                    </div>
+                    {/* One URL is all the provider stores — but they OPEN it, and check the
+                        page against a list. Saying so here is the difference between a
+                        rejection weeks later and a link that passes first time. */}
+                    <div className="space-y-2">
+                        <Label>Business website</Label>
+                        <Input
+                            value={website}
+                            onChange={(e) => setWebsite(e.target.value)}
+                            placeholder="yourbusiness.com"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            Leave blank to use your HangHut storefront. Whichever you give,
+                            the reviewer opens it and expects to find: your registered
+                            business name as it appears on your SEC/DTI certificate, your
+                            registered address, contact details, and links to Terms &amp;
+                            Conditions, a Privacy Policy, and a Cancellation/Refund Policy.
+                            A site missing these is the single most common rejection.
                         </p>
                     </div>
                     {corp && (

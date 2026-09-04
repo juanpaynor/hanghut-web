@@ -1417,15 +1417,35 @@ serve(async (req) => {
                 )
             }
 
+            // Xendit's kyc.failure_reasons is an array of OBJECTS — {field, message} —
+            // not of strings. The previous `.join('; ')` therefore rendered a rejection
+            // as "[object Object]; [object Object]", which told the partner nothing and
+            // lost the field names entirely. Keep the structured list as-is for the form
+            // to render per document, and flatten a readable sentence alongside it.
+            const reasonList: any[] = Array.isArray(failureReasons)
+                ? failureReasons
+                : (failureReasons ? [failureReasons] : [])
+
+            const readableReasons = reasonList.map((r: any) => {
+                if (typeof r === 'string') return r.trim()
+                const field = typeof r?.field === 'string'
+                    ? r.field.replace(/_DOCUMENT$/, '').replace(/_/g, ' ').toLowerCase()
+                    : ''
+                const msg = typeof r?.message === 'string' ? r.message.trim() : ''
+                return field && msg ? `${field}: ${msg}` : (msg || field)
+            }).filter(Boolean)
+
             const update: Record<string, unknown> = { kyc_status: newKyc }
             if (newKyc === 'rejected' || newKyc === 'resubmission_required') {
-                update.kyc_rejection_reason = Array.isArray(failureReasons)
-                    ? failureReasons.join('; ')
-                    : (failureReasons || (newKyc === 'resubmission_required'
+                update.kyc_failure_reasons = reasonList.length ? reasonList : null
+                update.kyc_rejection_reason = readableReasons.length
+                    ? readableReasons.join(' • ').slice(0, 2000)
+                    : (newKyc === 'resubmission_required'
                         ? 'Additional information required — please review and resubmit'
-                        : 'Verification failed — please review and resubmit'))
+                        : 'Verification failed — please review and resubmit')
             } else if (newKyc === 'verified') {
                 update.kyc_rejection_reason = null
+                update.kyc_failure_reasons = null
             }
 
             const { error: kycUpdateError } = await supabaseClient
