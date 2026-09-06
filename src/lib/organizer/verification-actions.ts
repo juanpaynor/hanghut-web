@@ -107,7 +107,7 @@ export async function submitKYCVerification(
         actingAsAdmin = true
     }
 
-    const partnerQuery = adminSupabase.from('partners').select('id, business_type, social_links')
+    const partnerQuery = adminSupabase.from('partners').select('id, business_type, social_links, user_id')
     const { data: partner } = requestedPartnerId
         ? await partnerQuery.eq('id', requestedPartnerId).single()
         : await partnerQuery.eq('user_id', user.id).single()
@@ -284,10 +284,29 @@ export async function submitKYCVerification(
     // Guard: only accept paths under the caller's own folder. RLS already enforces
     // this on write, but validate defensively so a client can't submit someone
     // else's file by passing an arbitrary path.
-    const ownPrefix = `${user.id}/`
+    //
+    // The prefix check accepts the CALLER's folder and — when an admin is acting on a
+    // partner's behalf — that PARTNER's folder too. Without the second prefix an admin
+    // submission could not carry ANY document forward: every previously uploaded file
+    // sits under the partner's user id, the admin's own id never matches it, and the
+    // `continue` below dropped them silently. Combined with the wholesale delete above,
+    // an admin "replacing one document" quietly destroyed all the others — which is
+    // exactly what happened to THE KOOLPALS on 2026-09-04 (8 documents in, 4 out, and
+    // the form still reported success).
+    const allowedPrefixes = [`${user.id}/`]
+    if (actingAsAdmin && partner.user_id) allowedPrefixes.push(`${partner.user_id}/`)
+
+    let skippedPaths = 0
     const applyPathMap = (map: Record<string, string>) => {
         for (const [slot, path] of Object.entries(map)) {
-            if (!path || !path.startsWith(ownPrefix)) continue
+            if (!path) continue
+            if (!allowedPrefixes.some(prefix => path.startsWith(prefix))) {
+                // Never silent again: a dropped document is data loss, and the only
+                // signal used to be a shorter list nobody counted.
+                console.warn(`[kyc] refused document outside allowed folders: ${slot}`)
+                skippedPaths++
+                continue
+            }
             const [scope, docType, idxRaw] = slot.split(':')
             if (scope === 'stakeholder') {
                 const idx = Number(idxRaw)
@@ -308,5 +327,11 @@ export async function submitKYCVerification(
     }
 
     revalidatePath('/organizer/verification')
+    if (skippedPaths > 0) {
+        return {
+            message: `Submitted, but ${skippedPaths} previously uploaded ${skippedPaths === 1 ? 'document was' : 'documents were'} not carried forward and must be re-uploaded.`,
+            success: true,
+        }
+    }
     return { message: 'Verification submitted successfully!', success: true }
 }
