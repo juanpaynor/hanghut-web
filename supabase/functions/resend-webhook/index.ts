@@ -125,12 +125,29 @@ serve(async (req) => {
         // keep a record of why an address was suppressed). Transactional opens/
         // clicks with no marketing send row are skipped to avoid noise.
         if ((sendId || isSuppressable) && recip) {
+            // Resolve the recipient to a user ONCE, here, and only on an exact
+            // lower(email) match. Doing it later with a fuzzy join is what must
+            // never happen: a normalised match can attribute one person's clicks
+            // to another account, and the taste profiles downstream of this
+            // cannot be un-poisoned. NULL is the correct answer for "we do not
+            // confidently know who this was".
+            let resolvedUserId: string | null = null
+            const { data: matchedUser } = await supabase
+                .from('users')
+                .select('id')
+                .ilike('email', recip)
+                .limit(2)
+            // Exactly one match, or nothing. Two accounts sharing a normalised
+            // address is precisely the ambiguous case worth refusing.
+            if (matchedUser?.length === 1) resolvedUserId = matchedUser[0].id
+
             const { error: evErr } = await supabase
                 .from('email_events')
                 .insert({
                     resend_id: emailId,
                     campaign_id: campaignId,
                     recipient: recip,
+                    user_id: resolvedUserId,
                     type: type,
                     occurred_at: occurredAt,
                     metadata: data,
