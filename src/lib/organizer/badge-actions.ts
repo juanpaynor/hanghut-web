@@ -57,7 +57,17 @@ function adminClient() {
     return createSupabaseClient(url, key)
 }
 
-/** Confirms the caller owns this partner. Every action below starts here. */
+/**
+ * Confirms the caller may act for this partner: the OWNER, one of their TEAM
+ * MEMBERS, or a platform admin.
+ *
+ * Team members matter here and were missed on the first pass. getPartner() falls
+ * back to team membership, and the sidebar shows Badges to managers and
+ * marketing — so a manager could open the page and then have every single action
+ * fail with "Forbidden", including the art upload. This mirrors the check inside
+ * get_organizer_customers(), which is the established shape for "may this user
+ * act for this partner".
+ */
 async function requireOwner(organizerId: string) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -65,13 +75,18 @@ async function requireOwner(organizerId: string) {
 
     const { data: partner } = await supabase
         .from('partners').select('id').eq('id', organizerId).eq('user_id', user.id).maybeSingle()
+    if (partner) return { user, supabase }
 
-    if (!partner) {
-        const { data: adminUser } = await supabase
-            .from('users').select('is_admin').eq('id', user.id).maybeSingle()
-        if (!adminUser?.is_admin) return { error: 'Forbidden' as const }
-    }
-    return { user, supabase }
+    const { data: teamMember } = await supabase
+        .from('partner_team_members').select('partner_id')
+        .eq('partner_id', organizerId).eq('user_id', user.id).maybeSingle()
+    if (teamMember) return { user, supabase }
+
+    const { data: adminUser } = await supabase
+        .from('users').select('is_admin').eq('id', user.id).maybeSingle()
+    if (adminUser?.is_admin) return { user, supabase }
+
+    return { error: 'Forbidden' as const }
 }
 
 export async function getCreatorBadges(organizerId: string) {
