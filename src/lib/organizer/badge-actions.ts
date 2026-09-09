@@ -64,11 +64,16 @@ function adminClient() {
  * Team members matter here and were missed on the first pass. getPartner() falls
  * back to team membership, and the sidebar shows Badges to managers and
  * marketing — so a manager could open the page and then have every single action
- * fail with "Forbidden", including the art upload. This mirrors the check inside
- * get_organizer_customers(), which is the established shape for "may this user
- * act for this partner".
+ * fail with "Forbidden", including the art upload.
+ *
+ * This is a fast rejection, not the security boundary. The same rule is enforced
+ * underneath by the creator_badges RLS policy and by can_manage_partner() inside
+ * grant_creator_badge() and preview_creator_badge_earners(), so a forged
+ * organizer id gets nowhere even if this check is bypassed. Keep the three in
+ * step: they disagreed once, and the symptom was a page that loaded and then
+ * refused every action.
  */
-async function requireOwner(organizerId: string) {
+async function requirePartnerAccess(organizerId: string) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' as const }
@@ -90,7 +95,7 @@ async function requireOwner(organizerId: string) {
 }
 
 export async function getCreatorBadges(organizerId: string) {
-    const ctx = await requireOwner(organizerId)
+    const ctx = await requirePartnerAccess(organizerId)
     if ('error' in ctx) return { error: ctx.error }
 
     const { data, error } = await ctx.supabase
@@ -116,7 +121,7 @@ export async function getCreatorBadges(organizerId: string) {
  * has an answer before they publish.
  */
 export async function previewBadgeEarners(organizerId: string, criteria: BadgeCriteria) {
-    const ctx = await requireOwner(organizerId)
+    const ctx = await requirePartnerAccess(organizerId)
     if ('error' in ctx) return { error: ctx.error }
 
     const { data, error } = await ctx.supabase.rpc('preview_creator_badge_earners', {
@@ -141,7 +146,7 @@ export async function saveCreatorBadge(input: {
     artUrl?: string | null
     isActive: boolean
 }) {
-    const ctx = await requireOwner(input.organizerId)
+    const ctx = await requirePartnerAccess(input.organizerId)
     if ('error' in ctx) return { error: ctx.error }
 
     if (!input.name?.trim()) return { error: 'Name is required' }
@@ -173,7 +178,7 @@ export async function saveCreatorBadge(input: {
 }
 
 export async function deleteCreatorBadge(organizerId: string, badgeId: string) {
-    const ctx = await requireOwner(organizerId)
+    const ctx = await requirePartnerAccess(organizerId)
     if ('error' in ctx) return { error: ctx.error }
 
     // Holders cascade with the badge (FK ON DELETE CASCADE). Deleting therefore
@@ -189,11 +194,14 @@ export async function deleteCreatorBadge(organizerId: string, badgeId: string) {
 
 /** Run the engine for one badge. Idempotent — safe to press repeatedly. */
 export async function evaluateBadge(organizerId: string, badgeId: string) {
-    const ctx = await requireOwner(organizerId)
+    const ctx = await requirePartnerAccess(organizerId)
     if ('error' in ctx) return { error: ctx.error }
 
-    // Awarding is service-role: evaluate_creator_badge is not granted to
-    // authenticated, so a browser cannot mint badges even for its own partner.
+    // Awarding is service-role. evaluate_creator_badge, evaluate_all_creator_badges
+    // and creator_badge_qualifying_emails are SECURITY DEFINER and trust their
+    // arguments, so EXECUTE on them is revoked from anon and authenticated — a
+    // browser cannot mint badges, nor read anyone's customer emails, by calling
+    // the engine directly.
     const admin = adminClient()
     const { data: badge } = await admin
         .from('creator_badges').select('id').eq('id', badgeId).eq('organizer_id', organizerId).maybeSingle()
@@ -225,7 +233,7 @@ export interface CustomerHit {
  * somebody else's customer list even with a forged organizer id.
  */
 export async function searchOrganizerCustomers(organizerId: string, search: string, segment?: string) {
-    const ctx = await requireOwner(organizerId)
+    const ctx = await requirePartnerAccess(organizerId)
     if ('error' in ctx) return { error: ctx.error }
 
     const { data, error } = await ctx.supabase.rpc('get_organizer_customers', {
@@ -255,7 +263,7 @@ export async function searchOrganizerCustomers(organizerId: string, search: stri
 
 /** manual_grant only — hand a badge to specific people by email. */
 export async function grantBadgeToEmails(organizerId: string, badgeId: string, emails: string[]) {
-    const ctx = await requireOwner(organizerId)
+    const ctx = await requirePartnerAccess(organizerId)
     if ('error' in ctx) return { error: ctx.error }
 
     const cleaned = emails
@@ -279,7 +287,7 @@ export async function grantBadgeToEmails(organizerId: string, badgeId: string, e
  * client INSERT policy — a partner's browser never writes to it.
  */
 export async function uploadBadgeArt(organizerId: string, formData: FormData) {
-    const ctx = await requireOwner(organizerId)
+    const ctx = await requirePartnerAccess(organizerId)
     if ('error' in ctx) return { error: ctx.error }
 
     const file = formData.get('file') as File | null
