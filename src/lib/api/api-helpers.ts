@@ -3,8 +3,11 @@ import { NextResponse } from 'next/server'
 /**
  * Standardized success response
  */
-export function apiSuccess(data: any, status = 200) {
-    return NextResponse.json({ data }, { status, headers: corsHeaders() })
+export function apiSuccess(data: any, status = 200, extraHeaders?: Record<string, string>) {
+    return NextResponse.json(
+        { data },
+        { status, headers: { ...corsHeaders(), ...(extraHeaders ?? {}) } }
+    )
 }
 
 /**

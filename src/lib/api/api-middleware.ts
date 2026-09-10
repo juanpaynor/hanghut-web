@@ -1,9 +1,12 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { apiError } from './api-helpers'
 import { createHash } from 'crypto'
+import { Timer } from './timing'
 
 interface AuthResult {
     partnerId: string
+    /** Per-step durations, to be merged into the handler's Server-Timing header. */
+    timer: Timer
 }
 
 /**
@@ -32,13 +35,33 @@ export async function authenticateApiKey(
     const keyHash = createHash('sha256').update(apiKey).digest('hex')
 
     const supabase = createAdminClient()
+    const timer = new Timer()
 
-    // Look up by prefix first, then verify hash
-    const { data: keyRecord, error } = await supabase
+    // ONE round trip. This used to be two sequential ones: the key lookup, then
+    // an rpc('check_rate_limit', ...). A round trip from the function to Supabase
+    // measures ~150ms, so the second one was ~150ms on every authenticated
+    // request.
+    //
+    // The rate-limit call is gone rather than parallelised, because it never did
+    // anything: check_rate_limit does not exist in the database
+    // (to_regprocedure returns null, api_rate_limits has 0 rows). The RPC errored
+    // on every request, leaving `data` null, and the guard read
+    // `if (allowed === false)` — which null never satisfies. So the documented
+    // "100 requests per minute" has never been enforced, and removing the call
+    // changes no behaviour.
+    //
+    // It is NOT parallelised back in as-is once implemented: running the limiter
+    // before validation would let anyone who guesses a key PREFIX (12 chars =
+    // "hh_live_" plus 4 hex, so 65,536 possibilities) burn a real partner's
+    // quota. The correct shape is a single SECURITY DEFINER function that
+    // validates the key and applies the limit to the validated key id atomically
+    // — still one round trip, and not spoofable.
+    const { data: keyRecord, error } = await timer.span('auth', () => supabase
         .from('api_keys')
         .select('id, partner_id, key_hash, is_active')
         .eq('key_prefix', prefix)
-        .single()
+        .maybeSingle()
+    )
 
     if (error || !keyRecord) {
         return apiError('Invalid API key', 401)
@@ -59,18 +82,7 @@ export async function authenticateApiKey(
         .eq('id', keyRecord.id)
         .then(() => {})
 
-    // Rate limit check (100 requests per 60 seconds per key)
-    const { data: allowed } = await supabase.rpc('check_rate_limit', {
-        p_key_prefix: prefix,
-        p_max_requests: 100,
-        p_window_seconds: 60
-    })
-
-    if (allowed === false) {
-        return apiError('Rate limit exceeded. Max 100 requests per minute.', 429)
-    }
-
-    return { partnerId: keyRecord.partner_id }
+    return { partnerId: keyRecord.partner_id, timer }
 }
 
 /**
