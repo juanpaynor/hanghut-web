@@ -441,15 +441,71 @@ export async function subscribeGuestToNewsletter(partnerId: string, email: strin
 // On send, send-promotional-email is passed draft_campaign_id and reuses the row.
 // ─────────────────────────────────────────────────────────────
 
-async function resolveMarketingPartnerId(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string | null> {
+/**
+ * Which partner is this campaign FOR — not which partner does the caller happen
+ * to own.
+ *
+ * The old version returned the caller's own partner unconditionally, so anyone
+ * who both owns a partner and can act for another (an admin, most obviously)
+ * silently stamped every draft with their own. That is exactly how a Fuego
+ * Manila campaign ended up owned by Upper Room Worship: the author owns Upper
+ * Room Worship, so the draft was written against it while targeting a Fuego
+ * event, and promoting it then failed on a lookup that found no such pairing.
+ *
+ * When the campaign targets an event, that event's organizer IS the partner.
+ * Authorisation is not assumed from being able to read the event — events are
+ * publicly readable — so it goes through can_manage_partner(), the same
+ * owner/team-member/admin check the badge and customer RPCs use.
+ *
+ * `.maybeSingle()` on the ownership lookups also threw outright for anyone on
+ * two teams; `.limit(1)` keeps that a resolution, not a 500.
+ */
+async function resolveMarketingPartnerId(
+    supabase: Awaited<ReturnType<typeof createClient>>,
+    eventId?: string | null,
+): Promise<string | null> {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
-    const { data: owner } = await supabase
-        .from('partners').select('id').eq('user_id', user.id).maybeSingle()
-    if (owner) return owner.id
+
+    if (eventId) {
+        const { data: event } = await supabase
+            .from('events').select('organizer_id').eq('id', eventId).maybeSingle()
+        if (event?.organizer_id) {
+            const { data: allowed } = await supabase
+                .rpc('can_manage_partner', { p_partner_id: event.organizer_id })
+            if (allowed) return event.organizer_id as string
+        }
+    }
+
+    const { data: owned } = await supabase
+        .from('partners').select('id').eq('user_id', user.id).limit(1)
+    if (owned?.[0]) return owned[0].id
+
     const { data: tm } = await supabase
-        .from('partner_team_members').select('partner_id').eq('user_id', user.id).maybeSingle()
-    return tm?.partner_id ?? null
+        .from('partner_team_members').select('partner_id').eq('user_id', user.id).limit(1)
+    return tm?.[0]?.partner_id ?? null
+}
+
+/**
+ * The partner that already owns an existing campaign row, once the caller is
+ * confirmed to be allowed to act for it.
+ *
+ * Reads have to resolve the same way writes do. A draft is now created against
+ * the TARGETED event's organizer, so scoping the reopen/delete by the caller's
+ * own partner would hand them a draft they can create and then never open
+ * again.
+ */
+async function resolveCampaignPartnerId(
+    supabase: Awaited<ReturnType<typeof createClient>>,
+    campaignId: string,
+): Promise<string | null> {
+    const { data: campaign } = await supabase
+        .from('email_campaigns').select('partner_id').eq('id', campaignId).maybeSingle()
+    if (!campaign?.partner_id) return null
+
+    const { data: allowed } = await supabase
+        .rpc('can_manage_partner', { p_partner_id: campaign.partner_id })
+    return allowed ? (campaign.partner_id as string) : null
 }
 
 export interface DraftInput {
@@ -462,7 +518,7 @@ export interface DraftInput {
 
 export async function saveDraft(input: DraftInput) {
     const supabase = await createClient()
-    const partnerId = await resolveMarketingPartnerId(supabase)
+    const partnerId = await resolveMarketingPartnerId(supabase, input.event_id)
     if (!partnerId) return { error: 'Partner account not found' }
     if (!input.subject?.trim() && !input.html_content?.trim()) {
         return { error: 'Nothing to save yet.' }
@@ -506,7 +562,7 @@ export async function getDrafts() {
 
 export async function getDraft(id: string) {
     const supabase = await createClient()
-    const partnerId = await resolveMarketingPartnerId(supabase)
+    const partnerId = await resolveCampaignPartnerId(supabase, id)
     if (!partnerId) return null
     const { data } = await supabase
         .from('email_campaigns')
@@ -517,8 +573,8 @@ export async function getDraft(id: string) {
 
 export async function deleteDraft(id: string) {
     const supabase = await createClient()
-    const partnerId = await resolveMarketingPartnerId(supabase)
-    if (!partnerId) return { error: 'Partner account not found' }
+    const partnerId = await resolveCampaignPartnerId(supabase, id)
+    if (!partnerId) return { error: 'Draft not found' }
     const { error } = await supabase
         .from('email_campaigns').delete()
         .eq('id', id).eq('partner_id', partnerId).eq('status', 'draft')
@@ -547,7 +603,7 @@ export interface ScheduleInput {
 
 export async function scheduleCampaign(input: ScheduleInput) {
     const supabase = await createClient()
-    const partnerId = await resolveMarketingPartnerId(supabase)
+    const partnerId = await resolveMarketingPartnerId(supabase, input.event_id)
     if (!partnerId) return { error: 'Partner account not found' }
 
     if (!input.subject?.trim() || !input.html_content?.trim()) {
@@ -628,8 +684,8 @@ export async function getScheduledCampaigns() {
 
 export async function cancelScheduledCampaign(id: string) {
     const supabase = await createClient()
-    const partnerId = await resolveMarketingPartnerId(supabase)
-    if (!partnerId) return { error: 'Partner account not found' }
+    const partnerId = await resolveCampaignPartnerId(supabase, id)
+    if (!partnerId) return { error: 'Scheduled campaign not found' }
     // Only cancellable while still pending — once the cron claims it ('dispatching')
     // or it has sent, it can't be pulled back.
     const { error } = await supabase

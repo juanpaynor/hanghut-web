@@ -1,5 +1,6 @@
 import { sanitize } from '@/lib/sanitize'
 import { cn } from '@/lib/utils'
+import { SectionShell, SectionHeading } from './section-shell'
 
 interface AboutSectionProps {
     config: {
@@ -13,39 +14,43 @@ export function AboutSection({ config, description, descriptionHtml }: AboutSect
     if (!descriptionHtml && !description) return null
 
     const variant = config.variant || 'centered'
+    const centered = variant === 'centered'
 
     return (
-        <section className="py-16 md:py-20">
-            <div className={cn(
-                'container mx-auto px-4',
-                variant === 'centered' ? 'max-w-3xl text-center' : 'max-w-5xl'
-            )}>
-                <h2 data-hh-section-title className={cn(
-                    'text-2xl md:text-3xl font-bold mb-6',
-                    variant === 'centered'
-                        ? 'bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60'
-                        : ''
-                )}>
-                    About Us
-                </h2>
+        // Tight rhythm: this is context for the events below, not a destination of
+        // its own, so it sits close rather than claiming a full screen.
+        <SectionShell rhythm="tight" width={centered ? 'narrow' : 'default'}>
+            <SectionHeading
+                eyebrow="About"
+                // The heading used to be "About Us" set in a foreground-to-60%
+                // gradient. The gradient is gone: it reads as decoration, and it
+                // fought every custom palette a partner set.
+                title="Who we are"
+                align={centered ? 'center' : 'left'}
+            />
 
-                {descriptionHtml ? (
-                    <div
-                        className={cn(
-                            'prose dark:prose-invert max-w-none prose-lg',
-                            variant === 'centered' ? 'mx-auto' : ''
-                        )}
-                        dangerouslySetInnerHTML={{ __html: sanitize(descriptionHtml) }}
-                    />
-                ) : (
-                    <p className={cn(
-                        'text-lg leading-relaxed text-muted-foreground',
-                        variant === 'centered' ? 'mx-auto max-w-2xl' : ''
-                    )}>
-                        {description}
-                    </p>
-                )}
-            </div>
-        </section>
+            {descriptionHtml ? (
+                <div
+                    className={cn(
+                        'prose prose-neutral dark:prose-invert',
+                        'prose-p:text-[1.0625rem] prose-p:leading-[1.7] prose-p:text-muted-foreground',
+                        'prose-headings:tracking-[-0.01em] prose-headings:font-semibold',
+                        'prose-a:underline prose-a:underline-offset-4 prose-a:decoration-border hover:prose-a:decoration-current',
+                        'prose-img:rounded-xl',
+                        centered ? 'mx-auto text-center' : 'max-w-[68ch]',
+                    )}
+                    dangerouslySetInnerHTML={{ __html: sanitize(descriptionHtml) }}
+                />
+            ) : (
+                <p
+                    className={cn(
+                        'text-[1.0625rem] leading-[1.7] text-muted-foreground',
+                        centered ? 'mx-auto max-w-[60ch] text-center' : 'max-w-[68ch]',
+                    )}
+                >
+                    {description}
+                </p>
+            )}
+        </SectionShell>
     )
 }

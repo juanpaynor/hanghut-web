@@ -32,11 +32,16 @@ export function GallerySection({
                 : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
 
     return (
-        <section className="container mx-auto px-4 py-12">
+        <section className="container mx-auto px-4 sm:px-6 max-w-7xl py-12 md:py-16">
             {config.heading && (
-                <h2 data-hh-section-title className="text-2xl md:text-3xl font-bold tracking-tight mb-6">
-                    {config.heading}
-                </h2>
+                <div className="mb-8 md:mb-10">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-2.5">
+                        Gallery
+                    </p>
+                    <h2 data-hh-section-title className="text-[1.75rem] md:text-[2.125rem] font-semibold leading-[1.15] tracking-[-0.02em] text-balance">
+                        {config.heading}
+                    </h2>
+                </div>
             )}
 
             {config.variant === 'masonry' ? (

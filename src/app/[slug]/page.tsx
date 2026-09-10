@@ -23,6 +23,7 @@ import { getEventThemeCss } from '@/lib/event-themes'
 import { StorefrontPreviewBridge } from '@/components/organizer/storefront-preview-bridge'
 import { CaptureAttribution } from '@/components/tracking/track-view'
 import { getPublicMerch } from '@/lib/merch/public-actions'
+import { getPublicBadges } from '@/lib/badges/public-actions'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-serif' })
@@ -189,6 +190,15 @@ export default async function StorefrontPage({
     // Called WITHOUT an eventId: on a storefront the shopper sees everything the
     // brand sells, not one show's table.
     const merch = await getPublicMerch(partner.id)
+
+    // ── Badges on the brand page ──
+    // Deliberately NOT auto-appended the way merch is above. Merch is stock the
+    // organizer is trying to sell, so hiding it is a bug; badges are a reward
+    // programme, and putting one on a public page is a promise. Only fetched when
+    // the organizer has actually placed the section.
+    const wantsBadges = hasSections
+        && branding.sections.some((sec: any) => sec.type === 'badges' && sec.visible !== false)
+    const badges = wantsBadges ? await getPublicBadges(partner.id) : []
 
     // If a partner has merch but hasn't added the section, append it rather than
     // leaving stock invisible. The section builder is opt-in and most partners
@@ -366,6 +376,7 @@ export default async function StorefrontPage({
                             events={upcoming}
                             pastEvents={past}
                             merch={merch}
+                            badges={badges}
                         />
                         {/* Membership section for section-based storefronts: show unless mode is explicitly events-only */}
                         {hasTiers && resolvedMode !== 'events' && (

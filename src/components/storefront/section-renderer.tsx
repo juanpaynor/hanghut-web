@@ -9,7 +9,9 @@ import { StatsSection } from './sections/stats-section'
 import { CTASection } from './sections/cta-section'
 import { GallerySection } from './sections/gallery-section'
 import { MerchStorefrontSection } from './sections/merch-storefront-section'
+import { BadgesSection } from './sections/badges-section'
 import type { PublicMerchProduct } from '@/lib/merch/public-actions'
+import type { PublicBadge } from '@/lib/badges/public-actions'
 
 interface SectionRendererProps {
     sections: StorefrontSection[]
@@ -28,9 +30,11 @@ interface SectionRendererProps {
     pastEvents: any[]
     /** Empty unless this partner has merch_enabled and active products. */
     merch?: PublicMerchProduct[]
+    /** Active creator badges. Empty unless the organizer has published some. */
+    badges?: PublicBadge[]
 }
 
-export function SectionRenderer({ sections, partner, events, pastEvents, merch = [] }: SectionRendererProps) {
+export function SectionRenderer({ sections, partner, events, pastEvents, merch = [], badges = [] }: SectionRendererProps) {
     const branding = partner.branding || {}
 
     return (
@@ -111,6 +115,15 @@ export function SectionRenderer({ sections, partner, events, pastEvents, merch =
                                     organizerId={partner.id}
                                     products={merch}
                                     config={section.config}
+                                />
+                            )
+                            break
+                        case 'badges':
+                            content = (
+                                <BadgesSection
+                                    config={section.config}
+                                    badges={badges}
+                                    partnerName={partner.business_name}
                                 />
                             )
                             break

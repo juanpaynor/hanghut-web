@@ -1,5 +1,5 @@
 // Section type definitions for the storefront page builder
-export type SectionType = 'hero' | 'about' | 'events' | 'past_events' | 'gallery' | 'merch' | 'newsletter' | 'stats' | 'cta' | 'divider'
+export type SectionType = 'hero' | 'about' | 'events' | 'past_events' | 'gallery' | 'merch' | 'newsletter' | 'stats' | 'cta' | 'divider' | 'badges'
 
 export interface StorefrontSection {
     type: SectionType
@@ -19,6 +19,7 @@ export const SECTION_META: Record<SectionType, { label: string; icon: string; de
     stats: { label: 'Stats & Numbers', icon: 'BarChart3', description: 'Highlight key numbers and achievements' },
     cta: { label: 'Call to Action', icon: 'Megaphone', description: 'Full-width banner with a call to action' },
     divider: { label: 'Divider', icon: 'Minus', description: 'Visual separator between sections' },
+    badges: { label: 'Badges', icon: 'Award', description: 'Show the badges fans can collect from you' },
 }
 
 // Default configs per section type
@@ -33,6 +34,10 @@ export const DEFAULT_SECTION_CONFIG: Record<SectionType, Record<string, any>> = 
     stats: { items: [{ label: 'Events Hosted', value: '10+' }, { label: 'Happy Attendees', value: '1,000+' }] },
     cta: { heading: '', subheading: '', button_text: 'Learn More', button_link: '', background_color: '' },
     divider: { style: 'line' },
+    // Opt-in, and never auto-appended the way merch is: a page that starts
+    // advertising rewards the organizer didn't choose to promote is worse than
+    // one that stays quiet about them.
+    badges: { heading: 'Badges to collect', subheading: '', variant: 'grid', show_holder_count: true },
 }
 
 // Template presets

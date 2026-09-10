@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Plus, Trash2, Upload, X, Loader2, GalleryHorizontal } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { uploadGalleryImage } from '@/lib/organizer/branding-actions'
@@ -321,6 +322,44 @@ export function SectionConfigPanel({ type, config, onChange, partnerId }: Sectio
                     <p className="text-xs text-muted-foreground">
                         Products come from your Merch catalog. This section hides itself when you
                         have nothing on sale.
+                    </p>
+                </div>
+            )
+
+        case 'badges':
+            return (
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label>Heading</Label>
+                        <Input
+                            value={config.heading ?? 'Badges to collect'}
+                            onChange={(e) => update('heading', e.target.value)}
+                            placeholder="Badges to collect"
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Subheading</Label>
+                        <Input
+                            value={config.subheading ?? ''}
+                            onChange={(e) => update('subheading', e.target.value)}
+                            placeholder="Optional line under the heading"
+                        />
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <Label>Show how many people have each badge</Label>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                                Turn this off while your numbers are still small.
+                            </p>
+                        </div>
+                        <Switch
+                            checked={config.show_holder_count !== false}
+                            onCheckedChange={(v) => update('show_holder_count', v)}
+                        />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        Badges come from your Badges page. Only active ones appear here, and the
+                        section hides itself when you have none.
                     </p>
                 </div>
             )

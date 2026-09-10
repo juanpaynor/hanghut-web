@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import {
     ArrowUp, ArrowDown, Trash2, Plus, Image, FileText, Calendar,
     History, GalleryHorizontal, Mail, BarChart3, Megaphone, Minus,
-    ChevronDown, ChevronRight, GripVertical
+    ChevronDown, ChevronRight, GripVertical, Award, ShoppingBag
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SectionConfigPanel } from './section-config-panel'
@@ -17,7 +17,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 const ICON_MAP: Record<string, any> = {
+    // Award and ShoppingBag were missing, so Badges and Merch both fell through
+    // to the generic FileText icon in the section picker.
     Image, FileText, Calendar, History, GalleryHorizontal, Mail, BarChart3, Megaphone, Minus,
+    Award, ShoppingBag,
 }
 
 interface SectionListProps {

@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Mail, Loader2, CheckCircle2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Loader2, CheckCircle2 } from 'lucide-react'
 
 interface NewsletterSectionProps {
     config: {
@@ -71,10 +70,7 @@ export function NewsletterSection({ config, partnerId, partnerName }: Newsletter
                 <div className="container mx-auto px-4 max-w-2xl">
                     <div className="flex flex-col sm:flex-row items-center gap-4 p-6 rounded-2xl border bg-card/50">
                         <div className="flex-1 text-center sm:text-left">
-                            <h3 className="font-semibold text-lg flex items-center gap-2 justify-center sm:justify-start">
-                                <Mail className="h-5 w-5 text-primary" />
-                                {heading}
-                            </h3>
+                            <h3 className="font-semibold text-[1.0625rem] tracking-[-0.01em]">{heading}</h3>
                             <p className="text-sm text-muted-foreground mt-1">{subheading}</p>
                         </div>
                         {status === 'success' ? (
@@ -108,15 +104,19 @@ export function NewsletterSection({ config, partnerId, partnerName }: Newsletter
     }
 
     // ─── Banner variant: full-width ───
+    // The directional primary/5-to-transparent wash is gone. It lit one edge of
+    // the band and faded out under the form, which read as a rendering artefact
+    // rather than a design; a single hairline-bounded panel states the same
+    // "this is a different kind of block" without the smear.
     return (
-        <section id="newsletter" className="py-20 md:py-24 relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent" />
-            <div className="container mx-auto px-4 relative z-10 text-center max-w-2xl">
-                <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Mail className="h-7 w-7 text-primary" />
-                </div>
-                <h2 data-hh-section-title className="text-2xl md:text-3xl font-bold mb-3">{heading}</h2>
-                <p className="text-muted-foreground mb-8 text-lg">{subheading}</p>
+        <section id="newsletter" className="py-16 md:py-24">
+            <div className="container mx-auto px-4 sm:px-6 max-w-3xl">
+                <div className="rounded-3xl border border-border/60 bg-muted/30 px-6 py-12 text-center md:px-12 md:py-16">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-2.5">
+                    Newsletter
+                </p>
+                <h2 data-hh-section-title className="text-[1.75rem] md:text-[2.125rem] font-semibold leading-[1.15] tracking-[-0.02em] text-balance">{heading}</h2>
+                <p className="mx-auto mt-3 max-w-md text-[0.9375rem] leading-relaxed text-muted-foreground mb-8">{subheading}</p>
 
                 {status === 'success' ? (
                     <div className="flex items-center justify-center gap-2 text-green-600 font-semibold text-lg animate-in fade-in zoom-in duration-300">
@@ -146,6 +146,7 @@ export function NewsletterSection({ config, partnerId, partnerName }: Newsletter
                 {status === 'error' && (
                     <p className="text-red-500 text-sm mt-3">{message}</p>
                 )}
+                </div>
             </div>
         </section>
     )

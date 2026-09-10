@@ -1,12 +1,12 @@
 import { eventHref } from '@/lib/events/urls'
 import { PublicEventCard } from '@/components/events/public-event-card'
-import { Calendar, MapPin, Ticket, ArrowUpRight } from 'lucide-react'
+import { Calendar, MapPin, Ticket } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import Image from 'next/image'
-import { format } from 'date-fns'
-import { formatInManila, formatEventTime, formatEventDayRange, isMultiDayEvent } from '@/lib/datetime'
+import { formatEventTime, formatEventDayRange, isMultiDayEvent } from '@/lib/datetime'
+import { SectionShell, SectionHeading } from './section-shell'
 
 interface EventsSectionProps {
     config: {
@@ -31,56 +31,61 @@ export function EventsSection({ config, events, sortBy }: EventsSectionProps) {
     })
 
     return (
-        <section id="events" className="py-16 md:py-20">
-            <div className="container mx-auto px-4">
-                <div className="flex items-center justify-between mb-8">
-                    <h2 data-hh-section-title className="text-2xl md:text-3xl font-bold flex items-center gap-3">
-                        <Calendar className="h-6 w-6 text-primary" />
-                        Upcoming Events
-                    </h2>
-                    {sortBy && sortBy !== 'upcoming' && (
-                        <Badge variant="outline" className="text-muted-foreground">
-                            Sorted by {sortBy === 'newest' ? 'Newest' : 'A-Z'}
-                        </Badge>
-                    )}
-                </div>
-
-                {sorted.length > 0 ? (
-                    <>
-                        {variant === 'list' ? (
-                            <div className="space-y-4 max-w-4xl">
-                                {sorted.map((event: any) => (
-                                    <ListEventCard key={event.id} event={event} />
-                                ))}
-                            </div>
-                        ) : (
-                            <div className={cn(
-                                'grid gap-6',
-                                columns === 3
-                                    ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-                                    : 'grid-cols-1 md:grid-cols-2'
-                            )}>
-                                {sorted.map((event: any) => (
-                                    <div key={event.id}>
-                                        <PublicEventCard event={event} />
-                                    </div>
-                                ))}
-                            </div>
+        // Generous rhythm: on almost every storefront this is the reason the page
+        // exists, and it was previously given exactly the same air as the divider.
+        <SectionShell rhythm="generous" width="wide" id="events">
+            <SectionHeading
+                eyebrow="What's on"
+                title="Upcoming events"
+                action={
+                    <div className="flex items-center gap-3">
+                        {sorted.length > 0 && (
+                            <span className="text-sm text-muted-foreground tabular-nums">
+                                {sorted.length} {sorted.length === 1 ? 'event' : 'events'}
+                            </span>
                         )}
-                    </>
-                ) : (
-                    <div className="flex flex-col items-center justify-center py-16 px-4 border-2 border-dashed border-muted rounded-3xl bg-muted/10 text-center w-full">
-                        <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-                            <Calendar className="h-8 w-8 text-muted-foreground" />
-                        </div>
-                        <h3 className="text-xl font-semibold mb-1">No Upcoming Events</h3>
-                        <p className="text-muted-foreground max-w-sm">
-                            Check back soon for new events!
-                        </p>
+                        {sortBy && sortBy !== 'upcoming' && (
+                            <Badge variant="outline" className="text-muted-foreground font-normal">
+                                {sortBy === 'newest' ? 'Newest first' : 'A–Z'}
+                            </Badge>
+                        )}
                     </div>
-                )}
-            </div>
-        </section>
+                }
+            />
+
+            {sorted.length > 0 ? (
+                variant === 'list' ? (
+                    <div className="space-y-4 max-w-4xl">
+                        {sorted.map((event: any) => (
+                            <ListEventCard key={event.id} event={event} />
+                        ))}
+                    </div>
+                ) : (
+                    <div className={cn(
+                        'grid gap-x-6 gap-y-10',
+                        columns === 3
+                            ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                            : 'grid-cols-1 md:grid-cols-2'
+                    )}>
+                        {sorted.map((event: any) => (
+                            <div key={event.id}>
+                                <PublicEventCard event={event} />
+                            </div>
+                        ))}
+                    </div>
+                )
+            ) : (
+                // A dashed box with a grey circle in it is the universal "nothing
+                // here" placeholder and reads as a broken page. A quiet line under
+                // a hairline says the same thing without the alarm.
+                <div className="border-t border-border/70 pt-10 text-center">
+                    <p className="text-[0.9375rem] font-medium">Nothing on sale right now.</p>
+                    <p className="mt-1.5 text-sm text-muted-foreground">
+                        Follow along and you&apos;ll hear when the next one goes live.
+                    </p>
+                </div>
+            )}
+        </SectionShell>
     )
 }
 

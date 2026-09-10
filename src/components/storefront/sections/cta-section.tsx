@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { SectionShell } from './section-shell'
 
 interface CTASectionProps {
     config: {
@@ -11,6 +11,12 @@ interface CTASectionProps {
     primaryColor?: string
 }
 
+/**
+ * One ask, made once. This used to stack two overlays — a 10%-opacity flat fill
+ * plus a primary/transparent/primary horizontal gradient — which on most palettes
+ * produced a muddy band rather than a deliberate block of colour. It now paints a
+ * single tinted panel and lets the type do the work.
+ */
 export function CTASection({ config, primaryColor }: CTASectionProps) {
     const heading = config.heading
     const subheading = config.subheading
@@ -21,27 +27,38 @@ export function CTASection({ config, primaryColor }: CTASectionProps) {
     if (!heading) return null
 
     return (
-        <section className="py-10 md:py-12 relative overflow-hidden">
+        <SectionShell rhythm="tight" width="default">
             <div
-                className="absolute inset-0 opacity-10"
-                style={bgColor ? { backgroundColor: bgColor } : undefined}
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-primary/10" />
+                data-hh-card
+                className="relative overflow-hidden rounded-3xl border border-border/60 px-6 py-14 text-center md:px-12 md:py-20"
+                style={
+                    bgColor
+                        ? { backgroundColor: `color-mix(in srgb, ${bgColor} 8%, transparent)` }
+                        : undefined
+                }
+            >
+                <h2
+                    data-hh-section-title
+                    className="mx-auto max-w-2xl text-[1.75rem] md:text-[2.25rem] font-semibold leading-[1.15] tracking-[-0.02em] text-balance"
+                >
+                    {heading}
+                </h2>
 
-            <div className="container mx-auto px-4 relative z-10 text-center max-w-3xl">
-                <h2 data-hh-section-title className="text-2xl md:text-3xl font-bold mb-2">{heading}</h2>
                 {subheading && (
-                    <p className="text-base text-muted-foreground mb-6 max-w-xl mx-auto">{subheading}</p>
+                    <p className="mx-auto mt-4 max-w-xl text-[0.9375rem] leading-relaxed text-muted-foreground">
+                        {subheading}
+                    </p>
                 )}
+
                 {buttonText && buttonLink && (
                     <a
                         href={buttonLink}
-                        className="inline-flex items-center gap-2 px-8 py-3 bg-primary text-primary-foreground rounded-full font-semibold hover:opacity-90 transition-opacity shadow-md"
+                        className="mt-8 inline-flex items-center justify-center rounded-full bg-primary px-8 py-3.5 text-[0.9375rem] font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                     >
                         {buttonText}
                     </a>
                 )}
             </div>
-        </section>
+        </SectionShell>
     )
 }
