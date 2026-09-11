@@ -177,3 +177,66 @@
     display: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   LANDING THEME
+
+   The landing used to be dark. It was rebuilt light because every other page
+   in the app is white, and a black front door in front of a white product
+   reads as two different products.
+
+   These are still scoped to `.landing-theme` rather than folded into the
+   global tokens: the landing wants a warmer, more art-directed set than the
+   app UI — a violet-biased neutral instead of a true grey, a near-black that
+   is actually very dark indigo — and scoping keeps that from leaking into
+   every dashboard table. The brand indigo is the app's `--primary` exactly,
+   so the one colour that must match across the two, does.
+   ───────────────────────────────────────────────────────────────────── */
+.landing-theme {
+  color-scheme: light;
+
+  --lp-void: #ffffff;          /* page ground */
+  --lp-deep: #f6f6fb;          /* alternating band */
+  --lp-panel: #fbfbfe;         /* lifted surface */
+  --lp-line: rgba(23, 21, 48, 0.10);
+  --lp-line-strong: rgba(23, 21, 48, 0.17);
+
+  --lp-text: #17152f;          /* near-black, biased indigo rather than grey */
+  --lp-muted: #5b5878;
+  --lp-dim: #8a87a4;
+
+  --lp-brand: #4f46e5;         /* the app's --primary, held exactly */
+  --lp-brand-soft: #6d5efc;    /* lifted, for gradients and accents */
+  --lp-brand-fg: #ffffff;
+
+  --lp-display: 'Bricolage Grotesque', 'Poppins', system-ui, sans-serif;
+  --lp-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  background: var(--lp-void);
+  color: var(--lp-text);
+}
+
+.lp-display {
+  font-family: var(--lp-display);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.lp-mono {
+  font-family: var(--lp-mono);
+  font-feature-settings: 'tnum' 1;
+}
+
+/* A hairline that fades out at both ends, so section dividers don't terminate
+   in hard dots against the ground. */
+.lp-rule {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--lp-line-strong) 15%,
+    var(--lp-line-strong) 85%,
+    transparent
+  );
+}

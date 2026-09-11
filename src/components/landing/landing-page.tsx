@@ -1,54 +1,81 @@
-"use client";
-
-import Link from "next/link";
-import Header from "@/components/landing/header";
-import Footer from "@/components/landing/footer";
-import Hero from "@/components/landing/hero";
-import VideoBanner from "@/components/landing/video-banner";
-import AttendeeTrack from "@/components/landing/attendee-track";
-import OrganizerTrack from "@/components/landing/organizer-track";
-import TrustBand from "@/components/landing/trust-band";
-import CTASection from "@/components/landing/cta-section";
-import { Reveal } from "@/components/landing/reveal";
+import LandingHeader from "@/components/landing/scenes/header";
+import LandingFooter from "@/components/landing/scenes/footer";
+import Hero from "@/components/landing/scenes/hero";
+import Film from "@/components/landing/scenes/film";
+import Discover from "@/components/landing/scenes/discover";
+import Platform from "@/components/landing/scenes/platform";
+import Pricing from "@/components/landing/scenes/pricing";
+import Trust from "@/components/landing/scenes/trust";
+import CTA from "@/components/landing/scenes/cta";
+import Rail from "@/components/landing/scenes/rail";
 import { SectionErrorBoundary } from "@/components/landing/section-error-boundary";
-import { ArrowRight } from "lucide-react";
 
-function PricingTeaser() {
-    return (
-        <section className="border-y border-kinetic-line bg-kinetic-panel px-6 py-20 md:px-12">
-            <Reveal className="mx-auto flex max-w-5xl flex-col items-center gap-6 text-center">
-                <h2 className="font-headline text-4xl font-bold tracking-tight text-kinetic-text md:text-6xl">
-                    Just <span className="text-kinetic-brand">2% + ₱15</span> per ticket.
-                </h2>
-                <p className="max-w-xl text-lg text-kinetic-muted">
-                    No monthly fees, no setup cost. You keep the rest — free events stay free to run.
-                </p>
-                <Link
-                    href="/pricing"
-                    className="group inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-kinetic-brand hover:underline"
-                >
-                    See full pricing
-                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                </Link>
-            </Reveal>
-        </section>
-    );
-}
-
+/**
+ * The landing page: six numbered scenes.
+ *
+ * The `.landing-theme` class on the root scopes the palette defined in
+ * globals.css to this subtree. It is white, like the rest of the app — a dark
+ * landing in front of a white product read as two different products — but it
+ * keeps its own tokens so the landing can stay more art-directed than a
+ * dashboard without leaking those choices into one.
+ *
+ * The header and footer here are the landing's own. The shared ones in
+ * components/landing/ are still used by /events, /pricing, /ticketing and the
+ * use-case pages, so they are deliberately left alone.
+ *
+ * Each scene stays wrapped in SectionErrorBoundary. Several of them run WebGL,
+ * a physics solver, or a video, and a landing page that blanks because one
+ * canvas failed on one device is worse than a landing page missing a scene.
+ */
 export default function LandingPage() {
     return (
-        <div className="flex min-h-dvh flex-col bg-kinetic-ink font-body text-kinetic-text antialiased">
-            <Header />
+        <div className="landing-theme flex min-h-dvh flex-col font-body antialiased">
+            <LandingHeader />
+            <Rail />
+
             <main className="flex-1">
-                <SectionErrorBoundary><Hero /></SectionErrorBoundary>
-                <SectionErrorBoundary><VideoBanner /></SectionErrorBoundary>
-                <SectionErrorBoundary><AttendeeTrack /></SectionErrorBoundary>
-                <SectionErrorBoundary><OrganizerTrack /></SectionErrorBoundary>
-                <SectionErrorBoundary><PricingTeaser /></SectionErrorBoundary>
-                <SectionErrorBoundary><TrustBand /></SectionErrorBoundary>
-                <SectionErrorBoundary><CTASection /></SectionErrorBoundary>
+                <SectionErrorBoundary>
+                    <Hero />
+                </SectionErrorBoundary>
+
+                <div id="scene-film" className="scroll-mt-24">
+                    <SectionErrorBoundary>
+                        <Film />
+                    </SectionErrorBoundary>
+                </div>
+
+                <div id="scene-discover" className="scroll-mt-24">
+                    <SectionErrorBoundary>
+                        <Discover />
+                    </SectionErrorBoundary>
+                </div>
+
+                <div id="scene-platform" className="scroll-mt-24">
+                    <SectionErrorBoundary>
+                        <Platform />
+                    </SectionErrorBoundary>
+                </div>
+
+                <div id="scene-pricing" className="scroll-mt-24">
+                    <SectionErrorBoundary>
+                        <Pricing />
+                    </SectionErrorBoundary>
+                </div>
+
+                <div id="scene-trust" className="scroll-mt-24">
+                    <SectionErrorBoundary>
+                        <Trust />
+                    </SectionErrorBoundary>
+                </div>
+
+                <div id="scene-start" className="scroll-mt-24">
+                    <SectionErrorBoundary>
+                        <CTA />
+                    </SectionErrorBoundary>
+                </div>
             </main>
-            <Footer />
+
+            <LandingFooter />
         </div>
     );
 }
