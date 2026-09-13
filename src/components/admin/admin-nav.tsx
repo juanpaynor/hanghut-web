@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Users, UsersRound, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet, Sparkles, Mail, Megaphone, Smartphone, Bell, Armchair, Receipt, Link2 } from 'lucide-react'
+import { LayoutDashboard, Users, UsersRound, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet, Sparkles, Mail, Megaphone, Smartphone, Bell, Armchair, Receipt, Link2, Headset } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,7 @@ const NAV_PERMISSIONS: Record<string, AdminRole[]> = {
     '/admin/users':       ['super_admin', 'admin', 'support'],
     '/admin/reports':     ['super_admin', 'admin', 'support'],
     '/admin/tables':      ['super_admin', 'admin', 'support'],
+    '/admin/support':     ['super_admin', 'admin', 'support'],
     '/admin/tickets':     ['super_admin', 'admin', 'support'],
     '/admin/audit':       ['super_admin', 'admin', 'finance_admin'],
     '/admin/waitlist':    ['super_admin', 'admin'],
@@ -85,7 +86,14 @@ const navItems = [
         icon: MapPin,
     },
     {
-        title: 'Support Tickets',
+        title: 'Support',
+        href: '/admin/support',
+        icon: Headset,
+    },
+    {
+        // The original single-shot appeals queue. Still here because the two
+        // account_appeal rows live in it; new conversations go to /admin/support.
+        title: 'Account Appeals',
         href: '/admin/tickets',
         icon: Ticket,
     },

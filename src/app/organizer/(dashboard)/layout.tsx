@@ -6,6 +6,7 @@ import { Briefcase } from 'lucide-react'
 import { getAuthUser, getPartner, getUserRole } from '@/lib/auth/cached'
 import type { UserRole } from '@/lib/auth/cached'
 import { OrganizerSidebar } from '@/components/organizer/organizer-sidebar'
+import { SupportWidget } from '@/components/support/support-widget'
 
 // Role-based nav visibility matrix
 const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
@@ -105,6 +106,12 @@ export default async function OrganizerLayout({
                     {children}
                 </main>
             </div>
+
+            {/* Support is available from anywhere in the dashboard, which is the
+                point: the moment an organizer needs help is the moment they are
+                already stuck on a specific screen, not a moment later on a
+                contact page they have to go find. */}
+            <SupportWidget />
         </div>
     )
 }

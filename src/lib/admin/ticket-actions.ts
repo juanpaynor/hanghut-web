@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { banUser } from './actions'
+import { notifyAppealDecision } from './appeal-notify'
 
 export interface TicketActionResponse {
     success: boolean
@@ -31,6 +32,10 @@ export async function respondToTicket(
             .eq('id', ticketId)
 
         if (error) throw error
+
+        // The reply has to leave the building. A suspended user cannot open the
+        // app to read admin_response — email is the only channel they have.
+        void notifyAppealDecision(ticketId)
 
         return {
             success: true,
@@ -77,6 +82,8 @@ export async function approveAppeal(
 
         if (error) throw error
 
+        void notifyAppealDecision(ticketId)
+
         return {
             success: true,
             message: 'Appeal approved and user reactivated',
@@ -114,6 +121,10 @@ export async function denyAppeal(
             .eq('id', ticketId)
 
         if (error) throw error
+
+        // A denial especially: this is the one the person most needs to hear,
+        // and the one they will otherwise wait on forever.
+        void notifyAppealDecision(ticketId)
 
         return {
             success: true,
