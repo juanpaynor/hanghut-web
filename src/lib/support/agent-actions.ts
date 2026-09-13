@@ -256,3 +256,59 @@ export async function claimThread(ticketId: string) {
     if (!user) return { error: 'Not signed in' as const }
     return assignThread(ticketId, user.id)
 }
+
+export interface TicketContext {
+    person: {
+        id: string
+        display_name: string | null
+        username: string | null
+        email: string | null
+        status: string | null
+        member_since: string
+    } | null
+    partner: {
+        id: string
+        business_name: string | null
+        slug: string | null
+        kyc_status: string | null
+        use_main_wallet: boolean
+        has_xendit: boolean
+        since: string
+        events: number
+    } | null
+    payouts: {
+        last: { amount: number; status: string; created_at: string; completed_at: string | null } | null
+        in_flight: number
+        paid_out_total: number
+    } | null
+    recent_purchases: Array<{
+        event: string
+        quantity: number
+        total: number
+        status: string
+        method: string | null
+        created_at: string
+    }>
+}
+
+/**
+ * Everything an agent needs before answering, in one call.
+ *
+ * The console used to show a name and an email, which answers none of the
+ * questions people actually raise. "Where is my payout" needs to know their
+ * last payout was rejected in March; "my ticket never arrived" needs their last
+ * five purchases. Without this an agent opens a second tab and reconstructs it
+ * by hand, which is how a one-line answer takes ten minutes and how two agents
+ * give two different answers to the same question.
+ */
+export async function getTicketContext(ticketId: string): Promise<TicketContext | null> {
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('get_support_ticket_context', {
+        p_ticket_id: ticketId,
+    })
+    if (error) {
+        console.error('getTicketContext:', error.message)
+        return null
+    }
+    return data as TicketContext
+}

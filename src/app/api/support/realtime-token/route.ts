@@ -32,7 +32,13 @@ import { supportChannel, supportChannelPattern } from '@/lib/support/realtime'
  */
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url)
-    const ticketId = searchParams.get('ticketId')
+    // Repeatable, because a client watching several threads needs ONE token
+    // covering all of them. Asking for a token per thread would be a round trip
+    // per row; asking for one token and then attaching to channels it does not
+    // cover is worse still — Ably refuses the connection outright, so a single
+    // uncovered channel silently kills every subscription on that stream.
+    const ticketIds = searchParams.getAll('ticketId').slice(0, 40)
+    const ticketId = ticketIds[0] ?? null
 
     // Bearer wins when present; otherwise fall back to the cookie session.
     const bearer = req.headers.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]
@@ -63,13 +69,29 @@ export async function GET(req: Request) {
         if (!ticketId) {
             return NextResponse.json({ error: 'ticketId required' }, { status: 400 })
         }
-        const { data: canView, error } = await supabase.rpc('can_view_support_ticket', { p_ticket_id: ticketId })
-        if (error || canView !== true) {
+
+        // Every id is checked, one by one, against the same predicate RLS uses.
+        // No short-cut for "they asked for several so they probably own them".
+        const allowed = await Promise.all(
+            ticketIds.map(async (id) => {
+                const { data, error } = await supabase.rpc('can_view_support_ticket', { p_ticket_id: id })
+                return !error && data === true ? id : null
+            }),
+        )
+        const visible = allowed.filter((id): id is string => id !== null)
+
+        if (visible.length === 0) {
             // 404, not 403: a distinguishable "forbidden" would confirm that a
             // given ticket id exists to anyone who guesses one.
             return NextResponse.json({ error: 'not found' }, { status: 404 })
         }
-        capability = { [supportChannel(ticketId)]: ['subscribe'] }
+
+        // Threads they cannot see are dropped rather than failing the request —
+        // one stale id in a client's list must not cost them live updates on
+        // the rest.
+        capability = Object.fromEntries(
+            visible.map((id) => [supportChannel(id), ['subscribe'] as ['subscribe']]),
+        )
     }
 
     const key = process.env.ABLY_API_KEY

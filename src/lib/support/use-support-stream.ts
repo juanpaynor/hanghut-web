@@ -57,9 +57,14 @@ export function useSupportStream(
 
         void (async () => {
             try {
+                // Ask for EVERY thread we are about to attach to. A token that
+                // covers fewer channels than the stream opens is refused by
+                // Ably as a whole, so an under-scoped token does not degrade —
+                // it takes the entire subscription down silently.
                 const url = agent
                     ? '/api/support/realtime-token'
-                    : `/api/support/realtime-token?ticketId=${encodeURIComponent(key.split(',')[0])}`
+                    : '/api/support/realtime-token?'
+                      + key.split(',').map((id) => `ticketId=${encodeURIComponent(id)}`).join('&')
                 const res = await fetch(url)
                 if (!res.ok) {
                     // This transport swallows everything by design, which makes

@@ -38,11 +38,15 @@ export default async function AdminSupportPage() {
 
     const [{ user }, inbox] = await Promise.all([getAuthUser(), listAgentThreads('inbox')])
 
+    // The console owns the viewport. A page that scrolls as a whole would put
+    // the composer below the fold on a long thread — the one control an agent
+    // needs on every single screen — so the height is fixed here and each pane
+    // inside scrolls on its own.
     return (
-        <div className="p-8">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold tracking-tight">Support</h1>
-                <p className="mt-1 text-sm text-slate-500">
+        <div className="flex h-screen flex-col overflow-hidden">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-slate-200 bg-white px-6 py-3.5">
+                <h1 className="text-xl font-semibold tracking-tight">Support</h1>
+                <p className="text-[13px] text-slate-500">
                     Organizer and user conversations. Replies reach them by email too.
                 </p>
             </div>
