@@ -11,6 +11,8 @@ const VALID_TYPES = new Set([
     'share',
     'add_to_calendar',
     'checkout_started',
+    'app_prompt_shown',
+    'app_prompt_tap',
 ])
 
 /**

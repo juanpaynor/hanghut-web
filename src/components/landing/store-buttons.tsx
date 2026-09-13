@@ -6,6 +6,13 @@ interface StoreButtonsProps {
   /** "dark" = black buttons (on light bg), "light" = white buttons (on dark bg) */
   variant?: "dark" | "light";
   className?: string;
+  /**
+   * Fired in addition to the referral beacon when either store button is
+   * tapped. Lets a specific placement measure its OWN conversion — the beacon
+   * above only fires for visitors who arrived on a /r/<code> link, so without
+   * this a placement outside that funnel is invisible.
+   */
+  onTap?: () => void;
 }
 
 /**
@@ -28,7 +35,12 @@ function beaconAppClick() {
   }
 }
 
-export function StoreButtons({ variant = "dark", className = "" }: StoreButtonsProps) {
+export function StoreButtons({ variant = "dark", className = "", onTap }: StoreButtonsProps) {
+  const handleTap = () => {
+    beaconAppClick();
+    try { onTap?.(); } catch { /* a broken metric must never eat the tap */ }
+  };
+
   const bg = variant === "dark" ? "bg-white text-black hover:bg-neutral-100 border border-neutral-200" : "bg-white text-black hover:bg-neutral-100";
   const border = variant === "dark" ? "" : "border border-white/30";
 
@@ -39,7 +51,7 @@ export function StoreButtons({ variant = "dark", className = "" }: StoreButtonsP
         href="https://apps.apple.com/ph/app/hanghut-social-hangouts/id6764278827"
         target="_blank"
         rel="noopener noreferrer"
-        onClick={beaconAppClick}
+        onClick={handleTap}
         className={`flex items-center gap-3 px-5 py-3 rounded-xl transition-all hover:scale-105 ${bg} ${border}`}
       >
         {/* Apple logo */}
@@ -57,7 +69,7 @@ export function StoreButtons({ variant = "dark", className = "" }: StoreButtonsP
         href="https://play.google.com/store/apps/details?id=com.hanghut.hanghut&pcampaignid=web_share"
         target="_blank"
         rel="noopener noreferrer"
-        onClick={beaconAppClick}
+        onClick={handleTap}
         className={`flex items-center gap-3 px-5 py-3 rounded-xl transition-all hover:scale-105 ${bg} ${border}`}
       >
         {/* Play Store icon */}

@@ -10,6 +10,10 @@ export type InteractionType =
     | 'share'
     | 'add_to_calendar'
     | 'checkout_started'
+    // Guest-checkout app prompt. Both halves are needed: 'shown' is the
+    // denominator, without which a tap count cannot say whether it works.
+    | 'app_prompt_shown'
+    | 'app_prompt_tap'
 
 const SESSION_KEY = 'hh_session_id'
 

@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { trackEventInteraction } from '@/lib/analytics/track-event'
+import { JoinHangHutPrompt } from '@/components/checkout/join-hanghut-prompt'
 import { getStoredAttribution } from '@/lib/tracking'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -699,6 +700,12 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                         )}
                     </CardContent>
                 </Card>
+
+                {/* Join prompt — guests only, never for someone already signed in,
+                    and deliberately placed AFTER their details and BEFORE the pay
+                    card: visible while they are still reading, gone from the path
+                    once they are paying. */}
+                {!effectiveUser && <JoinHangHutPrompt eventId={event.id} />}
 
                 {/* Registration Questions — hidden when the buyer already answered
                     them in the pre-checkout Register step (approvedRegistrationId set) */}
