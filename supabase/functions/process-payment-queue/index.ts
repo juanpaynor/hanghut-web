@@ -19,7 +19,7 @@
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.0'
 
 const QUEUE_NAME = 'payment_side_effects'
 const BATCH_SIZE = 20
@@ -147,8 +147,32 @@ serve(async (req) => {
         }
 
         case 'send_experience_email': {
+          const body: any = { ...(payload.data ?? {}) }
+          // Resolve the hosted pass link here, not in the producers. Bookings are
+          // created from several places (the paid checkout webhook, the host's
+          // manual booking RPC) and only this consumer holds APP_URL — the same
+          // split that made box-office ticket emails ship a relative /t/<token>
+          // that 404'd. One lookup here covers every producer, including ones
+          // written later.
+          try {
+            const appUrl = (Deno.env.get('APP_URL') || 'https://hanghut.com').replace(/\/+$/, '')
+            if (!body.booking_url && body.intent_id) {
+              const { data: epi } = await supabase
+                .from('experience_purchase_intents')
+                .select('access_token')
+                .eq('id', body.intent_id)
+                .maybeSingle()
+              if (epi?.access_token) {
+                body.booking_url = `${appUrl}/x/${epi.access_token}`
+              }
+            }
+          } catch (e) {
+            // The confirmation still has the date, venue, host and total. A
+            // missing link is worse email, not a missing one.
+            console.warn('⚠️ Could not resolve booking_url (sending without link):', e)
+          }
           const { error } = await supabase.functions.invoke('send-experience-confirmation', {
-            body: payload.data,
+            body,
           })
           if (error) throw new Error(`send-experience-confirmation failed: ${error.message}`)
           console.log(`✅ Experience email sent to ${payload.data?.email}`)

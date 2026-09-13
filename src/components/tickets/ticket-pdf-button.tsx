@@ -17,6 +17,15 @@ interface TicketPdfButtonProps {
     venue: string | null
     organizer: string | null
     tickets: PdfTicket[]
+    /**
+     * Wording of the line along the foot of each page, and the suffix on the
+     * downloaded filename. Both default to the events wording so every existing
+     * caller renders byte-identically; experiences pass their own, because a
+     * pass is handed to a host, not presented at an entrance, and is not
+     * single-use in the way a ticket is.
+     */
+    footerNote?: string
+    fileSuffix?: string
 }
 
 /**
@@ -25,7 +34,15 @@ interface TicketPdfButtonProps {
  * purchase time. The QR is rasterized from a hidden QRCodeCanvas (the same
  * payload the scanner reads), so the printed code scans identically.
  */
-export function TicketPdfButton({ eventTitle, eventDate, venue, organizer, tickets }: TicketPdfButtonProps) {
+export function TicketPdfButton({
+    eventTitle,
+    eventDate,
+    venue,
+    organizer,
+    tickets,
+    footerNote = 'Single use · Present this at the entrance',
+    fileSuffix = 'tickets',
+}: TicketPdfButtonProps) {
     const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([])
     const [busy, setBusy] = useState(false)
 
@@ -81,11 +98,11 @@ export function TicketPdfButton({ eventTitle, eventDate, venue, organizer, ticke
 
                 doc.setFontSize(9)
                 doc.setTextColor(148, 163, 184)
-                doc.text('Single use · Present this at the entrance', cx, pageH - 18, { align: 'center' })
+                doc.text(footerNote, cx, pageH - 18, { align: 'center' })
             })
 
-            const safe = eventTitle.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'tickets'
-            doc.save(`${safe}-tickets.pdf`)
+            const safe = eventTitle.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || fileSuffix
+            doc.save(`${safe}-${fileSuffix}.pdf`)
         } finally {
             setBusy(false)
         }

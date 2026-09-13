@@ -112,7 +112,10 @@ export async function middleware(request: NextRequest) {
     }
 
     // 3. Skip auth overhead for public-only routes
-    const publicPrefixes = ['/events', '/terms', '/privacy', '/how-it-works', '/embed', '/checkout', '/t']
+    // '/x' is the hosted experience pass, the experiences twin of '/t'. Both are
+    // addressed by an unguessable token and render with the anon key, so an auth
+    // round trip here would buy nothing and undo their ISR.
+    const publicPrefixes = ['/events', '/terms', '/privacy', '/how-it-works', '/embed', '/checkout', '/t', '/x']
     if (publicPrefixes.some(p => url.pathname.startsWith(p))) {
         return NextResponse.next()
     }

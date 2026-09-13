@@ -1,6 +1,20 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1'
-import { encode as base64Encode } from 'https://deno.land/std@0.168.0/encoding/base64.ts'
+
+/**
+ * Experience booking confirmation.
+ *
+ * REWRITTEN to the same delivery model as send-ticket-email. This function used
+ * to build a pass PDF with pdf-lib on every booking and attach it, fetching the
+ * QR bitmap from api.qrserver.com — so a paid booking depended on a third-party
+ * image service at send time, the guest's booking id was handed to that service,
+ * and anyone who lost the attachment had no way back to their pass because the
+ * email linked nowhere.
+ *
+ * Now the pass lives at /x/{access_token}, exactly as a ticket lives at
+ * /t/{access_token}: the email links to it, the QR renders in the browser, and
+ * the PDF is generated on demand, client-side, only if the guest asks for one.
+ * The only attachment left is the calendar invite.
+ */
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 
@@ -23,28 +37,27 @@ interface ExperienceEmailRequest {
   payment_method?: string
   intent_id: string
   cover_image_url?: string
-}
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' })
-  } catch { return iso }
-}
-
-function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Manila' })
-  } catch { return '' }
+  /**
+   * Hosted pass page (/x/{access_token}) — the primary delivery path, resolved
+   * by process-payment-queue from intent_id. Optional so a producer that has
+   * not been redeployed still sends a valid email, just without the link.
+   */
+  booking_url?: string
 }
 
 function formatDateFull(iso: string): string {
   try {
-    return new Date(iso).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Manila' })
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return iso
+    return d.toLocaleString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Manila',
+    })
   } catch { return iso }
 }
 
 function formatCurrency(amount: number): string {
-  return `₱${Number(amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
+  return `PHP ${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
 }
 
 // Calendar invite — parity with the events ticket email. Falls back to a 2h
@@ -61,127 +74,36 @@ function buildIcs(data: ExperienceEmailRequest) {
   } catch { return null }
 }
 
-async function generatePassPdf(data: ExperienceEmailRequest): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.create()
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-
-  const W = 226, H = 580, PAD = 18
-  const black = rgb(0.08, 0.08, 0.08), gray = rgb(0.55, 0.55, 0.55)
-  const lightGray = rgb(0.88, 0.88, 0.88), indigo = rgb(0.31, 0.27, 0.9)
-
-  let coverImg: any = null
-  if (data.cover_image_url) {
-    try {
-      const res = await fetch(data.cover_image_url)
-      const buf = await res.arrayBuffer()
-      try { coverImg = await pdfDoc.embedJpg(buf) } catch { coverImg = await pdfDoc.embedPng(buf) }
-    } catch {}
-  }
-
-  const page = pdfDoc.addPage([W, H])
-
-  const imgH = 130
-  if (coverImg) {
-    page.drawImage(coverImg, { x: 0, y: H - imgH, width: W, height: imgH })
-    page.drawRectangle({ x: 0, y: H - imgH, width: W, height: imgH, color: rgb(0,0,0), opacity: 0.38 })
-  } else {
-    page.drawRectangle({ x: 0, y: H - imgH, width: W, height: imgH, color: indigo })
-  }
-  page.drawText('EXPERIENCE PASS', { x: PAD, y: H - imgH + 12, size: 7, font: boldFont, color: rgb(1,1,1), opacity: 0.8 })
-
-  let y = H - imgH - 20
-
-  const titleSize = data.experience_title.length > 28 ? 11 : 13
-  page.drawText(data.experience_title, { x: PAD, y, size: titleSize, font: boldFont, color: black, maxWidth: W - PAD * 2 })
-  y -= titleSize + 6
-
-  page.drawText('DATE & TIME', { x: PAD, y, size: 6.5, font: boldFont, color: gray })
-  y -= 11
-  page.drawText(formatDate(data.experience_date), { x: PAD, y, size: 9, font, color: black, maxWidth: W - PAD * 2 })
-  y -= 12
-  page.drawText(formatTime(data.experience_date), { x: PAD, y, size: 9, font: boldFont, color: black })
-  y -= 18
-
-  page.drawText('VENUE', { x: PAD, y, size: 6.5, font: boldFont, color: gray })
-  y -= 11
-  page.drawText(data.experience_venue, { x: PAD, y, size: 9, font, color: black, maxWidth: W - PAD * 2 })
-  y -= 18
-
-  page.drawText('HOST', { x: PAD, y, size: 6.5, font: boldFont, color: gray })
-  y -= 11
-  page.drawText(data.host_name, { x: PAD, y, size: 9, font, color: black })
-  y -= 18
-
-  page.drawText('GUEST', { x: PAD, y, size: 6.5, font: boldFont, color: gray })
-  y -= 11
-  page.drawText((data.name || data.email).toUpperCase(), { x: PAD, y, size: 9, font: boldFont, color: black, maxWidth: W - PAD * 2 })
-  if (data.quantity > 1) {
-    y -= 12
-    page.drawText(`x${data.quantity} guests`, { x: PAD, y, size: 8, font, color: gray })
-  }
-  y -= 22
-
-  for (let x = 0; x < W; x += 8) {
-    page.drawLine({ start: { x, y }, end: { x: x + 4.5, y }, thickness: 0.8, color: lightGray })
-  }
-  y -= 18
-
-  const qrSize = 148, qrX = (W - qrSize) / 2
-  try {
-    const qrRes = await fetch(`https://api.qrserver.com/v1/create-qr-code/?size=500x500&format=png&margin=1&data=${encodeURIComponent(data.intent_id)}`)
-    const qrImg = await pdfDoc.embedPng(await qrRes.arrayBuffer())
-    page.drawImage(qrImg, { x: qrX, y: y - qrSize, width: qrSize, height: qrSize })
-  } catch {
-    page.drawRectangle({ x: qrX, y: y - qrSize, width: qrSize, height: qrSize, borderColor: lightGray, borderWidth: 1 })
-  }
-  y -= qrSize + 10
-
-  const scanLabel = 'Show to host for check-in'
-  const scanW = font.widthOfTextAtSize(scanLabel, 7)
-  page.drawText(scanLabel, { x: (W - scanW) / 2, y, size: 7, font, color: gray })
-  y -= 13
-
-  const ref = `Ref: ${data.transaction_ref.slice(0, 12)}`, refW = font.widthOfTextAtSize(ref, 7)
-  page.drawText(ref, { x: (W - refW) / 2, y, size: 7, font, color: lightGray })
-
-  const brand = 'HANGHUT', bW = boldFont.widthOfTextAtSize(brand, 8)
-  page.drawText(brand, { x: (W - bW) / 2, y: 10, size: 8, font: boldFont, color: indigo })
-
-  return pdfDoc.save()
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   try {
     const data: ExperienceEmailRequest = await req.json()
     console.log(`Experience confirmation -> ${data.email} | ${data.experience_title}`)
 
-    let passB64 = ''
-    try {
-      passB64 = base64Encode(await generatePassPdf(data))
-    } catch (e: any) {
-      return new Response(JSON.stringify({ error: `PDF failed: ${e.message}` }), { status: 500, headers: corsHeaders })
-    }
+    const guestsLine = data.quantity > 1 ? `${data.quantity} guests` : '1 guest'
 
-    // Same layout as the events ticket email (send-ticket-email): dark header,
-    // cover, green "Payment Successful" box, footer. Experience-specific: a Host
-    // row, and the QR is delivered as the attached pass (experiences have no
-    // hosted /t/{token} page), so the CTA area points at the attached pass.
-    const paymentMethodLine = data.payment_method
-      ? `<p style="margin:2px 0 0;color:#15803d">${data.payment_method}</p>`
+    // Same shape as send-ticket-email: dark header, cover, green payment box,
+    // one CTA, footer. The experience-specific rows are Host and party size.
+    const ctaButton = data.booking_url
+      ? `<div style="text-align:center;margin:28px 0 8px"><a href="${data.booking_url}" style="display:inline-block;background:#6366f1;color:#fff;text-decoration:none;font-weight:600;padding:14px 32px;border-radius:8px;font-size:16px">View Your Pass</a></div><p style="text-align:center;color:#94a3b8;font-size:12px;margin:0 0 8px">Open this on your phone when you arrive — a screenshot works too.</p>`
       : ''
+    const detailCopy = data.booking_url
+      ? `<p style="margin-top:20px;text-align:center;color:#475569">Your pass for <strong>${guestsLine}</strong> with its QR code is on the page above. You can also download a PDF copy from there.</p>`
+      : `<p style="margin-top:24px;text-align:center;color:#475569">Your booking for <strong>${guestsLine}</strong> is confirmed. Log in to your account to view your pass.</p>`
     const coverBlock = data.cover_image_url
       ? `<img src="${data.cover_image_url}" style="width:100%;height:200px;object-fit:cover;border-radius:8px;margin-bottom:20px" alt="">`
       : ''
-    const guestsLine = data.quantity > 1 ? ` · ${data.quantity} guests` : ''
+    const paymentMethodLine = data.payment_method
+      ? `<p style="margin:2px 0 0;color:#15803d">${data.payment_method}</p>`
+      : ''
 
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="font-family:Arial,sans-serif;background:#f3f4f6;padding:40px 0;margin:0"><div style="background:#fff;max-width:600px;margin:0 auto;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.05)"><div style="background:#0f172a;padding:40px 20px;text-align:center"><h1 style="color:#fff;margin:0;font-size:24px">Your Booking is Confirmed</h1><p style="color:#94a3b8;margin:10px 0 0;font-size:16px">We can't wait to host you!</p></div><div style="padding:40px 30px">${coverBlock}<h2 style="color:#0f172a;margin:0 0 20px">${data.experience_title}</h2><p><strong>Date:</strong> ${formatDateFull(data.experience_date)}</p><p><strong>Location:</strong> ${data.experience_venue}</p><p><strong>Host:</strong> ${data.host_name}</p><div style="background:#f0fdf4;border:1px solid #dcfce7;border-radius:8px;padding:16px;margin-top:10px"><p style="margin:0;color:#166534;font-weight:600">Payment Successful</p><p style="margin:2px 0 0;color:#15803d">Total Paid: ${formatCurrency(data.total_amount)}</p>${paymentMethodLine}</div><div style="margin-top:24px;padding:18px;background:#eef2ff;border:1px solid #e0e7ff;border-radius:8px;text-align:center"><p style="margin:0;color:#3730a3;font-weight:600;font-size:15px">Your Experience Pass is attached</p><p style="margin:6px 0 0;color:#4f46e5;font-size:13px">Show the QR code to your host for check-in${guestsLine}. A screenshot works too.</p></div></div><div style="background:#f8fafc;padding:20px;text-align:center;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0"><p>Ref: ${data.transaction_ref}</p><p>&copy; ${new Date().getFullYear()} HangHut. All rights reserved.</p></div></div></body></html>`
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="font-family:Arial,sans-serif;background:#f3f4f6;padding:40px 0;margin:0"><div style="background:#fff;max-width:600px;margin:0 auto;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.05)"><div style="background:#0f172a;padding:40px 20px;text-align:center"><h1 style="color:#fff;margin:0;font-size:24px">Your Booking is Confirmed</h1><p style="color:#94a3b8;margin:10px 0 0;font-size:16px">We can't wait to host you!</p></div><div style="padding:40px 30px">${coverBlock}<h2 style="color:#0f172a;margin:0 0 20px">${data.experience_title}</h2><p><strong>Date:</strong> ${formatDateFull(data.experience_date)}</p><p><strong>Location:</strong> ${data.experience_venue}</p><p><strong>Host:</strong> ${data.host_name}</p><p><strong>Guests:</strong> ${guestsLine}</p><div style="background:#f0fdf4;border:1px solid #dcfce7;border-radius:8px;padding:16px;margin-top:10px"><p style="margin:0;color:#166534;font-weight:600">Payment Successful</p><p style="margin:2px 0 0;color:#15803d">Total Paid: ${formatCurrency(data.total_amount)}</p>${paymentMethodLine}</div>${ctaButton}${detailCopy}</div><div style="background:#f8fafc;padding:20px;text-align:center;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0"><p>Ref: ${data.transaction_ref}</p><p>&copy; ${new Date().getFullYear()} HangHut. All rights reserved.</p></div></div></body></html>`
 
     if (!RESEND_API_KEY) throw new Error('RESEND_API_KEY not configured')
 
-    const attachments: { filename: string; content: string }[] = [{ filename: 'ExperiencePass.pdf', content: passB64 }]
-    try { const ics = buildIcs(data); if (ics) attachments.push(ics) } catch {}
+    // Only the lightweight calendar invite — no per-booking PDF generation.
+    const attachments: { filename: string; content: string }[] = []
+    try { const ics = buildIcs(data); if (ics) attachments.push(ics) } catch { /* invite is optional */ }
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       const res = await fetch('https://api.resend.com/emails', {
