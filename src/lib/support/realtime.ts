@@ -32,8 +32,40 @@
  * databases can never cross-talk.
  */
 
-/** Supabase project ref from the public URL — e.g. https://<ref>.supabase.co */
+/**
+ * The Supabase project ref — the real one.
+ *
+ * Read from the anon key's `ref` claim, NOT from the URL. The obvious version
+ * of this takes the first DNS label of NEXT_PUBLIC_SUPABASE_URL, which is
+ * correct only while that URL looks like https://<ref>.supabase.co. Ours does
+ * not: it is a custom domain, so the label is "api" and every channel was
+ * named `hh:api:support:...`.
+ *
+ * That still worked, because our publisher and our subscriber derive it the
+ * same way and agree with each other. It would NOT have worked with the app:
+ * the contract we published to them says the project ref, and a client that
+ * computes the ref honestly would have subscribed to a channel nobody
+ * publishes to — silently, with no error on either side, which is the worst
+ * possible failure for a transport whose whole failure mode is "nothing
+ * arrives".
+ *
+ * The anon key is a JWT carrying `ref`, so it is the project's own statement of
+ * its identity rather than an inference from a hostname someone can change. The
+ * URL label remains the fallback for a non-JWT publishable key.
+ */
 function projectScope(): string {
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
+    const parts = key.split('.')
+    if (parts.length === 3) {
+        try {
+            const payload = JSON.parse(
+                atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
+            )
+            if (typeof payload?.ref === 'string' && payload.ref) return payload.ref
+        } catch {
+            /* fall through to the URL */
+        }
+    }
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
     const m = url.match(/^https?:\/\/([a-z0-9-]+)\./i)
     return m?.[1] ?? 'unknown'

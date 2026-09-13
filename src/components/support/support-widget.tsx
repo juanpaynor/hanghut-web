@@ -76,15 +76,37 @@ export function SupportWidget({ currentPath }: { currentPath?: string }) {
         setLoading(false)
     }, [])
 
-    // The badge is the only thing that matters while the panel is shut, so it is
-    // the only thing fetched. Once on mount, then when the panel opens.
+    // On mount we fetch the LIST, not just the count.
+    //
+    // The count alone was cheaper and was what this did, but the live
+    // subscription below needs thread ids to subscribe to — and with the panel
+    // shut there were none, so the badge could only ever move on a page reload.
+    // One indexed query capped at 50 rows per dashboard load buys a badge that
+    // is actually live, which is the only job the bubble has when it is closed.
     useEffect(() => {
-        getSupportUnreadCount().then(setUnread).catch(() => {})
-    }, [])
+        void refreshThreads()
+    }, [refreshThreads])
 
     useEffect(() => {
         if (open && view.name === 'list') void refreshThreads()
     }, [open, view.name, refreshThreads])
+
+    // Subscribe to every thread this organizer has, at the TOP level.
+    //
+    // The subscription used to live only inside an open Thread, which meant the
+    // list and the unread badge never moved on their own: a reply arriving while
+    // you were on the list, or with the bubble shut, showed up only after a page
+    // reload. The badge is the entire point of the bubble — it is the only thing
+    // telling someone support answered — so it is the last thing that should
+    // have needed a refresh.
+    //
+    // Mounted with the dashboard, so it runs whether or not the panel is open.
+    useSupportStream(
+        threads.map((t) => t.id),
+        () => {
+            void refreshThreads()
+        },
+    )
 
     return (
         <>

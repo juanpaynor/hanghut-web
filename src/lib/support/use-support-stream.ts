@@ -61,7 +61,17 @@ export function useSupportStream(
                     ? '/api/support/realtime-token'
                     : `/api/support/realtime-token?ticketId=${encodeURIComponent(key.split(',')[0])}`
                 const res = await fetch(url)
-                if (!res.ok || cancelled) return
+                if (!res.ok) {
+                    // This transport swallows everything by design, which makes
+                    // "nothing arrives" indistinguishable from "nothing
+                    // happened". One line in dev is the difference between a
+                    // five-minute diagnosis and an afternoon.
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.warn('[support realtime] token request failed:', res.status)
+                    }
+                    return
+                }
+                if (cancelled) return
                 const { token } = await res.json()
                 if (!token || cancelled) return
 
@@ -74,6 +84,12 @@ export function useSupportStream(
                     + `&channels=${encodeURIComponent(channels)}`
                     + `&accessToken=${encodeURIComponent(token)}`
                 )
+
+                stream.onerror = () => {
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.warn('[support realtime] stream error; EventSource will retry')
+                    }
+                }
 
                 stream.onmessage = (ev: MessageEvent) => {
                     try {
