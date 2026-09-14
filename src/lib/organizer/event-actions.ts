@@ -5,6 +5,13 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import { manilaLocalToISO } from '@/lib/datetime'
 
+/** A valid ISO timestamp, or null. Used for optional date columns on insert. */
+function isoOrNull(v: unknown): string | null {
+    if (typeof v !== 'string' || !v) return null
+    const t = new Date(v).getTime()
+    return Number.isNaN(t) ? null : new Date(t).toISOString()
+}
+
 /**
  * Resolve the partner whose events the current user may manage. Real owners
  * (partners.user_id) AND team members with role owner/manager qualify — team
@@ -197,6 +204,12 @@ export async function createEvent(formData: FormData) {
                                 quantity_sold: 0,
                                 is_active: true,
                                 sort_order: Number.isFinite(t.sort_order) ? t.sort_order : i,
+                                // Sales window from the wizard. Anything that is not a
+                                // parseable timestamp becomes NULL (= no boundary) rather
+                                // than a string Postgres would reject and take the whole
+                                // tier insert down with it.
+                                sales_start: isoOrNull(t.sales_start),
+                                sales_end: isoOrNull(t.sales_end),
                             }))
                     }
                 }

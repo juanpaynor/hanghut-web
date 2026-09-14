@@ -177,7 +177,9 @@ export function EventForm({
     // Ticket tiers built inline in the wizard (create only). Persisted with the
     // draft and turned into ticket_tiers rows on publish (createEvent). Existing
     // events manage tiers on their dashboard, so editing keeps the single-price fields.
-    type TierDraft = { id: string; name: string; price: string; quantity: string }
+    // sales_start/sales_end are Manila-local 'YYYY-MM-DDTHH:mm' strings (what a
+    // datetime-local input holds); converted to ISO only when the payload is built.
+    type TierDraft = { id: string; name: string; price: string; quantity: string; sales_start?: string; sales_end?: string }
     const newTierId = () => Math.random().toString(36).slice(2)
     const [tiers, setTiers] = useState<TierDraft[]>([{ id: newTierId(), name: 'General Admission', price: '0', quantity: '' }])
     const addTier = () => setTiers(t => [...t, { id: newTierId(), name: '', price: '0', quantity: '' }])
@@ -444,6 +446,8 @@ export function EventForm({
                 newErrors.tiers = 'Give each ticket type a quantity of at least 1'
             } else if (active.some(t => isNaN(parseFloat(t.price)) || parseFloat(t.price) < 0)) {
                 newErrors.tiers = 'Ticket prices must be 0 or more'
+            } else if (active.some(t => t.sales_start && t.sales_end && new Date(t.sales_start) >= new Date(t.sales_end))) {
+                newErrors.tiers = 'A ticket type\u2019s sales must open before they close'
             }
             if (isAssignedSeating && (!formData.capacity || parseInt(formData.capacity) < 1)) {
                 newErrors.capacity = 'Enter your total capacity (at least 1)'
@@ -500,6 +504,7 @@ export function EventForm({
                 if (active.length === 0) e.tiers = isAssignedSeating ? 'Add at least one price category with a name' : 'Add at least one ticket type with a name'
                 else if (!isAssignedSeating && active.some(t => !(parseInt(t.quantity) >= 1))) e.tiers = 'Give each ticket type a quantity of at least 1'
                 else if (active.some(t => isNaN(parseFloat(t.price)) || parseFloat(t.price) < 0)) e.tiers = 'Ticket prices must be 0 or more'
+                else if (active.some(t => t.sales_start && t.sales_end && new Date(t.sales_start) >= new Date(t.sales_end))) e.tiers = 'A ticket type\u2019s sales must open before they close'
                 if (isAssignedSeating && (!formData.capacity || parseInt(formData.capacity) < 1)) e.capacity = 'Enter your total capacity (at least 1)'
             }
         }
@@ -584,6 +589,8 @@ export function EventForm({
                         price: parseFloat(t.price) || 0,
                         quantity_total: parseInt(t.quantity) || 0,
                         sort_order: i,
+                        sales_start: t.sales_start ? manilaLocalToISO(t.sales_start) : null,
+                        sales_end: t.sales_end ? manilaLocalToISO(t.sales_end) : null,
                     }))
                 formDataToSend.append('tiers', JSON.stringify(tierPayload))
             }
@@ -1291,6 +1298,35 @@ export function EventForm({
                                                 )}
                                             </div>
                                         </div>
+                                        <details open={!!(t.sales_start || t.sales_end)} className="group">
+                                            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+                                                <Calendar className="h-3.5 w-3.5" />
+                                                <span className="group-open:hidden">Set a sales window (early bird, presale)</span>
+                                                <span className="hidden group-open:inline">Sales window</span>
+                                                {(t.sales_start || t.sales_end) && (
+                                                    <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">set</span>
+                                                )}
+                                            </summary>
+                                            <div className="mt-2 grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-2">
+                                                <span className="text-xs text-muted-foreground">Opens</span>
+                                                <Input
+                                                    type="datetime-local"
+                                                    aria-label="Sales open"
+                                                    value={t.sales_start ?? ''}
+                                                    onChange={(e) => updateTier(t.id, 'sales_start', e.target.value)}
+                                                />
+                                                <span className="text-xs text-muted-foreground">Closes</span>
+                                                <Input
+                                                    type="datetime-local"
+                                                    aria-label="Sales close"
+                                                    value={t.sales_end ?? ''}
+                                                    onChange={(e) => updateTier(t.id, 'sales_end', e.target.value)}
+                                                />
+                                            </div>
+                                            <p className="mt-1.5 text-[11px] text-muted-foreground">
+                                                Philippine time. Blank = sells as long as the event does.
+                                            </p>
+                                        </details>
                                     </div>
                                 ))}
                                 <Button type="button" variant="outline" onClick={addTier} className="w-full gap-1.5 border-dashed">
