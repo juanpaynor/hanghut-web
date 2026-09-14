@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { isTierOnSale, isTierVisible } from '@/lib/tickets/tier-availability'
 
 interface Tier {
     id: string
@@ -27,7 +28,7 @@ const avail = (t: Tier) => Math.max(0, (t.quantity_total ?? 0) - (t.quantity_sol
 
 export function EmbedTierSelector({ eventId, tiers, maxPerOrder = 10 }: Props) {
     const active = tiers
-        .filter((t) => t.is_active)
+        .filter((t) => isTierOnSale(t))
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.price - b.price)
     const firstAvailable = active.find((t) => avail(t) > 0)
 

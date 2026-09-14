@@ -10,8 +10,8 @@ export async function createTicketTier(eventId: string, tierData: {
     quantity_total: number
     min_per_order?: number
     max_per_order?: number
-    sales_start?: string
-    sales_end?: string
+    sales_start?: string | null
+    sales_end?: string | null
     is_active: boolean
     /** When is_active is false: show the tier greyed out instead of hiding it. */
     show_when_locked?: boolean
@@ -95,8 +95,8 @@ export async function updateTicketTier(tierId: string, tierData: {
     quantity_total?: number
     min_per_order?: number
     max_per_order?: number
-    sales_start?: string
-    sales_end?: string
+    sales_start?: string | null
+    sales_end?: string | null
     is_active?: boolean
     show_when_locked?: boolean
     lock_note?: string | null

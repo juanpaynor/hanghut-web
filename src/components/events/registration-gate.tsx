@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { ClipboardList, Clock, CheckCircle2, Loader2, Ticket } from 'lucide-react'
 import type { QuestionForForm } from '@/components/events/registration-questions-form'
+import { isTierOnSale } from '@/lib/tickets/tier-availability'
 
 interface RegistrationGateProps {
     eventId: string
@@ -72,7 +73,7 @@ export function RegistrationGate({
     rsvpLabel,
     tierDisplay,
 }: RegistrationGateProps) {
-    const activeTiers = (tiers || []).filter((t: any) => t.is_active !== false)
+    const activeTiers = (tiers || []).filter((t: any) => isTierOnSale(t))
     const isFree = activeTiers.length > 0
         ? activeTiers.every((t: any) => Number(t.price) === 0)
         : Number(ticketPrice) === 0

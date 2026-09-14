@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
-import { Calendar, MapPin, Share2, ShieldCheck, Ticket, Phone, ExternalLink } from 'lucide-react'
+import { Calendar, MapPin, Share2, ShieldCheck, Ticket, Phone, ExternalLink, AlertCircle } from 'lucide-react'
 import type { Metadata } from 'next'
 import { SeatPickerLauncher } from '@/components/events/seat-picker-launcher'
 import { EventGallery } from '@/components/events/event-gallery'
@@ -37,6 +37,7 @@ import { createClient } from '@/lib/supabase/server'
 import { isUuid } from '@/lib/slug'
 import { cache } from 'react'
 import { LoginNudge } from '@/components/shared/login-nudge'
+import { isTierOnSale, isTierVisible } from '@/lib/tickets/tier-availability'
 
 export const dynamic = 'force-dynamic' // always fresh — bg style changes show immediately
 
@@ -154,6 +155,27 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     }
 }
 
+/**
+ * What to tell a buyer whose checkout link no longer sells anything. Split by
+ * state on purpose: "opens later" is an invitation to return, "closed" is not,
+ * and showing one where the other belongs wastes the only moment we have their
+ * attention.
+ */
+const TIER_BOUNCE_COPY: Record<string, { title: string; body: string }> = {
+    scheduled: {
+        title: 'That ticket isn\u2019t on sale yet',
+        body: 'Sales for it haven\u2019t opened. Pick another ticket below, or come back when it does.',
+    },
+    closed: {
+        title: 'That ticket has sold its last',
+        body: 'Sales for it have closed \u2014 other tickets below may still be available.',
+    },
+    locked: {
+        title: 'That ticket isn\u2019t available',
+        body: 'The organizer has taken it off sale. Other tickets below may still be available.',
+    },
+}
+
 export default async function PublicEventPage({
     params,
     searchParams,
@@ -167,11 +189,16 @@ export default async function PublicEventPage({
         // need no auth gate; the draft-status relaxation below stays owner-gated.
         hh_layout?: string; hh_bg?: string; hh_theme?: string
         hh_fh?: string; hh_fb?: string; hh_cd?: string; hh_sp?: string; hh_bgimg?: string
+        /** Why checkout sent them back: 'locked' | 'scheduled' | 'closed'. */
+        tier?: string
     }>
 }) {
     const { id } = await params
     const sp = await searchParams
     const { invite: inviteToken, hh_preview } = sp
+    // Set only by the checkout bounce above, never by a buyer action, so an
+    // unrecognised value simply shows nothing rather than an odd banner.
+    const tierBounce = TIER_BOUNCE_COPY[sp.tier ?? ''] ?? null
     const isPreview = hh_preview === '1'
     let event = await getEvent(id)
 
@@ -376,7 +403,7 @@ export default async function PublicEventPage({
     let isSoldOut = ticketsRemaining <= 0
 
     // If event has active ticket tiers, also check if all tiers are sold out individually
-    const activeTiers = event.ticket_tiers?.filter((t: any) => t.is_active !== false) || []
+    const activeTiers = event.ticket_tiers?.filter((t: any) => isTierOnSale(t)) || []
     if (activeTiers.length > 0) {
         const hasAvailableTier = activeTiers.some((t: any) => t.quantity_total - t.quantity_sold > 0)
         if (!hasAvailableTier) {
@@ -1126,7 +1153,7 @@ export default async function PublicEventPage({
         const showRemaining: boolean = cfg.show_remaining ?? false
         const showSoldOut: boolean = cfg.show_sold_out ?? true
         const soldOutOf = (t: any) => Number(t.quantity_sold) >= Number(t.quantity_total)
-        let list = (event.ticket_tiers || []).filter((t: any) => t.is_active !== false)
+        let list = (event.ticket_tiers || []).filter((t: any) => isTierOnSale(t))
         if (!showSoldOut) list = list.filter((t: any) => !soldOutOf(t))
         list = list.sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0) || a.price - b.price)
         if (list.length === 0) return null
@@ -2013,6 +2040,25 @@ export default async function PublicEventPage({
             className="min-h-screen bg-background pb-20 relative"
             style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}
         >
+            {/* Bounced off an un-buyable ticket. Above everything because the
+                buyer arrived here mid-purchase and needs to know why the page
+                changed under them before they start looking around. */}
+            {tierBounce && (
+                <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/40 dark:bg-amber-950/30">
+                    <div className="mx-auto flex max-w-5xl items-start gap-3">
+                        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-500" />
+                        <div>
+                            <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                                {tierBounce.title}
+                            </p>
+                            <p className="text-sm text-amber-800/90 dark:text-amber-200/80">
+                                {tierBounce.body}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Analytics: log a page view (once per session per event) */}
             <EventViewTracker eventId={event.id} />
             {/* Attribution: unconditionally (re-)capture channel/ref on every visit,
@@ -2063,7 +2109,7 @@ export default async function PublicEventPage({
                                 '@type': 'Offer',
                                 url: `https://hanghut.com/events/${event.id}`,
                                 price: (() => {
-                                    const tiers = (event.ticket_tiers || []).filter((t: any) => t.is_active !== false)
+                                    const tiers = (event.ticket_tiers || []).filter((t: any) => isTierOnSale(t))
                                     const prices = tiers.length
                                         ? tiers.map((t: any) => Number(t.price) || 0)
                                         : [Number(event.ticket_price) || 0]

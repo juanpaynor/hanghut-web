@@ -28,6 +28,7 @@ import { createTicketTier, updateTicketTier, deleteTicketTier, uploadTierImage }
 import { updateEventTierDisplay } from '@/lib/organizer/event-actions'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { isoToManilaLocal, manilaLocalToISO } from '@/lib/datetime'
 
 interface TicketTier {
     id: string
@@ -66,6 +67,21 @@ const DISPLAY_DEFAULTS: Required<TierDisplayConfig> = {
 
 /** Preset accent swatches offered in the tier editor. */
 const ACCENT_PRESETS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#8b5cf6', '#0ea5e9']
+
+/** Eyebrow for each column of the tier dialog. */
+function SectionLabel({ title, hint }: { title: string; hint: string }) {
+    return (
+        <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+            <p className="text-sm text-muted-foreground/80">{hint}</p>
+        </div>
+    )
+}
+
+/** The required-field asterisk, styled once. */
+function Req() {
+    return <span className="text-destructive" aria-hidden>*</span>
+}
 
 interface TicketTiersManagerProps {
     eventId: string
@@ -125,6 +141,8 @@ export function TicketTiersManager({
         quantity_total: '',
         min_per_order: '1',
         max_per_order: '10',
+        sales_start: '',
+        sales_end: '',
         is_active: true,
         show_when_locked: false,
         lock_note: '',
@@ -145,6 +163,8 @@ export function TicketTiersManager({
             quantity_total: '',
             min_per_order: '1',
             max_per_order: '10',
+            sales_start: '',
+            sales_end: '',
             is_active: true,
             show_when_locked: false,
             lock_note: '',
@@ -172,6 +192,8 @@ export function TicketTiersManager({
             quantity_total: tier.quantity_total.toString(),
             min_per_order: tier.min_per_order.toString(),
             max_per_order: tier.max_per_order.toString(),
+            sales_start: isoToManilaLocal(tier.sales_start),
+            sales_end: isoToManilaLocal(tier.sales_end),
             is_active: tier.is_active,
             show_when_locked: (tier as any).show_when_locked ?? false,
             lock_note: (tier as any).lock_note ?? '',
@@ -214,6 +236,13 @@ export function TicketTiersManager({
     }
 
     const handleSubmit = async () => {
+        // A window that closes before it opens sells nothing and reads as a
+        // working configuration — catch it here rather than at the first buyer.
+        if (formData.sales_start && formData.sales_end
+            && new Date(formData.sales_start) >= new Date(formData.sales_end)) {
+            toast({ title: 'Check the sales window', description: 'Sales must open before they close.', variant: 'destructive' })
+            return
+        }
         if (!formData.name || !formData.price || !formData.quantity_total) {
             toast({
                 title: 'Missing Fields',
@@ -233,6 +262,10 @@ export function TicketTiersManager({
                 quantity_total: parseInt(formData.quantity_total),
                 min_per_order: parseInt(formData.min_per_order),
                 max_per_order: parseInt(formData.max_per_order),
+                // Empty means "no boundary", which must reach the database as
+                // NULL and not as an empty string the column would reject.
+                sales_start: formData.sales_start ? manilaLocalToISO(formData.sales_start) : null,
+                sales_end: formData.sales_end ? manilaLocalToISO(formData.sales_end) : null,
                 is_active: formData.is_active,
                 show_when_locked: formData.show_when_locked,
                 lock_note: formData.lock_note.trim() || null,
@@ -508,7 +541,7 @@ export function TicketTiersManager({
             </div>
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>
                             {editingTier ? 'Edit Ticket Tier' : 'Create Ticket Tier'}
@@ -520,299 +553,335 @@ export function TicketTiersManager({
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="grid gap-4 py-4">
-                        <div className="grid gap-2">
-                            <Label htmlFor="name">Tier Name *</Label>
-                            <Input
-                                id="name"
-                                placeholder="e.g., VIP, General Admission, Early Bird"
-                                value={formData.name}
-                                onChange={(e) =>
-                                    setFormData({ ...formData, name: e.target.value })
-                                }
-                            />
-                        </div>
+                    {/* Two columns from md: what it IS on the left, how it LOOKS on the
+                        right. Both fit ~400px tall so the dialog never scrolls on a
+                        laptop; the max-h/overflow on DialogContent is only a net for a
+                        tier with a long perks list. */}
+                    <div className="grid gap-x-8 gap-y-5 py-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
 
-                        <div className="grid gap-2">
-                            <Label htmlFor="description">Description</Label>
-                            <Textarea
-                                id="description"
-                                placeholder="e.g., Includes 2 free drinks and skip-the-line access"
-                                value={formData.description}
-                                onChange={(e) =>
-                                    setFormData({ ...formData, description: e.target.value })
-                                }
-                            />
-                        </div>
+                        {/* ── Left: details ─────────────────────────────────── */}
+                        <div className="grid min-w-0 content-start gap-5">
+                            <SectionLabel title="Details" hint="What buyers get and what it costs." />
 
-                        <div className="grid grid-cols-2 gap-4">
+                            {/* Name + on-sale. The switch belongs with the tier's
+                                identity, not at the bottom of the form like an
+                                afterthought — "General B · on sale" is one thought. */}
                             <div className="grid gap-2">
-                                <Label htmlFor="price">Price (₱) *</Label>
-                                <Input
-                                    id="price"
-                                    type="number"
-                                    step="0.01"
-                                    placeholder="0.00"
-                                    value={formData.price}
-                                    onChange={(e) =>
-                                        setFormData({ ...formData, price: e.target.value })
-                                    }
-                                />
-                                {(() => {
-                                    const p = parseFloat(formData.price) || 0
-                                    const pct = p * commissionRate
-                                    const customerPays =
-                                        p + (passFixedToCustomer ? fixedFeePerTicket : 0) + (passPercentageToCustomer ? pct : 0)
-                                    const net =
-                                        p - (passFixedToCustomer ? 0 : fixedFeePerTicket) - (passPercentageToCustomer ? 0 : pct)
-                                    return (
-                                        <div className="space-y-1">
-                                            <div className="flex justify-between text-xs text-muted-foreground">
-                                                <span>Customer Pays</span>
-                                                <span>₱{customerPays.toFixed(2)}</span>
-                                            </div>
-                                            <div className="flex justify-between text-xs text-red-600">
-                                                <span>Booking Fee (₱{fixedFeePerTicket.toFixed(2)})</span>
-                                                <span>{passFixedToCustomer ? 'Customer' : `-₱${fixedFeePerTicket.toFixed(2)}`}</span>
-                                            </div>
-                                            <div className="flex justify-between text-xs text-red-600">
-                                                <span>Commission ({(commissionRate * 100).toFixed(0)}%)</span>
-                                                <span>{passPercentageToCustomer ? 'Customer' : `-₱${pct.toFixed(2)}`}</span>
-                                            </div>
-                                            <div className="border-t border-border/50 pt-1 flex justify-between font-medium text-foreground">
-                                                <span>Net Earnings</span>
-                                                <span className="text-green-600">₱{net.toFixed(2)}</span>
-                                            </div>
-                                        </div>
-                                    )
-                                })()}
-                            </div>
-
-                            <div className="grid gap-2">
-                                <Label htmlFor="quantity">Total Quantity *</Label>
-                                <Input
-                                    id="quantity"
-                                    type="number"
-                                    placeholder="100"
-                                    value={formData.quantity_total}
-                                    onChange={(e) =>
-                                        setFormData({ ...formData, quantity_total: e.target.value })
-                                    }
-                                />
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="grid gap-2">
-                                <Label htmlFor="min">Min Per Order</Label>
-                                <Input
-                                    id="min"
-                                    type="number"
-                                    value={formData.min_per_order}
-                                    onChange={(e) =>
-                                        setFormData({ ...formData, min_per_order: e.target.value })
-                                    }
-                                />
-                            </div>
-
-                            <div className="grid gap-2">
-                                <Label htmlFor="max">Max Per Order</Label>
-                                <Input
-                                    id="max"
-                                    type="number"
-                                    value={formData.max_per_order}
-                                    onChange={(e) =>
-                                        setFormData({ ...formData, max_per_order: e.target.value })
-                                    }
-                                />
-                            </div>
-                        </div>
-
-                        <Separator />
-
-                        {/* ── Presentation ─────────────────────────────────────── */}
-                        <div className="space-y-1">
-                            <Label className="text-base">Presentation</Label>
-                            <p className="text-sm text-muted-foreground">How this tier looks to buyers on the event page.</p>
-                        </div>
-
-                        {/* Tier image */}
-                        <div className="grid gap-2">
-                            <Label>Tier image</Label>
-                            <p className="text-xs text-muted-foreground">Optional. Shown on the tier card — e.g. a seating view, artist photo, or what the tier includes.</p>
-                            {formData.image_url ? (
-                                <div className="relative w-full max-w-xs overflow-hidden rounded-lg border">
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={formData.image_url} alt="Tier" className="h-36 w-full object-cover" />
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData(prev => ({ ...prev, image_url: '' }))}
-                                        className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white transition-colors hover:bg-black/80"
-                                        aria-label="Remove image"
-                                    >
-                                        <X className="h-3.5 w-3.5" />
-                                    </button>
-                                </div>
-                            ) : (
-                                <label className="flex h-28 w-full max-w-xs cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-muted-foreground transition-colors hover:bg-muted/40">
-                                    {uploadingImage ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
-                                    <span className="text-xs">{uploadingImage ? 'Uploading…' : 'Upload image'}</span>
-                                    <span className="text-[10px] text-muted-foreground/70">PNG or JPG, up to 5MB</span>
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        disabled={uploadingImage}
-                                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = '' }}
-                                    />
-                                </label>
-                            )}
-                        </div>
-
-                        {/* Perks */}
-                        <div className="grid gap-2">
-                            <Label>What&apos;s included</Label>
-                            <p className="text-xs text-muted-foreground">Short bullets shown on the tier card.</p>
-                            {formData.perks.length > 0 && (
-                                <div className="flex flex-wrap gap-2">
-                                    {formData.perks.map((perk, i) => (
-                                        <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-sm">
-                                            <Check className="h-3 w-3 text-green-600" />
-                                            {perk}
-                                            <button type="button" onClick={() => removePerk(i)} className="text-muted-foreground hover:text-foreground">
-                                                <X className="h-3 w-3" />
-                                            </button>
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="name">Tier name <Req /></Label>
+                                    <label htmlFor="active" className="flex cursor-pointer items-center gap-2 text-sm">
+                                        <span className={cn('font-medium', formData.is_active ? 'text-foreground' : 'text-muted-foreground')}>
+                                            {formData.is_active ? 'On sale' : 'Off sale'}
                                         </span>
-                                    ))}
+                                        <Switch
+                                            id="active"
+                                            checked={formData.is_active}
+                                            onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                                        />
+                                    </label>
                                 </div>
-                            )}
-                            <div className="flex gap-2">
                                 <Input
-                                    placeholder="e.g., Front-row seating"
-                                    value={perkDraft}
-                                    onChange={(e) => setPerkDraft(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPerk() } }}
-                                />
-                                <Button type="button" variant="outline" onClick={addPerk}>Add</Button>
-                            </div>
-                        </div>
-
-                        {/* Featured + badge */}
-                        <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                                <Label htmlFor="highlight">Feature this tier</Label>
-                                <p className="text-sm text-muted-foreground">Visually emphasize it on the page.</p>
-                            </div>
-                            <Switch
-                                id="highlight"
-                                checked={formData.highlight}
-                                onCheckedChange={(checked) => setFormData({ ...formData, highlight: checked })}
-                            />
-                        </div>
-
-                        <div className="grid gap-2">
-                            <Label htmlFor="badge">Badge label</Label>
-                            <Input
-                                id="badge"
-                                placeholder="e.g., Most Popular, Best Value"
-                                value={formData.badge_label}
-                                maxLength={24}
-                                onChange={(e) => setFormData({ ...formData, badge_label: e.target.value })}
-                            />
-                        </div>
-
-                        {/* Accent color */}
-                        <div className="grid gap-2">
-                            <Label>Accent color</Label>
-                            <div className="flex items-center gap-2 flex-wrap">
-                                {ACCENT_PRESETS.map(c => (
-                                    <button
-                                        key={c}
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, accent_color: c })}
-                                        className={cn(
-                                            'h-7 w-7 rounded-full border-2 transition-transform hover:scale-110',
-                                            formData.accent_color === c ? 'border-foreground' : 'border-transparent'
-                                        )}
-                                        style={{ backgroundColor: c }}
-                                        aria-label={`Accent ${c}`}
-                                    />
-                                ))}
-                                <input
-                                    type="color"
-                                    value={formData.accent_color || '#000000'}
-                                    onChange={(e) => setFormData({ ...formData, accent_color: e.target.value })}
-                                    className="h-7 w-9 rounded border bg-transparent p-0.5 cursor-pointer"
-                                    aria-label="Custom accent color"
-                                />
-                                {formData.accent_color && (
-                                    <Button type="button" variant="ghost" size="sm" onClick={() => setFormData({ ...formData, accent_color: '' })}>
-                                        Clear
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
-
-                        <Separator />
-
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <Label htmlFor="active">On sale</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Turn off to stop this tier selling. Buyers can&apos;t check out
-                                        with it either way.
-                                    </p>
-                                </div>
-                                <Switch
-                                    id="active"
-                                    checked={formData.is_active}
-                                    onCheckedChange={(checked) =>
-                                        setFormData({ ...formData, is_active: checked })
-                                    }
+                                    id="name"
+                                    placeholder="e.g., VIP, General Admission, Early Bird"
+                                    value={formData.name}
+                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 />
                             </div>
 
-                            {/* Only meaningful while locked — hidden otherwise so the
+                            {/* Only meaningful while off sale — hidden otherwise so the
                                 dialog doesn't ask about a state that isn't in play. */}
                             {!formData.is_active && (
-                                <div className="space-y-3 rounded-lg border bg-muted/40 p-3">
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="space-y-0.5">
-                                            <Label htmlFor="show_when_locked">Still show it on the event page</Label>
-                                            <p className="text-sm text-muted-foreground">
-                                                Greyed out and unbuyable, instead of disappearing.
-                                            </p>
-                                        </div>
+                                <div className="grid gap-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/40 dark:bg-amber-950/20">
+                                    <label htmlFor="show_when_locked" className="flex cursor-pointer items-center justify-between gap-4">
+                                        <span className="text-sm">
+                                            <span className="font-medium">Still show it on the event page</span>
+                                            <span className="block text-xs text-muted-foreground">Greyed out and unbuyable, instead of disappearing.</span>
+                                        </span>
                                         <Switch
                                             id="show_when_locked"
                                             checked={formData.show_when_locked}
-                                            onCheckedChange={(checked) =>
-                                                setFormData({ ...formData, show_when_locked: checked })
-                                            }
+                                            onCheckedChange={(checked) => setFormData({ ...formData, show_when_locked: checked })}
                                         />
-                                    </div>
-
+                                    </label>
                                     {formData.show_when_locked && (
-                                        <div className="space-y-1.5">
-                                            <Label htmlFor="lock_note">Note for buyers</Label>
-                                            <Input
-                                                id="lock_note"
-                                                value={formData.lock_note}
-                                                maxLength={80}
-                                                placeholder="e.g. Opens Friday 6PM"
-                                                onChange={(e) =>
-                                                    setFormData({ ...formData, lock_note: e.target.value })
-                                                }
-                                            />
-                                            <p className="text-[11px] text-muted-foreground">
-                                                Shown on the greyed-out tier. Leave blank for a plain
-                                                &ldquo;Not on sale&rdquo; label.
-                                            </p>
-                                        </div>
+                                        <Input
+                                            id="lock_note"
+                                            value={formData.lock_note}
+                                            maxLength={80}
+                                            placeholder="Note for buyers, e.g. Opens Friday 6PM"
+                                            onChange={(e) => setFormData({ ...formData, lock_note: e.target.value })}
+                                        />
                                     )}
                                 </div>
                             )}
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="description">Description</Label>
+                                <Textarea
+                                    id="description"
+                                    rows={2}
+                                    className="resize-none"
+                                    placeholder="e.g., Includes 2 free drinks and skip-the-line access"
+                                    value={formData.description}
+                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                />
+                            </div>
+
+                            {/* Money + inventory on one row. Min/max are one control:
+                                a range, not two unrelated numbers. */}
+                            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)] gap-3">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="price">Price <Req /></Label>
+                                    <div className="relative">
+                                        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">₱</span>
+                                        <Input
+                                            id="price"
+                                            type="number"
+                                            step="0.01"
+                                            placeholder="0.00"
+                                            className="pl-7"
+                                            value={formData.price}
+                                            onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="quantity">Quantity <Req /></Label>
+                                    <Input
+                                        id="quantity"
+                                        type="number"
+                                        placeholder="100"
+                                        value={formData.quantity_total}
+                                        onChange={(e) => setFormData({ ...formData, quantity_total: e.target.value })}
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="min">Per order</Label>
+                                    <div className="flex min-w-0 items-center gap-1.5">
+                                        <Input
+                                            id="min"
+                                            type="number"
+                                            className="min-w-0"
+                                            aria-label="Minimum per order"
+                                            value={formData.min_per_order}
+                                            onChange={(e) => setFormData({ ...formData, min_per_order: e.target.value })}
+                                        />
+                                        <span className="text-sm text-muted-foreground">–</span>
+                                        <Input
+                                            id="max"
+                                            type="number"
+                                            className="min-w-0"
+                                            aria-label="Maximum per order"
+                                            value={formData.max_per_order}
+                                            onChange={(e) => setFormData({ ...formData, max_per_order: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* The fee maths, as a computed result rather than
+                                floating text: what the buyer pays, what we keep,
+                                what the organizer actually gets. */}
+                            {(() => {
+                                const p = parseFloat(formData.price) || 0
+                                const pct = p * commissionRate
+                                const customerPays =
+                                    p + (passFixedToCustomer ? fixedFeePerTicket : 0) + (passPercentageToCustomer ? pct : 0)
+                                const fees =
+                                    (passFixedToCustomer ? 0 : fixedFeePerTicket) + (passPercentageToCustomer ? 0 : pct)
+                                const net = p - fees
+                                return (
+                                    <div className="-mt-2 flex items-center justify-between gap-4 rounded-md bg-muted/60 px-3 py-2 text-xs">
+                                        <span className="text-muted-foreground">
+                                            Buyer pays <span className="font-medium text-foreground tabular-nums">₱{customerPays.toFixed(2)}</span>
+                                            <span className="mx-1.5 text-muted-foreground/50">·</span>
+                                            Fees {fees > 0
+                                                ? <span className="tabular-nums text-red-600">−₱{fees.toFixed(2)}</span>
+                                                : <span>passed on</span>}
+                                        </span>
+                                        <span className="shrink-0 font-semibold">
+                                            You earn <span className="tabular-nums text-green-600">₱{net.toFixed(2)}</span>
+                                        </span>
+                                    </div>
+                                )
+                            })()}
+
+                            {/* Sales window — one control, a range with an arrow, not
+                                two separate optional fields to reason about. */}
+                            <div className="grid gap-2">
+                                <Label htmlFor="sales_start">
+                                    Sales window <span className="font-normal text-muted-foreground">(optional)</span>
+                                </Label>
+                                {/* Stacked, not side by side: a datetime-local narrower
+                                    than ~210px loses its calendar button in Chrome, and
+                                    two of them cannot both keep it inside one column. */}
+                                <div className="grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
+                                    <span className="text-sm text-muted-foreground">Opens</span>
+                                    <Input
+                                        id="sales_start"
+                                        type="datetime-local"
+                                        aria-label="Sales open"
+                                        value={formData.sales_start}
+                                        onChange={(e) => setFormData({ ...formData, sales_start: e.target.value })}
+                                    />
+                                    <span className="text-sm text-muted-foreground">Closes</span>
+                                    <Input
+                                        id="sales_end"
+                                        type="datetime-local"
+                                        aria-label="Sales close"
+                                        value={formData.sales_end}
+                                        onChange={(e) => setFormData({ ...formData, sales_end: e.target.value })}
+                                    />
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    Philippine time. Blank = sells as long as the event does. Set a close for early bird.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* ── Right: presentation ──────────────────────────── */}
+                        <div className="grid min-w-0 content-start gap-5 md:border-l md:pl-8">
+                            <SectionLabel title="Presentation" hint="How the tier looks on the event page." />
+
+                            {/* Image — a compact bar, not a tall empty box. */}
+                            <div className="grid gap-2">
+                                <Label>Image <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                                {formData.image_url ? (
+                                    <div className="relative overflow-hidden rounded-lg border">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={formData.image_url} alt="Tier" className="h-24 w-full object-cover" />
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData(prev => ({ ...prev, image_url: '' }))}
+                                            className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white transition-colors hover:bg-black/80"
+                                            aria-label="Remove image"
+                                        >
+                                            <X className="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <label className="flex h-14 cursor-pointer items-center gap-3 rounded-lg border border-dashed px-4 text-muted-foreground transition-colors hover:bg-muted/40">
+                                        {uploadingImage ? <Loader2 className="h-5 w-5 shrink-0 animate-spin" /> : <Upload className="h-5 w-5 shrink-0" />}
+                                        <span className="text-sm">
+                                            <span className="font-medium text-foreground">{uploadingImage ? 'Uploading…' : 'Upload an image'}</span>
+                                            <span className="block text-xs">A seating view, artist photo, or what's included. PNG or JPG, up to 5MB.</span>
+                                        </span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            disabled={uploadingImage}
+                                            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = '' }}
+                                        />
+                                    </label>
+                                )}
+                            </div>
+
+                            {/* Perks */}
+                            <div className="grid gap-2">
+                                <Label>What&apos;s included</Label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        placeholder="e.g., Front-row seating"
+                                        value={perkDraft}
+                                        onChange={(e) => setPerkDraft(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPerk() } }}
+                                    />
+                                    <Button type="button" variant="outline" onClick={addPerk} disabled={!perkDraft.trim()}>Add</Button>
+                                </div>
+                                {formData.perks.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {formData.perks.map((perk, i) => (
+                                            <span key={i} className="inline-flex items-center gap-1.5 rounded-full border bg-background py-1 pl-2.5 pr-1.5 text-xs">
+                                                <Check className="h-3 w-3 text-green-600" />
+                                                {perk}
+                                                <button type="button" onClick={() => removePerk(i)} aria-label={`Remove ${perk}`} className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground">
+                                                    <X className="h-3 w-3" />
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-muted-foreground">Short bullets on the tier card. Press Enter to add each one.</p>
+                                )}
+                            </div>
+
+                            {/* Badge + featured, one row */}
+                            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="badge">Badge</Label>
+                                    <Input
+                                        id="badge"
+                                        placeholder="e.g., Most Popular"
+                                        value={formData.badge_label}
+                                        maxLength={24}
+                                        onChange={(e) => setFormData({ ...formData, badge_label: e.target.value })}
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="highlight">Featured</Label>
+                                    <label
+                                        htmlFor="highlight"
+                                        className={cn(
+                                            'flex h-10 cursor-pointer items-center justify-between rounded-md border px-3 text-sm transition-colors',
+                                            formData.highlight ? 'border-primary/40 bg-primary/5' : 'hover:bg-muted/40',
+                                        )}
+                                    >
+                                        <span className="flex items-center gap-1.5">
+                                            <Star className={cn('h-3.5 w-3.5', formData.highlight ? 'text-primary' : 'text-muted-foreground')} />
+                                            Stand out
+                                        </span>
+                                        <Switch
+                                            id="highlight"
+                                            checked={formData.highlight}
+                                            onCheckedChange={(checked) => setFormData({ ...formData, highlight: checked })}
+                                        />
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Accent color */}
+                            <div className="grid gap-2">
+                                <Label>Accent color</Label>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {ACCENT_PRESETS.map(c => (
+                                        <button
+                                            key={c}
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, accent_color: formData.accent_color === c ? '' : c })}
+                                            className={cn(
+                                                'h-7 w-7 rounded-full transition-transform hover:scale-110',
+                                                'ring-offset-2 ring-offset-background',
+                                                formData.accent_color === c ? 'ring-2 ring-foreground' : 'ring-0',
+                                            )}
+                                            style={{ backgroundColor: c }}
+                                            aria-label={`Accent ${c}`}
+                                            aria-pressed={formData.accent_color === c}
+                                        />
+                                    ))}
+                                    <label className="relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-dashed text-muted-foreground hover:bg-muted/40" title="Custom color">
+                                        <Plus className="h-3.5 w-3.5" />
+                                        <input
+                                            type="color"
+                                            value={formData.accent_color || '#6366f1'}
+                                            onChange={(e) => setFormData({ ...formData, accent_color: e.target.value })}
+                                            className="absolute inset-0 cursor-pointer opacity-0"
+                                            aria-label="Custom accent color"
+                                        />
+                                    </label>
+                                    {formData.accent_color && !ACCENT_PRESETS.includes(formData.accent_color) && (
+                                        <span className="ml-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                                            <span className="h-4 w-4 rounded-full ring-2 ring-foreground ring-offset-2 ring-offset-background" style={{ backgroundColor: formData.accent_color }} />
+                                            {formData.accent_color}
+                                        </span>
+                                    )}
+                                    {formData.accent_color && (
+                                        <button type="button" onClick={() => setFormData({ ...formData, accent_color: '' })} className="ml-auto text-xs text-muted-foreground hover:text-foreground">
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
 

@@ -4,6 +4,7 @@ import { format } from 'date-fns'
 import { EmbedThemeWrapper, type EmbedTheme } from '@/components/embed/embed-theme-wrapper'
 import { EmbedTicketButton } from '@/components/embed/embed-ticket-button'
 import { EmbedTierSelector } from '@/components/embed/embed-tier-selector'
+import { isTierOnSale, isTierVisible } from '@/lib/tickets/tier-availability'
 
 // Always render fresh so ticket availability / sold-out / price changes show
 // immediately in the embed instead of a cached snapshot.
@@ -66,7 +67,7 @@ export default async function EmbedEventPage({
     const isSoldOut = event.tickets_sold >= event.capacity
     const eventDate = new Date(event.start_datetime)
     const organizer = Array.isArray(event.organizer) ? event.organizer[0] : event.organizer
-    const activeTiers = (event.ticket_tiers || []).filter((t: any) => t.is_active)
+    const activeTiers = (event.ticket_tiers || []).filter((t: any) => isTierOnSale(t))
     const lowestPrice = activeTiers.length > 0
         ? Math.min(...activeTiers.map((t: any) => Number(t.price)))
         : event.ticket_price

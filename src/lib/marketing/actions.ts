@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatInManila } from '@/lib/datetime'
+import { isTierOnSale, type TierWindow } from '@/lib/tickets/tier-availability'
 
 interface UnsubscribeResult {
     success: boolean
@@ -368,12 +369,16 @@ export async function buildEventEmailBlock(eventId: string): Promise<{ html?: st
     const supabase = await createClient()
     const { data: event } = await supabase
         .from('events')
-        .select('id, title, cover_image_url, start_datetime, venue_name, city, ticket_price, ticket_tiers(price, is_active)')
+        .select('id, title, cover_image_url, start_datetime, venue_name, city, ticket_price, ticket_tiers(price, is_active, sales_start, sales_end)')
         .eq('id', eventId)
         .maybeSingle()
     if (!event) return { error: 'Event not found' }
 
-    const tiers = ((event.ticket_tiers as { price: number; is_active: boolean }[] | null) || []).filter((t) => t.is_active)
+    // Only tiers a reader could actually buy. An expired early bird is usually
+    // the CHEAPEST row, so filtering on is_active alone advertises a "from"
+    // price that stopped existing when the window closed.
+    const tiers = ((event.ticket_tiers as (TierWindow & { price: number })[] | null) || [])
+        .filter((t) => isTierOnSale(t))
     const price = tiers.length ? Math.min(...tiers.map((t) => Number(t.price))) : Number(event.ticket_price || 0)
     const priceLabel = price === 0 ? 'Free' : `From ₱${price.toLocaleString()}`
     const dateStr = event.start_datetime

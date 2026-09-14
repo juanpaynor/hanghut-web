@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { fireConfetti } from '@/lib/utils/confetti'
 import { trackEventInteraction } from '@/lib/analytics/track-event'
+import { isTierOnSale, isTierVisible } from '@/lib/tickets/tier-availability'
 
 interface SubscriberDiscount {
     has_discount: boolean
@@ -61,10 +62,10 @@ export function TicketSelector({
     const [quantity, setQuantity] = useState(minTickets)
     const [isLoading, setIsLoading] = useState(false)
 
-    // Locked tiers (is_active = false) stay in the list only when the organizer
+    // Un-buyable tiers (locked, scheduled, or closed) stay in the list only when the organizer
     // chose to keep them visible; either way they can't be selected or bought.
     const lockedOf = (t: any) => t.is_active === false
-    const activeTiers = tiers?.filter((t: any) => t.is_active !== false || t.show_when_locked === true)
+    const activeTiers = tiers?.filter((t: any) => isTierVisible(t))
         .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0) || a.price - b.price) || []
 
     // Default to the first tier that can actually be bought.

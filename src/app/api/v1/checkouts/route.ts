@@ -3,6 +3,7 @@ import { apiSuccess, apiError, handleCors } from '@/lib/api/api-helpers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@supabase/supabase-js'
 import { resolvePlatformPct, resolveFixedFee, computePassedFees } from '@/lib/payment/platform-fees'
+import { tierSaleState } from '@/lib/tickets/tier-availability'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
     // Verify the event belongs to this partner
     const { data: event, error: eventError } = await supabase
         .from('events')
-        .select('id, organizer_id, status, capacity, ticket_price, ticket_tiers(id, price, quantity_total, is_active)')
+        .select('id, organizer_id, status, capacity, ticket_price, ticket_tiers(id, price, quantity_total, is_active, sales_start, sales_end)')
         .eq('id', event_id)
         .single()
 
@@ -70,7 +71,15 @@ export async function POST(request: Request) {
     if (tier_id) {
         tierToUse = event.ticket_tiers?.find((t: any) => t.id === tier_id)
         if (!tierToUse) return apiError('Ticket tier not found', 404)
-        if (!tierToUse.is_active) return apiError('Ticket tier is not available', 400)
+        // The scheduled window, same three rules and the same precedence as
+        // create-purchase-intent. A partner integrating against this API must
+        // not be able to sell an early-bird tier the web checkout has already
+        // closed — the two checkout paths disagreeing about what "on sale"
+        // means is precisely the bug that let locked tiers stay purchasable.
+        const saleState = tierSaleState(tierToUse)
+        if (saleState === 'locked') return apiError('Ticket tier is not available', 400)
+        if (saleState === 'scheduled') return apiError('Sales for this ticket tier have not opened yet', 400)
+        if (saleState === 'closed') return apiError('Sales for this ticket tier have closed', 400)
     }
 
     // Check availability

@@ -9,6 +9,7 @@ import { Minus, Plus, Loader2, Check, Star, Crown, Ticket, Lock } from 'lucide-r
 import { cn } from '@/lib/utils'
 import { fireConfetti } from '@/lib/utils/confetti'
 import { trackEventInteraction } from '@/lib/analytics/track-event'
+import { isTierVisible, isTierOnSale, tierSaleLabel } from '@/lib/tickets/tier-availability'
 
 interface SubscriberDiscount {
     has_discount: boolean
@@ -75,17 +76,15 @@ export function InlineTierList({
     const asList = display?.display === 'list'
 
     const soldOutOf = (t: any) => Number(t.quantity_sold) >= Number(t.quantity_total)
-    // Organizer locked this tier (is_active = false). Enforced server-side too.
-    const lockedOf = (t: any) => t.is_active === false
+    // Not buyable right now: locked, not yet open, or closed. Enforced server-side too.
+    const lockedOf = (t: any) => !isTierOnSale(t)
     const unbuyable = (t: any) => soldOutOf(t) || lockedOf(t)
 
     // Tiers to display, sorted; optionally drop sold-out ones.
     // A locked tier is included ONLY when the organizer asked for it to stay
     // visible — otherwise it disappears exactly as before.
     const activeTiers = useMemo(() => {
-        let list = (tiers || []).filter(
-            (t: any) => t.is_active !== false || t.show_when_locked === true
-        )
+        let list = (tiers || []).filter((t: any) => isTierVisible(t))
         if (!showSoldOut) list = list.filter((t: any) => !soldOutOf(t))
         return list.sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0) || a.price - b.price)
     }, [tiers, showSoldOut])
@@ -194,7 +193,7 @@ export function InlineTierList({
                                         {tSoldOut && <Badge variant="destructive" className="text-[10px] h-5">Sold Out</Badge>}
                                         {tLocked && !tSoldOut && (
                                             <Badge variant="secondary" className="gap-1 text-[10px] h-5">
-                                                <Lock className="h-3 w-3" /> Not on sale
+                                                <Lock className="h-3 w-3" /> {tierSaleLabel(tier) ?? 'Not on sale'}
                                             </Badge>
                                         )}
                                     </div>

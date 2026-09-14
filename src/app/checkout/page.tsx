@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { CheckoutClient } from '@/components/checkout/checkout-client'
+import { isTierOnSale, tierSaleState } from '@/lib/tickets/tier-availability'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,12 +106,17 @@ export default async function CheckoutPage({
 
     if (tierId) {
         tierToUse = event.ticket_tiers?.find((t: any) => t.id === tierId) || null
-        // A locked tier is still reachable directly — a stale tab, a bookmarked
-        // checkout URL, the embed widget. create-purchase-intent rejects it with
-        // TIER_LOCKED, but bounce here so the buyer reads the reason on the event
+        // An un-buyable tier is still reachable directly — a stale tab, a
+        // bookmarked checkout URL, the embed widget. create-purchase-intent
+        // rejects it, but bounce here so the buyer reads the reason on the event
         // page instead of filling in a form that was always going to fail.
-        if (tierToUse && tierToUse.is_active === false) {
-            redirect(`/events/${eventId}?error=tier_locked`)
+        //
+        // Carries WHICH state, because the three are not interchangeable to the
+        // person reading them: "come back Friday" and "you missed it" lead to
+        // completely different next actions.
+        const state = tierSaleState(tierToUse ?? {})
+        if (tierToUse && state !== 'on_sale') {
+            redirect(`/events/${eventId}?tier=${state}`)
         }
     }
 
@@ -118,7 +124,7 @@ export default async function CheckoutPage({
     // Or if event has no tiers, use event-level data
     if (!tierToUse) {
         // If tiers exist, default to the cheapest active one? Or just the first one?
-        const activeTiers = event.ticket_tiers?.filter((t: any) => t.is_active) || []
+        const activeTiers = event.ticket_tiers?.filter((t: any) => isTierOnSale(t)) || []
         if (activeTiers.length > 0) {
             tierToUse = activeTiers[0]
         } else {
