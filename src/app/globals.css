@@ -123,8 +123,9 @@
 
 /* Landing "lineup" bill: the track holds two copies of the bill, so sliding
    exactly one copy's width (-50%) lands on an identical frame and the loop
-   has no seam. Pauses on hover so an act can be read and clicked. The
-   component swaps in a static row under reduced motion, so no override here. */
+   has no seam. Keeps rolling under the mouse; only pauses when keyboard focus
+   lands inside so a tabbed-to act stays put. The component swaps in a static
+   row under reduced motion, so no override here. */
 @keyframes lp-lineup {
   from { transform: translateX(0); }
   to   { transform: translateX(-50%); }
@@ -133,7 +134,6 @@
   animation: lp-lineup 48s linear infinite;
   will-change: transform;
 }
-.lp-lineup:hover .lp-lineup-track,
 .lp-lineup:focus-within .lp-lineup-track {
   animation-play-state: paused;
 }
