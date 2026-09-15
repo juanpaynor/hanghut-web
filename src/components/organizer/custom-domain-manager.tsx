@@ -27,7 +27,20 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
         domain: string
         value: string
     } | null>(null)
+    // null = not checked yet this session; false = ownership may be verified
+    // but the hostname still doesn't point at us.
+    const [dnsReady, setDnsReady] = useState<boolean | null>(currentVerified ? true : null)
     const [copied, setCopied] = useState<string | null>(null)
+
+    // An apex (mimicmanila.com) can't carry a CNAME, so it gets an A record at
+    // "@" instead. Everything deeper is a subdomain and CNAMEs its first label.
+    const labels = activeDomain?.split('.') ?? []
+    const isApex = labels.length <= 2
+    const zone = isApex ? activeDomain ?? '' : labels.slice(1).join('.')
+    const trafficRecord = isApex
+        ? { type: 'A', name: '@', value: '76.76.21.21' }
+        : { type: 'CNAME', name: labels[0] ?? '', value: 'cname.hanghut.com' }
+    const live = verified && dnsReady !== false
 
     const handleAdd = async () => {
         if (!domain.trim()) return
@@ -41,6 +54,7 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
         }
         setActiveDomain(result.domain!)
         setVerified(false)
+        setDnsReady(null)
         setVerification(result.verification ?? null)
         setDomain('')
     }
@@ -55,6 +69,7 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
             return
         }
         setVerified(result.verified!)
+        setDnsReady(result.dnsReady ?? null)
         if (result.verification?.length) {
             const v = result.verification[0]
             setVerification({ type: v.type, domain: v.domain, value: v.value })
@@ -74,6 +89,7 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
         }
         setActiveDomain(null)
         setVerified(false)
+        setDnsReady(null)
         setVerification(null)
     }
 
@@ -113,7 +129,7 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
                     {/* Status row */}
                     <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
                         <div className="flex items-center gap-3">
-                            {verified ? (
+                            {live ? (
                                 <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
                             ) : (
                                 <XCircle className="h-5 w-5 text-amber-500 shrink-0" />
@@ -121,12 +137,16 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
                             <div>
                                 <p className="font-medium text-sm">{activeDomain}</p>
                                 <p className="text-xs text-muted-foreground">
-                                    {verified ? 'Domain verified & live' : 'Pending DNS verification'}
+                                    {live
+                                        ? 'Domain verified & live'
+                                        : verified
+                                            ? 'Ownership verified — waiting for DNS to point here'
+                                            : 'Pending DNS verification'}
                                 </p>
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                            {verified && (
+                            {live && (
                                 <a
                                     href={`https://${activeDomain}`}
                                     target="_blank"
@@ -136,24 +156,31 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
                                     <ExternalLink className="h-4 w-4" />
                                 </a>
                             )}
-                            <Badge variant={verified ? 'default' : 'secondary'} className={cn(verified && 'bg-green-500/15 text-green-700 border-green-500/30')}>
-                                {verified ? 'Active' : 'Unverified'}
+                            <Badge variant={live ? 'default' : 'secondary'} className={cn(live && 'bg-green-500/15 text-green-700 border-green-500/30')}>
+                                {live ? 'Active' : verified ? 'DNS pending' : 'Unverified'}
                             </Badge>
                         </div>
                     </div>
 
-                    {/* DNS instructions (shown until verified) */}
-                    {!verified && (
+                    {/* DNS instructions (shown until the domain is actually serving).
+                        Two different records do two different jobs: the CNAME/A
+                        sends traffic here, and the TXT (only when Vercel asks for
+                        it) proves the organizer owns the zone. The old panel showed
+                        ONE of them — whichever Vercel returned — so a domain could
+                        "verify" via TXT and still dead-end with no CNAME. */}
+                    {!live && (
                         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-4">
                             <div className="flex items-center gap-2 text-amber-700">
                                 <AlertTriangle className="h-4 w-4 shrink-0" />
-                                <p className="text-sm font-semibold">Action required: add a DNS record</p>
+                                <p className="text-sm font-semibold">
+                                    {verification ? 'Action required: add these DNS records' : 'Action required: add a DNS record'}
+                                </p>
                             </div>
 
                             <ol className="text-sm text-amber-900 space-y-1 list-decimal list-inside">
                                 <li>Log in to your domain registrar (GoDaddy, Cloudflare, Namecheap, etc.)</li>
-                                <li>Go to the <strong>DNS settings</strong> for <strong>{activeDomain?.split('.').slice(1).join('.')}</strong></li>
-                                <li>Add the record below, then click <strong>Check Status</strong></li>
+                                <li>Go to the <strong>DNS settings</strong> for <strong>{zone}</strong></li>
+                                <li>Add {verification ? 'both records' : 'the record'} below, then click <strong>Check Status</strong></li>
                             </ol>
 
                             {/* DNS record table */}
@@ -163,44 +190,34 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
                                     <span>Name</span>
                                     <span>Value</span>
                                 </div>
-                                {verification ? (
-                                    <div className="grid grid-cols-[80px_1fr_1fr] px-3 py-3 font-mono text-xs items-center gap-2">
-                                        <span className="font-semibold">{verification.type}</span>
-                                        <div className="flex items-center gap-1 min-w-0">
-                                            <span className="truncate">{verification.domain}</span>
-                                            <button onClick={() => copy(verification.domain, 'name')} className="text-muted-foreground hover:text-foreground shrink-0">
-                                                <Copy className="h-3 w-3" />
-                                            </button>
-                                            {copied === 'name' && <span className="text-green-600 text-[10px]">Copied!</span>}
-                                        </div>
-                                        <div className="flex items-center gap-1 min-w-0">
-                                            <span className="truncate">{verification.value}</span>
-                                            <button onClick={() => copy(verification.value, 'value')} className="text-muted-foreground hover:text-foreground shrink-0">
-                                                <Copy className="h-3 w-3" />
-                                            </button>
-                                            {copied === 'value' && <span className="text-green-600 text-[10px]">Copied!</span>}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-[80px_1fr_1fr] px-3 py-3 font-mono text-xs items-center gap-2">
-                                        <span className="font-semibold">CNAME</span>
-                                        <div className="flex items-center gap-1 min-w-0">
-                                            <span className="truncate">{activeDomain?.split('.')[0]}</span>
-                                            <button onClick={() => copy(activeDomain!.split('.')[0], 'name')} className="text-muted-foreground hover:text-foreground shrink-0">
-                                                <Copy className="h-3 w-3" />
-                                            </button>
-                                            {copied === 'name' && <span className="text-green-600 text-[10px]">Copied!</span>}
-                                        </div>
-                                        <div className="flex items-center gap-1 min-w-0">
-                                            <span className="truncate">cname.hanghut.com</span>
-                                            <button onClick={() => copy('cname.hanghut.com', 'value')} className="text-muted-foreground hover:text-foreground shrink-0">
-                                                <Copy className="h-3 w-3" />
-                                            </button>
-                                            {copied === 'value' && <span className="text-green-600 text-[10px]">Copied!</span>}
-                                        </div>
-                                    </div>
+                                <DnsRow
+                                    type={trafficRecord.type}
+                                    name={trafficRecord.name}
+                                    value={trafficRecord.value}
+                                    note="Sends visitors to HangHut"
+                                    done={dnsReady === true}
+                                    copied={copied}
+                                    onCopy={copy}
+                                />
+                                {verification && (
+                                    <DnsRow
+                                        type={verification.type}
+                                        name={verification.domain}
+                                        value={verification.value}
+                                        note="Proves you own the domain"
+                                        done={verified}
+                                        copied={copied}
+                                        onCopy={copy}
+                                    />
                                 )}
                             </div>
+
+                            {verification && (
+                                <p className="text-xs text-amber-900/80">
+                                    Vercel is asking for the TXT record because <strong>{activeDomain}</strong> was already pointed at another
+                                    site. Some registrars want the TXT name entered as just <code className="font-mono">_vercel</code>.
+                                </p>
+                            )}
 
                             <p className="text-xs text-amber-700/80">
                                 ⏱ DNS changes usually propagate within minutes, but can take up to 48 hours.
@@ -230,6 +247,49 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
                     {error}
                 </p>
             )}
+        </div>
+    )
+}
+
+function DnsRow({
+    type, name, value, note, done, copied, onCopy,
+}: {
+    type: string
+    name: string
+    value: string
+    note: string
+    done: boolean
+    copied: string | null
+    onCopy: (text: string, key: string) => void
+}) {
+    const nameKey = `${type}-name`
+    const valueKey = `${type}-value`
+    return (
+        <div className={cn(
+            'grid grid-cols-[80px_1fr_1fr] px-3 py-3 font-mono text-xs items-center gap-2 border-t first:border-t-0',
+            done && 'bg-green-500/5',
+        )}>
+            <div className="flex items-center gap-1.5">
+                {done && <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />}
+                <span className="font-semibold">{type}</span>
+            </div>
+            <div className="min-w-0">
+                <div className="flex items-center gap-1 min-w-0">
+                    <span className="truncate">{name}</span>
+                    <button onClick={() => onCopy(name, nameKey)} className="text-muted-foreground hover:text-foreground shrink-0" aria-label="Copy name">
+                        <Copy className="h-3 w-3" />
+                    </button>
+                    {copied === nameKey && <span className="text-green-600 text-[10px]">Copied!</span>}
+                </div>
+                <p className="mt-0.5 font-sans text-[11px] text-muted-foreground">{note}</p>
+            </div>
+            <div className="flex items-center gap-1 min-w-0">
+                <span className="truncate">{value}</span>
+                <button onClick={() => onCopy(value, valueKey)} className="text-muted-foreground hover:text-foreground shrink-0" aria-label="Copy value">
+                    <Copy className="h-3 w-3" />
+                </button>
+                {copied === valueKey && <span className="text-green-600 text-[10px]">Copied!</span>}
+            </div>
         </div>
     )
 }

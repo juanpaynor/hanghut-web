@@ -111,6 +111,22 @@ export async function checkCustomDomainStatus() {
 
     const verified = data?.verified === true
 
+    // `verified` above is only OWNERSHIP (the TXT challenge, when Vercel asks
+    // for one). Whether the hostname actually points at Vercel is a separate
+    // check — a domain can be verified and still dead-end because the CNAME
+    // was never added. Non-fatal: if the config call fails we report unknown.
+    let dnsReady: boolean | null = null
+    try {
+        const cfg = await vercelFetch(
+            `/v6/domains/${partnerData.custom_domain}/config?projectId=${VERCEL_PROJECT_ID}`
+        )
+        if (cfg.ok && typeof cfg.data?.misconfigured === 'boolean') {
+            dnsReady = cfg.data.misconfigured === false
+        }
+    } catch (e) {
+        console.warn('Vercel domain config check failed:', e)
+    }
+
     // Update DB if just became verified
     if (verified && !partnerData.custom_domain_verified) {
         await supabase
@@ -123,6 +139,7 @@ export async function checkCustomDomainStatus() {
     return {
         domain: partnerData.custom_domain,
         verified,
+        dnsReady,
         verification: data?.verification,
     }
 }
