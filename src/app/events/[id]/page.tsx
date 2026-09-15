@@ -413,9 +413,12 @@ export default async function PublicEventPage({
 
     // RSVP mode — free events where the organizer opted into a one-tap RSVP instead
     // of the ticket/quantity/checkout flow. Only valid when the event is actually free.
+    // A tiered event with every tier locked is closed, not "free at the event
+    // price" — the gate renders its own not-on-sale state for that case.
+    const hasAnyTier = (event.ticket_tiers?.length ?? 0) > 0
     const isFreeEvent = activeTiers.length > 0
         ? activeTiers.every((t: any) => Number(t.price) === 0)
-        : Number(event.ticket_price) === 0
+        : !hasAnyTier && Number(event.ticket_price) === 0
     const rsvpMode = !!event.rsvp_enabled && isFreeEvent
     const rsvpLabel = (event.rsvp_button_label || '').trim() || 'RSVP'
 

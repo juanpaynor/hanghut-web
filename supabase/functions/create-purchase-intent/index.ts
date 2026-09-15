@@ -196,11 +196,47 @@ serve(async (req) => {
         let tierName = 'General Admission'
         let organizerId = null
 
-        if (tier_id) {
+        // A tiered event must be bought THROUGH a tier. Without this, a request
+        // that omits tier_id priced from events.ticket_price and skipped every
+        // tier guard (lock, sales window, quantity) — the web gate did exactly
+        // that when an organizer locked their only tier, issuing tier-less
+        // "general admission" tickets for an event that was meant to be closed.
+        // If exactly one tier is on sale we take it (single-tier free claims and
+        // older clients never sent one); otherwise the buyer has to choose, or
+        // there is nothing to choose.
+        let effectiveTierId: string | null = tier_id ?? null
+        if (!effectiveTierId) {
+            const { data: eventTiers } = await supabaseClient
+                .from('ticket_tiers')
+                .select('id, is_active, sales_start, sales_end')
+                .eq('event_id', event_id)
+            if (eventTiers && eventTiers.length > 0) {
+                const nowMs = Date.now()
+                const onSale = eventTiers.filter(t =>
+                    t.is_active !== false
+                    && !(t.sales_start && new Date(t.sales_start).getTime() > nowMs)
+                    && !(t.sales_end && new Date(t.sales_end).getTime() < nowMs))
+                if (onSale.length === 0) {
+                    return new Response(
+                        JSON.stringify({ success: false, error: { code: 'TIER_LOCKED', message: 'Tickets for this event are not on sale right now.' } }),
+                        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                    )
+                }
+                if (onSale.length > 1) {
+                    return new Response(
+                        JSON.stringify({ success: false, error: { code: 'TIER_REQUIRED', message: 'Please choose a ticket type.' } }),
+                        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                    )
+                }
+                effectiveTierId = onSale[0].id
+            }
+        }
+
+        if (effectiveTierId) {
             const { data: tier, error: tierError } = await supabaseClient
                 .from('ticket_tiers')
                 .select('price, name, quantity_sold, quantity_total, is_active, sales_start, sales_end, events(organizer_id)')
-                .eq('id', tier_id)
+                .eq('id', effectiveTierId)
                 .eq('event_id', event_id)
                 .single()
 
@@ -365,12 +401,12 @@ serve(async (req) => {
 
         // --- SEAT ASSIGNMENT (seated events) ---
         let assignedSeats = null
-        if (tier_id) {
+        if (effectiveTierId) {
             const { data: seatAssignment, error: seatError } = await supabaseAdmin.rpc(
                 'assign_seats_to_intent',
                 {
                     p_intent_id: intentId,
-                    p_tier_id: tier_id,
+                    p_tier_id: effectiveTierId,
                     p_quantity: quantity,
                     p_seat_ids: Array.isArray(seat_ids) && seat_ids.length > 0 ? seat_ids : null,
                     // Lets the RPC confirm the buyer STILL holds these seats.
@@ -495,7 +531,7 @@ serve(async (req) => {
         const { error: updateError } = await supabaseAdmin
             .from('purchase_intents')
             .update({
-                tier_id: tier_id ?? null,
+                tier_id: effectiveTierId,
                 promo_code_id: promoCodeId,
                 unit_price: unitPrice,
                 subtotal: subtotal,
@@ -654,7 +690,7 @@ serve(async (req) => {
                 intent_id: intentId,
                 user_id: user?.id || 'guest',
                 is_guest: String(!user),
-                tier_id: tier_id || 'default',
+                tier_id: effectiveTierId || 'default',
                 promo_code: promo_code || ''
             },
         }

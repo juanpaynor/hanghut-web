@@ -7,9 +7,9 @@ import { InlineTierList, type TierDisplayConfig } from '@/components/events/inli
 import { RegisterModal } from '@/components/events/register-modal'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
-import { ClipboardList, Clock, CheckCircle2, Loader2, Ticket } from 'lucide-react'
+import { ClipboardList, Clock, CheckCircle2, Loader2, Ticket, Lock } from 'lucide-react'
 import type { QuestionForForm } from '@/components/events/registration-questions-form'
-import { isTierOnSale } from '@/lib/tickets/tier-availability'
+import { isTierOnSale, tierSaleState } from '@/lib/tickets/tier-availability'
 
 interface RegistrationGateProps {
     eventId: string
@@ -74,9 +74,15 @@ export function RegistrationGate({
     tierDisplay,
 }: RegistrationGateProps) {
     const activeTiers = (tiers || []).filter((t: any) => isTierOnSale(t))
+    // A tiered event with nothing on sale is CLOSED — it must not fall through to
+    // the event-level price. That fallback is what let a locked-tier event hand
+    // out tier-less "general admission" tickets. Only tier-less events use
+    // ticketPrice.
+    const hasTiers = (tiers?.length ?? 0) > 0
+    const nothingOnSale = hasTiers && activeTiers.length === 0
     const isFree = activeTiers.length > 0
         ? activeTiers.every((t: any) => Number(t.price) === 0)
-        : Number(ticketPrice) === 0
+        : !hasTiers && Number(ticketPrice) === 0
     const freeTierId: string | null = activeTiers[0]?.id ?? null
 
     const [modalOpen, setModalOpen] = useState(false)
@@ -175,6 +181,25 @@ export function RegistrationGate({
                         <Ticket className="h-4 w-4" /> View ticket
                     </Link>
                 </Button>
+            </div>
+        )
+    }
+
+    // ── Nothing on sale (every tier locked / outside its window) ─────────────
+    // Sits after "already going" so a ticket holder still sees their ticket, and
+    // before every purchase branch so none of them can run.
+    if (nothingOnSale && !hasTicket && !claimed) {
+        const states = (tiers || []).map((t: any) => tierSaleState(t))
+        const copy = states.every(st => st === 'scheduled')
+            ? 'Tickets aren\u2019t on sale yet. Check back soon.'
+            : states.every(st => st === 'closed')
+                ? 'Ticket sales for this event have closed.'
+                : 'Tickets for this event aren\u2019t on sale right now.'
+        return (
+            <div className="rounded-xl border p-5 text-center">
+                <Lock className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
+                <p className="font-semibold">Not on sale</p>
+                <p className="mt-1 text-sm text-muted-foreground">{copy}</p>
             </div>
         )
     }
