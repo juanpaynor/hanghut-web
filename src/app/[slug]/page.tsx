@@ -1,4 +1,5 @@
 import { cache, type CSSProperties } from 'react'
+import { toSocialHref } from '@/lib/social-links'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
@@ -297,22 +298,22 @@ export default async function StorefrontPage({
         <div className="flex gap-2 mb-6 justify-center lg:justify-start">
             {social.website && (
                 <Button variant="outline" size="icon" className="h-8 w-8 rounded-full hover:text-primary hover:border-primary transition-colors" asChild>
-                    <a href={social.website} target="_blank" rel="noopener"><Globe className="h-4 w-4" /></a>
+                    <a href={toSocialHref('website', social.website)!} target="_blank" rel="noopener"><Globe className="h-4 w-4" /></a>
                 </Button>
             )}
             {social.instagram && (
                 <Button variant="outline" size="icon" className="h-8 w-8 rounded-full hover:text-pink-500 hover:border-pink-500 transition-colors" asChild>
-                    <a href={social.instagram} target="_blank" rel="noopener"><Instagram className="h-4 w-4" /></a>
+                    <a href={toSocialHref('instagram', social.instagram)!} target="_blank" rel="noopener"><Instagram className="h-4 w-4" /></a>
                 </Button>
             )}
             {social.facebook && (
                 <Button variant="outline" size="icon" className="h-8 w-8 rounded-full hover:text-blue-600 hover:border-blue-600 transition-colors" asChild>
-                    <a href={social.facebook} target="_blank" rel="noopener"><Facebook className="h-4 w-4" /></a>
+                    <a href={toSocialHref('facebook', social.facebook)!} target="_blank" rel="noopener"><Facebook className="h-4 w-4" /></a>
                 </Button>
             )}
             {social.twitter && (
                 <Button variant="outline" size="icon" className="h-8 w-8 rounded-full hover:text-sky-500 hover:border-sky-500 transition-colors" asChild>
-                    <a href={social.twitter} target="_blank" rel="noopener"><Twitter className="h-4 w-4" /></a>
+                    <a href={toSocialHref('twitter', social.twitter)!} target="_blank" rel="noopener"><Twitter className="h-4 w-4" /></a>
                 </Button>
             )}
         </div>
@@ -682,7 +683,7 @@ export default async function StorefrontPage({
                                     <span>© {new Date().getFullYear()}</span>
                                 </div>
                                 <div className="flex items-center gap-6">
-                                    {social.website && <a href={social.website} target="_blank" className="hover:text-foreground">Website</a>}
+                                    {social.website && <a href={toSocialHref('website', social.website)!} target="_blank" rel="noopener" className="hover:text-foreground">Website</a>}
                                     {social.instagram && <a href={social.instagram} target="_blank" className="hover:text-foreground">Instagram</a>}
                                     {social.facebook && <a href={social.facebook} target="_blank" className="hover:text-foreground">Facebook</a>}
                                 </div>

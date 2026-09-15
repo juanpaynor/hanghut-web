@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatInManila } from '@/lib/datetime'
 import { isTierOnSale, type TierWindow } from '@/lib/tickets/tier-availability'
+import { getAuthUser, getActingPartnerId } from '@/lib/auth/cached'
 
 interface UnsubscribeResult {
     success: boolean
@@ -177,6 +178,52 @@ export async function processAttendeeUnsubscribe(
         organizer: partner?.business_name || "Organizer",
         email,
     }
+}
+
+/**
+ * How many of an audience were already emailed by this partner in the last N
+ * days — the number the composer shows next to the "skip recently emailed"
+ * toggle. send-promotional-email applies the same rule at send time, so this
+ * is a preview, not the enforcement.
+ */
+export async function getRecentlyEmailedCount(
+    partnerId: string,
+    days: number,
+    audienceType: 'all_subscribers' | 'event_attendees' | 'customer_segment' | 'specific_customers',
+    eventId?: string,
+    segment?: string,
+    specificEmails?: string[],
+): Promise<number> {
+    if (!days || days <= 0) return 0
+    const supabase = createAdminClient()
+    const { user } = await getAuthUser()
+    if (!user) return 0
+    const acting = await getActingPartnerId(user.id)
+    if (!acting || acting !== partnerId) return 0
+
+    let emails: string[] = []
+    if (audienceType === 'all_subscribers') {
+        const { data } = await supabase
+            .from('partner_subscribers').select('email')
+            .eq('partner_id', partnerId).eq('is_active', true)
+        emails = (data ?? []).map(r => r.email)
+    } else if (audienceType === 'event_attendees' && eventId) {
+        emails = await getEventAttendeeEmails(eventId)
+    } else if (audienceType === 'customer_segment' && segment) {
+        emails = await getSegmentEmails(partnerId, segment)
+    } else if (audienceType === 'specific_customers') {
+        emails = specificEmails ?? []
+    }
+    if (emails.length === 0) return 0
+
+    const { data: recent, error } = await supabase
+        .rpc('get_recently_emailed', { p_partner_id: partnerId, p_days: Math.min(days, 90) })
+    if (error) {
+        console.error('getRecentlyEmailedCount rpc error:', error)
+        return 0
+    }
+    const set = new Set<string>((recent ?? []).map((e: unknown) => String(e).toLowerCase()))
+    return emails.filter(e => set.has(e.toLowerCase())).length
 }
 
 export async function getAudienceCount(
@@ -604,6 +651,8 @@ export interface ScheduleInput {
     segment: string
     event_id?: string | null
     scheduled_for: string // ISO timestamp
+    // Skip anyone this partner emailed in the last N days (applied at send time).
+    exclude_recent_days?: number | null
 }
 
 export async function scheduleCampaign(input: ScheduleInput) {
@@ -628,6 +677,9 @@ export async function scheduleCampaign(input: ScheduleInput) {
         sender_name,
         segment: input.segment,
         event_id: input.event_id ?? null,
+        ...(input.exclude_recent_days && input.exclude_recent_days > 0
+            ? { exclude_recent_days: Math.min(Math.floor(input.exclude_recent_days), 90) }
+            : {}),
     }
     let recipientCount = 0
 

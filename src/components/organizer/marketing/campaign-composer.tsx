@@ -13,10 +13,11 @@ import { Loader2, Send, Eye, Edit, Code, Users, Calendar, ChevronDown, FileText,
 import { RichTextEditor } from './rich-text-editor'
 import { EventCombobox } from './event-combobox'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { format } from 'date-fns'
-import { getAudienceCount, getEventAttendeeRecipients, getSegmentRecipients, saveDraft, getDrafts, getDraft, deleteDraft, scheduleCampaign, getScheduledCampaigns, cancelScheduledCampaign, getTemplates, saveAsTemplate, deleteTemplate, buildEventEmailBlock, type EmailTemplate } from '@/lib/marketing/actions'
+import { getAudienceCount, getRecentlyEmailedCount, getEventAttendeeRecipients, getSegmentRecipients, saveDraft, getDrafts, getDraft, deleteDraft, scheduleCampaign, getScheduledCampaigns, cancelScheduledCampaign, getTemplates, saveAsTemplate, deleteTemplate, buildEventEmailBlock, type EmailTemplate } from '@/lib/marketing/actions'
 import { formatInManila } from '@/lib/datetime'
 
 /** datetime-local value (yyyy-MM-ddTHH:mm) in the user's local timezone. */
@@ -44,7 +45,7 @@ const SEGMENT_OPTIONS: { value: string; label: string }[] = [
     { value: 'lost', label: 'Lost customers' },
     { value: 'repeat', label: 'Repeat buyers' },
     { value: 'no_show', label: 'No-shows' },
-    { value: 'abandoned', label: 'Abandoned checkout' },
+    { value: 'abandoned', label: 'Open carts (abandoned checkout)' },
     { value: 'reengaged', label: 'Re-engaged' },
     { value: 'rejected', label: 'Rejected' },
 ]
@@ -91,6 +92,13 @@ export function CampaignComposer() {
     const [loadingEvents, setLoadingEvents] = useState(false)
     const [audienceCount, setAudienceCount] = useState<number | null>(null)
     const [loadingCount, setLoadingCount] = useState(false)
+    // "Skip anyone I emailed in the last N days." On by default: the failure
+    // mode it prevents (the same person getting two campaigns in a week) is
+    // the one organizers actually complained about, and turning it off is one
+    // tap. Enforced at send time by the edge fn; skipCount is the preview.
+    const [skipRecent, setSkipRecent] = useState(true)
+    const [skipRecentDays, setSkipRecentDays] = useState(7)
+    const [skipCount, setSkipCount] = useState<number | null>(null)
 
     // Drafts (Phase 6)
     const [draftId, setDraftId] = useState<string | null>(null)
@@ -304,6 +312,7 @@ export function CampaignComposer() {
             segment: audienceType === 'customer_segment' ? selectedSegment : audienceType,
             event_id: audienceType === 'event_attendees' ? selectedEventId : null,
             scheduled_for: new Date(scheduledFor).toISOString(),
+            exclude_recent_days: skipRecent ? skipRecentDays : null,
         })
         setScheduling(false)
         if (res.error) {
@@ -381,14 +390,42 @@ export function CampaignComposer() {
     useEffect(() => {
         if (audienceType === 'event_attendees' && !selectedEventId) {
             setAudienceCount(null)
+            setSkipCount(null)
             return
         }
         if (audienceType === 'customer_segment' && !selectedSegment) {
             setAudienceCount(null)
+            setSkipCount(null)
             return
         }
         loadAudienceCount()
     }, [audienceType, selectedEventId, selectedSegment])
+
+    // Preview of the recently-emailed exclusion. Separate from the audience
+    // count so toggling it doesn't refetch the audience.
+    useEffect(() => {
+        let cancelled = false
+        async function run() {
+            if (!skipRecent) { setSkipCount(null); return }
+            if (audienceType === 'event_attendees' && !selectedEventId) { setSkipCount(null); return }
+            if (audienceType === 'customer_segment' && !selectedSegment) { setSkipCount(null); return }
+            if (audienceType === 'specific_customers' && specificRecipients.length === 0) { setSkipCount(null); return }
+            try {
+                const partnerId = await getPartnerId()
+                if (!partnerId) return
+                const n = await getRecentlyEmailedCount(
+                    partnerId, skipRecentDays, audienceType,
+                    selectedEventId || undefined, selectedSegment || undefined,
+                    audienceType === 'specific_customers' ? specificRecipients.map(r => r.email) : undefined,
+                )
+                if (!cancelled) setSkipCount(n)
+            } catch (err) {
+                console.error('Failed to load recently-emailed count:', err)
+            }
+        }
+        run()
+        return () => { cancelled = true }
+    }, [skipRecent, skipRecentDays, audienceType, selectedEventId, selectedSegment, specificRecipients])
 
     async function getPartnerId() {
         const { data: { user } } = await supabase.auth.getUser()
@@ -610,6 +647,7 @@ export function CampaignComposer() {
 
             // If sending from a saved draft, reuse that row (no orphan draft left behind)
             if (draftId) body.draft_campaign_id = draftId
+            if (skipRecent) body.exclude_recent_days = skipRecentDays
 
             if (audienceType === 'event_attendees' && selectedEventId) {
                 // All buyers regardless of newsletter opt-in; names carried for {{first_name}}.
@@ -644,9 +682,13 @@ export function CampaignComposer() {
                 throw new Error(data?.error || "Email sending reported failure")
             }
 
+            const queued = data.queued ?? data.sent_count ?? audienceCount ?? 'all'
+            const skipped = Number(data.skipped_recent || 0)
             toast({
                 title: "Campaign Sent!",
-                description: `Successfully queued email for ${data.sent_count || audienceCount || 'all'} recipients.`,
+                description: skipped > 0
+                    ? `Queued for ${queued} recipients. Skipped ${skipped} emailed in the last ${skipRecentDays} days.`
+                    : `Successfully queued email for ${queued} recipients.`,
             })
 
             setSubject('')
@@ -858,6 +900,32 @@ export function CampaignComposer() {
                             </div>
                         )}
 
+                        {/* Recently-emailed exclusion */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-muted/30 px-3 py-2">
+                            <div className="flex items-center gap-2">
+                                <Switch id="skip-recent" checked={skipRecent} onCheckedChange={setSkipRecent} />
+                                <Label htmlFor="skip-recent" className="cursor-pointer text-sm font-normal">
+                                    Skip anyone emailed in the last
+                                </Label>
+                            </div>
+                            <Select value={String(skipRecentDays)} onValueChange={(v) => setSkipRecentDays(Number(v))} disabled={!skipRecent}>
+                                <SelectTrigger className="h-8 w-[7.5rem]"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="3">3 days</SelectItem>
+                                    <SelectItem value="7">7 days</SelectItem>
+                                    <SelectItem value="14">14 days</SelectItem>
+                                    <SelectItem value="30">30 days</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            {skipRecent && skipCount !== null && (
+                                <span className={`text-xs ${skipCount > 0 ? 'text-amber-700' : 'text-muted-foreground'}`}>
+                                    {skipCount > 0
+                                        ? `${skipCount} will be skipped`
+                                        : 'No one in this audience was emailed recently'}
+                                </span>
+                            )}
+                        </div>
+
                         {/* Audience count badge */}
                         {audienceCount !== null && (
                             <div className="flex items-center gap-2 animate-in fade-in-50 duration-200">
@@ -867,8 +935,11 @@ export function CampaignComposer() {
                                     ) : (
                                         <Users className="h-3 w-3 mr-1" />
                                     )}
-                                    {audienceCount} recipient{audienceCount !== 1 ? 's' : ''}
+                                    {skipRecent && skipCount ? Math.max(audienceCount - skipCount, 0) : audienceCount} recipient{(skipRecent && skipCount ? Math.max(audienceCount - skipCount, 0) : audienceCount) !== 1 ? 's' : ''}
                                 </Badge>
+                                {skipRecent && skipCount ? (
+                                    <span className="text-xs text-muted-foreground">of {audienceCount}</span>
+                                ) : null}
                                 {audienceType === 'event_attendees' && selectedEvent && (
                                     <span className="text-xs text-muted-foreground">
                                         all buyers from {selectedEvent.title}

@@ -1,5 +1,6 @@
 'use server'
 
+import { toSocialHref } from '@/lib/social-links'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
@@ -122,10 +123,10 @@ export async function updatePartnerProfile(
         cover_image_url: formData.get('cover_image_url') as string || undefined,
         profile_photo_url: formData.get('profile_photo_url') as string || undefined,
         social_links: {
-            facebook: formData.get('facebook') as string || '',
-            instagram: formData.get('instagram') as string || '',
-            twitter: formData.get('twitter') as string || '',
-            website: formData.get('website') as string || '',
+            facebook: toSocialHref('facebook', formData.get('facebook') as string) ?? '',
+            instagram: toSocialHref('instagram', formData.get('instagram') as string) ?? '',
+            twitter: toSocialHref('twitter', formData.get('twitter') as string) ?? '',
+            website: toSocialHref('website', formData.get('website') as string) ?? '',
         },
         branding
     }

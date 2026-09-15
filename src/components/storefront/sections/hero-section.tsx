@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import { toSocialHref } from '@/lib/social-links'
 import { StorefrontHeroVideo } from '../storefront-hero-video'
 import { ProfileActions } from '../profile-actions'
 import { Globe, Instagram, Facebook, Twitter } from 'lucide-react'
@@ -43,22 +44,22 @@ function SocialButtons({ social }: { social: Record<string, string> }) {
         <div className="flex gap-2 flex-wrap">
             {social.website && (
                 <Button variant="outline" size="icon" className="h-8 w-8 rounded-full hover:text-primary hover:border-primary transition-colors" asChild>
-                    <a href={social.website} target="_blank" rel="noopener"><Globe className="h-4 w-4" /></a>
+                    <a href={toSocialHref('website', social.website)!} target="_blank" rel="noopener"><Globe className="h-4 w-4" /></a>
                 </Button>
             )}
             {social.instagram && (
                 <Button variant="outline" size="icon" className="h-8 w-8 rounded-full hover:text-pink-500 hover:border-pink-500 transition-colors" asChild>
-                    <a href={social.instagram} target="_blank" rel="noopener"><Instagram className="h-4 w-4" /></a>
+                    <a href={toSocialHref('instagram', social.instagram)!} target="_blank" rel="noopener"><Instagram className="h-4 w-4" /></a>
                 </Button>
             )}
             {social.facebook && (
                 <Button variant="outline" size="icon" className="h-8 w-8 rounded-full hover:text-blue-600 hover:border-blue-600 transition-colors" asChild>
-                    <a href={social.facebook} target="_blank" rel="noopener"><Facebook className="h-4 w-4" /></a>
+                    <a href={toSocialHref('facebook', social.facebook)!} target="_blank" rel="noopener"><Facebook className="h-4 w-4" /></a>
                 </Button>
             )}
             {social.twitter && (
                 <Button variant="outline" size="icon" className="h-8 w-8 rounded-full hover:text-sky-500 hover:border-sky-500 transition-colors" asChild>
-                    <a href={social.twitter} target="_blank" rel="noopener"><Twitter className="h-4 w-4" /></a>
+                    <a href={toSocialHref('twitter', social.twitter)!} target="_blank" rel="noopener"><Twitter className="h-4 w-4" /></a>
                 </Button>
             )}
         </div>

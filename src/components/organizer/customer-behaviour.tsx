@@ -64,7 +64,10 @@ const RFM_CARDS: { key: string | null; label: string; field: keyof Summary; icon
 const BEHAVIOR_CHIPS: { key: string; label: string; field: keyof Summary }[] = [
     { key: 'repeat', label: 'Repeat', field: 'repeat' },
     { key: 'no_show', label: 'No-shows', field: 'no_show' },
-    { key: 'abandoned', label: 'Abandoned', field: 'abandoned' },
+    // Open carts only: an upcoming event they never bought, abandoned after
+    // their last purchase. Lifetime abandons (incl. past events) are not a
+    // segment — there is nothing to recover there.
+    { key: 'abandoned', label: 'Open carts', field: 'abandoned' },
     { key: 'rejected', label: 'Rejected', field: 'rejected' },
     { key: 'reengaged', label: 'Re-engaged', field: 'reengaged' },
 ]
@@ -77,7 +80,7 @@ const BADGES: Record<string, { label: string; cls: string }> = {
     at_risk:   { label: 'At risk',    cls: 'bg-amber-500/10 text-amber-700 border-amber-500/30' },
     lost:      { label: 'Lost',       cls: 'bg-rose-500/10 text-rose-700 border-rose-500/30' },
     no_show:   { label: 'No-show',    cls: 'bg-amber-500/10 text-amber-700 border-amber-500/30' },
-    abandoned: { label: 'Abandoned',  cls: 'bg-orange-500/10 text-orange-700 border-orange-500/30' },
+    abandoned: { label: 'Open cart',  cls: 'bg-orange-500/10 text-orange-700 border-orange-500/30' },
     rejected:  { label: 'Rejected',   cls: 'bg-red-500/10 text-red-700 border-red-500/30' },
     reengaged: { label: 'Re-engaged', cls: 'bg-violet-500/10 text-violet-700 border-violet-500/30' },
 }
