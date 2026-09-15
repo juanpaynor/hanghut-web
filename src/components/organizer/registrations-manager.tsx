@@ -7,13 +7,42 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
-import { Check, X, Clock, Users, ChevronDown, ChevronUp, Loader2, RefreshCw } from 'lucide-react'
+import { Check, X, Clock, Users, ChevronDown, ChevronUp, Loader2, RefreshCw, Download } from 'lucide-react'
 import { approveRegistration, rejectRegistration, EventRegistration } from '@/lib/organizer/registration-management-actions'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 interface Props {
     eventId: string
+    eventTitle?: string
     initialRegistrations: EventRegistration[]
+    /** Approval-gated event: show the pending/approved/rejected queue. Off = a
+     *  flat list of responses (auto-approve has nothing to review). */
+    approvalMode?: boolean
+}
+
+const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`
+
+/** One row per registration, one column per question — the shape a spreadsheet
+ *  wants, not one row per answer. Question columns come from the union of labels
+ *  actually answered so a question added mid-event still lands in its own column. */
+function registrationsToCsv(regs: EventRegistration[]): string {
+    const labels: string[] = []
+    for (const r of regs) for (const a of r.answers) if (!labels.includes(a.question_label)) labels.push(a.question_label)
+    const headers = ['Name', 'Email', 'Status', 'Submitted', ...labels]
+    const rows = regs.map(r => {
+        const byLabel = new Map(r.answers.map(a => [a.question_label, a.answer]))
+        return [
+            r.user?.full_name || r.guest_name || '',
+            r.user?.email || r.guest_email || '',
+            STATUS_BADGE[r.status]?.label ?? r.status,
+            new Date(r.created_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
+            ...labels.map(l => {
+                const v = byLabel.get(l)
+                return Array.isArray(v) ? v.join('; ') : v ?? ''
+            }),
+        ].map(csvCell).join(',')
+    })
+    return [headers.map(csvCell).join(','), ...rows].join('\n')
 }
 
 const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -168,7 +197,7 @@ function RegistrationCard({
     )
 }
 
-export function RegistrationsManager({ eventId, initialRegistrations }: Props) {
+export function RegistrationsManager({ eventId, eventTitle, initialRegistrations, approvalMode = true }: Props) {
     const router = useRouter()
     const [registrations, setRegistrations] = useState<EventRegistration[]>(initialRegistrations)
     const [isRefreshing, setIsRefreshing] = useState(false)
@@ -200,12 +229,61 @@ export function RegistrationsManager({ eventId, initialRegistrations }: Props) {
     const approved = registrations.filter(r => r.status === 'approved' || r.status === 'auto_approved')
     const rejected = registrations.filter(r => r.status === 'rejected')
 
+    const exportCsv = () => {
+        const blob = new Blob(['\uFEFF' + registrationsToCsv(registrations)], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${(eventTitle || 'event').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}-registrations.csv`
+        a.click()
+        URL.revokeObjectURL(url)
+    }
+
     if (registrations.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground border-2 border-dashed rounded-xl">
                 <Users className="h-10 w-10 mb-3 opacity-40" />
                 <p className="font-semibold text-foreground">No registrations yet</p>
-                <p className="text-sm mt-1 max-w-xs">Once people submit registration requests for this event, they'll appear here.</p>
+                <p className="text-sm mt-1 max-w-xs">
+                    {approvalMode
+                        ? "Once people submit registration requests for this event, they'll appear here."
+                        : "Once people register for this event, their answers will appear here."}
+                </p>
+            </div>
+        )
+    }
+
+    const exportButton = (
+        <Button variant="outline" size="sm" onClick={exportCsv} className="gap-1.5">
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+        </Button>
+    )
+
+    // Auto-approve: nothing to review, so no queue — one list, newest first,
+    // with the answers expandable on each card.
+    if (!approvalMode) {
+        const list = [...registrations].reverse()
+        return (
+            <div className="space-y-4">
+                <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border rounded-lg text-sm">
+                        <Users className="h-4 w-4" />
+                        <span><strong>{list.length}</strong> {list.length === 1 ? 'response' : 'responses'}</span>
+                    </div>
+                    <div className="ml-auto flex items-center gap-2">
+                        {exportButton}
+                        <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-1.5">
+                            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                            Refresh
+                        </Button>
+                    </div>
+                </div>
+                <div className="space-y-3">
+                    {list.map(reg => (
+                        <RegistrationCard key={reg.id} reg={reg} eventId={eventId} onUpdate={handleUpdate} />
+                    ))}
+                </div>
             </div>
         )
     }
@@ -225,10 +303,13 @@ export function RegistrationsManager({ eventId, initialRegistrations }: Props) {
                     <X className="h-4 w-4" />
                     <span><strong>{rejected.length}</strong> rejected</span>
                 </div>
-                <Button variant="outline" size="sm" onClick={handleRefresh} className="ml-auto gap-1.5">
-                    <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-                    Refresh
-                </Button>
+                <div className="ml-auto flex items-center gap-2">
+                    {exportButton}
+                    <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-1.5">
+                        <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        Refresh
+                    </Button>
+                </div>
             </div>
 
             <Tabs defaultValue="pending">

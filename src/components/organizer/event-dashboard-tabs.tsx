@@ -73,8 +73,12 @@ export function EventDashboardTabs({
 
     // Base 7 tabs (incl. Analytics) + optional Registrations / Seat Map / Invites.
     // Literal class strings keep Tailwind's JIT happy (no dynamic grid-cols-${n}).
+    // Registrations exist for ANY event with questions (auto-approve just skips
+    // the review step), not only approval-gated ones. Gating the tab on
+    // require_approval hid every auto-approved answer from the organizer.
+    const showRegistrations = !!event.require_approval || initialQuestions.length > 0 || initialRegistrations.length > 0
     const tabCount = 7
-        + (event.require_approval ? 1 : 0)
+        + (showRegistrations ? 1 : 0)
         + (event.seating_type === 'assigned_seating' ? 1 : 0)
         + (event.invite_only ? 1 : 0)
     const gridColsClass = ({ 7: 'grid-cols-7', 8: 'grid-cols-8', 9: 'grid-cols-9', 10: 'grid-cols-10' } as Record<number, string>)[tabCount] || 'grid-cols-7'
@@ -110,10 +114,10 @@ export function EventDashboardTabs({
                     <ClipboardList className="h-4 w-4" />
                     Questions
                 </TabsTrigger>
-                {event.require_approval && (
+                {showRegistrations && (
                     <TabsTrigger value="registrations" className="flex items-center gap-2">
                         <UserCheck className="h-4 w-4" />
-                        Registrations
+                        {event.require_approval ? 'Registrations' : 'Responses'}
                         {initialRegistrations.filter(r => r.status === 'pending').length > 0 && (
                             <span className="ml-1 bg-amber-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-bold">
                                 {initialRegistrations.filter(r => r.status === 'pending').length}
@@ -221,15 +225,21 @@ export function EventDashboardTabs({
                 />
             </TabsContent>
 
-            {event.require_approval && (
+            {showRegistrations && (
                 <TabsContent value="registrations" className="mt-6 animate-in fade-in-50 duration-300">
                     <div className="mb-4">
-                        <h3 className="text-xl font-semibold">Registration Requests</h3>
-                        <p className="text-sm text-muted-foreground mt-1">Review and approve or reject attendee registration requests.</p>
+                        <h3 className="text-xl font-semibold">{event.require_approval ? 'Registration Requests' : 'Registration Responses'}</h3>
+                        <p className="text-sm text-muted-foreground mt-1">
+                            {event.require_approval
+                                ? 'Review and approve or reject attendee registration requests.'
+                                : 'Everything attendees answered when they registered. Export it as a CSV for your own lists.'}
+                        </p>
                     </div>
                     <RegistrationsManager
                         eventId={eventId}
+                        eventTitle={event.title}
                         initialRegistrations={initialRegistrations}
+                        approvalMode={!!event.require_approval}
                     />
                 </TabsContent>
             )}

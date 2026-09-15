@@ -484,6 +484,12 @@ serve(async (req) => {
         const combinedMetadata = {
             ...(Object.keys(feeMetadata).length > 0 ? feeMetadata : {}),
             ...(Object.keys(subscriberDiscountMeta).length > 0 ? { subscriber_discount: subscriberDiscountMeta } : {}),
+            // The webhook issues PAID tickets with `intent.metadata.registration_id`,
+            // but nothing ever wrote it here — so every paid ticket was issued with
+            // registration_id NULL and the organizer could never reach the buyer's
+            // answers (the attendee "View answers" button keys off that link). The
+            // free path passed registration_id directly and was fine.
+            ...(typeof registration_id === 'string' && registration_id ? { registration_id } : {}),
         }
 
         const { error: updateError } = await supabaseAdmin

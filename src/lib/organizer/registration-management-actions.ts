@@ -37,14 +37,18 @@ export async function getEventRegistrations(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return []
 
-    const { data: ownerCheck } = await supabase
+    // Resolve through the acting partner (owner OR platform-support seat), the
+    // same way the rest of the dashboard does. Comparing partners.user_id to
+    // the caller meant a ghost seat saw an empty Registrations tab on an event
+    // that had hundreds.
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (!actingPartnerId) return []
+    const { data: ownerCheck } = await adminClient
         .from('events')
-        .select('id, partners!events_organizer_id_fkey(user_id)')
+        .select('id, organizer_id')
         .eq('id', eventId)
         .single()
-
-    const partnerUserId = (ownerCheck?.partners as any)?.user_id
-    if (!ownerCheck || partnerUserId !== user.id) return []
+    if (!ownerCheck || ownerCheck.organizer_id !== actingPartnerId) return []
 
     // Use admin client to bypass RLS on the nested joins (users, registration_answers, registration_questions)
     let query = adminClient
