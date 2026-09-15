@@ -1,6 +1,7 @@
 import LandingHeader from "@/components/landing/scenes/header";
 import LandingFooter from "@/components/landing/scenes/footer";
 import Hero from "@/components/landing/scenes/hero";
+import Lineup from "@/components/landing/scenes/lineup";
 import Film from "@/components/landing/scenes/film";
 import Discover from "@/components/landing/scenes/discover";
 import Platform from "@/components/landing/scenes/platform";
@@ -36,6 +37,12 @@ export default function LandingPage() {
             <main className="flex-1">
                 <SectionErrorBoundary>
                     <Hero />
+                </SectionErrorBoundary>
+
+                {/* Social proof directly under the promise, before the first
+                    numbered scene asks for any more attention. */}
+                <SectionErrorBoundary>
+                    <Lineup />
                 </SectionErrorBoundary>
 
                 <div id="scene-film" className="scroll-mt-24">
