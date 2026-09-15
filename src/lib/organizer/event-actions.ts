@@ -131,6 +131,8 @@ export async function createEvent(formData: FormData) {
         const externalTicketUrl = formData.get('external_ticket_url') as string || null
         const externalProviderName = formData.get('external_provider_name') as string || null
 
+        const capacity = isExternal ? 999999 : parseInt(formData.get('capacity') as string)
+
         const eventData = {
             organizer_id: partner.id,
             title: formData.get('title') as string,
@@ -149,10 +151,13 @@ export async function createEvent(formData: FormData) {
             end_datetime: manilaLocalToISO(formData.get('end_datetime') as string) || null,
             sales_end_datetime: salesEndDatetime || defaultSalesEnd,
             ticket_price: parseFloat(formData.get('ticket_price') as string) || 0,
-            capacity: isExternal ? 999999 : parseInt(formData.get('capacity') as string),
+            capacity,
             tickets_sold: 0,
             min_tickets_per_purchase: 1, // Default from migration
-            max_tickets_per_purchase: 10, // Default from migration
+            // The table enforces max_tickets_per_purchase <= capacity, so a flat
+            // 10 rejected every small event (a 4-seat tournament could not be
+            // created at all). Clamp to capacity, never below 1.
+            max_tickets_per_purchase: Math.max(1, Math.min(10, capacity)),
             cover_image_url: coverUrl,
             images: additionalImageUrls.length > 0 ? additionalImageUrls : null,
             status: formData.get('status') as string,
@@ -313,7 +318,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
     // Verify ownership
     const { data: existingEvent } = await adminSupabase
         .from('events')
-        .select('organizer_id, cover_image_url, images')
+        .select('organizer_id, cover_image_url, images, max_tickets_per_purchase')
         .eq('id', eventId)
         .single()
 
@@ -372,6 +377,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
         const salesEndDatetime = manilaLocalToISO(formData.get('sales_end_datetime') as string)
         const defaultSalesEnd = new Date(new Date(startDatetime).getTime() - 3600000).toISOString()
         const isExternal = formData.get('is_external') === 'true'
+        const newCapacity = isExternal ? 999999 : parseInt(formData.get('capacity') as string)
 
         const updateData = {
             title: formData.get('title') as string,
@@ -390,7 +396,10 @@ export async function updateEvent(eventId: string, formData: FormData) {
             end_datetime: manilaLocalToISO(formData.get('end_datetime') as string) || null,
             sales_end_datetime: salesEndDatetime || defaultSalesEnd,
             ticket_price: parseFloat(formData.get('ticket_price') as string) || 0,
-            capacity: isExternal ? 999999 : parseInt(formData.get('capacity') as string),
+            capacity: newCapacity,
+            // Same constraint on edit: shrinking capacity below the existing
+            // per-order cap would reject the whole save.
+            max_tickets_per_purchase: Math.max(1, Math.min(existingEvent.max_tickets_per_purchase ?? 10, newCapacity)),
             cover_image_url: coverUrl,
             images: finalImages.length > 0 ? finalImages : null,
             status: formData.get('status') as string,
