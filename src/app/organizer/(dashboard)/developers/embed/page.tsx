@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { getEmbedContext } from '@/lib/organizer/embed-actions'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +16,7 @@ export default function EmbedPage() {
     const { toast } = useToast()
     const [partner, setPartner] = useState<any>(null)
     const [events, setEvents] = useState<any[]>([])
+    const [loadError, setLoadError] = useState<string | null>(null)
     const [copied, setCopied] = useState(false)
 
     // Customization state
@@ -31,34 +32,26 @@ export default function EmbedPage() {
 
     useEffect(() => {
         async function load() {
-            const supabase = createClient()
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return
-
-            const { data: p } = await supabase
-                .from('partners')
-                .select('id, slug, business_name, branding')
-                .eq('user_id', user.id)
-                .single()
-
-            if (p) {
-                setPartner(p)
-
-                // Load brand colors from branding if available
-                if (p.branding?.colors?.primary) setPrimaryColor(p.branding.colors.primary)
-                if (p.branding?.colors?.background) setBgColor(p.branding.colors.background)
-
-                // Load events for event selector
-                const { data: evts } = await supabase
-                    .from('events')
-                    .select('id, title, start_datetime')
-                    .eq('organizer_id', p.id)
-                    .eq('status', 'active')
-                    .order('start_datetime', { ascending: true })
-
-                if (evts) setEvents(evts)
-                if (evts && evts.length > 0) setSelectedEventId(evts[0].id)
+            let res: Awaited<ReturnType<typeof getEmbedContext>>
+            try {
+                res = await getEmbedContext()
+            } catch (e) {
+                // A thrown action (network, server crash) used to leave the
+                // skeleton up forever — surface it instead.
+                setLoadError(e instanceof Error ? e.message : 'Could not load your embed settings.')
+                return
             }
+            if ('error' in res) {
+                setLoadError(res.error)
+                return
+            }
+            const p = res.partner
+            setPartner(p)
+            // Load brand colors from branding if available
+            if (p.branding?.colors?.primary) setPrimaryColor(p.branding.colors.primary)
+            if (p.branding?.colors?.background) setBgColor(p.branding.colors.background)
+            setEvents(res.events)
+            if (res.events.length > 0) setSelectedEventId(res.events[0].id)
         }
         load()
     }, [])
@@ -105,6 +98,14 @@ export default function EmbedPage() {
         setCopied(true)
         toast({ title: 'Copied!', description: 'Embed code copied to clipboard.' })
         setTimeout(() => setCopied(false), 2000)
+    }
+
+    if (loadError) {
+        return (
+            <div className="flex-1 p-8 pt-6">
+                <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-sm text-destructive">{loadError}</div>
+            </div>
+        )
     }
 
     if (!partner) {

@@ -1,17 +1,18 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import Header from '@/components/landing/header'
-import Footer from '@/components/landing/footer'
-import { USE_CASES, ACCENT, getUseCase } from '@/lib/marketing/use-cases'
+import { USE_CASES, getUseCase } from '@/lib/marketing/use-cases'
+import { MaskedLines, Reveal, SceneLabel, Magnetic } from '@/components/landing/scenes/primitives'
+import CTA from '@/components/landing/scenes/cta'
 import {
-    ArrowRight, ArrowLeft, Check, Sparkles, ChevronDown,
+    ArrowRight, ArrowUpRight, Check, ChevronDown,
     Armchair, Layers, QrCode, UserCheck, Code2, Mail, MapPin, ClipboardList,
-    CreditCard, BarChart3, Palette, Ticket, Rocket, Share2, ScanLine,
+    CreditCard, BarChart3, Palette, Ticket, CalendarPlus, Share2, ScanLine,
+    type LucideIcon,
 } from 'lucide-react'
 
 // Map a feature chip to a fitting icon (best-effort keyword match).
-function featureIcon(feature: string): React.ElementType {
+function featureIcon(feature: string): LucideIcon {
     const f = feature.toLowerCase()
     if (f.includes('seat')) return Armchair
     if (f.includes('tier') || f.includes('pass')) return Layers
@@ -28,12 +29,19 @@ function featureIcon(feature: string): React.ElementType {
     return Check
 }
 
-const BENEFITS = ['No monthly fees', 'Payouts to your bank', 'GCash · cards · QRPh', 'Set up in minutes']
+// Split a short headline into two display lines at the word midpoint, so the
+// masked-line reveal has something to reveal line by line.
+function twoLines(text: string): string[] {
+    const words = text.split(' ')
+    if (words.length < 3) return [text]
+    const cut = Math.ceil(words.length / 2)
+    return [words.slice(0, cut).join(' '), words.slice(cut).join(' ')]
+}
 
-const HOW_IT_WORKS = [
-    { icon: Rocket, title: 'Create your event', body: 'Add the details, set ticket tiers or switch on free RSVP, and publish in minutes.' },
-    { icon: Share2, title: 'Share everywhere', body: 'Post your link, embed it on your own site, and get discovered on the HangHut map.' },
-    { icon: ScanLine, title: 'Check them in', body: 'Scan QR codes at the door — fast, duplicate-proof entry with the seat shown instantly.' },
+const STEPS = [
+    { icon: CalendarPlus, n: '01', title: 'Create the event', body: 'Add the details, set ticket tiers or switch on free RSVP, publish.' },
+    { icon: Share2, n: '02', title: 'Share everywhere', body: 'Your link, an embed on your own site, and the HangHut map.' },
+    { icon: ScanLine, n: '03', title: 'Check them in', body: 'Scan QR at the door — duplicate-proof, seat shown instantly.' },
 ]
 
 const GENERIC_FAQS = [
@@ -54,242 +62,233 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     return { title: `${uc.name} — HangHut`, description: uc.subhead }
 }
 
+/**
+ * One use case, told the way the landing tells everything: a numbered
+ * sequence on hairline grids, one brand colour, big display type. The
+ * per-vertical rainbow accents and gradient pills of the old page are gone —
+ * six colour schemes for six pages made them read as six different products.
+ */
 export default async function UseCasePage({ params }: { params: Promise<{ slug: string }> }) {
     const { slug } = await params
     const uc = getUseCase(slug)
     if (!uc) notFound()
 
-    const a = ACCENT[uc.accent]
     const faqs = [...(uc.faqs ?? []), ...GENERIC_FAQS]
+    const index = USE_CASES.findIndex((u) => u.slug === uc.slug)
+    const others = USE_CASES.filter((u) => u.slug !== uc.slug)
+    // Challenges and solutions are authored as parallel triples: the i-th
+    // solution answers the i-th challenge. Present them as pairs, not two lists.
+    const pairs = uc.challenges.map((c, i) => ({ challenge: c, solution: uc.solutions[i] }))
 
     return (
-        <div className="flex min-h-dvh flex-col font-sans antialiased" style={{ backgroundColor: '#FAFAF8' }}>
-            <Header />
-            <main className="flex-1">
-                {/* ── Hero ───────────────────────────────── */}
-                <section className={`relative overflow-hidden bg-gradient-to-b ${a.soft} via-[#FAFAF8] to-[#FAFAF8]`}>
-                    <div aria-hidden className={`pointer-events-none absolute -right-20 -top-24 h-96 w-96 rounded-full ${a.glow} opacity-30 blur-[120px]`} />
-                    <div aria-hidden className={`pointer-events-none absolute -left-24 top-40 h-80 w-80 rounded-full ${a.glow} opacity-20 blur-[130px]`} />
-
-                    <div className="relative mx-auto max-w-4xl px-4 pb-16 pt-10 text-center md:pt-14">
-                        <Link href="/use-cases" className="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-500 transition-colors hover:text-gray-900">
-                            <ArrowLeft className="h-4 w-4" /> All use cases
-                        </Link>
-
-                        {/* Big emoji tile */}
-                        <div className="mt-8 flex justify-center">
-                            <span className={`flex h-24 w-24 rotate-[-4deg] items-center justify-center rounded-[1.75rem] bg-white text-5xl shadow-xl ring-1 ${a.ring} transition-transform hover:rotate-0`}>
-                                {uc.emoji}
-                            </span>
+        <>
+            {/* ── Hero ─────────────────────────────────────────────────── */}
+            <section className="relative overflow-hidden pt-20">
+                <div
+                    aria-hidden
+                    className="pointer-events-none absolute -right-32 -top-24 h-[28rem] w-[28rem] rounded-full bg-[var(--lp-brand)] opacity-[0.08] blur-[120px]"
+                />
+                <div className="mx-auto max-w-7xl px-6 pb-20 pt-16 md:px-12 md:pb-28 md:pt-24">
+                    <Reveal className="flex flex-col gap-6">
+                        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                            <Link href="/use-cases" className="lp-mono text-[11px] uppercase tracking-[0.28em] text-[var(--lp-dim)] transition-colors hover:text-[var(--lp-text)]">
+                                ← All use cases
+                            </Link>
+                            <SceneLabel index={String(index + 1).padStart(2, '0')} label={uc.eyebrow} />
                         </div>
 
-                        <span className={`mt-6 inline-block rounded-full bg-white px-4 py-1.5 text-xs font-bold uppercase tracking-widest ${a.text} shadow-sm ring-1 ${a.ring}`}>
-                            {uc.eyebrow}
-                        </span>
-
-                        <h1 className="mx-auto mt-5 max-w-3xl font-headline text-5xl font-extrabold leading-[1.05] tracking-tight text-gray-900 md:text-7xl">
-                            {uc.headline}
+                        <h1 className="lp-display max-w-5xl text-5xl leading-[0.9] text-[var(--lp-text)] md:text-8xl">
+                            <MaskedLines lines={twoLines(uc.headline)} />
                         </h1>
-                        <p className="mx-auto mt-5 max-w-2xl text-lg text-gray-600 md:text-xl">{uc.subhead}</p>
 
-                        <div className="mt-8 flex flex-wrap justify-center gap-3">
-                            <Link href="/ticketing" className={`rounded-full bg-gradient-to-r ${a.grad} px-7 py-3.5 text-sm font-bold text-white shadow-lg transition-transform hover:scale-105`}>
-                                Become a partner
-                            </Link>
-                            <Link href="/download" className="rounded-full border-2 border-gray-900 bg-transparent px-7 py-3.5 text-sm font-bold text-gray-900 transition-colors hover:bg-gray-900 hover:text-white">
-                                Download the app
+                        <p className="max-w-xl text-lg leading-relaxed text-[var(--lp-muted)] md:text-xl">{uc.subhead}</p>
+
+                        <div className="mt-2 flex flex-wrap items-center gap-3">
+                            <Magnetic>
+                                <Link
+                                    href="/ticketing"
+                                    className="group inline-flex items-center gap-2 rounded-full bg-[var(--lp-brand)] px-7 py-3.5 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--lp-brand-fg)] shadow-[0_8px_22px_-8px_rgba(79,70,229,0.6)] transition-shadow hover:shadow-[0_12px_30px_-8px_rgba(79,70,229,0.75)]"
+                                >
+                                    Start selling
+                                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                                </Link>
+                            </Magnetic>
+                            <Link
+                                href="/pricing"
+                                className="inline-flex items-center gap-2 rounded-full border border-[var(--lp-line-strong)] px-7 py-3.5 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--lp-text)] transition-colors hover:border-[var(--lp-brand-soft)] hover:bg-[var(--lp-deep)]"
+                            >
+                                See pricing
                             </Link>
                         </div>
 
-                        {/* Feature pills — gradient */}
-                        <div className="mt-9 flex flex-wrap justify-center gap-2.5">
+                        <ul className="mt-6 flex flex-wrap gap-2">
                             {uc.features.map((f) => (
-                                <span key={f} className={`rounded-full bg-gradient-to-r ${a.grad} px-4 py-2 text-sm font-bold text-white shadow-sm`}>
+                                <li key={f} className="lp-mono rounded-full border border-[var(--lp-line-strong)] px-3.5 py-1.5 text-[11px] uppercase tracking-[0.18em] text-[var(--lp-muted)]">
                                     {f}
-                                </span>
+                                </li>
                             ))}
-                        </div>
-                    </div>
-                </section>
+                        </ul>
+                    </Reveal>
+                </div>
+                <div className="lp-rule" />
+            </section>
 
-                {/* ── Trust strip ────────────────────────── */}
-                <section className="border-y-2 border-black/5 bg-white">
-                    <div className="mx-auto grid max-w-4xl grid-cols-2 gap-4 px-4 py-6 sm:grid-cols-4">
-                        {BENEFITS.map((b) => (
-                            <div key={b} className="flex items-center gap-2 text-sm font-bold text-gray-800">
-                                <span className={`flex h-6 w-6 items-center justify-center rounded-full ${a.bg} ${a.text}`}>
-                                    <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                                </span>
-                                {b}
-                            </div>
+            {/* ── Problem → what HangHut does ─────────────────────────── */}
+            <section className="py-24 md:py-32">
+                <div className="mx-auto max-w-7xl px-6 md:px-12">
+                    <Reveal className="flex flex-col gap-6">
+                        <SceneLabel index="A" label="The job" />
+                        <h2 className="lp-display max-w-3xl text-4xl leading-[0.92] text-[var(--lp-text)] md:text-6xl">
+                            <MaskedLines lines={['Three things that break,', 'and what we do about each.']} />
+                        </h2>
+                    </Reveal>
+
+                    <div className="mt-14 overflow-hidden rounded-[28px] border border-[var(--lp-line-strong)] bg-[var(--lp-line)]">
+                        <div className="hidden grid-cols-[3rem_1fr_1fr] gap-px bg-[var(--lp-line)] md:grid">
+                            <div className="bg-[var(--lp-deep)]" />
+                            <div className="lp-mono bg-[var(--lp-deep)] px-8 py-4 text-[10px] uppercase tracking-[0.3em] text-[var(--lp-dim)]">The problem</div>
+                            <div className="lp-mono bg-[var(--lp-deep)] px-8 py-4 text-[10px] uppercase tracking-[0.3em] text-[var(--lp-brand)]">With HangHut</div>
+                        </div>
+                        {pairs.map((p, i) => (
+                            <Reveal key={p.challenge.title} delay={i * 0.06} amount={0.2}>
+                                <div className="grid gap-px bg-[var(--lp-line)] md:grid-cols-[3rem_1fr_1fr]">
+                                    <div className="lp-mono flex items-start bg-[var(--lp-void)] px-4 pt-8 text-[12px] text-[var(--lp-brand-soft)] md:justify-center md:px-0">
+                                        {String(i + 1).padStart(2, '0')}
+                                    </div>
+                                    <div className="bg-[var(--lp-void)] px-6 py-6 md:px-8 md:py-8">
+                                        <p className="lp-mono mb-2 text-[10px] uppercase tracking-[0.3em] text-[var(--lp-dim)] md:hidden">The problem</p>
+                                        <h3 className="text-lg font-semibold text-[var(--lp-text)]">{p.challenge.title}</h3>
+                                        <p className="mt-2 max-w-md text-[15px] leading-relaxed text-[var(--lp-muted)]">{p.challenge.body}</p>
+                                    </div>
+                                    <div className="bg-[var(--lp-void)] px-6 py-6 md:bg-[var(--lp-deep)]/60 md:px-8 md:py-8">
+                                        <p className="lp-mono mb-2 text-[10px] uppercase tracking-[0.3em] text-[var(--lp-brand)] md:hidden">With HangHut</p>
+                                        {p.solution ? (
+                                            <>
+                                                <h3 className="text-lg font-semibold text-[var(--lp-text)]">{p.solution.title}</h3>
+                                                <p className="mt-2 max-w-md text-[15px] leading-relaxed text-[var(--lp-muted)]">{p.solution.body}</p>
+                                            </>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            </Reveal>
                         ))}
                     </div>
-                </section>
+                </div>
+            </section>
 
-                {/* ── Challenge ──────────────────────────── */}
-                <section className="px-4 py-16 md:py-20">
-                    <div className="mx-auto max-w-5xl">
-                        <p className={`text-center text-sm font-bold uppercase tracking-widest ${a.text}`}>The challenge</p>
-                        <h2 className="mx-auto mt-3 max-w-2xl text-center font-headline text-3xl font-extrabold text-gray-900 md:text-4xl">
-                            Running {uc.name.toLowerCase()} events shouldn’t be this hard
+            {/* ── Built in ───────────────────────────────────────────── */}
+            <section className="border-y border-[var(--lp-line)] bg-[var(--lp-deep)] py-24 md:py-32">
+                <div className="mx-auto max-w-7xl px-6 md:px-12">
+                    <Reveal className="flex flex-col gap-6">
+                        <SceneLabel index="B" label="Built in" />
+                        <h2 className="lp-display max-w-3xl text-4xl leading-[0.92] text-[var(--lp-text)] md:text-6xl">
+                            <MaskedLines lines={['Nothing to bolt on.']} />
                         </h2>
-                        <div className="mt-10 grid gap-5 sm:grid-cols-3">
-                            {uc.challenges.map((c) => (
-                                <div key={c.title} className={`rounded-[1.5rem] border-2 ${a.border} ${a.bg} p-6 transition-transform hover:-translate-y-1`}>
-                                    <h3 className="font-headline text-lg font-bold text-gray-900">{c.title}</h3>
-                                    <p className="mt-2 text-sm leading-relaxed text-gray-600">{c.body}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </section>
+                        <p className="max-w-xl text-lg leading-relaxed text-[var(--lp-muted)]">
+                            The features {uc.name.toLowerCase()} organizers reach for first, already switched on.
+                        </p>
+                    </Reveal>
 
-                {/* ── Solutions ──────────────────────────── */}
-                <section className="bg-white px-4 py-16 md:py-20">
-                    <div className="mx-auto max-w-5xl">
-                        <p className={`text-center text-sm font-bold uppercase tracking-widest ${a.text}`}>How HangHut helps</p>
-                        <h2 className="mt-3 text-center font-headline text-3xl font-extrabold text-gray-900 md:text-4xl">
-                            The tools that do the heavy lifting
+                    <div className="mt-14 grid grid-cols-1 gap-px overflow-hidden rounded-[28px] border border-[var(--lp-line-strong)] bg-[var(--lp-line)] sm:grid-cols-2 lg:grid-cols-3">
+                        {uc.features.map((f, i) => {
+                            const Icon = featureIcon(f)
+                            return (
+                                <Reveal key={f} delay={(i % 3) * 0.05} amount={0.15} className="h-full">
+                                    <div className="group flex h-full items-center gap-5 bg-[var(--lp-void)] p-7 transition-colors duration-500 hover:bg-[var(--lp-deep)]">
+                                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[var(--lp-line-strong)] bg-[var(--lp-brand)]/10 text-[var(--lp-brand-soft)] transition-all duration-500 group-hover:border-[var(--lp-brand-soft)] group-hover:bg-[var(--lp-brand)]/25">
+                                            <Icon className="h-5 w-5" />
+                                        </span>
+                                        <span className="text-[15px] font-semibold text-[var(--lp-text)]">{f}</span>
+                                    </div>
+                                </Reveal>
+                            )
+                        })}
+                        <Reveal delay={0.15} amount={0.15} className="h-full">
+                            <Link href="/ticketing" className="group flex h-full items-center justify-between gap-5 bg-[var(--lp-brand)] p-7 text-[var(--lp-brand-fg)] transition-colors hover:bg-[var(--lp-brand-soft)]">
+                                <span className="text-[15px] font-semibold">And everything on the platform</span>
+                                <ArrowUpRight className="h-5 w-5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                            </Link>
+                        </Reveal>
+                    </div>
+                </div>
+            </section>
+
+            {/* ── How it works ──────────────────────────────────────── */}
+            <section className="py-24 md:py-32">
+                <div className="mx-auto max-w-7xl px-6 md:px-12">
+                    <Reveal className="flex flex-col gap-6">
+                        <SceneLabel index="C" label="How it works" />
+                        <h2 className="lp-display max-w-3xl text-4xl leading-[0.92] text-[var(--lp-text)] md:text-6xl">
+                            <MaskedLines lines={['Live before lunch.']} />
                         </h2>
-                        <div className="mt-10 grid gap-5 md:grid-cols-3">
-                            {uc.solutions.map((s, i) => (
-                                <div key={s.title} className="rounded-[1.5rem] border-2 border-black/5 bg-[#FAFAF8] p-7 transition-transform hover:-translate-y-1.5 hover:rotate-1">
-                                    <span className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${a.grad} font-headline text-xl font-extrabold text-white shadow-md`}>
-                                        {String(i + 1).padStart(2, '0')}
-                                    </span>
-                                    <h3 className="mt-5 font-headline text-lg font-bold text-gray-900">{s.title}</h3>
-                                    <p className="mt-2 text-sm leading-relaxed text-gray-600">{s.body}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </section>
+                    </Reveal>
 
-                {/* ── Everything you need ────────────────── */}
-                <section className="px-4 py-16 md:py-20">
-                    <div className="mx-auto max-w-5xl">
-                        <h2 className="text-center font-headline text-3xl font-extrabold text-gray-900 md:text-4xl">Everything you need, built in</h2>
-                        <div className="mt-10 grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-                            {uc.features.map((f) => {
-                                const FIcon = featureIcon(f)
-                                return (
-                                    <div key={f} className="flex items-center gap-4 rounded-2xl border-2 border-black/5 bg-white p-5 transition-transform hover:-translate-y-1">
-                                        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${a.bg} ${a.text}`}>
-                                            <FIcon className="h-6 w-6" />
-                                        </span>
-                                        <p className="font-bold text-gray-900">{f}</p>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    </div>
-                </section>
-
-                {/* ── How it works ───────────────────────── */}
-                <section className="bg-white px-4 py-16 md:py-20">
-                    <div className="mx-auto max-w-5xl">
-                        <h2 className="text-center font-headline text-3xl font-extrabold text-gray-900 md:text-4xl">Up and running in 3 steps</h2>
-                        <div className="mt-12 grid gap-10 md:grid-cols-3">
-                            {HOW_IT_WORKS.map((step, i) => {
-                                const SIcon = step.icon
-                                return (
-                                    <div key={step.title} className="relative text-center">
-                                        <span className={`mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] bg-gradient-to-br ${a.grad} text-white shadow-xl`}>
-                                            <SIcon className="h-9 w-9" />
-                                        </span>
-                                        <h3 className="mt-5 font-headline text-xl font-bold text-gray-900">
-                                            <span className={a.text}>{i + 1}.</span> {step.title}
-                                        </h3>
-                                        <p className="mt-2 text-sm leading-relaxed text-gray-600">{step.body}</p>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    </div>
-                </section>
-
-                {/* ── Case study (optional) ──────────────── */}
-                {uc.caseStudy && (
-                    <section className="px-4 py-16">
-                        <div className={`mx-auto max-w-3xl rounded-[2rem] border-2 ${a.border} ${a.bg} p-9`}>
-                            <Sparkles className={`h-7 w-7 ${a.text}`} />
-                            <blockquote className="mt-4 font-headline text-2xl font-bold leading-relaxed text-gray-900">“{uc.caseStudy.quote}”</blockquote>
-                            <div className="mt-4 text-sm text-gray-600">
-                                <span className="font-bold text-gray-900">{uc.caseStudy.author}</span> · {uc.caseStudy.role}
-                            </div>
-                            {uc.caseStudy.metrics && (
-                                <div className="mt-6 grid grid-cols-3 gap-4 border-t-2 border-black/10 pt-6">
-                                    {uc.caseStudy.metrics.map((m) => (
-                                        <div key={m.label}>
-                                            <div className={`font-headline text-3xl font-extrabold ${a.text}`}>{m.value}</div>
-                                            <div className="text-xs font-medium text-gray-500">{m.label}</div>
+                    <div className="mt-14 grid gap-10 md:grid-cols-3 md:gap-8">
+                        {STEPS.map((s, i) => {
+                            const Icon = s.icon
+                            return (
+                                <Reveal key={s.n} delay={i * 0.08} amount={0.3}>
+                                    <div className="border-t border-[var(--lp-line-strong)] pt-7">
+                                        <div className="flex items-center justify-between">
+                                            <span className="lp-mono text-[12px] text-[var(--lp-brand-soft)]">{s.n}</span>
+                                            <Icon className="h-5 w-5 text-[var(--lp-dim)]" />
                                         </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </section>
-                )}
-
-                {/* ── FAQ ────────────────────────────────── */}
-                <section className="px-4 py-16 md:py-20">
-                    <div className="mx-auto max-w-2xl">
-                        <h2 className="text-center font-headline text-3xl font-extrabold text-gray-900 md:text-4xl">Frequently asked</h2>
-                        <div className="mt-8 space-y-3">
-                            {faqs.map((f) => (
-                                <details key={f.q} className="group rounded-2xl border-2 border-black/5 bg-white px-6 py-4 transition-colors open:border-black/10">
-                                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-headline font-bold text-gray-900">
-                                        {f.q}
-                                        <ChevronDown className={`h-5 w-5 shrink-0 ${a.text} transition-transform group-open:rotate-180`} />
-                                    </summary>
-                                    <p className="mt-3 text-sm leading-relaxed text-gray-600">{f.a}</p>
-                                </details>
-                            ))}
-                        </div>
+                                        <h3 className="lp-display mt-6 text-2xl text-[var(--lp-text)]">{s.title}</h3>
+                                        <p className="mt-3 max-w-xs text-[15px] leading-relaxed text-[var(--lp-muted)]">{s.body}</p>
+                                    </div>
+                                </Reveal>
+                            )
+                        })}
                     </div>
-                </section>
+                </div>
+            </section>
 
-                {/* ── CTA ────────────────────────────────── */}
-                <section className="px-4 pb-16">
-                    <div className={`relative mx-auto max-w-5xl overflow-hidden rounded-[2.5rem] bg-gradient-to-br ${a.grad} px-8 py-16 text-center text-white shadow-2xl`}>
-                        <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/15 blur-2xl" />
-                        <div aria-hidden className="pointer-events-none absolute -bottom-20 -left-10 h-64 w-64 rounded-full bg-black/10 blur-2xl" />
-                        <div className="relative">
-                            <div className="text-5xl">{uc.emoji}</div>
-                            <h2 className="mt-4 font-headline text-3xl font-extrabold md:text-4xl">Start selling for your {uc.name.toLowerCase()} event</h2>
-                            <p className="mx-auto mt-3 max-w-xl text-white/90">No monthly fees — you only pay when you sell. Set up in minutes.</p>
-                            <div className="mt-8 flex flex-wrap justify-center gap-3">
-                                <Link href="/ticketing" className="rounded-full bg-white px-7 py-3.5 text-sm font-bold text-gray-900 shadow-lg transition-transform hover:scale-105">
-                                    Become a partner
-                                </Link>
-                                <Link href="/organizer/login" className="rounded-full border-2 border-white/50 px-7 py-3.5 text-sm font-bold text-white transition-colors hover:bg-white/10">
-                                    Partner login
-                                </Link>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+            {/* ── FAQ ───────────────────────────────────────────────── */}
+            <section className="border-t border-[var(--lp-line)] py-24 md:py-32">
+                <div className="mx-auto grid max-w-7xl gap-12 px-6 md:grid-cols-[1fr_1.6fr] md:px-12">
+                    <Reveal className="flex flex-col gap-6">
+                        <SceneLabel index="D" label="Questions" />
+                        <h2 className="lp-display text-4xl leading-[0.92] text-[var(--lp-text)] md:text-6xl">
+                            <MaskedLines lines={['Before you', 'ask.']} />
+                        </h2>
+                    </Reveal>
+                    <Reveal delay={0.1} className="divide-y divide-[var(--lp-line)] border-y border-[var(--lp-line)]">
+                        {faqs.map((f) => (
+                            <details key={f.q} className="group py-5">
+                                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 text-[17px] font-semibold text-[var(--lp-text)]">
+                                    {f.q}
+                                    <ChevronDown className="h-5 w-5 shrink-0 text-[var(--lp-dim)] transition-transform duration-300 group-open:rotate-180" />
+                                </summary>
+                                <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-[var(--lp-muted)]">{f.a}</p>
+                            </details>
+                        ))}
+                    </Reveal>
+                </div>
+            </section>
 
-                {/* ── Other use cases ────────────────────── */}
-                <section className="px-4 pb-24">
-                    <div className="mx-auto max-w-4xl">
-                        <h2 className="text-center text-sm font-bold uppercase tracking-widest text-gray-400">Explore more use cases</h2>
-                        <div className="mt-5 flex flex-wrap justify-center gap-3">
-                            {USE_CASES.filter((u) => u.slug !== uc.slug).map((u) => (
+            {/* ── Close (shared with the landing) ───────────────────── */}
+            <CTA />
+
+            {/* ── Other use cases ───────────────────────────────────── */}
+            <section className="pb-24 md:pb-32">
+                <div className="mx-auto max-w-7xl px-6 md:px-12">
+                    <p className="lp-mono text-[11px] uppercase tracking-[0.28em] text-[var(--lp-dim)]">More use cases</p>
+                    <ul className="mt-6 grid gap-px overflow-hidden rounded-[22px] border border-[var(--lp-line-strong)] bg-[var(--lp-line)] sm:grid-cols-2 lg:grid-cols-5">
+                        {others.map((u) => (
+                            <li key={u.slug}>
                                 <Link
-                                    key={u.slug}
                                     href={`/use-cases/${u.slug}`}
-                                    className="inline-flex items-center gap-2 rounded-full border-2 border-black/10 bg-white px-4 py-2 text-sm font-bold text-gray-700 transition-transform hover:-translate-y-0.5"
+                                    className="group flex h-full items-center gap-3 bg-[var(--lp-void)] px-5 py-4 text-[14px] font-semibold text-[var(--lp-text)] transition-colors hover:bg-[var(--lp-deep)]"
                                 >
-                                    <span>{u.emoji}</span>
-                                    {u.name}
+                                    <span aria-hidden className="text-lg leading-none">{u.emoji}</span>
+                                    <span className="flex-1">{u.name}</span>
+                                    <ArrowRight className="h-4 w-4 -translate-x-1 text-[var(--lp-dim)] opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
                                 </Link>
-                            ))}
-                        </div>
-                    </div>
-                </section>
-            </main>
-            <Footer />
-        </div>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            </section>
+        </>
     )
 }

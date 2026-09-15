@@ -31,6 +31,17 @@ export function CookieConsent() {
 
     useEffect(() => {
         if (getCookieConsent()) return; // already decided
+        // Never inside an embed. The widget and the in-widget checkout are
+        // iframed on partner sites at a fixed height; the banner rendered on
+        // top of the quantity and Get Tickets controls and looked like the
+        // widget was broken. Consent belongs to the host page, not to a
+        // 600px frame the visitor didn't navigate to.
+        if (typeof window !== "undefined") {
+            const framed = window.self !== window.top;
+            const embedPath = window.location.pathname.startsWith("/embed");
+            const embedParam = new URLSearchParams(window.location.search).get("embed") === "true";
+            if (framed || embedPath || embedParam) return;
+        }
         const timer = setTimeout(() => setIsVisible(true), 1500);
         return () => clearTimeout(timer);
     }, []);

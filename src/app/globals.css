@@ -209,9 +209,12 @@
    every dashboard table. The brand indigo is the app's `--primary` exactly,
    so the one colour that must match across the two, does.
    ───────────────────────────────────────────────────────────────────── */
+/* Tokens are declared on :root as well so the landing header/footer can be
+   mounted on any public page (events, pricing, ticketing…) and still resolve
+   its colours. Only the variables live here — the ground/colour/color-scheme
+   below stay scoped to .landing-theme, so nothing repaints outside it. */
+:root,
 .landing-theme {
-  color-scheme: light;
-
   --lp-void: #ffffff;          /* page ground */
   --lp-deep: #f6f6fb;          /* alternating band */
   --lp-panel: #fbfbfe;         /* lifted surface */
@@ -228,7 +231,10 @@
 
   --lp-display: 'Bricolage Grotesque', 'Poppins', system-ui, sans-serif;
   --lp-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
 
+.landing-theme {
+  color-scheme: light;
   background: var(--lp-void);
   color: var(--lp-text);
 }
