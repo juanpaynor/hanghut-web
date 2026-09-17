@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import type { SectionData, CanvasTool, SectionType, SeatData, BackgroundShape, SeatShape, TierInfo } from './types'
+import type { SectionData, CanvasTool, SectionType, SeatData, BackgroundShape, SeatShape, TierInfo, RowData } from './types'
 import { SECTION_TYPE_COLORS, resolveSeatTier } from './types'
-import { fillStraightSeats, fillArcSeats } from './algorithms/fill-seats'
+import { fillSectionRows, pathCurvature, pathFromCurvature, pathEndpoints, rowLabelAt } from '@/lib/seat-map/rows'
+import { pointInPolygon, flatToVertices } from './algorithms/point-in-polygon'
 import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, XCircle, Circle, Square, Diamond, Lock, Unlock, Banknote, BoxSelect, Triangle, Minus, Type, Spline, Ruler, Plus } from 'lucide-react'
 import { CapacitySummary } from './capacity-summary'
 import { createClient } from '@/lib/supabase/client'
@@ -46,6 +47,11 @@ interface CanvasPropertiesProps {
   seatShape: SeatShape
   onSetSeatRadius: (r: number) => void
   onSetSeatShape: (s: SeatShape) => void
+  // ── Rows ──
+  selectedRowId?: string | null
+  onSelectRow2?: (rowId: string | null) => void
+  onUpdateRow?: (sectionId: string, rowId: string, updates: Partial<RowData>, relayout?: boolean) => void
+  onDeleteRow?: (sectionId: string, rowId: string) => void
 }
 
 const sectionTypes: { value: SectionType; label: string }[] = [
@@ -260,7 +266,7 @@ function BorderControls({
 type PresetShape = Partial<BackgroundShape> & { type: BackgroundShape['type'] }
 
 const ZONE_PRESETS: { label: string; shape: PresetShape }[] = [
-  { label: 'Stage', shape: { type: 'rect', width: 240, height: 70, fill: '#1e293b', label: 'STAGE' } },
+  { label: 'Stage', shape: { type: 'rect', width: 240, height: 70, fill: '#1e293b', label: 'STAGE', role: 'stage' } },
   { label: 'Bar', shape: { type: 'rect', width: 140, height: 50, fill: '#422006', label: 'BAR' } },
   { label: 'Entrance', shape: { type: 'rect', width: 120, height: 40, fill: '#14532d', label: 'ENTRANCE' } },
   { label: 'Dance Floor', shape: { type: 'rect', width: 200, height: 140, fill: '#312e81', label: 'DANCE FLOOR' } },
@@ -313,9 +319,16 @@ export function CanvasProperties({
   seatShape,
   onSetSeatRadius,
   onSetSeatShape,
+  selectedRowId = null,
+  onSelectRow2,
+  onUpdateRow,
+  onDeleteRow,
 }: CanvasPropertiesProps) {
   const [fillRows, setFillRows] = useState(10)
   const [fillCols, setFillCols] = useState(20)
+  const [fillCurve, setFillCurve] = useState(0)          // sagitta / row width, −0.4 … 0.4
+  const [fillSkipIO, setFillSkipIO] = useState(false)
+  const [fillStartNumber, setFillStartNumber] = useState(1)
   const [gridRotation, setGridRotation] = useState(0)
   const [labelScheme, setLabelScheme] = useState<'alpha' | 'numeric'>('alpha')
   const [aisleInput, setAisleInput] = useState('')  // comma-separated: e.g. "5,15" = aisle after seat 5 and 15
@@ -338,34 +351,30 @@ export function CanvasProperties({
   }, [selectedSection?.id])
 
   // ─── Fill seats in selected section ───────────────────────────────
+  // Rows first, seats from rows: every row gets a path (straight, or an arc
+  // when Curve ≠ 0), a label and its numbering, and the seats hang off it.
   const handleFillSeats = useCallback(() => {
     if (!selectedSection) return
-
-    const numConfig = { numberingDirection: numberingDir, numberingStyle, seatGap, rowGap, seatSize: seatRadius }
-    let seatPositions
-    if (selectedSection.seatOrientation === 'arc' && selectedSection.arcConfig) {
-      seatPositions = fillArcSeats(selectedSection.arcConfig, {
-        rowCount: fillRows,
-        seatsPerRow: fillCols,
-        labelScheme,
-        ...numConfig,
-      })
-    } else {
-      // Parse aisle positions
-      const aisleAfterSeats = aisleInput
-        .split(',')
-        .map(s => parseInt(s.trim()))
-        .filter(n => !isNaN(n) && n > 0)
-
-      seatPositions = fillStraightSeats(selectedSection.polygonPoints, {
-        rowCount: fillRows,
-        seatsPerRow: fillCols,
-        labelScheme,
-        gridRotation,
-        aisleAfterSeats: aisleAfterSeats.length > 0 ? aisleAfterSeats : undefined,
-        ...numConfig,
-      })
-    }
+    const aisleAfterSeats = aisleInput
+      .split(',')
+      .map(s => parseInt(s.trim()))
+      .filter(n => !isNaN(n) && n > 0)
+    const polygon = flatToVertices(selectedSection.polygonPoints)
+    const { rows, seats: generated } = fillSectionRows(selectedSection.polygonPoints, {
+      rowCount: fillRows,
+      seatsPerRow: fillCols,
+      seatRadius,
+      seatGap,
+      rowGap,
+      curvature: fillCurve,
+      gridRotation,
+      labelScheme,
+      skipIO: fillSkipIO,
+      startNumber: Math.max(1, fillStartNumber || 1),
+      numberingDirection: numberingDir,
+      numberingStyle,
+      aisleAfterSeats: aisleAfterSeats.length > 0 ? aisleAfterSeats : undefined,
+    }, (x, y) => pointInPolygon(x, y, polygon))
 
     // Preserve seat IDENTITY across re-fills. Canvas id = DB id, so regenerating
     // ids would orphan sold seats (save refuses to delete booked rows → invisible
@@ -374,27 +383,16 @@ export function CanvasProperties({
     // and only move to the new position. Booked seats whose label vanished from
     // the new layout are KEPT in place — a sold seat can never be dropped.
     const prevByLabel = new Map(selectedSection.seats.map((s) => [s.label, s]))
-    const newLabels = new Set(seatPositions.map((p) => p.label))
-
-    const seats: SeatData[] = seatPositions.map((pos) => {
+    const newLabels = new Set(generated.map((p) => p.label))
+    const seats: SeatData[] = generated.map((pos) => {
       const prev = prevByLabel.get(pos.label)
       return prev
-        ? { ...prev, rowLabel: pos.rowLabel, seatNumber: pos.seatNumber, x: pos.x, y: pos.y }
-        : {
-            id: crypto.randomUUID(),
-            rowLabel: pos.rowLabel,
-            seatNumber: pos.seatNumber,
-            label: pos.label,
-            x: pos.x,
-            y: pos.y,
-            status: 'available' as const,
-            customPrice: null,
-          }
+        ? { ...prev, rowId: pos.rowId, rowLabel: pos.rowLabel, seatNumber: pos.seatNumber, x: pos.x, y: pos.y }
+        : pos
     })
-
     const keptBooked = selectedSection.seats.filter(
       (s) => s.status === 'booked' && !newLabels.has(s.label)
-    )
+    ).map((s) => ({ ...s, rowId: null }))
     if (keptBooked.length > 0) {
       window.alert(
         `${keptBooked.length} sold seat(s) (${keptBooked.slice(0, 5).map((s) => s.label).join(', ')}${keptBooked.length > 5 ? '…' : ''}) aren't in the new layout — they were kept in place because sold seats can't be removed.`
@@ -403,6 +401,7 @@ export function CanvasProperties({
 
     onUpdateSection(selectedSection.id, {
       seats: [...seats, ...keptBooked],
+      rows,
       rowCount: fillRows,
       seatsPerRow: fillCols,
       gridRotation,
@@ -411,7 +410,7 @@ export function CanvasProperties({
       seatGap,
       rowGap,
     })
-  }, [selectedSection, fillRows, fillCols, labelScheme, gridRotation, numberingDir, numberingStyle, seatGap, rowGap, onUpdateSection])
+  }, [selectedSection, fillRows, fillCols, fillCurve, fillSkipIO, fillStartNumber, labelScheme, gridRotation, numberingDir, numberingStyle, seatGap, rowGap, seatRadius, aisleInput, onUpdateSection])
 
   // Find the selected seat object
   const selectedSeat = selectedSection?.seats.find((s) => s.id === selectedSeatId) ?? null
@@ -442,8 +441,16 @@ export function CanvasProperties({
         </p>
       </div>
 
-      {/* ─── Selected Seat View ─────────────────────────────────────── */}
-      {selectedSeatIds.length <= 1 && selectedSection && selectedSeat ? (
+      {/* ─── Selected Row View ──────────────────────────────────────── */}
+      {selectedSection && selectedRowId && selectedSection.rows?.some((r) => r.id === selectedRowId) ? (
+        <RowPanel
+          section={selectedSection}
+          row={selectedSection.rows.find((r) => r.id === selectedRowId)!}
+          onUpdateRow={(updates, relayout) => onUpdateRow?.(selectedSection.id, selectedRowId, updates, relayout)}
+          onDelete={() => onDeleteRow?.(selectedSection.id, selectedRowId)}
+          onBack={() => onSelectRow2?.(null)}
+        />
+      ) : selectedSeatIds.length <= 1 && selectedSection && selectedSeat ? (
         <div className="p-4 space-y-4">
           <div className="bg-indigo-900/20 border border-indigo-500/30 p-3 rounded-lg">
             <p className="text-sm text-white font-medium mb-1">
@@ -1109,7 +1116,7 @@ export function CanvasProperties({
             {tool === 'draw-seat' && (
               <div className="bg-indigo-900/20 border border-indigo-500/30 p-3 rounded-lg mb-3">
                 <p className="text-[11px] text-indigo-200 leading-relaxed mb-2">
-                  Click on the canvas to place seats. Seat # auto-increments after each click.
+                  <b>Drag</b> across the section to lay a whole row (label below, seats spaced automatically). <b>Click</b> to drop a single seat. Select a row afterwards to bend it, renumber it or move its labels.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1226,6 +1233,40 @@ export function CanvasProperties({
                   />
                 </div>
 
+                {/* Curve: rows become concentric arcs. 0 = straight. */}
+                <div className="mt-3">
+                  <label className="text-[11px] text-slate-500 flex justify-between mb-1">
+                    <span className="flex items-center gap-1"><Spline className="w-3 h-3" />Curve</span>
+                    <span className="text-slate-400">{fillCurve === 0 ? 'straight' : `${Math.round(fillCurve * 100)}%`}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="-40"
+                    max="40"
+                    value={Math.round(fillCurve * 100)}
+                    onChange={(e) => setFillCurve(parseInt(e.target.value) / 100)}
+                    className="w-full accent-indigo-500 cursor-pointer"
+                  />
+                  <p className="text-[10px] text-slate-600 mt-1">Bends every row into an arc — drag the slider toward the stage side. Single rows can be bent on the canvas with the orange handle.</p>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] text-slate-500 mb-1 block">First seat #</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={fillStartNumber}
+                      onChange={(e) => setFillStartNumber(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <label className="flex items-end gap-2 pb-2 text-[11px] text-slate-400 cursor-pointer">
+                    <input type="checkbox" checked={fillSkipIO} onChange={(e) => setFillSkipIO(e.target.checked)} className="h-3.5 w-3.5 accent-indigo-500" />
+                    Skip I and O
+                  </label>
+                </div>
+
                 <div className="mt-3">
                   <label className="text-[11px] text-slate-500 mb-1 block">
                     Row Labels
@@ -1332,11 +1373,68 @@ export function CanvasProperties({
               </div>
             )}
 
+            {/* Rows in this section */}
+            {(selectedSection.rows?.length ?? 0) > 0 && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[11px] text-slate-400 font-medium">Rows ({selectedSection.rows!.length})</p>
+                  <label className="flex items-center gap-1.5 text-[10px] text-slate-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedSection.showRowLabels !== false}
+                      onChange={(e) => onUpdateSection(selectedSection.id, { showRowLabels: e.target.checked })}
+                      className="h-3 w-3 accent-indigo-500"
+                    />
+                    Show labels
+                  </label>
+                </div>
+                <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-800 divide-y divide-slate-800">
+                  {selectedSection.rows!.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => onSelectRow2?.(r.id)}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 text-left text-xs transition-colors ${selectedRowId === r.id ? 'bg-indigo-600/30 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+                    >
+                      <span className="font-mono font-semibold">{r.label}</span>
+                      <span className="text-slate-500">{r.seatCount} seat{r.seatCount === 1 ? '' : 's'}{r.path.kind === 'arc' ? ' · curved' : ''}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Relabel rows A, B, C… in their current order (front → back
+                      // as drawn / filled). Seats are renamed with them.
+                      const rows = selectedSection.rows!
+                      rows.forEach((r, i) => onUpdateRow?.(selectedSection.id, r.id, { label: rowLabelAt(i, { skipIO: fillSkipIO }) }, false))
+                    }}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] py-1.5 rounded-lg border border-slate-700"
+                    title="A, B, C… in the rows' current order"
+                  >
+                    Relabel A→Z
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const rows = [...selectedSection.rows!].reverse()
+                      onUpdateSection(selectedSection.id, { rows })
+                    }}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] py-1.5 rounded-lg border border-slate-700"
+                    title="Flip which row counts as the first"
+                  >
+                    Reverse order
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Clear all seats */}
             {selectedSection.seats.length > 0 && (
               <button
                 onClick={() =>
-                  onUpdateSection(selectedSection.id, { seats: [] })
+                  onUpdateSection(selectedSection.id, { seats: [], rows: [] })
                 }
                 className="w-full flex items-center justify-center gap-2 bg-amber-600/10 hover:bg-amber-600/20 text-amber-400 text-xs font-medium py-2 rounded-lg transition-all border border-amber-600/20"
               >
@@ -1650,7 +1748,7 @@ export function CanvasProperties({
               <p className="font-medium text-slate-400">Quick Tips</p>
               <p>• <kbd className="bg-slate-800 px-1 rounded text-[10px]">P</kbd> Draw polygon section</p>
               <p>• <kbd className="bg-slate-800 px-1 rounded text-[10px]">R</kbd> Draw rectangle section</p>
-              <p>• <kbd className="bg-slate-800 px-1 rounded text-[10px]">D</kbd> Drop individual seats</p>
+              <p>• <kbd className="bg-slate-800 px-1 rounded text-[10px]">D</kbd> Seats &amp; rows — click one seat, drag a row</p>
               <p>• <kbd className="bg-slate-800 px-1 rounded text-[10px]">⌘Z</kbd> Undo</p>
               <p>• Click a seat to select & delete it</p>
               <p>• Scroll to pan, ⌘+scroll to zoom</p>
@@ -1665,6 +1763,134 @@ export function CanvasProperties({
 
 
 // ─── Best available (buy by section) — per-section controls ─────────────────
+// ─── Row panel ─────────────────────────────────────────────────────────────
+function RowPanel({
+  section, row, onUpdateRow, onDelete, onBack,
+}: {
+  section: SectionData
+  row: RowData
+  onUpdateRow: (updates: Partial<RowData>, relayout?: boolean) => void
+  onDelete: () => void
+  onBack: () => void
+}) {
+  const curvature = pathCurvature(row.path)
+  const sold = section.seats.filter((s) => s.rowId === row.id && s.status === 'booked').length
+  const setCurve = (c: number) => {
+    const { start, end } = pathEndpoints(row.path)
+    onUpdateRow({ path: pathFromCurvature(start, end, c) })
+  }
+  const inputCls = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500'
+  const segBtn = (active: boolean) => `flex-1 py-1.5 text-[11px] rounded-lg border transition-all ${active ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`
+  return (
+    <div className="p-4 space-y-4">
+      <div className="bg-indigo-900/20 border border-indigo-500/30 p-3 rounded-lg">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-white font-medium">Row {row.label}</p>
+          <button type="button" onClick={onBack} className="text-[11px] text-indigo-300 hover:text-white">← Section</button>
+        </div>
+        <p className="text-[11px] text-slate-400 mt-0.5">
+          {row.seatCount} seat{row.seatCount === 1 ? '' : 's'} · {row.path.kind === 'arc' ? 'curved' : 'straight'} · {section.label}
+          {sold > 0 && <span className="text-amber-400"> · {sold} sold</span>}
+        </p>
+        <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
+          Drag the white end handles to move or stretch the row, the orange middle handle to bend it, and the row labels to place them.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-[11px] text-slate-500 mb-1 block">Label</label>
+          <input
+            type="text"
+            value={row.label}
+            onChange={(e) => onUpdateRow({ label: e.target.value.toUpperCase().slice(0, 4) }, false)}
+            className={inputCls + ' font-mono'}
+          />
+        </div>
+        <div>
+          <label className="text-[11px] text-slate-500 mb-1 block">Seats</label>
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={row.seatCount}
+            onChange={(e) => onUpdateRow({ seatCount: Math.max(1, Math.min(200, parseInt(e.target.value) || 1)) })}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="text-[11px] text-slate-500 mb-1 block">First seat #</label>
+          <input
+            type="number"
+            min={1}
+            value={row.startNumber}
+            onChange={(e) => onUpdateRow({ startNumber: Math.max(1, parseInt(e.target.value) || 1) })}
+            className={inputCls}
+          />
+        </div>
+        <label className="flex items-end gap-2 pb-2 text-[11px] text-slate-400 cursor-pointer">
+          <input type="checkbox" checked={!row.hideLabels} onChange={(e) => onUpdateRow({ hideLabels: !e.target.checked }, false)} className="h-3.5 w-3.5 accent-indigo-500" />
+          Show labels
+        </label>
+      </div>
+
+      <div>
+        <label className="text-[11px] text-slate-500 mb-1 block">Numbering direction</label>
+        <div className="flex gap-2">
+          <button type="button" className={segBtn(row.numberingDirection === 'ltr')} onClick={() => onUpdateRow({ numberingDirection: 'ltr' })}>1→ from start</button>
+          <button type="button" className={segBtn(row.numberingDirection === 'rtl')} onClick={() => onUpdateRow({ numberingDirection: 'rtl' })}>←1 from end</button>
+        </div>
+      </div>
+      <div>
+        <label className="text-[11px] text-slate-500 mb-1 block">Numbering style</label>
+        <div className="flex gap-2">
+          <button type="button" className={segBtn(row.numberingStyle === 'sequential')} onClick={() => onUpdateRow({ numberingStyle: 'sequential' })}>1, 2, 3…</button>
+          <button type="button" className={segBtn(row.numberingStyle === 'odd_even')} onClick={() => onUpdateRow({ numberingStyle: 'odd_even' })}>1,3 / 2,4…</button>
+        </div>
+      </div>
+
+      <div>
+        <label className="text-[11px] text-slate-500 flex justify-between mb-1">
+          <span className="flex items-center gap-1"><Spline className="w-3 h-3" />Curve</span>
+          <span className="text-slate-400">{Math.abs(curvature) < 0.005 ? 'straight' : `${Math.round(curvature * 100)}%`}</span>
+        </label>
+        <input
+          type="range"
+          min="-40"
+          max="40"
+          value={Math.round(curvature * 100)}
+          onChange={(e) => setCurve(parseInt(e.target.value) / 100)}
+          className="w-full accent-indigo-500 cursor-pointer"
+        />
+      </div>
+
+      {row.gaps && row.gaps.length > 0 && (
+        <p className="text-[10px] text-slate-500">Aisle{row.gaps.length > 1 ? 's' : ''} after seat {row.gaps.map((g) => g.afterIndex + 1).join(', ')} — kept when the row is re-laid.</p>
+      )}
+
+      <button
+        type="button"
+        onClick={() => onUpdateRow({})}
+        className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-2 rounded-lg border border-slate-700"
+        title="Snap this row's seats back onto its path, evenly spaced"
+      >
+        Re-lay seats on the row
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          if (sold > 0 && !window.confirm(`${sold} seat(s) in this row are sold and will stay on the map. Delete the row and its unsold seats?`)) return
+          onDelete()
+        }}
+        className="w-full flex items-center justify-center gap-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 text-sm font-medium py-2.5 rounded-lg transition-all border border-red-600/30"
+      >
+        <Trash2 className="w-4 h-4" /> Delete Row
+      </button>
+    </div>
+  )
+}
+
 function BestAvailableBlock({
   section,
   tiers,
@@ -1714,7 +1940,7 @@ function BestAvailableBlock({
         <label className="text-[11px] text-slate-500 mb-1 block">Front row</label>
         <select
           value={section.rowOrder ?? 'asc'}
-          onChange={(e) => onUpdateSection(section.id, { rowOrder: e.target.value === 'desc' ? 'desc' : 'asc' })}
+          onChange={(e) => onUpdateSection(section.id, { rowOrder: e.target.value === 'desc' ? 'desc' : 'asc', rowOrderManual: true })}
           className="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
         >
           <option value="asc">First row label (A / 1) — top of the section</option>
@@ -1722,6 +1948,9 @@ function BestAvailableBlock({
         </select>
         <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
           Auto-assigned seats start from the front row and the middle of the row.
+          {section.rowOrderManual
+            ? <> Set by hand — <button type="button" className="text-indigo-300 hover:text-white underline" onClick={() => onUpdateSection(section.id, { rowOrderManual: false })}>follow the stage instead</button>.</>
+            : ' Worked out from where the Stage sits on the map when you publish.'}
         </p>
       </div>
       <div className="flex items-center gap-2">

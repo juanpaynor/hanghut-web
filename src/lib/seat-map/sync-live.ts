@@ -1,6 +1,7 @@
 import { revalidatePath } from 'next/cache'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CanvasData } from '@/components/seat-map/types'
+import { findStage, shapeCenter, rowOrderFromStage, ensureRows } from './rows'
 
 /**
  * The live-map writer behind both the legacy direct save and Publish
@@ -65,6 +66,21 @@ export async function syncLiveSeatMap(
     }
   }
 
+  // ── Rows + front row ──────────────────────────────────────────────────
+  // Every section carries its rows (derived once for pre-row maps so the
+  // buyer picker can label them), and the front row for best-available is
+  // read off the Stage unless the organizer set it by hand.
+  const stage = findStage(canvasData.backgroundShapes ?? [])
+  const stageCenter = stage ? shapeCenter(stage) : null
+  canvasData.sections = canvasData.sections.map((section) => {
+    const withRows = ensureRows(section, canvasData.seatRadius ?? 8)
+    if (stageCenter && !withRows.rowOrderManual) {
+      const derived = rowOrderFromStage(withRows, stageCenter)
+      if (derived) return { ...withRows, rowOrder: derived }
+    }
+    return withRows
+  })
+
   // Upsert event_seat_maps
   const { data: seatMap, error: mapError } = await supabase
     .from('event_seat_maps')
@@ -108,6 +124,8 @@ export async function syncLiveSeatMap(
     tier_id: section.tierId || null,
     row_tier_overrides: section.rowTierOverrides ?? {},
     row_order: section.rowOrder === 'desc' ? 'desc' : 'asc',
+    rows: (section.rows ?? []).map((r) => ({ ...r })),
+    show_row_labels: section.showRowLabels !== false,
     is_active: section.isActive,
     sort_order: section.sortOrder,
   }))

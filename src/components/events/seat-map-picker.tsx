@@ -32,6 +32,8 @@ import { cn } from '@/lib/utils'
 import { sectionChannel } from '@/lib/seat-map/realtime'
 import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
 import type { PreviewBundle } from '@/lib/seat-map/preview-bundle'
+import type { RowData } from '@/components/seat-map/types'
+import { deriveRows, rowLabelAnchors } from '@/lib/seat-map/rows'
 
 // ─── RPC payload types (shared contract with the Flutter app) ───────────────
 
@@ -75,6 +77,9 @@ interface MapSection {
     by_tier?: { tier_id: string; available_count: number; largest_block: number }[]
     /** False when none of the section's price categories is currently on sale. */
     on_sale?: boolean
+    /** Row definitions (paths + labels) from the published map; empty on older maps → derived from seats. */
+    rows?: RowData[]
+    show_row_labels?: boolean
 }
 
 interface MapBackgroundShape {
@@ -632,6 +637,21 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         const sec = mapData.sections.find(s => s.id === activeSection)
         return sec ? computeSeatRadius(sec.seats) : 6
     }, [activeSection, mapData])
+
+    // Row labels for the open section. Published-with-rows maps carry them;
+    // older maps get the same derivation the editor uses, from the seats.
+    const activeRows = useMemo<RowData[]>(() => {
+        if (!activeSection || !mapData) return []
+        const sec = mapData.sections.find(s => s.id === activeSection)
+        if (!sec || sec.show_row_labels === false || sec.seats.length === 0) return []
+        if (sec.rows && sec.rows.length > 0) return sec.rows
+        const { rows } = deriveRows({
+            id: sec.id, label: sec.label, color: sec.color, sectionType: 'general', polygonPoints: sec.polygon_points,
+            seatOrientation: 'straight', rowCount: 0, seatsPerRow: 0, isActive: true, sortOrder: 0,
+            seats: sec.seats.map(x => ({ id: x.id, rowLabel: x.row, seatNumber: x.seat, label: x.label, x: x.x, y: x.y, status: 'available' as const })),
+        }, activeSeatRadius)
+        return rows
+    }, [activeSection, mapData, activeSeatRadius])
 
     // Seats THIS buyer is holding, counted per section.
     //
@@ -1392,6 +1412,22 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                                     )}
                                 </Group>
                             )
+                        })}
+
+                        {/* Row labels at both ends of every row (world-sized, so they
+                            zoom with the seats; hidden until dots are readable). */}
+                        {activeSectionData && activeRows.map(row => {
+                            if (row.hideLabels) return null
+                            const anchors = rowLabelAnchors(row, activeSeatRadius)
+                            // World-sized like the seats, but never below ~9px on screen.
+                            const fs = Math.max(activeSeatRadius * 1.5, 9 / view.scale)
+                            const ends: ('start' | 'end')[] = row.seatCount <= 1 ? ['start'] : ['start', 'end']
+                            return ends.map(end => (
+                                <Group key={`${row.id}-${end}`} x={anchors[end].x} y={anchors[end].y} listening={false}>
+                                    <Rect x={-fs * 0.85} y={-fs * 0.6} width={fs * 1.7} height={fs * 1.2} cornerRadius={fs * 0.2} fill="#0f172a" opacity={0.85} perfectDrawEnabled={false} />
+                                    <Text x={-fs * 0.85} y={-fs * 0.6} width={fs * 1.7} height={fs * 1.2} text={row.label} fontSize={fs} fontStyle="bold" fill="#ffffff" align="center" verticalAlign="middle" perfectDrawEnabled={false} />
+                                </Group>
+                            ))
                         })}
                     </Layer>
                 </Stage>

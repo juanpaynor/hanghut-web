@@ -25,6 +25,7 @@ export interface PreviewBundle {
     sections: {
       id: string; label: string; color: string; section_type: string
       polygon_points: number[]; tier_id: string | null; row_tier_overrides: Record<string, string>
+      rows: unknown[]; show_row_labels: boolean
       sales_mode: 'ga' | 'seated'; seat_count: number
     }[]
   }
@@ -113,6 +114,8 @@ export function buildPreviewBundle(
         polygon_points: s.polygonPoints,
         tier_id: s.tierId ?? null,
         row_tier_overrides: s.rowTierOverrides ?? {},
+        rows: s.showRowLabels === false ? [] : (s.rows ?? []),
+        show_row_labels: s.showRowLabels !== false,
         sales_mode: s.tierId && (s.seats?.length ?? 0) === 0 ? 'ga' : 'seated',
         seat_count: s.seats?.length ?? 0,
       })),

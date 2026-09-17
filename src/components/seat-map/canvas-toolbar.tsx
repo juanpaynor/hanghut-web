@@ -35,7 +35,7 @@ const tools: { tool: CanvasTool; icon: typeof MousePointer2; label: string; shor
   { tool: 'select', icon: MousePointer2, label: 'Select & Move', shortcut: 'V' },
   { tool: 'draw-polygon', icon: Pentagon, label: 'Draw Section (Polygon)', shortcut: 'P' },
   { tool: 'draw-rect', icon: Square, label: 'Draw Section (Rectangle)', shortcut: 'R' },
-  { tool: 'draw-seat', icon: MapPin, label: 'Drop Seats', shortcut: 'D' },
+  { tool: 'draw-seat', icon: MapPin, label: 'Seats & Rows (click = seat, drag = row)', shortcut: 'D' },
   { tool: 'pan', icon: Hand, label: 'Pan Canvas', shortcut: 'H' },
 ]
 

@@ -17,6 +17,8 @@ import { CanvasProperties } from './canvas-properties'
 import type { CanvasData, SectionData, SeatData, BackgroundShape, SeatShape, TierInfo } from './types'
 import { SEAT_COLORS, resolveSeatTier } from './types'
 import { pointInPolygon, flatToVertices } from './algorithms/point-in-polygon'
+import { rowLabelAnchors, pointOnPath, transformRows, arcThrough, nextRowLabel, layoutRow } from '@/lib/seat-map/rows'
+import type { RowData } from './types'
 
 // ─── Memoized seat dot ─────────────────────────────────────────────────────
 const SeatDot = memo(function SeatDot({
@@ -180,6 +182,73 @@ const SeatDot = memo(function SeatDot({
   )
 })
 
+// ─── Row labels (both ends of every row) ───────────────────────────────────
+// Drawn inside the section group so they move with it. Draggable in the
+// select tool: the drag is stored as an offset from the auto anchor, so the
+// label keeps following the row if the row is later moved or re-laid.
+const RowLabels = memo(function RowLabels({
+  rows, seatRadius, selectedRowId, editable, onClick, onDragEnd,
+}: {
+  rows: RowData[]
+  seatRadius: number
+  selectedRowId: string | null
+  editable: boolean
+  onClick?: (rowId: string) => void
+  onDragEnd?: (rowId: string, end: 'start' | 'end', dx: number, dy: number) => void
+}) {
+  const fontSize = Math.max(8, Math.min(14, seatRadius * 1.6))
+  return (
+    <>
+      {rows.map((row) => {
+        if (row.hideLabels) return null
+        const anchors = rowLabelAnchors(row, seatRadius)
+        const auto = rowLabelAnchors({ ...row, labelOffset: undefined }, seatRadius)
+        const ends: ('start' | 'end')[] = row.seatCount <= 1 ? ['start'] : ['start', 'end']
+        const selected = row.id === selectedRowId
+        return ends.map((end) => (
+          <Group
+            key={`${row.id}-${end}`}
+            x={anchors[end].x}
+            y={anchors[end].y}
+            draggable={editable}
+            name="row-label"
+            onClick={(e) => { e.cancelBubble = true; onClick?.(row.id) }}
+            onTap={(e) => { e.cancelBubble = true; onClick?.(row.id) }}
+            onDragStart={(e) => { e.cancelBubble = true }}
+            onDragMove={(e) => { e.cancelBubble = true }}
+            onDragEnd={(e) => {
+              e.cancelBubble = true
+              onDragEnd?.(row.id, end, e.target.x() - auto[end].x, e.target.y() - auto[end].y)
+            }}
+          >
+            <Rect
+              x={-fontSize * 0.9} y={-fontSize * 0.65}
+              width={fontSize * 1.8} height={fontSize * 1.3}
+              cornerRadius={3}
+              fill={selected ? '#6366f1' : 'rgba(15,23,42,0.75)'}
+              stroke={selected ? '#ffffff' : undefined}
+              strokeWidth={selected ? 1 : 0}
+              perfectDrawEnabled={false}
+            />
+            <Text
+              x={-fontSize * 0.9} y={-fontSize * 0.65}
+              width={fontSize * 1.8} height={fontSize * 1.3}
+              text={row.label}
+              fontSize={fontSize}
+              fontStyle="bold"
+              fill="#ffffff"
+              align="center"
+              verticalAlign="middle"
+              listening={false}
+              perfectDrawEnabled={false}
+            />
+          </Group>
+        ))
+      })}
+    </>
+  )
+})
+
 // ─── Memoized section group ────────────────────────────────────────────────
 const SectionGroup = memo(function SectionGroup({
   section,
@@ -198,6 +267,10 @@ const SectionGroup = memo(function SectionGroup({
   seatShape,
   tierColorMap,
   seatsDraggable,
+  selectedRowId,
+  rowLabelsEditable,
+  onRowLabelClick,
+  onRowLabelDragEnd,
 }: {
   section: SectionData
   isSelected: boolean
@@ -215,6 +288,10 @@ const SectionGroup = memo(function SectionGroup({
   seatShape: SeatShape
   tierColorMap?: Map<string, string>
   seatsDraggable?: boolean
+  selectedRowId?: string | null
+  rowLabelsEditable?: boolean
+  onRowLabelClick?: (rowId: string) => void
+  onRowLabelDragEnd?: (rowId: string, end: 'start' | 'end', dx: number, dy: number) => void
 }) {
   const center = useMemo(
     () => getSectionCenter(section.polygonPoints),
@@ -279,6 +356,16 @@ const SectionGroup = memo(function SectionGroup({
           />
         )
       })}
+      {section.showRowLabels !== false && (section.rows?.length ?? 0) > 0 && (
+        <RowLabels
+          rows={section.rows!}
+          seatRadius={seatRadius}
+          selectedRowId={isSelected ? (selectedRowId ?? null) : null}
+          editable={!!rowLabelsEditable && isSelected}
+          onClick={onRowLabelClick}
+          onDragEnd={onRowLabelDragEnd}
+        />
+      )}
     </Group>
   )
 })
@@ -617,7 +704,12 @@ export function CanvasBuilder({
       // Delete key — seats take priority over sections so multi-selecting
       // seats and pressing Delete can never nuke the whole section
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (state.selectedSeatIds.length > 0) {
+        if (state.selectedRowId && state.selectedIds.length > 0) {
+          const sec = state.sections.find((x) => x.id === state.selectedIds[0])
+          const sold = sec?.seats.filter((x) => x.rowId === state.selectedRowId && x.status === 'booked').length ?? 0
+          if (sold > 0 && !window.confirm(`${sold} seat(s) in this row are sold and will stay on the map. Delete the row and its unsold seats?`)) return
+          dispatchWithHistory({ type: 'DELETE_ROW', sectionId: state.selectedIds[0], rowId: state.selectedRowId })
+        } else if (state.selectedSeatIds.length > 0) {
           // Sold seats can't be deleted (server keeps them → confusing resurrection)
           const bookedIds = new Set(
             state.sections.flatMap((s) => s.seats.filter((seat) => seat.status === 'booked').map((seat) => seat.id))
@@ -646,7 +738,9 @@ export function CanvasBuilder({
         }
       }
       if (e.key === 'Escape') {
-        if (state.selectedSeatId) {
+        if (state.selectedRowId) {
+          dispatch({ type: 'SELECT_ROW', rowId: null })
+        } else if (state.selectedSeatId) {
           dispatch({ type: 'SELECT_SEAT', seatId: null })
         } else {
           dispatch({ type: 'DESELECT_ALL' })
@@ -657,7 +751,7 @@ export function CanvasBuilder({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [readOnly, state.sections, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, state.backgroundShapes, undo, redo, dispatch, dispatchWithHistory, filterDeletableSections])
+  }, [readOnly, state.sections, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, state.selectedRowId, state.backgroundShapes, undo, redo, dispatch, dispatchWithHistory, filterDeletableSections])
 
   // ─── Zoom via Mouse Wheel ────────────────────────────────────────────
   const handleWheel = useCallback(
@@ -827,34 +921,48 @@ export function CanvasBuilder({
             const dist = Math.sqrt(dx * dx + dy * dy)
             const spacing = state.seatRadius * 2.5
             const isDrag = dist > spacing
-            const count = isDrag ? Math.max(2, Math.round(dist / spacing)) : 1
-            // Seats must land inside their section's polygon
             const polygon = flatToVertices(section.polygonPoints)
-            const newSeats: SeatData[] = []
-            let num = state.dropSeatNumber
-            for (let i = 0; i < count; i++) {
-              const t = count === 1 ? 0 : i / (count - 1)
-              const sx = isDrag ? state.dragSeatStart.x + dx * t : state.dragSeatStart.x
-              const sy = isDrag ? state.dragSeatStart.y + dy * t : state.dragSeatStart.y
-              if (!pointInPolygon(sx, sy, polygon)) continue
-              newSeats.push({
+
+            if (isDrag) {
+              // ── Row tool: a drag lays a whole ROW (label + numbering + path),
+              // not loose seats. Seats outside the section are trimmed and the
+              // path shrinks to the seats that fit, so the labels hug real seats.
+              const count = Math.max(2, Math.round(dist / spacing) + 1)
+              const draft: RowData = {
                 id: crypto.randomUUID(),
-                rowLabel: state.dropRow,
-                seatNumber: num,
-                label: `${state.dropRow}${num}`,
-                x: sx,
-                y: sy,
-                status: 'available',
-              })
-              num++
-            }
-            if (newSeats.length > 0) {
-              dispatchWithHistory({
-                type: 'UPDATE_SECTION',
-                id: sectionId,
-                updates: { seats: [...section.seats, ...newSeats] },
-              })
-              dispatch({ type: 'SET_DROP_SEAT_NUMBER', num })
+                label: state.dropRow || nextRowLabel(section),
+                path: { kind: 'line', x1: state.dragSeatStart.x, y1: state.dragSeatStart.y, x2: x, y2: y },
+                seatCount: count,
+                startNumber: state.dropSeatNumber,
+                numberingDirection: section.numberingDirection ?? 'ltr',
+                numberingStyle: section.numberingStyle ?? 'sequential',
+              }
+              const laid = layoutRow(draft).filter((p) => pointInPolygon(p.x, p.y, polygon))
+              if (laid.length > 0) {
+                const row: RowData = laid.length === 1
+                  ? { ...draft, seatCount: 1, path: { kind: 'line', x1: laid[0].x, y1: laid[0].y, x2: laid[0].x, y2: laid[0].y } }
+                  : { ...draft, seatCount: laid.length, path: { kind: 'line', x1: laid[0].x, y1: laid[0].y, x2: laid[laid.length - 1].x, y2: laid[laid.length - 1].y } }
+                dispatchWithHistory({ type: 'ADD_ROW', sectionId, row })
+                // Next drag is the next row: advance the label, keep the start number.
+                dispatch({ type: 'SET_DROP_ROW', row: nextRowLabel({ ...section, rows: [...(section.rows ?? []), row] }) })
+              }
+            } else {
+              // Single click: one hand-placed seat (no row), as before.
+              const sx = state.dragSeatStart.x, sy = state.dragSeatStart.y
+              if (pointInPolygon(sx, sy, polygon)) {
+                const num = state.dropSeatNumber
+                dispatchWithHistory({
+                  type: 'UPDATE_SECTION',
+                  id: sectionId,
+                  updates: {
+                    seats: [...section.seats, {
+                      id: crypto.randomUUID(), rowLabel: state.dropRow, seatNumber: num, label: `${state.dropRow}${num}`,
+                      x: sx, y: sy, status: 'available', rowId: null,
+                    }],
+                  },
+                })
+                dispatch({ type: 'SET_DROP_SEAT_NUMBER', num: num + 1 })
+              }
             }
           }
         }
@@ -1147,7 +1255,10 @@ export function CanvasBuilder({
       dispatchWithHistory({
         type: 'UPDATE_SECTION',
         id: sectionId,
-        updates: { polygonPoints: newPoints, seats: newSeats, arcConfig: newArcConfig },
+        updates: {
+          polygonPoints: newPoints, seats: newSeats, arcConfig: newArcConfig,
+          rows: transformRows(section.rows, (p) => ({ x: p.x + dx, y: p.y + dy })),
+        },
       })
     },
     [readOnly, state.tool, state.sections, dispatchWithHistory]
@@ -1463,8 +1574,66 @@ export function CanvasBuilder({
                 seatRadius={state.seatRadius}
                 seatShape={state.seatShape}
                 tierColorMap={tierColorMap}
+                selectedRowId={state.selectedRowId}
+                rowLabelsEditable={!readOnly && state.tool === 'select'}
+                onRowLabelClick={(rowId) => {
+                  if (!state.selectedIds.includes(section.id)) dispatch({ type: 'SELECT', ids: [section.id] })
+                  dispatch({ type: 'SELECT_ROW', rowId })
+                }}
+                onRowLabelDragEnd={(rowId, end, dx, dy) => {
+                  dispatchWithHistory({ type: 'MOVE_ROW_LABEL', sectionId: section.id, rowId, end, dx, dy })
+                }}
               />
             ))}
+            {/* Row editing handles for the selected row: the path itself, both
+                ends (drag to move/stretch) and a curve handle at the middle
+                (drag to bend). Committed on release like the vertex handles. */}
+            {!readOnly && state.tool === 'select' && selectedSection && state.selectedRowId && (() => {
+              const row = selectedSection.rows?.find((r) => r.id === state.selectedRowId)
+              if (!row) return null
+              const samples = Array.from({ length: 25 }, (_, i) => pointOnPath(row.path, i / 24))
+              const start = samples[0], end = samples[24], mid = samples[12]
+              const hr = 7 / state.zoom
+              const commit = (kind: 'start' | 'end' | 'curve', x: number, y: number) => {
+                const s0 = { x: start.x, y: start.y }, e0 = { x: end.x, y: end.y }, m0 = { x: mid.x, y: mid.y }
+                const path = kind === 'curve'
+                  ? arcThrough(s0, { x, y }, e0)
+                  : kind === 'start'
+                    ? (row.path.kind === 'line' ? { kind: 'line' as const, x1: x, y1: y, x2: e0.x, y2: e0.y } : arcThrough({ x, y }, m0, e0))
+                    : (row.path.kind === 'line' ? { kind: 'line' as const, x1: s0.x, y1: s0.y, x2: x, y2: y } : arcThrough(s0, m0, { x, y }))
+                dispatchWithHistory({ type: 'UPDATE_ROW', sectionId: selectedSection.id, rowId: row.id, updates: { path } })
+              }
+              return (
+                <Group key={`row-handles-${row.id}`}>
+                  <Line
+                    points={samples.flatMap((p) => [p.x, p.y])}
+                    stroke="#818cf8"
+                    strokeWidth={1.5 / state.zoom}
+                    dash={[6 / state.zoom, 4 / state.zoom]}
+                    listening={false}
+                    perfectDrawEnabled={false}
+                  />
+                  {([['start', start], ['end', end], ['curve', mid]] as const).map(([kind, p]) => (
+                    <Circle
+                      key={kind}
+                      x={p.x}
+                      y={p.y}
+                      radius={hr}
+                      fill={kind === 'curve' ? '#f59e0b' : '#ffffff'}
+                      stroke="#4f46e5"
+                      strokeWidth={2 / state.zoom}
+                      draggable
+                      onDragStart={(e) => { e.cancelBubble = true }}
+                      onDragMove={(e) => { e.cancelBubble = true }}
+                      onDragEnd={(e) => { e.cancelBubble = true; commit(kind, e.target.x(), e.target.y()) }}
+                      onMouseEnter={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = kind === 'curve' ? 'ns-resize' : 'move' }}
+                      onMouseLeave={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = '' }}
+                      perfectDrawEnabled={false}
+                    />
+                  ))}
+                </Group>
+              )
+            })()}
             {/* Vertex handles — reshape the selected section by dragging its
                 corners. Rendered AFTER sections so they sit on top and win the
                 hit test. Committed on release (state stays untouched during the
@@ -1639,6 +1808,10 @@ export function CanvasBuilder({
       {/* Right Properties Panel */}
       {!readOnly && (
         <CanvasProperties
+          selectedRowId={state.selectedRowId}
+          onSelectRow2={(rowId) => dispatch({ type: 'SELECT_ROW', rowId })}
+          onUpdateRow={(sectionId, rowId, updates, relayout) => dispatchWithHistory({ type: 'UPDATE_ROW', sectionId, rowId, updates, relayout })}
+          onDeleteRow={(sectionId, rowId) => dispatchWithHistory({ type: 'DELETE_ROW', sectionId, rowId })}
           selectedSection={seatParentSection || selectedSection || null}
           selectedSections={seatParentSection ? [] : selectedSections}
           selectedShape={selectedShape}
@@ -1742,7 +1915,8 @@ export function CanvasBuilder({
                   rOuter: section.arcConfig.rOuter * factor,
                 }
               : section.arcConfig
-            dispatchWithHistory({ type: 'UPDATE_SECTION', id, updates: { polygonPoints, seats, arcConfig } })
+            const rows = transformRows(section.rows, (p) => scalePt(p.x, p.y))
+            dispatchWithHistory({ type: 'UPDATE_SECTION', id, updates: { polygonPoints, seats, arcConfig, rows } })
           }}
           seatRadius={state.seatRadius}
           seatShape={state.seatShape}

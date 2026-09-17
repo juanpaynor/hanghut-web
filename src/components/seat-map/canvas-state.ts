@@ -1,7 +1,9 @@
 'use client'
 
 import { useReducer, useCallback, useRef, useEffect } from 'react'
+import { ensureRows, applyRowLayout, transformRows } from '@/lib/seat-map/rows'
 import type {
+  RowData,
   CanvasState,
   CanvasTool,
   CanvasData,
@@ -31,15 +33,26 @@ export function regenerateCanvasIds(canvas: CanvasData): CanvasData {
       ...shape,
       id: crypto.randomUUID(),
     })),
-    sections: (canvas.sections ?? []).map((section) => ({
-      ...section,
-      id: crypto.randomUUID(),
-      seats: (section.seats ?? []).map((seat) => ({
-        ...seat,
+    sections: (canvas.sections ?? []).map((section) => {
+      // Rows get fresh ids too; seats follow their row through the map.
+      const rowIdMap = new Map<string, string>()
+      const rows = (section.rows ?? []).map((row) => {
+        const id = crypto.randomUUID()
+        rowIdMap.set(row.id, id)
+        return { ...row, id }
+      })
+      return {
+        ...section,
         id: crypto.randomUUID(),
-        status: 'available' as SeatStatus,
-      })),
-    })),
+        rows,
+        seats: (section.seats ?? []).map((seat) => ({
+          ...seat,
+          id: crypto.randomUUID(),
+          rowId: seat.rowId ? rowIdMap.get(seat.rowId) ?? null : null,
+          status: 'available' as SeatStatus,
+        })),
+      }
+    }),
   }
 }
 
@@ -97,6 +110,17 @@ function cloneSectionWithNewIds(section: SectionData, opts: { mirror: boolean })
       : { ...arcConfig, cx: arcConfig.cx + 40, cy: arcConfig.cy + 40 }
   }
 
+  // Rows follow the same transform; seats keep their row through the id map.
+  const rowIdMap = new Map<string, string>()
+  const rows = transformRows(section.rows, (p) => ({ x: reflectX(p.x), y: offY(p.y) }))?.map((r) => {
+    const id = crypto.randomUUID()
+    rowIdMap.set(r.id, id)
+    // A mirrored row reads right-to-left now; flip its numbering so the
+    // renumbered seats above still describe it.
+    return { ...r, id, numberingDirection: opts.mirror ? (r.numberingDirection === 'ltr' ? 'rtl' : 'ltr') as 'ltr' | 'rtl' : r.numberingDirection }
+  })
+  seats = seats.map((s) => ({ ...s, rowId: s.rowId ? rowIdMap.get(s.rowId) ?? null : null }))
+
   return {
     ...section,
     id: crypto.randomUUID(),
@@ -104,6 +128,7 @@ function cloneSectionWithNewIds(section: SectionData, opts: { mirror: boolean })
     polygonPoints,
     seats,
     arcConfig,
+    rows,
   }
 }
 
@@ -210,6 +235,16 @@ type Action =
   | { type: 'SCALE_SEATS'; seatIds: string[]; factor: number }
   | { type: 'ALIGN_SEATS'; seatIds: string[]; mode: 'straighten' | 'flat' }
   | { type: 'DUPLICATE_SECTION'; id: string; mirror?: boolean }
+  // ── Rows ──
+  | { type: 'SELECT_ROW'; rowId: string | null }
+  /** Replace a row's definition and re-lay its seats (ids preserved). */
+  | { type: 'UPDATE_ROW'; sectionId: string; rowId: string; updates: Partial<RowData>; relayout?: boolean }
+  /** Add a row + its generated seats to a section. */
+  | { type: 'ADD_ROW'; sectionId: string; row: RowData }
+  /** Remove a row and its (unsold) seats. */
+  | { type: 'DELETE_ROW'; sectionId: string; rowId: string }
+  /** Move a row's end label (drag). */
+  | { type: 'MOVE_ROW_LABEL'; sectionId: string; rowId: string; end: 'start' | 'end'; dx: number; dy: number }
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'CLEAR_ALL' }
@@ -234,6 +269,7 @@ const initialState: CanvasState = {
   seatRadius: 6,
   seatShape: 'circle',
   dragSeatStart: null,
+  selectedRowId: null,
 }
 
 // ─── Reducer ────────────────────────────────────────────────────────────────
@@ -241,7 +277,7 @@ const initialState: CanvasState = {
 function canvasReducer(state: CanvasState, action: Action): CanvasState {
   switch (action.type) {
     case 'SET_TOOL':
-      return { ...state, tool: action.tool, isDrawing: false, drawingPoints: [], selectedSeatId: null, selectedSeatIds: [], dragSeatStart: null }
+      return { ...state, tool: action.tool, isDrawing: false, drawingPoints: [], selectedSeatId: null, selectedSeatIds: [], dragSeatStart: null, selectedRowId: null }
 
     case 'SET_ZOOM':
       return { ...state, zoom: Math.max(0.1, Math.min(5, action.zoom)) }
@@ -308,7 +344,7 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
       }
 
     case 'SELECT':
-      return { ...state, selectedIds: action.ids, selectedSeatId: null, selectedSeatIds: [] }
+      return { ...state, selectedIds: action.ids, selectedSeatId: null, selectedSeatIds: [], selectedRowId: null }
 
     case 'TOGGLE_SELECT': {
       const exists = state.selectedIds.includes(action.id)
@@ -322,10 +358,77 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
     // clear selectedIds so the properties panel never confuses a seat selection
     // for a section (which would hide the multi-seat tools like Straighten).
     case 'SELECT_SEAT':
-      return { ...state, selectedIds: [], selectedSeatId: action.seatId, selectedSeatIds: action.seatId ? [action.seatId] : [] }
+      return { ...state, selectedIds: [], selectedSeatId: action.seatId, selectedSeatIds: action.seatId ? [action.seatId] : [], selectedRowId: null }
 
     case 'SELECT_SEATS':
-      return { ...state, selectedIds: [], selectedSeatIds: action.seatIds, selectedSeatId: action.seatIds[0] ?? null }
+      return { ...state, selectedIds: [], selectedSeatIds: action.seatIds, selectedSeatId: action.seatIds[0] ?? null, selectedRowId: null }
+
+    // A row lives inside a section: keep the section selected, clear seats.
+    case 'SELECT_ROW':
+      return { ...state, selectedRowId: action.rowId, selectedSeatId: null, selectedSeatIds: [] }
+
+    case 'UPDATE_ROW': {
+      return {
+        ...state,
+        sections: state.sections.map((sec) => {
+          if (sec.id !== action.sectionId) return sec
+          const rows = (sec.rows ?? []).map((r) => (r.id === action.rowId ? { ...r, ...action.updates } : r))
+          const row = rows.find((r) => r.id === action.rowId)
+          if (!row) return sec
+          let seats = sec.seats
+          if (action.relayout !== false) {
+            seats = applyRowLayout({ ...sec, rows }, row)
+          } else if (action.updates.label !== undefined) {
+            // Label-only edit still has to rename the row's seats.
+            seats = sec.seats.map((s) => (s.rowId === row.id ? { ...s, rowLabel: row.label, label: `${row.label}${s.seatNumber}` } : s))
+          }
+          return { ...sec, rows, seats }
+        }),
+      }
+    }
+
+    case 'ADD_ROW': {
+      return {
+        ...state,
+        sections: state.sections.map((sec) => {
+          if (sec.id !== action.sectionId) return sec
+          const rows = [...(sec.rows ?? []), action.row]
+          return { ...sec, rows, seats: applyRowLayout({ ...sec, rows }, action.row) }
+        }),
+        selectedRowId: action.row.id,
+      }
+    }
+
+    case 'DELETE_ROW': {
+      return {
+        ...state,
+        sections: state.sections.map((sec) => {
+          if (sec.id !== action.sectionId) return sec
+          return {
+            ...sec,
+            rows: (sec.rows ?? []).filter((r) => r.id !== action.rowId),
+            // Sold seats stay (the save refuses to drop them anyway); they just lose their row.
+            seats: sec.seats.filter((s) => s.rowId !== action.rowId || s.status === 'booked').map((s) => (s.rowId === action.rowId ? { ...s, rowId: null } : s)),
+          }
+        }),
+        selectedRowId: state.selectedRowId === action.rowId ? null : state.selectedRowId,
+      }
+    }
+
+    case 'MOVE_ROW_LABEL': {
+      return {
+        ...state,
+        sections: state.sections.map((sec) => {
+          if (sec.id !== action.sectionId) return sec
+          return {
+            ...sec,
+            rows: (sec.rows ?? []).map((r) => r.id === action.rowId
+              ? { ...r, labelOffset: { ...(r.labelOffset ?? {}), [action.end]: { dx: action.dx, dy: action.dy } } }
+              : r),
+          }
+        }),
+      }
+    }
 
     case 'TOGGLE_SELECT_SEAT': {
       const exists = state.selectedSeatIds.includes(action.seatId)
@@ -336,7 +439,7 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
     }
 
     case 'DESELECT_ALL':
-      return { ...state, selectedIds: [], selectedSeatId: null, selectedSeatIds: [], dragSeatStart: null }
+      return { ...state, selectedIds: [], selectedSeatId: null, selectedSeatIds: [], dragSeatStart: null, selectedRowId: null }
 
     case 'SET_DRAWING_POINTS':
       return { ...state, drawingPoints: action.points }
@@ -418,7 +521,9 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
     case 'LOAD_CANVAS':
       return {
         ...state,
-        sections: action.sections,
+        // Maps saved before rows existed get their rows derived from the seats
+        // once here; they persist on the next save.
+        sections: action.sections.map((sec) => ensureRows(sec, action.seatRadius ?? state.seatRadius)),
         backgroundShapes: action.backgroundShapes,
         canvasWidth: action.width ?? state.canvasWidth,
         canvasHeight: action.height ?? state.canvasHeight,
