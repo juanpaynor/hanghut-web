@@ -6,6 +6,7 @@ import { SECTION_TYPE_COLORS, resolveSeatTier } from './types'
 import { fillStraightSeats, fillArcSeats } from './algorithms/fill-seats'
 import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, XCircle, Circle, Square, Diamond, Lock, Unlock, Banknote, BoxSelect, Triangle, Minus, Type, Spline, Ruler, Plus } from 'lucide-react'
 import { CapacitySummary } from './capacity-summary'
+import { createClient } from '@/lib/supabase/client'
 
 interface CanvasPropertiesProps {
   selectedSection: SectionData | null
@@ -1046,6 +1047,15 @@ export function CanvasProperties({
                   )}
                 </div>
 
+                {/* Best available: which way is the front, and a dry run */}
+                {selectedSection.seats.length > 0 && (
+                  <BestAvailableBlock
+                    section={selectedSection}
+                    tiers={tiers}
+                    onUpdateSection={onUpdateSection}
+                  />
+                )}
+
                 {/* Row-level overrides */}
                 {sectionRows.length > 0 && (
                   <div>
@@ -1649,6 +1659,86 @@ export function CanvasProperties({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+
+// ─── Best available (buy by section) — per-section controls ─────────────────
+function BestAvailableBlock({
+  section,
+  tiers,
+  onUpdateSection,
+}: {
+  section: SectionData
+  tiers: TierInfo[]
+  onUpdateSection: (id: string, updates: Partial<SectionData>) => void
+}) {
+  const [qty, setQty] = useState(2)
+  const [busy, setBusy] = useState(false)
+  const [preview, setPreview] = useState<string | null>(null)
+
+  // Dry run against the SAVED map (the RPC reads the seats table).
+  const runPreview = async () => {
+    const tierId = section.tierId ?? tiers[0]?.id
+    if (!tierId) { setPreview('Assign a price category first.'); return }
+    setBusy(true)
+    setPreview(null)
+    try {
+      const { data, error } = await createClient().rpc('preview_best_available', {
+        p_section_id: section.id, p_tier_id: tierId, p_quantity: qty, p_allow_split: true,
+      })
+      if (error) throw error
+      const r = data as any
+      if (!r?.ok) {
+        setPreview(r?.code === 'SECTION_NOT_FOUND' ? 'Save the map first, then preview.' : `Nothing for ${qty}: ${r?.code ?? 'unknown'}`)
+        return
+      }
+      const byRow = new Map<string, number[]>()
+      for (const s of r.seats ?? []) { const a = byRow.get(s.row) ?? []; a.push(s.seat); byRow.set(s.row, a) }
+      const lines = [...byRow.entries()].map(([row, n]) => `Row ${row} · ${n.sort((a: number, b: number) => a - b).join(', ')}`)
+      const how = r.together === 'row' ? 'together' : r.together === 'split_row' ? `same row, ${(r.split ?? []).join('+')}`
+        : r.together === 'stacked' ? `stacked ${(r.split ?? []).join('+')}` : 'scattered'
+      setPreview(`${lines.join(' · ')} (${how})`)
+    } catch (e: any) {
+      setPreview(e?.message ?? 'Preview failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-slate-800 bg-slate-900/40 p-2.5 space-y-2">
+      <label className="text-[11px] text-slate-400 block">Best available</label>
+      <div>
+        <label className="text-[11px] text-slate-500 mb-1 block">Front row</label>
+        <select
+          value={section.rowOrder ?? 'asc'}
+          onChange={(e) => onUpdateSection(section.id, { rowOrder: e.target.value === 'desc' ? 'desc' : 'asc' })}
+          className="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        >
+          <option value="asc">First row label (A / 1) — top of the section</option>
+          <option value="desc">Last row label — bottom of the section</option>
+        </select>
+        <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+          Auto-assigned seats start from the front row and the middle of the row.
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="number" min={1} max={20} value={qty}
+          onChange={(e) => setQty(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
+          className="w-14 bg-slate-800 border border-slate-700 rounded-md px-2 py-1 text-xs text-white"
+          aria-label="Party size to preview"
+        />
+        <button
+          type="button" onClick={runPreview} disabled={busy}
+          className="flex-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 text-xs text-white disabled:opacity-50"
+        >
+          {busy ? 'Picking…' : `Preview best ${qty}`}
+        </button>
+      </div>
+      {preview && <p className="text-[11px] text-slate-300 leading-relaxed break-words">{preview}</p>}
     </div>
   )
 }

@@ -41,6 +41,9 @@ export interface SectionData {
   sortOrder: number
   tierId?: string | null                       // default price category for the whole section
   rowTierOverrides?: Record<string, string>    // rowLabel → tierId, overrides section tier
+  /** Which end of the row order is the front for best-available seating:
+   *  'asc' = first label / top row first (default), 'desc' = last label first. */
+  rowOrder?: 'asc' | 'desc'
   // Layout prefs (persisted in canvas_data JSONB so re-fills stay stable)
   seatGap?: number
   rowGap?: number

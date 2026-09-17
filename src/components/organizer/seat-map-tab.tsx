@@ -13,7 +13,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
-import { getEventSeatMap, saveEventSeatMap, getUsableVenueTemplates, getVenueTemplateCanvas, saveVenueTemplate } from '@/lib/seat-map/seat-map-actions'
+import { getEventSeatMap, saveEventSeatMap, getUsableVenueTemplates, getVenueTemplateCanvas, saveVenueTemplate, updateSeatingSettings } from '@/lib/seat-map/seat-map-actions'
 import { createTicketTier } from '@/lib/organizer/tier-actions'
 import type { CanvasData, TierInfo } from '@/components/seat-map/types'
 import { TIER_PALETTE } from '@/components/seat-map/types'
@@ -427,6 +427,13 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
 
     return (
         <>
+            {!loading && existingMap && (
+                <SeatingSettingsCard
+                    eventId={eventId}
+                    initialMode={event?.seat_selection_mode ?? 'both'}
+                    initialAvoidOrphans={event?.avoid_orphan_seats ?? true}
+                />
+            )}
             {renderContent()}
 
             <Dialog open={showWarning} onOpenChange={setShowWarning}>
@@ -453,5 +460,79 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                 </DialogContent>
             </Dialog>
         </>
+    )
+}
+
+
+// ─── How buyers choose seats (event-level) ───────────────────────────────────
+function SeatingSettingsCard({
+    eventId,
+    initialMode,
+    initialAvoidOrphans,
+}: {
+    eventId: string
+    initialMode: 'best_available' | 'pick' | 'both'
+    initialAvoidOrphans: boolean
+}) {
+    const { toast } = useToast()
+    const [mode, setMode] = useState<'best_available' | 'pick' | 'both'>(initialMode)
+    const [avoidOrphans, setAvoidOrphans] = useState(initialAvoidOrphans)
+    const [saving, setSaving] = useState(false)
+
+    const save = async (next: { seatSelectionMode?: 'best_available' | 'pick' | 'both'; avoidOrphanSeats?: boolean }) => {
+        setSaving(true)
+        const res = await updateSeatingSettings(eventId, next)
+        setSaving(false)
+        if ('error' in res && res.error) {
+            toast({ title: 'Could not save', description: res.error, variant: 'destructive' })
+            return false
+        }
+        return true
+    }
+
+    const MODES: { value: 'best_available' | 'pick' | 'both'; label: string; hint: string }[] = [
+        { value: 'both', label: 'Best available + pick', hint: 'Tap a section, we pick seats together; "pick my own" one tap away. Recommended.' },
+        { value: 'best_available', label: 'Best available only', hint: 'Fastest on mobile. Buyers choose a section and how many; we assign.' },
+        { value: 'pick', label: 'Pick only', hint: 'Buyers click every seat themselves. Full control, more abandoned carts.' },
+    ]
+
+    return (
+        <Card className="p-5 mb-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                    <h3 className="font-semibold">How buyers choose seats</h3>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                        Best available sells faster on mobile; pick-only gives buyers full control but more abandoned carts.
+                    </p>
+                </div>
+                {saving && <span className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Saving</span>}
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                {MODES.map(m => (
+                    <button
+                        key={m.value}
+                        type="button"
+                        onClick={async () => { const prev = mode; setMode(m.value); if (!(await save({ seatSelectionMode: m.value }))) setMode(prev) }}
+                        className={`rounded-xl border p-3 text-left transition-colors ${mode === m.value ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'}`}
+                    >
+                        <span className="block text-sm font-medium">{m.label}</span>
+                        <span className="block text-xs text-muted-foreground mt-1 leading-relaxed">{m.hint}</span>
+                    </button>
+                ))}
+            </div>
+            <label className="mt-4 flex items-start gap-3 cursor-pointer">
+                <input
+                    type="checkbox"
+                    checked={avoidOrphans}
+                    disabled={mode === 'pick'}
+                    onChange={async (e) => { const v = e.target.checked; setAvoidOrphans(v); if (!(await save({ avoidOrphanSeats: v }))) setAvoidOrphans(!v) }}
+                    className="mt-0.5 h-4 w-4"
+                />
+                <span>
+                    <span className="block text-sm font-medium">Avoid leaving single seats</span>
+                    <span className="block text-xs text-muted-foreground">When auto-assigning, don&apos;t strand one lonely seat at the end of a block — it rarely sells.</span>
+                </span>
+            </label>
+        </Card>
     )
 }

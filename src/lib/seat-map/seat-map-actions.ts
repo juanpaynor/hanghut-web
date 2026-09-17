@@ -320,6 +320,7 @@ export async function saveEventSeatMap(
     arc_config: section.arcConfig || null,
     tier_id: section.tierId || null,
     row_tier_overrides: section.rowTierOverrides ?? {},
+    row_order: section.rowOrder === 'desc' ? 'desc' : 'asc',
     is_active: section.isActive,
     sort_order: section.sortOrder,
   }))
@@ -472,4 +473,33 @@ export async function saveEventSeatMap(
 
   revalidatePath(`/organizer/events/${eventId}`)
   return seatMap
+}
+
+
+/**
+ * Event-level best-available settings (Seating tab). Owner or team seat.
+ */
+export async function updateSeatingSettings(
+  eventId: string,
+  settings: { seatSelectionMode?: 'best_available' | 'pick' | 'both'; avoidOrphanSeats?: boolean }
+) {
+  const { getAuthUser, getActingPartnerId } = await import('@/lib/auth/cached')
+  const { createAdminClient } = await import('@/lib/supabase/admin')
+  const { user } = await getAuthUser()
+  if (!user) return { error: 'Not signed in' }
+  const partnerId = await getActingPartnerId(user.id)
+  if (!partnerId) return { error: 'No partner account' }
+
+  const admin = createAdminClient()
+  const { data: ev } = await admin.from('events').select('id').eq('id', eventId).eq('organizer_id', partnerId).maybeSingle()
+  if (!ev) return { error: 'Event not found' }
+
+  const updates: Record<string, unknown> = {}
+  if (settings.seatSelectionMode) updates.seat_selection_mode = settings.seatSelectionMode
+  if (typeof settings.avoidOrphanSeats === 'boolean') updates.avoid_orphan_seats = settings.avoidOrphanSeats
+  if (Object.keys(updates).length === 0) return { success: true }
+
+  const { error } = await admin.from('events').update(updates).eq('id', eventId)
+  if (error) return { error: error.message }
+  return { success: true }
 }
