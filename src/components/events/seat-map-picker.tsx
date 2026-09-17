@@ -163,11 +163,57 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
     const [activeSection, setActiveSection] = useState<string | null>(null)
     const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([])
     const [view, setView] = useState({ scale: 1, x: 0, y: 0 })
+    // ── Camera ───────────────────────────────────────────────────────────
+    // Every programmatic move (tap a section, back to overview, re-frame on
+    // resize) is a short tween: the scale eases geometrically and the world
+    // point under the stage centre eases linearly, so the target stays pinned
+    // while the map "flies" to it. Wheel and drag stay instant and cancel any
+    // tween in flight.
+    type View = { scale: number; x: number; y: number }
+    const viewRef = useRef(view)
+    useEffect(() => { viewRef.current = view }, [view])
+    const animRef = useRef<number | null>(null)
+    const cancelCamera = useCallback(() => {
+        if (animRef.current != null) { cancelAnimationFrame(animRef.current); animRef.current = null }
+    }, [])
+    const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const flyTo = useCallback((to: View, duration = 420) => {
+        cancelCamera()
+        const from = viewRef.current
+        if (duration <= 0 || reducedMotion || !isFinite(from.scale) || from.scale <= 0) { setView(to); return }
+        const W = stageSize.width, H = stageSize.height
+        const c0 = { x: (W / 2 - from.x) / from.scale, y: (H / 2 - from.y) / from.scale }
+        const c1 = { x: (W / 2 - to.x) / to.scale, y: (H / 2 - to.y) / to.scale }
+        const ratio = to.scale / from.scale
+        const start = performance.now()
+        const step = (now: number) => {
+            const t = Math.min(1, (now - start) / duration)
+            const e = 1 - Math.pow(1 - t, 3)   // ease-out cubic
+            const scale = from.scale * Math.pow(ratio, e)
+            const cx = c0.x + (c1.x - c0.x) * e
+            const cy = c0.y + (c1.y - c0.y) * e
+            setView({ scale, x: W / 2 - cx * scale, y: H / 2 - cy * scale })
+            if (t < 1) animRef.current = requestAnimationFrame(step)
+            else animRef.current = null
+        }
+        animRef.current = requestAnimationFrame(step)
+    }, [stageSize, cancelCamera, reducedMotion])
+    useEffect(() => cancelCamera, [cancelCamera])
+
+    // The section the buyer is "in": the sheet is open for it (best-available
+    // or GA) even though no seats are on screen yet. The camera frames it, it
+    // is drawn emphasised, and a resize (the sheet opening below the map)
+    // re-frames IT — never the whole overview.
+    const [focusSectionId, setFocusSectionId] = useState<string | null>(null)
+    const focusSectionRef = useRef<string | null>(null)
+    useEffect(() => { focusSectionRef.current = focusSectionId }, [focusSectionId])
     const [navigating, setNavigating] = useState(false)
     const [hoveredSeat, setHoveredSeat] = useState<{ seat: MapSeat; screenX: number; screenY: number } | null>(null)
     // GA (general admission) purchase sheet: tapping a GA zone picks a quantity,
     // not seats. gaSection is the zone being bought from.
     const [gaSection, setGaSection] = useState<MapSection | null>(null)
+    const gaSectionRef = useRef<MapSection | null>(null)
+    useEffect(() => { gaSectionRef.current = gaSection }, [gaSection])
     const [gaQty, setGaQty] = useState(1)
 
     // ── Best available ("buy by section") ────────────────────────────────
@@ -615,7 +661,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
     // Fit-to-content view for the overview. Fits the bounding box of the actual
     // sections (not the full canvas) — sections rarely fill the canvas, so fitting
     // canvas_width/height would render them as a tiny cluster in one corner.
-    const fitOverview = useCallback(() => {
+    const fitOverview = useCallback((animate = true) => {
         if (!mapData || mapData.sections.length === 0) return
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
         const extend = (x: number, y: number) => {
@@ -642,13 +688,38 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
             stageSize.height / (contentH + pad * 2),
             3, // don't over-zoom a small layout
         )
-        setView({
+        flyTo({
             scale,
             x: (stageSize.width - contentW * scale) / 2 - minX * scale,
             y: (stageSize.height - contentH * scale) / 2 - minY * scale,
-        })
+        }, animate ? 420 : 0)
         setActiveSection(null)
-    }, [mapData, stageSize])
+        // "All sections" with no sheet open = the buyer let go of that section.
+        if (!autoSheetRef.current && !gaSectionRef.current) setFocusSectionId(null)
+    }, [mapData, stageSize, flyTo])
+
+    // Frame one section with room around it — the "I tapped this" camera. The
+    // section fills roughly half the stage so its neighbours stay in view for
+    // context; it never zooms OUT relative to the overview.
+    const frameSection = useCallback((section: MapSection, animate = true) => {
+        const pts = section.polygon_points
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+        for (let i = 0; i < pts.length; i += 2) {
+            minX = Math.min(minX, pts[i]); maxX = Math.max(maxX, pts[i])
+            minY = Math.min(minY, pts[i + 1]); maxY = Math.max(maxY, pts[i + 1])
+        }
+        if (!isFinite(minX)) return
+        const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY)
+        const scale = Math.max(
+            viewRef.current.scale,
+            Math.min(stageSize.width * 0.55 / w, stageSize.height * 0.6 / h, 4),
+        )
+        flyTo({
+            scale,
+            x: stageSize.width / 2 - (minX + w / 2) * scale,
+            y: stageSize.height / 2 - (minY + h / 2) * scale,
+        }, animate ? 420 : 0)
+    }, [stageSize, flyTo])
 
     // Auto-fit ONLY on the first map load and on a real resize while still in the
     // overview — NEVER while zoomed into a section, and never on a data refresh.
@@ -669,11 +740,22 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         if (didInitialFitRef.current) {
             if (activeSectionRef.current !== null) return   // zoomed into a section → leave view alone
             if (fitKey === lastFitKeyRef.current) return    // data-only change in overview → keep view
+            lastFitKeyRef.current = fitKey
+            // The map just changed size (the section sheet opened or closed
+            // below it). Keep the buyer's section in frame — this used to
+            // re-fit the whole overview, which read as "I tapped a section
+            // and the map shrank".
+            const focused = focusSectionRef.current
+                ? mapData.sections.find(s => s.id === focusSectionRef.current)
+                : null
+            if (focused) { frameSection(focused); return }
+            fitOverview()
+            return
         }
         didInitialFitRef.current = true
         lastFitKeyRef.current = fitKey
-        fitOverview()
-    }, [fitOverview, mapData, stageSize])
+        fitOverview(false)
+    }, [fitOverview, frameSection, mapData, stageSize])
 
     // Zoom into a section. Fit to the SEATS' bounds, not the polygon — a section
     // outline is often far larger than its seated area (see the huge empty lower
@@ -697,13 +779,13 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         const w = maxX - minX + pad * 2
         const h = maxY - minY + pad * 2
         const scale = Math.min(stageSize.width / w, stageSize.height / h, 6)
-        setView({
+        flyTo({
             scale,
             x: stageSize.width / 2 - (minX + (maxX - minX) / 2) * scale,
             y: stageSize.height / 2 - (minY + (maxY - minY) / 2) * scale,
-        })
+        }, 480)
         setActiveSection(section.id)
-    }, [stageSize])
+    }, [stageSize, flyTo])
 
     // ─── Interactions ────────────────────────────────────────────────────
     // Seated sections lazily load their seats, then zoom to them; GA zones open
@@ -717,15 +799,28 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         const cap = Math.max(1, Math.min(effectiveMaxPerOrder, Math.max(...offers.map(o => o.available), 1)))
         setGaSection(null)
         setAutoSheet({ section, tierId: preferred, qty: Math.max(1, Math.min(partySize, cap)), phase: 'choose' })
+        setFocusSectionId(section.id)
+        frameSection(section)
         // Warm the seats so the result can zoom in instantly.
         void loadSection(section.id, true)
-    }, [sectionOffers, sectionPill, effectiveMaxPerOrder, partySize, loadSection])
+    }, [sectionOffers, sectionPill, effectiveMaxPerOrder, partySize, loadSection, frameSection])
+
+    // Leaving a sheet without picking: drop the focus and ease back out to the
+    // overview (unless the buyer is already zoomed into seats).
+    const leaveSheet = useCallback(() => {
+        setAutoSheet(null)
+        setGaSection(null)
+        setFocusSectionId(null)
+        if (activeSectionRef.current === null) fitOverview()
+    }, [fitOverview])
 
     const handleSectionTap = useCallback(async (section: MapSection) => {
         if (isGASection(section)) {
             setAutoSheet(null)
             setGaSection(section)
             setGaQty(1)
+            setFocusSectionId(section.id)
+            frameSection(section)
             return
         }
         if (selectionMode !== 'pick' && !isPreview) {
@@ -737,7 +832,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         // before remerge), so we fit the seats, not the polygon.
         const loaded = geometryRef.current?.sections.find((s: any) => s.id === section.id)
         zoomToSection(loaded ?? section)
-    }, [loadSection, zoomToSection, selectionMode, openAutoSheet, isPreview])
+    }, [loadSection, zoomToSection, selectionMode, openAutoSheet, isPreview, frameSection])
 
     // "Pick my own seats" from the sheet → the hand-pick flow, unchanged.
     const pickManually = useCallback(async (section: MapSection) => {
@@ -880,6 +975,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
 
     const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
         e.evt.preventDefault()
+        cancelCamera()
         const stage = stageRef.current
         if (!stage) return
         const pointer = stage.getPointerPosition()
@@ -893,18 +989,18 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
             x: pointer.x - worldPos.x * newScale,
             y: pointer.y - worldPos.y * newScale,
         })
-    }, [view])
+    }, [view, cancelCamera])
 
     const zoomButton = useCallback((factor: number) => {
         const center = { x: stageSize.width / 2, y: stageSize.height / 2 }
         const newScale = Math.max(0.2, Math.min(5, view.scale * factor))
         const worldPos = { x: (center.x - view.x) / view.scale, y: (center.y - view.y) / view.scale }
-        setView({
+        flyTo({
             scale: newScale,
             x: center.x - worldPos.x * newScale,
             y: center.y - worldPos.y * newScale,
-        })
-    }, [view, stageSize])
+        }, 220)
+    }, [view, stageSize, flyTo])
 
     // Ask the server for the best N seats in a section and hold them. From here
     // on it is the hand-picked flow: the seats land in selectedSeatIds (same
@@ -1066,6 +1162,8 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
 
     // Show seat numbers only once a dot is big enough on screen to fit the text.
     const showSeatLabels = activeSeatRadius * view.scale >= 11
+    // A section sheet (best-available or GA) is open below the map.
+    const sheetOpen = !!autoSheet || !!gaSection
 
     return (
         <div className="flex flex-col min-h-0 h-full gap-3 min-w-0">
@@ -1193,6 +1291,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                     y={view.y}
                     draggable
                     onWheel={handleWheel}
+                    onDragStart={cancelCamera}
                     onDragEnd={(e) => setView(v => ({ ...v, x: e.target.x(), y: e.target.y() }))}
                 >
                     <Layer>
@@ -1225,6 +1324,8 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                                     showLabel={!activeSection || isActive}
                                     pill={pill ? `₱${pill.price.toLocaleString()}${pill.split ? ' · split' : ''}` : (cantSeatParty ? `Not for ${partySize}` : null)}
                                     dimmed={cantSeatParty || (!!pill && pill.split)}
+                                    focused={focusSectionId === section.id && (sheetOpen || isActive)}
+                                    faded={sheetOpen && !!focusSectionId && focusSectionId !== section.id && !activeSection}
                                     onTap={() => !soldOut && handleSectionTap(section)}
                                 />
                             )
@@ -1357,7 +1458,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                     <Button size="icon" variant="secondary" className="h-8 w-8 shadow-sm" onClick={() => zoomButton(1 / 1.3)}>
                         <Minus className="h-4 w-4" />
                     </Button>
-                    <Button size="icon" variant="secondary" className="h-8 w-8 shadow-sm" onClick={fitOverview}>
+                    <Button size="icon" variant="secondary" className="h-8 w-8 shadow-sm" onClick={() => fitOverview()}>
                         <RotateCcw className="h-4 w-4" />
                     </Button>
                 </div>
@@ -1367,14 +1468,14 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                         size="sm"
                         variant="secondary"
                         className="absolute top-3 left-3 shadow-sm"
-                        onClick={fitOverview}
+                        onClick={() => fitOverview()}
                     >
                         <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
                         All sections
                     </Button>
                 )}
 
-                {!activeSection && (
+                {!activeSection && !autoSheet && !gaSection && (
                     <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-background/90 backdrop-blur-sm border rounded-full px-4 py-1.5 text-xs text-muted-foreground shadow-sm pointer-events-none">
                         {selectionMode === 'pick' ? 'Tap a section to pick seats' : `Tap a section for the best ${partySize} ${partySize === 1 ? 'seat' : 'seats'}`}
                     </div>
@@ -1399,7 +1500,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                     : r.together === 'split_row' ? `Same row, in ${r.split.join(' + ')}`
                     : r.together === 'stacked' ? `${r.split.join(' + ')}, one row in front of the other`
                     : 'Best seats available, not together'
-                const close = () => setAutoSheet(null)
+                const close = leaveSheet
                 return (
                     <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3 shrink-0">
                         <div className="flex items-start justify-between gap-3">
@@ -1555,7 +1656,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                                 </p>
                             </div>
                             <button
-                                onClick={() => setGaSection(null)}
+                                onClick={leaveSheet}
                                 className="text-muted-foreground hover:text-foreground text-sm px-1"
                                 aria-label="Close"
                             >✕</button>
@@ -1645,6 +1746,8 @@ function SectionShape({
     showLabel,
     pill = null,
     dimmed = false,
+    focused = false,
+    faded = false,
     onTap,
 }: {
     section: MapSection
@@ -1659,16 +1762,24 @@ function SectionShape({
     pill?: string | null
     /** Can't seat the party together — draw faded but keep it tappable. */
     dimmed?: boolean
+    /** The sheet is open for this section — outlined and lifted. */
+    focused?: boolean
+    /** Another section has the focus — recede so the focused one reads. */
+    faded?: boolean
     onTap: () => void
 }) {
     return (
-        <>
+        <Group opacity={faded ? 0.38 : 1}>
             <Line
                 points={section.polygon_points}
                 closed
-                fill={soldOut ? '#e5e7eb' : fill + (isActive ? '30' : dimmed ? '40' : '99')}
-                stroke={soldOut ? '#9ca3af' : fill}
-                strokeWidth={isActive ? 2.5 : 1.5}
+                fill={soldOut ? '#e5e7eb' : fill + (isActive ? '30' : dimmed ? '40' : focused ? 'cc' : '99')}
+                stroke={focused ? '#0f172a' : soldOut ? '#9ca3af' : fill}
+                strokeWidth={focused ? 3 : isActive ? 2.5 : 1.5}
+                shadowColor={focused ? '#0f172a' : undefined}
+                shadowBlur={focused ? 18 : 0}
+                shadowOpacity={focused ? 0.35 : 0}
+                shadowForStrokeEnabled={false}
                 onClick={onTap}
                 onTap={onTap}
                 hitStrokeWidth={8}
@@ -1715,7 +1826,7 @@ function SectionShape({
                     )}
                 </>
             )}
-        </>
+        </Group>
     )
 }
 
