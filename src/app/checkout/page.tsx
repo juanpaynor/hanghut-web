@@ -9,10 +9,10 @@ export const dynamic = 'force-dynamic'
 export default async function CheckoutPage({
     searchParams,
 }: {
-    searchParams: Promise<{ eventId: string; quantity: string; tierId?: string; seatIds?: string }>
+    searchParams: Promise<{ eventId: string; quantity: string; tierId?: string; seatIds?: string; together?: string; split?: string }>
 }) {
     // 1. Validate params
-    const { eventId, quantity, tierId, seatIds } = await searchParams
+    const { eventId, quantity, tierId, seatIds, together, split } = await searchParams
     const qty = parseInt(quantity || '0')
 
     // Seat picker handoff: comma-separated seat UUIDs; count must match quantity
@@ -95,6 +95,23 @@ export default async function CheckoutPage({
     if (seatMapRow && selectedSeatIds.length !== qty) {
         redirect(`/events/${eventId}?error=select_seats`)
     }
+
+    // Labels for the "Your seats" card. Display-only: the RPC re-verifies the
+    // holds at intent time, so nothing here is trusted for anything but copy.
+    let selectedSeats: { id: string; label: string; row: string; seat: number; section: string }[] = []
+    if (selectedSeatIds.length > 0) {
+        const { data: seatRows } = await createAdminClient()
+            .from('seats')
+            .select('id, label, row_label, seat_number, section:event_sections(label)')
+            .in('id', selectedSeatIds)
+        selectedSeats = (seatRows ?? []).map((r: any) => ({
+            id: r.id, label: r.label, row: r.row_label, seat: r.seat_number,
+            section: (Array.isArray(r.section) ? r.section[0] : r.section)?.label ?? '',
+        })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+    }
+    const seatArrangement = together
+        ? { together, split: (split || '').split(',').map(n => parseInt(n)).filter(n => n > 0) }
+        : null
 
     // Resolve custom TOS: event-level overrides organizer-level
     const org = Array.isArray(event.organizer) ? event.organizer[0] : event.organizer
@@ -208,6 +225,8 @@ export default async function CheckoutPage({
                     registrationQuestions={(event.registration_questions || []).sort((a: any, b: any) => a.display_order - b.display_order)}
                     subscriberDiscount={subscriberDiscount}
                     selectedSeatIds={selectedSeatIds}
+                    selectedSeats={selectedSeats}
+                    seatArrangement={seatArrangement}
                     approvedRegistrationId={approvedRegistrationId}
                 />
             </main>

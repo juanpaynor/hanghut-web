@@ -22,7 +22,7 @@ import { validatePromoCode } from '@/lib/organizer/promo-actions'
 import { subscribeGuestToNewsletter } from '@/lib/marketing/actions'
 import { hexToHsl } from '@/lib/utils'
 import { resolvePlatformPct, resolveFixedFee, computePassedFees } from '@/lib/payment/platform-fees'
-import { CheckCircle2, ClipboardList } from 'lucide-react'
+import { CheckCircle2, ClipboardList, Armchair } from 'lucide-react'
 import { formatEventShortWithEnd } from '@/lib/datetime'
 import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
 
@@ -67,11 +67,15 @@ interface CheckoutClientProps {
     registrationQuestions?: RegistrationQuestion[]
     subscriberDiscount?: SubscriberDiscount | null
     selectedSeatIds?: string[]
+    /** Display labels for the held seats (section / row / number). */
+    selectedSeats?: { id: string; label: string; row: string; seat: number; section: string }[]
+    /** How the picker arranged them: 'row' = together, else the split shape. */
+    seatArrangement?: { together: string; split: number[] } | null
     /** Server-resolved approved registration for this buyer (returning approved users). */
     approvedRegistrationId?: string | null
 }
 
-export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName, registrationQuestions = [], subscriberDiscount = null, selectedSeatIds = [], approvedRegistrationId: serverApprovedRegistrationId = null }: CheckoutClientProps) {
+export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName, registrationQuestions = [], subscriberDiscount = null, selectedSeatIds = [], selectedSeats = [], seatArrangement = null, approvedRegistrationId: serverApprovedRegistrationId = null }: CheckoutClientProps) {
     const router = useRouter()
     const searchParams = useSearchParams()
     const { toast } = useToast()
@@ -621,19 +625,57 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 {/* Seat hold countdown — same session id the picker held under, so
                     this continues that timer rather than starting a new one. */}
                 {selectedSeatIds.length > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         <SeatHoldTimer
                             secondsLeft={holdSecondsLeft}
                             label="Your seats are held for"
                         />
-                        <button
-                            type="button"
-                            onClick={cancelAndLeave}
-                            disabled={cancelling}
-                            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
-                        >
-                            {cancelling ? 'Releasing your seats…' : 'Cancel and release my seats'}
-                        </button>
+                        {selectedSeats.length > 0 && (() => {
+                            const byRow = new Map<string, number[]>()
+                            selectedSeats.forEach(s => { const a = byRow.get(s.row) ?? []; a.push(s.seat); byRow.set(s.row, a) })
+                            const arrangement = seatArrangement
+                                ? seatArrangement.together === 'row' ? 'Seats are together'
+                                : seatArrangement.together === 'split_row' ? `Same row, in ${seatArrangement.split.join(' + ')}`
+                                : seatArrangement.together === 'stacked' ? `${seatArrangement.split.join(' + ')}, one row in front of the other`
+                                : seatArrangement.together === 'scattered' ? 'Not together'
+                                : null
+                                : null
+                            return (
+                                <div className="rounded-xl border bg-primary/5 border-primary/20 p-4">
+                                    <p className="text-sm font-semibold flex items-center gap-2 mb-2">
+                                        <Armchair className="h-4 w-4 text-primary" />
+                                        Your seats — {selectedSeats[0].section}
+                                    </p>
+                                    <div className="space-y-0.5">
+                                        {[...byRow.entries()].map(([row, nums]) => (
+                                            <p key={row} className="text-sm">
+                                                <span className="font-medium">Row {row}</span>
+                                                <span className="text-muted-foreground"> · {nums.length === 1 ? 'seat' : 'seats'} {nums.sort((a, b) => a - b).join(', ')}</span>
+                                            </p>
+                                        ))}
+                                    </div>
+                                    {arrangement && <p className="text-xs text-muted-foreground mt-2">{arrangement}</p>}
+                                    <button
+                                        type="button"
+                                        onClick={cancelAndLeave}
+                                        disabled={cancelling}
+                                        className="mt-3 text-xs text-primary underline underline-offset-2 hover:opacity-80 disabled:opacity-50"
+                                    >
+                                        {cancelling ? 'Releasing your seats…' : 'Change seats'}
+                                    </button>
+                                </div>
+                            )
+                        })()}
+                        {selectedSeats.length === 0 && (
+                            <button
+                                type="button"
+                                onClick={cancelAndLeave}
+                                disabled={cancelling}
+                                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+                            >
+                                {cancelling ? 'Releasing your seats…' : 'Cancel and release my seats'}
+                            </button>
+                        )}
                     </div>
                 )}
 

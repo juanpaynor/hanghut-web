@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { Button } from '@/components/ui/button'
 import {
@@ -35,6 +35,17 @@ interface SeatPickerLauncherProps {
 export function SeatPickerLauncher({ eventId, fullWidth = false, maxPerOrder }: SeatPickerLauncherProps) {
     const [open, setOpen] = useState(false)
 
+    // Open straight away when the URL asks for it: checkout bounces back here
+    // with ?error=select_seats when the seats are missing/expired, and the
+    // "Change seats" link lands here too — making the buyer find the button
+    // again is one more place to lose them.
+    useEffect(() => {
+        try {
+            const q = new URLSearchParams(window.location.search)
+            if (q.get('seats') === '1' || q.get('error') === 'select_seats') setOpen(true)
+        } catch { /* noop */ }
+    }, [])
+
     return (
         <>
             <Button
@@ -54,7 +65,7 @@ export function SeatPickerLauncher({ eventId, fullWidth = false, maxPerOrder }: 
                     <DialogHeader className="shrink-0">
                         <DialogTitle>Choose Your Seats</DialogTitle>
                         <DialogDescription>
-                            Tap a section, then tap seats to select them. Prices are shown per category.
+                            Tap a section and we&apos;ll find the best seats together — or pick your own.
                         </DialogDescription>
                     </DialogHeader>
                     {open && (

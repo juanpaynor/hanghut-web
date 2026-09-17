@@ -26,7 +26,7 @@ import { Stage, Layer, Line, Circle, Text, Rect, Ellipse, Group } from 'react-ko
 import type Konva from 'konva'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Loader2, Minus, Plus, RotateCcw, ArrowLeft, Armchair } from 'lucide-react'
+import { Loader2, Minus, Plus, RotateCcw, ArrowLeft, Armchair, Map as MapIcon, List, Sparkles, Shuffle, ArrowRight } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { sectionChannel } from '@/lib/seat-map/realtime'
@@ -68,6 +68,12 @@ interface MapSection {
     seat_count?: number
     /** Empty until the section is opened (Phase 2 lazy load). */
     seats: MapSeat[]
+    /** Longest run of free, unheld, same-priced seats in one physical row (status endpoint). */
+    largest_block?: number
+    /** Per price category inside the section (a section can mix prices via row overrides). */
+    by_tier?: { tier_id: string; available_count: number; largest_block: number }[]
+    /** False when none of the section's price categories is currently on sale. */
+    on_sale?: boolean
 }
 
 interface MapBackgroundShape {
@@ -101,6 +107,10 @@ interface SeatMapData {
     /** Organizer's chosen seat dot size (world units) from the editor. */
     seat_radius?: number | null
     seat_shape?: string | null
+    /** Organizer's choice: best-available sheet, hand-pick only, or both (default). */
+    selection_mode?: 'best_available' | 'pick' | 'both'
+    /** events.max_seats_per_order, authoritative from the status endpoint. */
+    max_per_order?: number
 }
 
 interface SeatMapPickerProps {
@@ -150,6 +160,35 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     // not seats. gaSection is the zone being bought from.
     const [gaSection, setGaSection] = useState<MapSection | null>(null)
     const [gaQty, setGaQty] = useState(1)
+
+    // ── Best available ("buy by section") ────────────────────────────────
+    // Party size is the first question; the map answers it (sections that can't
+    // seat N together fade, price pills show the cheapest option for N).
+    const [partySize, setPartySizeState] = useState(2)
+    useEffect(() => {
+        try {
+            const saved = Number(sessionStorage.getItem(`hh_party_${eventId}`))
+            if (saved >= 1 && saved <= 20) setPartySizeState(saved)
+        } catch { /* private mode etc. */ }
+    }, [eventId])
+    const setPartySize = useCallback((n: number) => {
+        setPartySizeState(n)
+        try { sessionStorage.setItem(`hh_party_${eventId}`, String(n)) } catch { /* noop */ }
+    }, [eventId])
+    const [viewMode, setViewMode] = useState<'map' | 'list'>('map')
+    // The section sheet. `result` = seats the server picked AND holds for us.
+    type AutoResult = { seats: { seat_id: string; row: string; seat: number; label: string }[]; together: string; split: number[] }
+    const [autoSheet, setAutoSheet] = useState<{
+        section: MapSection
+        tierId: string | null
+        qty: number
+        phase: 'choose' | 'working' | 'result' | 'split' | 'gone'
+        result?: AutoResult
+        proposal?: AutoResult
+        message?: string
+    } | null>(null)
+    const autoSheetRef = useRef(autoSheet)
+    useEffect(() => { autoSheetRef.current = autoSheet }, [autoSheet])
 
     // Browsing-session id for seat holds. Persisted per-tab so checkout (same tab)
     // can release these holds right before assign_seats_to_intent takes its own —
@@ -213,14 +252,19 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         const takenMap = new Map<string, MapSeat['status']>(
             (status?.taken ?? []).map((t: any) => [t.id as string, t.status as MapSeat['status']])
         )
-        const countMap = new Map<string, number>(
-            (status?.sections ?? []).map((s: any) => [s.id as string, s.available_count as number])
+        const statusBySection = new Map<string, any>(
+            (status?.sections ?? []).map((s: any) => [s.id as string, s])
         )
         return {
             ...geo,
+            selection_mode: status?.selection_mode ?? 'both',
+            max_per_order: status?.max_per_order ?? undefined,
             sections: (geo.sections ?? []).map((sec: any) => ({
                 ...sec,
-                available_count: countMap.get(sec.id) ?? 0,
+                available_count: statusBySection.get(sec.id)?.available_count ?? 0,
+                largest_block: statusBySection.get(sec.id)?.largest_block ?? 0,
+                by_tier: statusBySection.get(sec.id)?.by_tier ?? [],
+                on_sale: statusBySection.get(sec.id)?.on_sale ?? true,
                 // seats is absent until the section is opened (lazy) → [] for now.
                 seats: (sec.seats ?? []).map((s: any) => ({
                     ...s,
@@ -491,6 +535,33 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         return map
     }, [mapData])
 
+    const selectionMode = mapData?.selection_mode ?? 'both'
+    const effectiveMaxPerOrder = mapData?.max_per_order ?? maxPerOrder
+    useEffect(() => {
+        if (partySize > effectiveMaxPerOrder) setPartySize(effectiveMaxPerOrder)
+    }, [partySize, effectiveMaxPerOrder, setPartySize])
+
+    // Price groups inside a seated section, cheapest first. A section with row
+    // overrides can hold two prices; the sheet lets the buyer choose.
+    type Offer = { tier: MapTier; available: number; largestBlock: number }
+    const sectionOffers = useCallback((section: MapSection): Offer[] => {
+        const rows = section.by_tier ?? []
+        return rows
+            .map(r => ({ tier: tierById.get(r.tier_id), available: r.available_count, largestBlock: r.largest_block }))
+            .filter((o): o is Offer => !!o.tier)
+            .sort((a, b) => Number(a.tier.price) - Number(b.tier.price))
+    }, [tierById])
+
+    // What the overview pill says for this section at the current party size.
+    const sectionPill = useCallback((section: MapSection): { price: number; split: boolean } | null => {
+        const offers = sectionOffers(section)
+        const together = offers.find(o => o.largestBlock >= partySize)
+        if (together) return { price: Number(together.tier.price), split: false }
+        const anyFit = offers.find(o => o.available >= partySize)
+        if (anyFit) return { price: Number(anyFit.tier.price), split: true }
+        return null
+    }, [sectionOffers, partySize])
+
     // Seat dot size (world units). Respect the organizer's chosen size from the
     // editor (canvas_data.seatRadius) so the picker matches the builder exactly;
     // only fall back to a spacing-derived size for legacy maps that never stored
@@ -623,15 +694,41 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     // ─── Interactions ────────────────────────────────────────────────────
     // Seated sections lazily load their seats, then zoom to them; GA zones open
     // the quantity sheet (no seats to load).
+    const openAutoSheet = useCallback((section: MapSection, tierId?: string | null) => {
+        const offers = sectionOffers(section)
+        const pill = sectionPill(section)
+        const preferred = tierId
+            ?? (offers.length === 1 ? offers[0].tier.id : null)
+            ?? (pill ? (offers.find(o => Number(o.tier.price) === pill.price)?.tier.id ?? null) : null)
+        const cap = Math.max(1, Math.min(effectiveMaxPerOrder, Math.max(...offers.map(o => o.available), 1)))
+        setGaSection(null)
+        setAutoSheet({ section, tierId: preferred, qty: Math.max(1, Math.min(partySize, cap)), phase: 'choose' })
+        // Warm the seats so the result can zoom in instantly.
+        void loadSection(section.id, true)
+    }, [sectionOffers, sectionPill, effectiveMaxPerOrder, partySize, loadSection])
+
     const handleSectionTap = useCallback(async (section: MapSection) => {
         if (isGASection(section)) {
+            setAutoSheet(null)
             setGaSection(section)
             setGaQty(1)
+            return
+        }
+        if (selectionMode !== 'pick') {
+            openAutoSheet(section)
             return
         }
         await loadSection(section.id)
         // Zoom using the freshly-loaded section (geometryRef is updated synchronously
         // before remerge), so we fit the seats, not the polygon.
+        const loaded = geometryRef.current?.sections.find((s: any) => s.id === section.id)
+        zoomToSection(loaded ?? section)
+    }, [loadSection, zoomToSection, selectionMode, openAutoSheet])
+
+    // "Pick my own seats" from the sheet → the hand-pick flow, unchanged.
+    const pickManually = useCallback(async (section: MapSection) => {
+        setAutoSheet(null)
+        await loadSection(section.id)
         const loaded = geometryRef.current?.sections.find((s: any) => s.id === section.id)
         zoomToSection(loaded ?? section)
     }, [loadSection, zoomToSection])
@@ -648,6 +745,9 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     const handleHoldExpired = useCallback(() => {
         if (selectedIdsRef.current.length === 0) return
         setSelectedSeatIds([])
+        setAutoSheet(prev => prev && prev.phase === 'result'
+            ? { ...prev, phase: 'gone', result: undefined, message: 'Your seat hold expired — the seats are back on sale.' }
+            : prev)
         void refreshStatus()
         toast({
             title: 'Seat hold expired',
@@ -784,6 +884,89 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         })
     }, [view, stageSize])
 
+    // Ask the server for the best N seats in a section and hold them. From here
+    // on it is the hand-picked flow: the seats land in selectedSeatIds (same
+    // session, same timer, same release-on-close, same checkout URL).
+    const requestBestAvailable = useCallback(async (allowSplit: boolean, exclude?: string[]) => {
+        const sheet = autoSheetRef.current
+        if (!sheet || !sheet.tierId) return
+        const sid = sessionIdRef.current
+        setAutoSheet(prev => prev ? { ...prev, phase: 'working' } : prev)
+
+        // Hand-picked seats from before would fight the one-tier rule and the
+        // cap; a best-available request starts from a clean selection.
+        const previous = selectedIdsRef.current
+        if (previous.length > 0) {
+            setSelectedSeatIds([])
+            try {
+                await fetch('/api/seat-map/release', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: sid, seatIds: previous, origin: originRef.current }),
+                })
+            } catch { /* TTL backstops it */ }
+        }
+
+        try {
+            const res = await fetch('/api/seat-map/best-available', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    eventId, sectionId: sheet.section.id, tierId: sheet.tierId, quantity: sheet.qty,
+                    sessionId: sid, allowSplit, exclude: exclude && exclude.length > 0 ? exclude : undefined,
+                    origin: originRef.current,
+                }),
+            })
+            const data = await res.json().catch(() => null)
+            if (!res.ok || !data) throw new Error('bad response')
+
+            if (data.ok) {
+                const result: AutoResult = { seats: data.seats ?? [], together: data.together, split: data.split ?? [] }
+                const ids = result.seats.map(x => x.seat_id)
+                // Our own holds come back as 'held' from the next status poll —
+                // selectedSeatIds masks that, same as hand-picked seats.
+                setSelectedSeatIds(ids)
+                setAutoSheet(prev => prev ? { ...prev, phase: 'result', result, proposal: undefined } : prev)
+                await loadSection(sheet.section.id)
+                const loaded = geometryRef.current?.sections.find((x: any) => x.id === sheet.section.id)
+                if (loaded) zoomToSection(loaded)
+                return
+            }
+
+            switch (data.code) {
+                case 'SPLIT_REQUIRED': {
+                    const pr = data.proposal
+                    const proposal: AutoResult | undefined = pr?.ok
+                        ? { seats: pr.seats ?? [], together: pr.together, split: pr.split ?? [] }
+                        : undefined
+                    setAutoSheet(prev => prev ? { ...prev, phase: proposal ? 'split' : 'gone', proposal, message: proposal ? undefined : 'Not enough seats left in this section.' } : prev)
+                    return
+                }
+                case 'NOT_ENOUGH':
+                    void refreshStatus()
+                    setAutoSheet(prev => prev ? { ...prev, phase: 'gone', message: 'Those seats just went to another buyer.' } : prev)
+                    return
+                case 'MAX_PER_ORDER':
+                    setAutoSheet(prev => prev ? { ...prev, phase: 'choose', qty: Math.max(1, Math.min(prev.qty, Number(data.max) || 1)) } : prev)
+                    toast({ title: 'Limit reached', description: `Maximum of ${data.max ?? effectiveMaxPerOrder} seats per order.` })
+                    return
+                case 'SECTION_NOT_ON_SALE':
+                case 'EVENT_NOT_ON_SALE':
+                    setAutoSheet(prev => prev ? { ...prev, phase: 'gone', message: 'Tickets for this section are not on sale right now.' } : prev)
+                    return
+                case 'AUTO_DISABLED':
+                    setAutoSheet(null)
+                    void pickManually(sheet.section)
+                    return
+                default:
+                    throw new Error(data.code || 'unknown')
+            }
+        } catch {
+            setAutoSheet(prev => prev ? { ...prev, phase: 'choose' } : prev)
+            toast({ title: "Couldn't get seats", description: 'Check your connection and try again.' })
+        }
+    }, [eventId, loadSection, zoomToSection, refreshStatus, toast, effectiveMaxPerOrder, pickManually])
+
     const handleContinue = () => {
         if (!selectedTierId || selectedSeats.length === 0) return
         continuingRef.current = true // keep holds alive — checkout releases + re-holds them
@@ -793,6 +976,13 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         params.set('quantity', String(selectedSeats.length))
         params.set('tierId', selectedTierId)
         params.set('seatIds', selectedSeatIds.join(','))
+        // Tell checkout how the seats sit so its summary can say "together" /
+        // "2 + 2" without re-deriving it.
+        const r = autoSheetRef.current?.result
+        if (r && r.seats.length === selectedSeatIds.length) {
+            params.set('together', r.together)
+            if (r.split.length > 1) params.set('split', r.split.join(','))
+        }
         router.push(`/checkout?${params.toString()}`)
     }
 
@@ -849,6 +1039,38 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
 
     return (
         <div className="flex flex-col min-h-0 h-full gap-3 min-w-0">
+            {/* Party size + view toggle — the first question, then the map answers it */}
+            {selectionMode !== 'pick' && (
+                <div className="flex items-center justify-between gap-3 shrink-0">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">Tickets</span>
+                        <div className="inline-flex items-center rounded-full border bg-background">
+                            <button type="button" aria-label="Fewer tickets" disabled={partySize <= 1}
+                                onClick={() => setPartySize(Math.max(1, partySize - 1))}
+                                className="h-8 w-8 flex items-center justify-center rounded-l-full hover:bg-muted disabled:opacity-40">
+                                <Minus className="h-3.5 w-3.5" />
+                            </button>
+                            <span className="w-7 text-center text-sm font-bold tabular-nums">{partySize}</span>
+                            <button type="button" aria-label="More tickets" disabled={partySize >= effectiveMaxPerOrder}
+                                onClick={() => setPartySize(Math.min(effectiveMaxPerOrder, partySize + 1))}
+                                className="h-8 w-8 flex items-center justify-center rounded-r-full hover:bg-muted disabled:opacity-40">
+                                <Plus className="h-3.5 w-3.5" />
+                            </button>
+                        </div>
+                    </div>
+                    <div className="inline-flex rounded-full border bg-background p-0.5">
+                        <button type="button" onClick={() => setViewMode('map')}
+                            className={cn('h-7 px-3 rounded-full text-xs font-medium flex items-center gap-1.5', viewMode === 'map' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')}>
+                            <MapIcon className="h-3.5 w-3.5" /> Map
+                        </button>
+                        <button type="button" onClick={() => setViewMode('list')}
+                            className={cn('h-7 px-3 rounded-full text-xs font-medium flex items-center gap-1.5', viewMode === 'list' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')}>
+                            <List className="h-3.5 w-3.5" /> List
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Price legend */}
             <div className="flex flex-wrap gap-x-4 gap-y-1.5 shrink-0">
                 {mapData.tiers.map(tier => (
@@ -868,9 +1090,59 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                 stays visible without scrolling. Min height keeps it usable on
                 short screens; the ResizeObserver feeds the real px height to the
                 Konva stage. */}
+            {viewMode === 'list' && selectionMode !== 'pick' && (() => {
+                type Row = { section: MapSection; offer: Offer; together: boolean }
+                const rows: Row[] = []
+                for (const section of mapData.sections) {
+                    if (isGASection(section)) continue
+                    for (const offer of sectionOffers(section)) {
+                        if (offer.available < partySize) continue
+                        rows.push({ section, offer, together: offer.largestBlock >= partySize })
+                    }
+                }
+                rows.sort((a, b) => Number(a.together) !== Number(b.together)
+                    ? Number(b.together) - Number(a.together)
+                    : Number(a.offer.tier.price) - Number(b.offer.tier.price))
+                const firstSplit = rows.findIndex(r => !r.together)
+                return (
+                    <div className="flex-1 min-h-[240px] overflow-y-auto rounded-2xl border bg-background divide-y">
+                        {rows.length === 0 && (
+                            <div className="p-8 text-center text-sm text-muted-foreground">
+                                Nothing left for {partySize} {partySize === 1 ? 'ticket' : 'tickets'}. Try a smaller party.
+                            </div>
+                        )}
+                        {rows.map((r, i) => (
+                            <div key={`${r.section.id}:${r.offer.tier.id}`}>
+                                {i === firstSplit && firstSplit > 0 && (
+                                    <div className="px-4 py-1.5 text-[11px] uppercase tracking-wide text-muted-foreground bg-muted/40">Split seats only</div>
+                                )}
+                                <button type="button" onClick={() => openAutoSheet(r.section, r.offer.tier.id)}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/40">
+                                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: tierColors.get(r.offer.tier.id) }} />
+                                    <span className="flex-1 min-w-0">
+                                        <span className="block font-semibold truncate">{r.section.label}
+                                            {sectionOffers(r.section).length > 1 && <span className="font-normal text-muted-foreground"> · {r.offer.tier.name}</span>}
+                                        </span>
+                                        <span className="block text-xs text-muted-foreground">
+                                            {r.together ? `${partySize} together` : `split only`} · {r.offer.available} left
+                                        </span>
+                                    </span>
+                                    <span className="text-right shrink-0">
+                                        <span className="block font-bold tabular-nums">₱{Number(r.offer.tier.price).toLocaleString()}</span>
+                                        <span className="block text-[11px] text-muted-foreground">each</span>
+                                    </span>
+                                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )
+            })()}
+
             <div
                 ref={containerRef}
-                className="relative w-full flex-1 min-h-[240px] rounded-2xl border bg-white dark:bg-slate-100 overflow-hidden touch-none"
+                className={cn('relative w-full flex-1 min-h-[240px] rounded-2xl border bg-white dark:bg-slate-100 overflow-hidden touch-none',
+                    viewMode === 'list' && selectionMode !== 'pick' && 'hidden')}
             >
                 <Stage
                     ref={stageRef}
@@ -899,6 +1171,9 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                                 section.available_count + (ownHeldBySection.get(section.id) ?? 0)
                             const soldOut = availableCount === 0
                             const center = sectionCenter(section.polygon_points)
+                            const ga = isGASection(section)
+                            const pill = !ga && selectionMode !== 'pick' ? sectionPill(section) : null
+                            const cantSeatParty = !ga && selectionMode !== 'pick' && !soldOut && availableCount < partySize
                             return (
                                 <SectionShape
                                     key={section.id}
@@ -909,6 +1184,8 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                                     availableCount={availableCount}
                                     center={center}
                                     showLabel={!activeSection || isActive}
+                                    pill={pill ? `₱${pill.price.toLocaleString()}${pill.split ? ' · split' : ''}` : (cantSeatParty ? `Not for ${partySize}` : null)}
+                                    dimmed={cantSeatParty || (!!pill && pill.split)}
                                     onTap={() => !soldOut && handleSectionTap(section)}
                                 />
                             )
@@ -1060,10 +1337,165 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
 
                 {!activeSection && (
                     <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-background/90 backdrop-blur-sm border rounded-full px-4 py-1.5 text-xs text-muted-foreground shadow-sm pointer-events-none">
-                        Tap a section to pick seats
+                        {selectionMode === 'pick' ? 'Tap a section to pick seats' : `Tap a section for the best ${partySize} ${partySize === 1 ? 'seat' : 'seats'}`}
                     </div>
                 )}
             </div>
+
+            {/* Best-available sheet — tap a seated section, choose how many, we pick */}
+            {autoSheet && (() => {
+                const sh = autoSheet
+                const offers = sectionOffers(sh.section)
+                const offer = offers.find(o => o.tier.id === sh.tierId) ?? null
+                const capForOffer = offer ? Math.max(1, Math.min(offer.available, effectiveMaxPerOrder)) : 1
+                const total = offer ? Number(offer.tier.price) * sh.qty : 0
+                const willSplit = !!offer && sh.qty > offer.largestBlock
+                const groupByRow = (r: AutoResult) => {
+                    const m = new Map<string, number[]>()
+                    r.seats.forEach(x => { const a = m.get(x.row) ?? []; a.push(x.seat); m.set(x.row, a) })
+                    return [...m.entries()].map(([row, nums]) => `Row ${row} · ${nums.length === 1 ? 'seat' : 'seats'} ${nums.sort((a, b) => a - b).join(', ')}`)
+                }
+                const togetherCopy = (r: AutoResult) =>
+                    r.together === 'row' ? 'Seats are together'
+                    : r.together === 'split_row' ? `Same row, in ${r.split.join(' + ')}`
+                    : r.together === 'stacked' ? `${r.split.join(' + ')}, one row in front of the other`
+                    : 'Best seats available, not together'
+                const close = () => setAutoSheet(null)
+                return (
+                    <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3 shrink-0">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <p className="font-semibold">{sh.section.label}</p>
+                                {sh.phase === 'choose' && offer && (
+                                    <p className="text-sm text-muted-foreground">
+                                        {offer.available} left · {offer.largestBlock >= 2 ? `up to ${Math.min(offer.largestBlock, effectiveMaxPerOrder)} together` : 'single seats only'}
+                                    </p>
+                                )}
+                                {sh.phase === 'result' && sh.result && (
+                                    <p className="text-sm text-muted-foreground flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5 text-primary" />{togetherCopy(sh.result)}</p>
+                                )}
+                            </div>
+                            <button onClick={close} className="text-muted-foreground hover:text-foreground text-sm px-1" aria-label="Close">✕</button>
+                        </div>
+
+                        {sh.phase === 'choose' && (
+                            <>
+                                {offers.length > 1 && (
+                                    <div className="space-y-1.5">
+                                        {offers.map(o => (
+                                            <button key={o.tier.id} type="button" onClick={() => setAutoSheet(prev => prev ? { ...prev, tierId: o.tier.id, qty: Math.max(1, Math.min(prev.qty, Math.min(o.available, effectiveMaxPerOrder))) } : prev)}
+                                                className={cn('w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm text-left',
+                                                    o.tier.id === sh.tierId ? 'border-primary bg-primary/10' : 'bg-background hover:bg-muted/40')}>
+                                                <span className="flex items-center gap-2 min-w-0">
+                                                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: tierColors.get(o.tier.id) }} />
+                                                    <span className="truncate">{o.tier.name}</span>
+                                                    <span className="text-xs text-muted-foreground shrink-0">{o.available} left</span>
+                                                </span>
+                                                <span className="font-semibold tabular-nums">₱{Number(o.tier.price).toLocaleString()}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {!offer && <p className="text-sm text-muted-foreground">This section has no tickets on sale.</p>}
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <Button size="icon" variant="outline" className="h-9 w-9" disabled={sh.qty <= 1}
+                                            onClick={() => setAutoSheet(prev => prev ? { ...prev, qty: Math.max(1, prev.qty - 1) } : prev)}>
+                                            <Minus className="h-4 w-4" />
+                                        </Button>
+                                        <span className="w-8 text-center font-bold text-lg tabular-nums">{sh.qty}</span>
+                                        <Button size="icon" variant="outline" className="h-9 w-9" disabled={!offer || sh.qty >= capForOffer}
+                                            onClick={() => setAutoSheet(prev => prev ? { ...prev, qty: Math.min(capForOffer, prev.qty + 1) } : prev)}>
+                                            <Plus className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                    <div className="font-bold text-lg tabular-nums">₱{total.toLocaleString()}</div>
+                                </div>
+                                <Button className="w-full h-11 font-semibold" disabled={!offer || navigating}
+                                    onClick={() => { setPartySize(sh.qty); void requestBestAvailable(false) }}>
+                                    <Sparkles className="h-4 w-4 mr-2" />
+                                    Get {sh.qty} best {sh.qty === 1 ? 'seat' : 'seats'}{willSplit ? ' (may be split)' : ''}
+                                </Button>
+                                {selectionMode === 'both' && (
+                                    <button type="button" onClick={() => void pickManually(sh.section)}
+                                        className="block w-full text-center text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground">
+                                        Pick my own seats instead
+                                    </button>
+                                )}
+                            </>
+                        )}
+
+                        {sh.phase === 'working' && (
+                            <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" /> Finding your seats…
+                            </div>
+                        )}
+
+                        {sh.phase === 'result' && sh.result && offer && (
+                            <>
+                                <SeatHoldTimer secondsLeft={holdSecondsLeft} />
+                                <div className="rounded-xl bg-background border p-3 space-y-1">
+                                    {groupByRow(sh.result).map(line => (
+                                        <p key={line} className="text-sm font-semibold">{line}</p>
+                                    ))}
+                                    <p className="text-xs text-muted-foreground">{offer.tier.name} · ₱{Number(offer.tier.price).toLocaleString()} each</p>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="font-bold text-lg tabular-nums">₱{total.toLocaleString()}</div>
+                                    <Button onClick={handleContinue} disabled={navigating || selectedSeatIds.length !== sh.qty} className="h-11 px-6 font-semibold">
+                                        {navigating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Continue to checkout'}
+                                    </Button>
+                                </div>
+                                <div className="flex items-center justify-center gap-4 text-sm">
+                                    <button type="button" onClick={() => void requestBestAvailable(sh.result?.together !== 'row', sh.result?.seats.map(x => x.seat_id))}
+                                        className="text-muted-foreground underline underline-offset-2 hover:text-foreground flex items-center gap-1">
+                                        <Shuffle className="h-3.5 w-3.5" /> Try different seats
+                                    </button>
+                                    {selectionMode === 'both' && (
+                                        <button type="button" onClick={close}
+                                            className="text-muted-foreground underline underline-offset-2 hover:text-foreground">
+                                            Adjust on the map
+                                        </button>
+                                    )}
+                                </div>
+                            </>
+                        )}
+
+                        {sh.phase === 'split' && sh.proposal && (
+                            <>
+                                <p className="text-sm font-medium">We can&apos;t seat {sh.qty} together in this section.</p>
+                                <div className="rounded-xl bg-background border p-3 space-y-1">
+                                    <p className="text-xs text-muted-foreground">{togetherCopy(sh.proposal)}</p>
+                                    {groupByRow(sh.proposal).map(line => (
+                                        <p key={line} className="text-sm font-semibold">{line}</p>
+                                    ))}
+                                </div>
+                                <Button className="w-full h-11 font-semibold" onClick={() => void requestBestAvailable(true)} disabled={navigating}>
+                                    Take these seats · ₱{total.toLocaleString()}
+                                </Button>
+                                <div className="flex items-center justify-center gap-4 text-sm">
+                                    <button type="button" onClick={() => setAutoSheet(prev => prev ? { ...prev, phase: 'choose', proposal: undefined } : prev)}
+                                        className="text-muted-foreground underline underline-offset-2 hover:text-foreground">Change quantity</button>
+                                    <button type="button" onClick={close}
+                                        className="text-muted-foreground underline underline-offset-2 hover:text-foreground">Try another section</button>
+                                </div>
+                            </>
+                        )}
+
+                        {sh.phase === 'gone' && (
+                            <>
+                                <p className="text-sm font-medium">{sh.message ?? 'Those seats are no longer available.'}</p>
+                                <div className="flex items-center justify-center gap-4 text-sm">
+                                    <button type="button" onClick={() => { void refreshStatus(); setAutoSheet(prev => prev ? { ...prev, phase: 'choose', message: undefined } : prev) }}
+                                        className="text-muted-foreground underline underline-offset-2 hover:text-foreground">Try again</button>
+                                    <button type="button" onClick={close}
+                                        className="text-muted-foreground underline underline-offset-2 hover:text-foreground">Try another section</button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )
+            })()}
 
             {/* GA quantity sheet — tapping a standing/GA zone buys by quantity */}
             {gaSection && (() => {
@@ -1115,8 +1547,9 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
             })()}
 
             {/* Selection bar — pinned (shrink-0) at the bottom of the flex column
-                so "Continue" is always in view; no scrolling to reach it. */}
-            <div className={cn(
+                so "Continue" is always in view; no scrolling to reach it. Hidden
+                while the best-available sheet is open — it carries its own. */}
+            {!autoSheet && <div className={cn(
                 'rounded-2xl border p-4 transition-colors shrink-0',
                 selectedSeats.length > 0 ? 'bg-primary/5 border-primary/30' : 'bg-muted/20'
             )}>
@@ -1156,7 +1589,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                         </div>
                     </div>
                 )}
-            </div>
+            </div>}
         </div>
     )
 }
@@ -1171,6 +1604,8 @@ function SectionShape({
     availableCount,
     center,
     showLabel,
+    pill = null,
+    dimmed = false,
     onTap,
 }: {
     section: MapSection
@@ -1181,6 +1616,10 @@ function SectionShape({
     availableCount: number
     center: { x: number; y: number }
     showLabel: boolean
+    /** Price pill for the current party size ("₱1,800", "₱1,800 · split") or a reason. */
+    pill?: string | null
+    /** Can't seat the party together — draw faded but keep it tappable. */
+    dimmed?: boolean
     onTap: () => void
 }) {
     return (
@@ -1188,7 +1627,7 @@ function SectionShape({
             <Line
                 points={section.polygon_points}
                 closed
-                fill={soldOut ? '#e5e7eb' : fill + (isActive ? '30' : '99')}
+                fill={soldOut ? '#e5e7eb' : fill + (isActive ? '30' : dimmed ? '40' : '99')}
                 stroke={soldOut ? '#9ca3af' : fill}
                 strokeWidth={isActive ? 2.5 : 1.5}
                 onClick={onTap}
@@ -1215,12 +1654,26 @@ function SectionShape({
                         y={center.y + 4}
                         width={140}
                         align="center"
-                        text={soldOut ? 'Sold out' : `${availableCount} left`}
+                        text={soldOut ? (section.on_sale === false ? 'Not on sale' : 'Sold out') : `${availableCount} left`}
                         fontSize={11}
                         fill="#64748b"
                         listening={false}
                         perfectDrawEnabled={false}
                     />
+                    {!soldOut && pill && (
+                        <Text
+                            x={center.x - 70}
+                            y={center.y + 18}
+                            width={140}
+                            align="center"
+                            text={pill}
+                            fontSize={12}
+                            fontStyle="bold"
+                            fill={dimmed ? '#94a3b8' : '#0f172a'}
+                            listening={false}
+                            perfectDrawEnabled={false}
+                        />
+                    )}
                 </>
             )}
         </>
