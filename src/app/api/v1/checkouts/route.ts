@@ -23,7 +23,7 @@ export async function POST(request: Request) {
         return apiError('Invalid JSON body', 400)
     }
 
-    const { event_id, tier_id, quantity, customer, success_url, cancel_url } = body
+    const { event_id, tier_id, quantity, customer, success_url, cancel_url, section_id } = body
 
     // Validate required fields
     if (!event_id) return apiError('event_id is required', 400)
@@ -53,17 +53,33 @@ export async function POST(request: Request) {
         return apiError('Event is not currently active', 400)
     }
 
-    // Reserved-seating events can't be checked out via this quantity-based API —
-    // there's no seat-selection mechanism here, and a quantity-only intent would
-    // oversell against seat-mapped capacity. These must go through the web seat picker.
+    // Reserved-seating events: the caller names a section and we seat the party
+    // (best available, splits allowed) inside create-purchase-intent. A
+    // quantity-only intent would oversell against seat-mapped capacity, so the
+    // section is required. GA-only zones (no seat dots) fall through as quantity.
     const { data: seatMapRow } = await supabase
         .from('event_seat_maps')
         .select('id')
         .eq('event_id', event_id)
         .maybeSingle()
 
+    let resolvedSectionId: string | null = null
     if (seatMapRow) {
-        return apiError('This event uses reserved seating and cannot be booked via the API. Direct buyers to the event page to select seats.', 400)
+        const { count: seatCount } = await supabase
+            .from('seats').select('id', { count: 'exact', head: true }).eq('event_id', event_id)
+        if ((seatCount ?? 0) > 0) {
+            if (!section_id || typeof section_id !== 'string') {
+                return apiError('This event uses reserved seating: pass section_id (see GET /events/{id}/sections). Seats are assigned best-available within the section.', 400)
+            }
+            const { data: section } = await supabase
+                .from('event_sections')
+                .select('id, tier_id, is_active')
+                .eq('id', section_id)
+                .eq('event_id', event_id)
+                .maybeSingle()
+            if (!section || section.is_active === false) return apiError('section_id does not belong to this event', 400)
+            resolvedSectionId = section.id
+        }
     }
 
     // Resolve tier
@@ -145,6 +161,7 @@ export async function POST(request: Request) {
             event_id,
             quantity,
             tier_id: tier_id || undefined,
+            section_id: resolvedSectionId || undefined,
             // Partner-integration checkout, not our own web UI — tagged separately so
             // partner-driven volume doesn't get counted as hanghut.com traffic.
             source: 'api',
@@ -182,9 +199,15 @@ export async function POST(request: Request) {
     }
 
     return apiSuccess({
-        checkout_id: result.data?.purchase_intent_id || null,
+        // The function returns `intent_id`; the old `purchase_intent_id` read was
+        // always null, so integrations never got a checkout id back.
+        checkout_id: result.data?.intent_id || result.data?.purchase_intent_id || null,
         checkout_url: result.data?.payment_url,
         expires_at: result.data?.expires_at || null,
+        // Seated events: what the buyer was given (held until the checkout expires).
+        assigned_seats: Array.isArray(result.data?.assigned_seats)
+            ? result.data.assigned_seats.map((s: any) => ({ section: s.section, row: s.row, seat: s.seat, label: s.label }))
+            : undefined,
     }, 201)
 }
 

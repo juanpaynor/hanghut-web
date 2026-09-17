@@ -27,6 +27,8 @@ export interface DoorSaleResult {
     cash_tendered: number | null
     change_given: number | null
     tickets: { ticket_number: string; qr_code: string }[] | null
+    /** Seated events: the seats the door sale was given (section/row/seat). */
+    seats?: { section: string; row: string; seat: number; label: string }[] | null
 }
 
 export interface DoorSale {
@@ -74,6 +76,8 @@ export async function sellAtDoor(input: {
     admitNow: boolean
     /** Cash handed over. Only meaningful for CASH; the RPC ignores it otherwise. */
     cashTendered?: number | null
+    /** Seated events: which section to seat the party in (best available). */
+    sectionId?: string | null
 }): Promise<{ data: DoorSaleResult } | { error: string }> {
     const supabase = await createClient()
 
@@ -88,6 +92,7 @@ export async function sellAtDoor(input: {
         p_note: input.note || null,
         p_admit_now: input.admitNow,
         p_cash_tendered: input.cashTendered ?? null,
+        p_section_id: input.sectionId || null,
     })
 
     if (error) return { error: readableError(error.message) }

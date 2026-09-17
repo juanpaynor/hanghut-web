@@ -175,7 +175,11 @@ const checkoutRes = `{
   "data": {
     "checkout_id": "pi_abc123def456",
     "checkout_url": "https://checkout.hanghut.com/...",
-    "expires_at": "2026-03-22T00:00:00Z"
+    "expires_at": "2026-03-22T00:00:00Z",
+    "assigned_seats": [                 // seated events only
+      { "section": "Orchestra Left", "row": "D", "seat": 12, "label": "D12" },
+      { "section": "Orchestra Left", "row": "D", "seat": 13, "label": "D13" }
+    ]
   }
 }`
 
@@ -686,6 +690,7 @@ export function ApiDocsClient() {
                                     <ParamTable title="Request Body" params={[
                                         { name: 'event_id', type: 'uuid', required: true, description: 'Event to buy tickets for' },
                                         { name: 'tier_id', type: 'uuid', description: 'Ticket tier (default if omitted)' },
+                                        { name: 'section_id', type: 'uuid', description: 'Seated events only (required there): the section to seat the party in. We assign the best available seats together, splitting only if the section can\'t seat them side by side. List sections with GET /events/{id}/sections.' },
                                         { name: 'quantity', type: 'integer', required: true, description: 'Number of tickets (min 1)' },
                                         { name: 'customer.name', type: 'string', required: true, description: 'Customer full name' },
                                         { name: 'customer.email', type: 'string', required: true, description: 'Email for ticket delivery' },

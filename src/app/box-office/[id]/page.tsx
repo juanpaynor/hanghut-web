@@ -34,6 +34,22 @@ export default async function BoxOfficeTillPage({ params }: { params: Promise<{ 
         )
     }
 
+    // Seated events: the seller picks a section and we seat the party (best
+    // available). Sections + live availability come from the same status RPC
+    // the buyer picker polls.
+    const { data: seatStatus } = await supabase.rpc('get_event_seat_status', { p_event_id: id })
+    let sections: { id: string; label: string; available: number }[] = []
+    if (seatStatus && Array.isArray((seatStatus as any).sections)) {
+        const { data: secRows } = await supabase
+            .from('event_sections')
+            .select('id, label, sort_order')
+            .eq('event_id', id)
+            .eq('is_active', true)
+            .order('sort_order', { ascending: true })
+        const avail = new Map<string, number>(((seatStatus as any).sections as any[]).map(s => [s.id, Number(s.available_count) || 0]))
+        sections = (secRows ?? []).map(r => ({ id: r.id, label: r.label, available: avail.get(r.id) ?? 0 }))
+    }
+
     const [{ data: tiers }, { count: availableCount }, sales, summary] = await Promise.all([
         supabase
             .from('ticket_tiers')
@@ -64,6 +80,7 @@ export default async function BoxOfficeTillPage({ params }: { params: Promise<{ 
                 available: Math.max(0, (t.quantity_total ?? 0) - (t.quantity_sold ?? 0)),
             }))}
             ticketsLeft={availableCount ?? 0}
+            sections={sections}
             initialSales={sales}
             initialSummary={summary}
         />

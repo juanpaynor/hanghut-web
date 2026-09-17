@@ -44,13 +44,15 @@ const peso = (n: number) =>
  * honour rule 1 honestly and pretending otherwise would just hide controls.
  */
 export function DoorTill({
-    eventId, eventTitle, basePrice, tiers, ticketsLeft, initialSales, initialSummary,
+    eventId, eventTitle, basePrice, tiers, ticketsLeft, sections = [], initialSales, initialSummary,
 }: {
     eventId: string
     eventTitle: string
     basePrice: number
     tiers: Tier[]
     ticketsLeft: number
+    /** Seated events only: sections with live availability. Empty = general admission. */
+    sections?: { id: string; label: string; available: number }[]
     initialSales: DoorSale[]
     initialSummary: DoorSummaryRow[]
 }) {
@@ -60,6 +62,8 @@ export function DoorTill({
     const [mode, setMode] = useState<'sell' | 'find'>('sell')
     const [qty, setQty] = useState(1)
     const [tierId, setTierId] = useState<string | null>(tiers[0]?.id ?? null)
+    const seated = sections.length > 0
+    const [sectionId, setSectionId] = useState<string | null>(sections.find((s) => s.available > 0)?.id ?? sections[0]?.id ?? null)
     const [method, setMethod] = useState<DoorPaymentMethod>('CASH')
     const [name, setName] = useState('')
     const [email, setEmail] = useState('')
@@ -126,9 +130,14 @@ export function DoorTill({
             })
             return
         }
+        if (seated && !sectionId) {
+            toast({ title: 'Pick a section', description: 'This event has assigned seats.', variant: 'destructive' })
+            return
+        }
         startTransition(async () => {
             const res = await sellAtDoor({
                 eventId, quantity: qty, tierId,
+                sectionId: seated ? sectionId : null,
                 buyerName: name.trim(),
                 buyerEmail: email.trim() || null,
                 paymentMethod: method, admitNow,
@@ -250,6 +259,34 @@ export function DoorTill({
                     {mode === 'sell' ? (
                         <>
                             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
+                                {seated && (
+                                    <Field label="Section">
+                                        <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
+                                            {sections.map((s) => {
+                                                const on = sectionId === s.id
+                                                const out = s.available <= 0
+                                                return (
+                                                    <button
+                                                        key={s.id}
+                                                        onClick={() => setSectionId(s.id)}
+                                                        disabled={out}
+                                                        aria-pressed={on}
+                                                        className={`rounded-xl border-2 p-3 text-left transition-colors disabled:opacity-40 ${
+                                                            on ? 'border-primary bg-primary/5' : 'border-border bg-card hover:border-muted-foreground/30'
+                                                        }`}
+                                                    >
+                                                        <span className="block truncate text-sm font-medium">{s.label}</span>
+                                                        <span className="block text-xs text-muted-foreground">
+                                                            {out ? 'full' : `${s.available} seats left`}
+                                                        </span>
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                        <p className="mt-1.5 text-xs text-muted-foreground">Best seats together are assigned automatically. Read them out from the receipt.</p>
+                                    </Field>
+                                )}
+
                                 {tiers.length > 0 && (
                                     <Field label="Ticket type">
                                         <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
@@ -497,6 +534,14 @@ export function DoorTill({
                                         <span className="text-5xl font-bold tabular-nums text-primary">
                                             {peso(last.change_given)}
                                         </span>
+                                    </div>
+                                )}
+                                {last.seats && last.seats.length > 0 && (
+                                    <div className="mx-auto mt-4 rounded-xl border bg-background px-6 py-3 text-left">
+                                        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Seats · {last.seats[0].section}</p>
+                                        <p className="mt-1 text-2xl font-bold tabular-nums">
+                                            {last.seats.map((s) => `${s.row}${s.seat}`).join(' · ')}
+                                        </p>
                                     </div>
                                 )}
                                 <p className="mt-3 text-base font-medium">

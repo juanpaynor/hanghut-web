@@ -65,7 +65,7 @@ serve(async (req) => {
         )
 
         // Parse request body
-        const { event_id, quantity, tier_id, seat_ids, seat_session_id, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution, source } = await req.json()
+        const { event_id, quantity, tier_id, seat_ids, seat_session_id, section_id, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution, source } = await req.json()
 
         // Which client created this order. Whitelisted rather than stored raw so the column
         // can't drift into 'App'/'ios'/'mobile-web' variants; anything unrecognised is stored
@@ -415,6 +415,9 @@ serve(async (req) => {
                     // buyer's own hold lapsed while they sat on the page.
                     p_session_id: typeof seat_session_id === 'string' && seat_session_id
                         ? seat_session_id : null,
+                    // Buy-by-section without pre-held seats (public API, integrations):
+                    // the RPC picks best available inside this section.
+                    p_section_id: typeof section_id === 'string' && section_id ? section_id : null,
                 }
             )
 
