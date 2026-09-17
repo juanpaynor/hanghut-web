@@ -176,6 +176,7 @@ export const createEventSamples: CodeSample = {
     "event_type": "social",
     "start_datetime": "2026-04-10T20:00:00+08:00",
     "venue_name": "Comedy Bar Manila",
+    "address": "Makati Ave, Makati",
     "city": "Manila",
     "capacity": 150,
     "ticket_price": 800
@@ -192,6 +193,8 @@ export const createEventSamples: CodeSample = {
     event_type: 'social',
     start_datetime: '2026-04-10T20:00:00+08:00',
     venue_name: 'Comedy Bar Manila',
+  address: 'Makati Ave, Makati',
+    address: 'Makati Ave, Makati',
     city: 'Manila',
     capacity: 150,
     ticket_price: 800
@@ -213,6 +216,7 @@ response = requests.post(
         "event_type": "social",
         "start_datetime": "2026-04-10T20:00:00+08:00",
         "venue_name": "Comedy Bar Manila",
+        "address": "Makati Ave, Makati",
         "city": "Manila",
         "capacity": 150,
         "ticket_price": 800,
@@ -227,6 +231,7 @@ $payload = json_encode([
     'event_type' => 'social',
     'start_datetime' => '2026-04-10T20:00:00+08:00',
     'venue_name' => 'Comedy Bar Manila',
+    'address' => 'Makati Ave, Makati',
     'city' => 'Manila',
     'capacity' => 150,
     'ticket_price' => 800,

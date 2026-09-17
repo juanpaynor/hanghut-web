@@ -131,7 +131,7 @@ export async function PUT(
     }
 
     // Build update object from allowed fields
-    const allowedFields = ['title', 'description', 'start_datetime', 'end_datetime', 'venue_name', 'address', 'city', 'capacity', 'event_type', 'ticket_price', 'cover_image_url', 'status']
+    const allowedFields = ['title', 'description', 'start_datetime', 'end_datetime', 'venue_name', 'address', 'city', 'latitude', 'longitude', 'capacity', 'event_type', 'ticket_price', 'cover_image_url', 'status']
     const updates: Record<string, any> = {}
     for (const field of allowedFields) {
         if (body[field] !== undefined) {
@@ -145,12 +145,20 @@ export async function PUT(
     if (updates.event_type != null && !EVENT_TYPES.includes(updates.event_type)) {
         return apiError(`event_type must be one of: ${EVENT_TYPES.join(', ')}`, 400)
     }
+    for (const k of ['latitude', 'longitude'] as const) {
+        if (updates[k] != null && !Number.isFinite(Number(updates[k]))) return apiError(`${k} must be a number`, 400)
+    }
+    if (updates.capacity != null) {
+        const cap = Number.parseInt(String(updates.capacity), 10)
+        if (!Number.isFinite(cap) || cap < 1) return apiError('capacity must be an integer ≥ 1', 400)
+        updates.capacity = cap
+    }
 
     const { data: event, error } = await supabase
         .from('events')
         .update(updates)
         .eq('id', id)
-        .select('id, title, status, start_datetime, end_datetime, venue_name, address, city, capacity, event_type, ticket_price, cover_image_url')
+        .select('id, title, status, start_datetime, end_datetime, venue_name, address, city, latitude, longitude, capacity, event_type, ticket_price, cover_image_url')
         .single()
 
     if (error) {

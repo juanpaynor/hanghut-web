@@ -161,6 +161,10 @@ const createEventRes = `{
     "status": "draft",
     "start_datetime": "2026-04-10T20:00:00+08:00",
     "venue_name": "Comedy Bar Manila",
+    "address": "Makati Ave, Makati",
+    "city": "Manila",
+    "latitude": 14.5654,
+    "longitude": 121.0287,
     "capacity": 150,
     "event_type": "social",
     "ticket_price": 800
@@ -605,7 +609,7 @@ export function ApiDocsClient() {
                                     <MethodBadge method="POST" />
                                     <code className="font-mono text-white text-lg">/events</code>
                                 </div>
-                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">Create a new event. Events are created in <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">draft</code> status by default.</p>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">Create a new event. Events are created in <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">draft</code> status with one <em>General Admission</em> tier sized to <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">capacity</code> at <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">ticket_price</code>. Publish with <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">PATCH {'{'}status: "active"{'}'}</code>.</p>
                                 <ParamTable title="Request Body" params={[
                                     { name: 'title', type: 'string', required: true, description: 'Event name' },
                                     { name: 'start_datetime', type: 'ISO 8601', required: true, description: 'Start date/time' },
@@ -614,8 +618,11 @@ export function ApiDocsClient() {
                                     { name: 'venue_name', type: 'string', description: 'Venue name' },
                                     { name: 'address', type: 'string', description: 'Street address' },
                                     { name: 'city', type: 'string', description: 'City' },
-                                    { name: 'capacity', type: 'integer', description: 'Max attendees' },
-                                    { name: 'ticket_price', type: 'number', description: 'Base price in PHP' },
+                                    { name: 'latitude', type: 'number', description: 'Venue latitude. If omitted, we geocode venue_name + address + city; send both coordinates to skip that.' },
+                                    { name: 'longitude', type: 'number', description: 'Venue longitude' },
+                                    { name: 'capacity', type: 'integer', required: true, description: 'Max attendees. Also sizes the default General Admission tier.' },
+                                    { name: 'ticket_price', type: 'number', description: 'Price in PHP for the default General Admission tier (0 = free)' },
+                                    { name: 'sales_end_datetime', type: 'ISO 8601', description: 'When sales close. Defaults to one hour before start_datetime.' },
                                     { name: 'event_type', type: 'enum', description: 'One of concert, workshop, conference, sports, social, food, nightlife, art, other. Defaults to other.' },
                                     { name: 'cover_image_url', type: 'string', description: 'Public HTTPS URL of the cover image' },
                                 ]} />
