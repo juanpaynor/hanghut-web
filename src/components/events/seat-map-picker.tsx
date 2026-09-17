@@ -31,6 +31,7 @@ import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { sectionChannel } from '@/lib/seat-map/realtime'
 import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
+import type { PreviewBundle } from '@/lib/seat-map/preview-bundle'
 
 // ─── RPC payload types (shared contract with the Flutter app) ───────────────
 
@@ -117,6 +118,13 @@ interface SeatMapPickerProps {
     eventId: string
     /** Event's max tickets per order (events.max_seats_per_order); defaults to 10. */
     maxPerOrder?: number
+    /**
+     * Organizer preview: render THIS bundle (built from the draft) instead of
+     * fetching the live map. No holds, no polling, no realtime, no checkout —
+     * seat taps toggle locally so the organizer can feel the flow. Everything
+     * else is the real picker, so what they see is what buyers get.
+     */
+    preview?: PreviewBundle | null
 }
 
 /** GA = buy by quantity, no seat dots. Uses `sales_mode` (authoritative from the
@@ -142,7 +150,8 @@ const SELECTED_COLOR = '#0f172a'
 // initial payload stays tiny.
 const PREFETCH_SEAT_LIMIT = 6000
 
-export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps) {
+export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: SeatMapPickerProps) {
+    const isPreview = !!preview
     const router = useRouter()
     const { toast } = useToast()
     const containerRef = useRef<HTMLDivElement>(null)
@@ -222,7 +231,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     useEffect(() => { selectedIdsRef.current = selectedSeatIds }, [selectedSeatIds])
     const continuingRef = useRef(false)
     useEffect(() => () => {
-        if (continuingRef.current || selectedIdsRef.current.length === 0) return
+        if (isPreview || continuingRef.current || selectedIdsRef.current.length === 0) return
         // sendBeacon reliably fires during teardown (dialog close, navigation, tab
         // close) — a supabase-js rpc here is lazy AND can be cancelled mid-flight,
         // which is why abandoned holds were sticking until the 12-min TTL.
@@ -282,29 +291,32 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     }, [mergeStatus])
 
     const fetchStatus = useCallback(async (): Promise<any | null> => {
+        if (preview) return preview.status
         try {
             const res = await fetch(`/api/seat-map/status?eventId=${eventId}`, { cache: 'no-store' })
             if (!res.ok) return null
             return await res.json()
         } catch { return null }
-    }, [eventId])
+    }, [eventId, preview])
 
     const fetchGeometry = useCallback(async (version: number): Promise<any | null> => {
+        if (preview) return preview.geometry
         try {
             // Version-keyed URL → immutable CDN cache; a new save = new URL.
             const res = await fetch(`/api/seat-map/geometry?eventId=${eventId}&v=${version}`)
             if (!res.ok) return null
             return await res.json()
         } catch { return null }
-    }, [eventId])
+    }, [eventId, preview])
 
     const fetchSectionSeats = useCallback(async (sectionId: string, version: number): Promise<any[] | null> => {
+        if (preview) return preview.sectionSeats[sectionId] ?? []
         try {
             const res = await fetch(`/api/seat-map/section?sectionId=${sectionId}&v=${version}`)
             if (!res.ok) return null
             return await res.json()
         } catch { return null }
-    }, [])
+    }, [preview])
 
     // Load one section's seats into geometryRef (once), then remerge so they
     // render. `background` skips the spinner (used by prefetch). Parallel-safe:
@@ -381,9 +393,10 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
 
     useEffect(() => {
         loadAll()
+        if (isPreview) return   // a draft has no live state to poll for
         const interval = setInterval(refreshStatus, 12000)
         return () => clearInterval(interval)
-    }, [loadAll, refreshStatus])
+    }, [loadAll, refreshStatus, isPreview])
 
     // Live updates: booked seats grey out as other buyers complete payment
     // ── Live hold updates (Ably, per active section) ─────────────────────────
@@ -397,7 +410,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     // UNIQUE(seat_id) regardless. So failures here are swallowed and the picker
     // simply refreshes at poll speed instead of instantly.
     useEffect(() => {
-        if (!activeSection) return   // overview shows counts, not individual seats
+        if (!activeSection || isPreview) return   // overview shows counts, not individual seats
         let cancelled = false
         let realtime: EventSource | null = null
 
@@ -471,6 +484,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     }, [eventId, activeSection, remerge])
 
     useEffect(() => {
+        if (isPreview) return
         const supabase = createClient()
         const channel = supabase
             .channel(`seats-${eventId}`)
@@ -496,7 +510,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
             })
             .subscribe()
         return () => { supabase.removeChannel(channel) }
-    }, [eventId])
+    }, [eventId, isPreview])
 
     // ─── Responsive stage ────────────────────────────────────────────────
     // Depends on mapData: while loading, the component early-returns a spinner
@@ -714,7 +728,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
             setGaQty(1)
             return
         }
-        if (selectionMode !== 'pick') {
+        if (selectionMode !== 'pick' && !isPreview) {
             openAutoSheet(section)
             return
         }
@@ -723,7 +737,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         // before remerge), so we fit the seats, not the polygon.
         const loaded = geometryRef.current?.sections.find((s: any) => s.id === section.id)
         zoomToSection(loaded ?? section)
-    }, [loadSection, zoomToSection, selectionMode, openAutoSheet])
+    }, [loadSection, zoomToSection, selectionMode, openAutoSheet, isPreview])
 
     // "Pick my own seats" from the sheet → the hand-pick flow, unchanged.
     const pickManually = useCallback(async (section: MapSection) => {
@@ -757,7 +771,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     }, [refreshStatus, toast])
 
     const { secondsLeft: holdSecondsLeft } = useSeatHoldTimer(
-        sessionId,
+        isPreview ? null : sessionId,
         selectedSeatIds.length,
         handleHoldExpired,
         pendingSeatIds.length,
@@ -789,11 +803,13 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
             // Postgres but announces nothing, so every other buyer kept seeing the
             // seat as taken until their next poll — the release half of the pair
             // was silent. The route publishes 'released'.
-            void fetch('/api/seat-map/release', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId: sid, seatIds: [seat.id], origin: originRef.current }),
-            }).catch(() => { /* advisory; the TTL and the poll both still cover us */ })
+            if (!isPreview) {
+                void fetch('/api/seat-map/release', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: sid, seatIds: [seat.id], origin: originRef.current }),
+                }).catch(() => { /* advisory; the TTL and the poll both still cover us */ })
+            }
             return
         }
 
@@ -810,6 +826,12 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
         }
         if (selectedSeatIds.length >= maxPerOrder) {
             toast({ title: 'Limit reached', description: `Maximum of ${maxPerOrder} seats per order.` })
+            return
+        }
+
+        // Preview: nothing to hold — the seat is selected locally, same rules.
+        if (isPreview) {
+            setSelectedSeatIds(prev => prev.includes(seat.id) ? prev : [...prev, seat.id])
             return
         }
 
@@ -854,7 +876,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
                 setPendingSeatIds(prev => prev.filter(id => id !== seat.id))
             }
         })()
-    }, [selectedSeatIds, pendingSeatIds, allSeats, toast, maxPerOrder, refreshStatus, remerge])
+    }, [selectedSeatIds, pendingSeatIds, allSeats, toast, maxPerOrder, refreshStatus, remerge, isPreview])
 
     const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
         e.evt.preventDefault()
@@ -969,6 +991,10 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
 
     const handleContinue = () => {
         if (!selectedTierId || selectedSeats.length === 0) return
+        if (isPreview) {
+            toast({ title: 'This is a preview', description: `Buyers would continue to checkout with ${selectedSeats.length} seat${selectedSeats.length > 1 ? 's' : ''} here.` })
+            return
+        }
         continuingRef.current = true // keep holds alive — checkout releases + re-holds them
         setNavigating(true)
         const params = new URLSearchParams()
@@ -990,6 +1016,10 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
     // tickets get seat_info = null, which the scanner already handles.
     const handleGAContinue = () => {
         if (!gaSection?.tier_id || gaQty < 1) return
+        if (isPreview) {
+            toast({ title: 'This is a preview', description: `Buyers would continue to checkout with ${gaQty} ticket${gaQty > 1 ? 's' : ''} here.` })
+            return
+        }
         setNavigating(true)
         const params = new URLSearchParams()
         params.set('eventId', eventId)
@@ -1039,6 +1069,15 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10 }: SeatMapPickerProps)
 
     return (
         <div className="flex flex-col min-h-0 h-full gap-3 min-w-0">
+            {isPreview && (
+                <div className="shrink-0 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-900 px-3 py-1.5 text-xs dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                    <span className="font-semibold uppercase tracking-wide">Preview</span>
+                    <span>
+                        {preview?.source === 'draft' ? 'Your unpublished draft, as buyers would see it.' : 'The published map, as buyers see it.'}
+                        {' '}Seats can be tapped but nothing is held; best-available picks run only on the published map.
+                    </span>
+                </div>
+            )}
             {/* Party size + view toggle — the first question, then the map answers it */}
             {selectionMode !== 'pick' && (
                 <div className="flex items-center justify-between gap-3 shrink-0">

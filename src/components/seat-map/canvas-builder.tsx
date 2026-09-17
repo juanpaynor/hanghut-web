@@ -355,7 +355,12 @@ const GridLayer = memo(function GridLayer({
 // ─── Main Component ────────────────────────────────────────────────────────
 interface CanvasBuilderProps {
   initialData?: CanvasData | null
-  onSave?: (data: CanvasData) => void
+  /** `auto` marks a background autosave (parent can keep the toast quiet). */
+  onSave?: (data: CanvasData, opts?: { auto?: boolean }) => void
+  /** Reports unsaved-edit state so the parent can save before Publish. */
+  onDirtyChange?: (dirty: boolean) => void
+  /** Autosave this many ms after the last edit while dirty (0/undefined = off). */
+  autosaveMs?: number
   mode?: 'admin' | 'organizer'
   readOnly?: boolean
   /** Price categories (ticket tiers) available for section/row/seat assignment */
@@ -374,6 +379,8 @@ export function CanvasBuilder({
   tiers = [],
   onCreateTier,
   onUploadImageFile,
+  onDirtyChange,
+  autosaveMs,
 }: CanvasBuilderProps) {
   const stageRef = useRef<Konva.Stage>(null)
   const { state, dispatch, dispatchWithHistory: rawDispatchWithHistory, undo: rawUndo, redo: rawRedo, canUndo, canRedo } = useCanvasState()
@@ -399,6 +406,7 @@ export function CanvasBuilder({
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   const containerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Clipboard for copy/paste of seats (Cmd/Ctrl + C / V)
@@ -1146,7 +1154,7 @@ export function CanvasBuilder({
   )
 
   // ─── Export ──────────────────────────────────────────────────────────
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback((opts?: { auto?: boolean }) => {
     const data: CanvasData = {
       canvasWidth: state.canvasWidth,
       canvasHeight: state.canvasHeight,
@@ -1155,9 +1163,17 @@ export function CanvasBuilder({
       seatRadius: state.seatRadius,
       seatShape: state.seatShape,
     }
-    onSave?.(data)
+    onSave?.(data, opts?.auto ? { auto: true } : undefined)
     setDirty(false)
   }, [state, onSave])
+
+  // Autosave: a draft is safe to write often, so unsaved work never outlives a
+  // closed tab. Timer restarts on every edit; fires once things go quiet.
+  useEffect(() => {
+    if (!autosaveMs || !dirty || readOnly) return
+    const t = setTimeout(() => handleExport({ auto: true }), autosaveMs)
+    return () => clearTimeout(t)
+  }, [autosaveMs, dirty, readOnly, handleExport])
 
   // ─── External save trigger (from parent header buttons) ─────────────
   useEffect(() => {
@@ -1369,7 +1385,7 @@ export function CanvasBuilder({
           canUndo={canUndo}
           canRedo={canRedo}
           dirty={dirty}
-          onSave={handleExport}
+          onSave={() => handleExport()}
           zoom={state.zoom}
           onZoomChange={handleToolbarZoom}
           onUploadImage={handleUploadClick}
