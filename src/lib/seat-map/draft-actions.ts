@@ -364,6 +364,3 @@ export async function getSeatMapPreviewBundle(eventId: string): Promise<PreviewB
     source: draft ? 'draft' : 'live',
   })
 }
-
-// Re-export so the tab can type its state without importing the plain modules.
-export type { PublishDiff, PreviewBundle }

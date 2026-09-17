@@ -17,8 +17,9 @@ import { getUsableVenueTemplates, getVenueTemplateCanvas, saveVenueTemplate, upd
 import {
     getSeatMapWorkspace, saveSeatMapDraft, discardSeatMapDraft, previewSeatMapPublish, publishSeatMap,
     restoreSeatMapVersion, getSeatMapPreviewBundle,
-    type SeatMapWorkspace, type PublishPreview, type PreviewBundle,
+    type SeatMapWorkspace, type PublishPreview,
 } from '@/lib/seat-map/draft-actions'
+import type { PreviewBundle } from '@/lib/seat-map/preview-bundle'
 import { createTicketTier } from '@/lib/organizer/tier-actions'
 import type { CanvasData, TierInfo } from '@/components/seat-map/types'
 import { TIER_PALETTE } from '@/components/seat-map/types'
