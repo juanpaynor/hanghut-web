@@ -40,6 +40,15 @@ interface HoldState {
      * expiry — see the guard in the tick effect.
      */
     syncedClean: boolean
+    /**
+     * The selectionCount in effect when THIS sync was kicked off. An "empty"
+     * result (expiresAt null) only means "expired" for a selection the sync
+     * actually observed. When the buyer taps a new seat, selectionCount rises
+     * before the sync that would see the new hold resolves, so the previous
+     * sync's snapshot (taken at a lower count) must NOT be read as an expiry —
+     * a newer sync is already on its way.
+     */
+    syncedSelection: number
 }
 
 export function useSeatHoldTimer(
@@ -62,10 +71,12 @@ export function useSeatHoldTimer(
      */
     pendingMutations: number = 0,
 ) {
-    const [hold, setHold] = useState<HoldState>({ expiresAt: null, skewMs: 0, seatsHeld: 0, loaded: false, syncedClean: false })
+    const [hold, setHold] = useState<HoldState>({ expiresAt: null, skewMs: 0, seatsHeld: 0, loaded: false, syncedClean: false, syncedSelection: 0 })
     // Read inside the async sync below without re-creating it on every change.
     const pendingRef = useRef(pendingMutations)
     pendingRef.current = pendingMutations
+    const selectionCountRef = useRef(selectionCount)
+    selectionCountRef.current = selectionCount
     const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
     // Ref so the ticking effect never re-subscribes when the parent passes a new closure.
     const onExpireRef = useRef(onExpire)
@@ -74,11 +85,14 @@ export function useSeatHoldTimer(
 
     const sync = useCallback(async () => {
         if (!sessionId) {
-            setHold({ expiresAt: null, skewMs: 0, seatsHeld: 0, loaded: true, syncedClean: true })
+            setHold({ expiresAt: null, skewMs: 0, seatsHeld: 0, loaded: true, syncedClean: true, syncedSelection: 0 })
             return
         }
         const supabase = createClient()
         const { data, error } = await supabase.rpc('get_seat_hold_expiry', { p_session_id: sessionId })
+        // The selection this sync will describe — captured NOW, before the await,
+        // so a seat added while the RPC is in flight invalidates the result.
+        const observedSelection = selectionCountRef.current
         if (error || !data) {
             // Leave any existing countdown running rather than blanking it — a
             // transient network blip must not tell the buyer their seats are gone.
@@ -95,6 +109,7 @@ export function useSeatHoldTimer(
             loaded: true,
             // Trustworthy only if nothing was being written while this resolved.
             syncedClean: pendingRef.current === 0,
+            syncedSelection: observedSelection,
         })
         if (expiresAtRaw) firedRef.current = false
     }, [sessionId])
@@ -126,7 +141,7 @@ export function useSeatHoldTimer(
             // BEFORE the write landed — still null — and the fresh sync has not
             // resolved yet. Requiring syncedClean makes the verdict wait for a
             // sync that actually observed a quiet moment.
-            if (hold.loaded && hold.syncedClean && selectionCount > 0 && pendingMutations === 0 && !firedRef.current) {
+            if (hold.loaded && hold.syncedClean && hold.syncedSelection >= selectionCount && selectionCount > 0 && pendingMutations === 0 && !firedRef.current) {
                 firedRef.current = true
                 onExpireRef.current?.()
             }
@@ -144,7 +159,7 @@ export function useSeatHoldTimer(
         tick()
         const id = setInterval(tick, 1000)
         return () => clearInterval(id)
-    }, [hold.expiresAt, hold.skewMs, hold.loaded, hold.syncedClean, selectionCount, pendingMutations])
+    }, [hold.expiresAt, hold.skewMs, hold.loaded, hold.syncedClean, hold.syncedSelection, selectionCount, pendingMutations])
 
     return {
         secondsLeft,
@@ -156,7 +171,7 @@ export function useSeatHoldTimer(
          * `secondsLeft === 0`: secondsLeft is null for a lapsed hold, and
          * `null === 0` is false, which fails open.
          */
-        expired: hold.loaded && hold.syncedClean && selectionCount > 0 && pendingMutations === 0
+        expired: hold.loaded && hold.syncedClean && hold.syncedSelection >= selectionCount && selectionCount > 0 && pendingMutations === 0
             && (hold.expiresAt === null || secondsLeft === 0),
         hasHold: hold.expiresAt !== null,
         loaded: hold.loaded,
