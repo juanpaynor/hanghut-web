@@ -2,6 +2,9 @@ import { authenticateApiKey, isAuthError } from '@/lib/api/api-middleware'
 import { apiSuccess, apiError, handleCors } from '@/lib/api/api-helpers'
 import { createAdminClient } from '@/lib/supabase/admin'
 
+// Mirrors the Postgres `event_type` enum. Keep in sync with the DB.
+const EVENT_TYPES = ['concert', 'workshop', 'conference', 'sports', 'social', 'food', 'nightlife', 'art', 'other'] as const
+
 export const dynamic = 'force-dynamic'
 
 /**
@@ -112,6 +115,12 @@ export async function POST(request: Request) {
 
     if (!title || typeof title !== 'string') return apiError('title is required', 400)
     if (!start_datetime) return apiError('start_datetime is required', 400)
+    if (description != null && typeof description !== 'string') return apiError('description must be a string', 400)
+    // Validate up front: an unknown value used to reach Postgres and come back as a
+    // 500 ("invalid input value for enum event_type"), which told the caller nothing.
+    if (event_type != null && !EVENT_TYPES.includes(event_type)) {
+        return apiError(`event_type must be one of: ${EVENT_TYPES.join(', ')}`, 400)
+    }
 
     const supabase = createAdminClient()
 
@@ -127,7 +136,7 @@ export async function POST(request: Request) {
             address: address || null,
             city: city || null,
             capacity: capacity || null,
-            event_type: event_type || 'event',
+            event_type: event_type || 'other',
             ticket_price: ticket_price || 0,
             cover_image_url: cover_image_url || null,
             status: 'draft',

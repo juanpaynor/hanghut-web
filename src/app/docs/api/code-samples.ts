@@ -172,6 +172,8 @@ export const createEventSamples: CodeSample = {
   -H "Content-Type: application/json" \\
   -d '{
     "title": "Friday Night Comedy",
+    "description": "An hour of stand-up from Manila's best.",
+    "event_type": "social",
     "start_datetime": "2026-04-10T20:00:00+08:00",
     "venue_name": "Comedy Bar Manila",
     "city": "Manila",
@@ -186,6 +188,8 @@ export const createEventSamples: CodeSample = {
   },
   body: JSON.stringify({
     title: 'Friday Night Comedy',
+    description: "An hour of stand-up from Manila's best.",
+    event_type: 'social',
     start_datetime: '2026-04-10T20:00:00+08:00',
     venue_name: 'Comedy Bar Manila',
     city: 'Manila',
@@ -205,6 +209,8 @@ response = requests.post(
     },
     json={
         "title": "Friday Night Comedy",
+        "description": "An hour of stand-up from Manila's best.",
+        "event_type": "social",
         "start_datetime": "2026-04-10T20:00:00+08:00",
         "venue_name": "Comedy Bar Manila",
         "city": "Manila",
@@ -217,6 +223,8 @@ print(f"Created: {event['id']} — {event['status']}")`,
     php: `<?php
 $payload = json_encode([
     'title' => 'Friday Night Comedy',
+    'description' => "An hour of stand-up from Manila's best.",
+    'event_type' => 'social',
     'start_datetime' => '2026-04-10T20:00:00+08:00',
     'venue_name' => 'Comedy Bar Manila',
     'city' => 'Manila',
@@ -245,6 +253,8 @@ req['Authorization'] = "Bearer #{api_key}"
 req['Content-Type'] = 'application/json'
 req.body = {
   title: 'Friday Night Comedy',
+  description: "An hour of stand-up from Manila's best.",
+  event_type: 'social',
   start_datetime: '2026-04-10T20:00:00+08:00',
   venue_name: 'Comedy Bar Manila',
   city: 'Manila',

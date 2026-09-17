@@ -162,6 +162,7 @@ const createEventRes = `{
     "start_datetime": "2026-04-10T20:00:00+08:00",
     "venue_name": "Comedy Bar Manila",
     "capacity": 150,
+    "event_type": "social",
     "ticket_price": 800
   }
 }`
@@ -609,10 +610,14 @@ export function ApiDocsClient() {
                                     { name: 'title', type: 'string', required: true, description: 'Event name' },
                                     { name: 'start_datetime', type: 'ISO 8601', required: true, description: 'Start date/time' },
                                     { name: 'end_datetime', type: 'ISO 8601', description: 'End date/time' },
+                                    { name: 'description', type: 'string', description: 'Event description shown on the event page. Plain text or HTML.' },
                                     { name: 'venue_name', type: 'string', description: 'Venue name' },
+                                    { name: 'address', type: 'string', description: 'Street address' },
                                     { name: 'city', type: 'string', description: 'City' },
                                     { name: 'capacity', type: 'integer', description: 'Max attendees' },
                                     { name: 'ticket_price', type: 'number', description: 'Base price in PHP' },
+                                    { name: 'event_type', type: 'enum', description: 'One of concert, workshop, conference, sports, social, food, nightlife, art, other. Defaults to other.' },
+                                    { name: 'cover_image_url', type: 'string', description: 'Public HTTPS URL of the cover image' },
                                 ]} />
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">

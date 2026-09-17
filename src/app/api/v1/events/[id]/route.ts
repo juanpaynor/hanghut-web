@@ -3,6 +3,9 @@ import { apiSuccess, apiError, handleCors } from '@/lib/api/api-helpers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { dispatchWebhook } from '@/lib/api/webhook-dispatcher'
 
+// Mirrors the Postgres `event_type` enum. Keep in sync with the DB.
+const EVENT_TYPES = ['concert', 'workshop', 'conference', 'sports', 'social', 'food', 'nightlife', 'art', 'other'] as const
+
 export const dynamic = 'force-dynamic'
 
 /**
@@ -138,6 +141,9 @@ export async function PUT(
 
     if (Object.keys(updates).length === 0) {
         return apiError('No valid fields to update', 400)
+    }
+    if (updates.event_type != null && !EVENT_TYPES.includes(updates.event_type)) {
+        return apiError(`event_type must be one of: ${EVENT_TYPES.join(', ')}`, 400)
     }
 
     const { data: event, error } = await supabase
