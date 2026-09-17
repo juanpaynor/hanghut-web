@@ -865,11 +865,14 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         })
     }, [refreshStatus, toast])
 
+    // Preview holds nothing server-side, so the timer must see NO selection —
+    // fed a selection with no hold it would (rightly, for a buyer) call that an
+    // expiry and clear the seats on the first tap.
     const { secondsLeft: holdSecondsLeft } = useSeatHoldTimer(
         isPreview ? null : sessionId,
-        selectedSeatIds.length,
-        handleHoldExpired,
-        pendingSeatIds.length,
+        isPreview ? 0 : selectedSeatIds.length,
+        isPreview ? undefined : handleHoldExpired,
+        isPreview ? 0 : pendingSeatIds.length,
     )
 
     const handleSeatTap = useCallback((seat: MapSeat) => {
