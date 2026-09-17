@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { CheckCircle2, Home, Mail, Armchair, CalendarClock, MapPin } from 'lucide-react'
+import { CheckCircle2, Home, Mail, Armchair, CalendarClock, MapPin, Ticket } from 'lucide-react'
 import type { Metadata } from 'next'
 import { formatEventDateTimeWithEnd } from '@/lib/datetime'
 
@@ -33,6 +33,8 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
     let endTime: string | null = null
     let quantity = 0
     let seats: SeatInfo[] = []
+    // The order's hosted ticket page (/t/<token>) — the same link the email carries.
+    let ticketToken: string | null = null
 
     if (intent_id) {
         // Admin client: guests have no session, and the intent UUID itself is
@@ -40,7 +42,7 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
         const supabase = createAdminClient()
         const { data: intent } = await supabase
             .from('purchase_intents')
-            .select('quantity, status, event:events(title, venue_name, start_datetime, end_datetime)')
+            .select('quantity, status, access_token, event:events(title, venue_name, start_datetime, end_datetime)')
             .eq('id', intent_id)
             .maybeSingle()
 
@@ -51,6 +53,7 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
             startTime = event?.start_datetime ?? null
             endTime = event?.end_datetime ?? null
             quantity = intent.quantity ?? 0
+            ticketToken = (intent as any).access_token ?? null
 
             const { data: ticketRows } = await supabase
                 .from('tickets')
@@ -136,14 +139,23 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
 
                     <h4 className="text-sm font-semibold mt-4 mb-2">What happens next?</h4>
                     <ul className="space-y-2 text-sm text-muted-foreground list-disc list-inside">
-                        <li>Open the email from HangHut.</li>
-                        <li>Download your ticket QR code.</li>
+                        {ticketToken
+                            ? <li>Open your tickets below, or from the email from HangHut.</li>
+                            : <li>Open the email from HangHut.</li>}
                         <li>Show the QR code at the venue entrance.</li>
                     </ul>
                 </div>
 
                 <div className="space-y-3 pt-2">
-                    <Button className="w-full h-11 text-base shadow-sm" asChild>
+                    {ticketToken && (
+                        <Button className="w-full h-11 text-base shadow-sm" asChild>
+                            <Link href={`/t/${ticketToken}`} className="flex items-center gap-2">
+                                <Ticket className="h-4 w-4" />
+                                View my {quantity > 1 ? 'tickets' : 'ticket'}
+                            </Link>
+                        </Button>
+                    )}
+                    <Button variant={ticketToken ? 'outline' : 'default'} className="w-full h-11 text-base shadow-sm" asChild>
                         <Link href="/" className="flex items-center gap-2">
                             <Home className="h-4 w-4" />
                             Return to Home

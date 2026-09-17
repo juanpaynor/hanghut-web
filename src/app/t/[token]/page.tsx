@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { unstable_noStore as noStore } from 'next/cache'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { TicketOrderView, type TicketOrder } from '@/components/tickets/ticket-order-view'
 
@@ -26,6 +27,11 @@ export default async function TicketPage({ params }: { params: Promise<{ token: 
     const supabase = publicClient()
     const { data, error } = await supabase.rpc('get_ticket_order', { p_token: token })
     if (error || !data) notFound()
+
+    // The success page links here the instant Xendit redirects, which can beat
+    // the webhook that issues the tickets. Never let the "not ready yet" state
+    // into the ISR cache, or "refresh in a moment" would serve it for 5 minutes.
+    if (!Array.isArray((data as TicketOrder).tickets) || (data as TicketOrder).tickets.length === 0) noStore()
 
     // No templateOverride here — the buyer-facing page always renders the
     // organizer's saved design.
