@@ -1228,6 +1228,19 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
 
     // Show seat numbers only once a dot is big enough on screen to fit the text.
     const showSeatLabels = activeSeatRadius * view.scale >= 11
+
+    // Hand-picking is off when the organizer chose best-available ONLY. The map
+    // still loads the section after a pick so the buyer can see WHERE they are,
+    // but it draws just the seats they were given rather than the whole grid,
+    // and those dots are inert: with the full grid tappable a buyer could
+    // deselect their assigned seats and pick their own, straight past the
+    // setting the organizer turned off.
+    const seatsPickable = selectionMode !== 'best_available'
+    const visibleSeats = seatsPickable
+        ? (activeSectionData?.seats ?? [])
+        : (activeSectionData?.seats ?? []).filter(
+            seat => selectedSeatIds.includes(seat.id) || pendingSeatIds.includes(seat.id)
+        )
     // A section sheet (best-available or GA) is open below the map.
     const sheetOpen = !!autoSheet || !!gaSection
 
@@ -1409,7 +1422,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                         {/* Seats — only the active section's, drawn above polygons.
                             Radius comes from the section's real spacing; seat numbers
                             appear once the dots are big enough on screen to fit them. */}
-                        {activeSectionData?.seats.map(seat => {
+                        {visibleSeats.map(seat => {
                             const isSel = selectedSeatIds.includes(seat.id)
                             const isPending = pendingSeatIds.includes(seat.id)
                             const r = isSel ? activeSeatRadius * 1.15 : activeSeatRadius
@@ -1424,8 +1437,9 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                                         shadowColor={isSel ? '#0f172a' : undefined}
                                         shadowBlur={isSel ? activeSeatRadius * 0.8 : 0}
                                         shadowOpacity={isSel ? 0.5 : 0}
-                                        onClick={() => handleSeatTap(seat)}
-                                        onTap={() => handleSeatTap(seat)}
+                                        onClick={seatsPickable ? () => handleSeatTap(seat) : undefined}
+                                        onTap={seatsPickable ? () => handleSeatTap(seat) : undefined}
+                                        listening={seatsPickable}
                                         hitStrokeWidth={Math.max(8, activeSeatRadius)}
                                         perfectDrawEnabled={false}
                                         onMouseEnter={(e) => {

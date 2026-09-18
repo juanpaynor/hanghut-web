@@ -15,6 +15,22 @@ const corsHeaders = {
 const DEFAULT_PLATFORM_PCT = 2   // new standard commission (%)
 const DEFAULT_FIXED_FEE = 15     // per-ticket fixed booking fee (₱)
 
+// Mirror of the shape check in src/lib/email/validate.ts. Deno can't import
+// from src/, so keep the two in sync by hand. The client offers domain
+// suggestions; the server only refuses addresses that cannot receive mail at
+// all — a ticket with nowhere to go is worse than a rejected checkout.
+const EMAIL_SHAPE = /^[^\s@,;<>()[\]\\]+@[^\s@,;<>()[\]\\]+\.[A-Za-z]{2,}$/
+function normalizeEmailAddress(raw: unknown): string {
+    if (typeof raw !== 'string') return ''
+    let v = raw.trim()
+    const angled = v.match(/<([^<>]+)>\s*$/)
+    if (angled) v = angled[1].trim()
+    v = v.replace(/^[<"'\s]+|[>"'\s.,;]+$/g, '')
+    const at = v.lastIndexOf('@')
+    if (at === -1) return v
+    return v.slice(0, at) + '@' + v.slice(at + 1).toLowerCase()
+}
+
 // Xendit rejects a mobile_number that is not bare E.164 with a hard 400
 // API_VALIDATION_ERROR, which fails the whole checkout before the buyer ever
 // reaches a payment page. Buyers type "+63 967 246 7837", "0930 2262 977 ",
@@ -91,6 +107,20 @@ serve(async (req) => {
                     { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
                 )
             }
+            // Only presence was ever checked here, so anything the client sent
+            // became the delivery address for a real ticket — including a stray
+            // "name <addr>" wrapper. Normalise, then refuse the unreachable.
+            const cleanEmail = normalizeEmailAddress(guest_details.email)
+            if (!EMAIL_SHAPE.test(cleanEmail)) {
+                return new Response(
+                    JSON.stringify({
+                        success: false,
+                        error: { code: 'INVALID_EMAIL', message: 'That email address doesn\u2019t look valid. Please check it — your ticket is sent there.' }
+                    }),
+                    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+            guest_details.email = cleanEmail
         }
 
         // Get user profile for customer details (only if authenticated)

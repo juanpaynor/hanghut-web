@@ -186,16 +186,56 @@ export async function syncLiveSeatMap(
   // ── Remove seats/sections no longer in the canvas ─────────────────────
   // Booked seats are never deleted — the map can't orphan a sold ticket.
   const keptSeatIds = new Set(seatRecords.map((s) => s.id))
-  const staleSeatIds = (existingSeats ?? [])
+  const staleCandidates = (existingSeats ?? [])
     .filter((s) => !keptSeatIds.has(s.id) && s.status !== 'booked')
     .map((s) => s.id)
 
-  if (staleSeatIds.length > 0) {
-    const { error: delSeatError } = await supabase
-      .from('seats')
-      .delete()
-      .in('id', staleSeatIds)
-    if (delSeatError) throw new Error(delSeatError.message)
+  if (staleCandidates.length > 0) {
+    // seats.status is NOT a safe proxy for "nothing points at this seat".
+    // tickets.seat_id is a RESTRICT foreign key (no ON DELETE action), and
+    // releasing a ticket back to the pool clears user_id/purchase_intent_id
+    // but leaves seat_id set — so a seat can read 'available' while an unsold
+    // ticket row still references it. Deleting one of those aborted the whole
+    // publish with:
+    //   update or delete on table "seats" violates foreign key constraint
+    //   "tickets_seat_id_fkey" on table "tickets"
+    // Ask the tickets table instead of trusting the seat's own status.
+    const { data: refs, error: refError } = await supabase
+      .from('tickets')
+      .select('id, seat_id, status')
+      .eq('event_id', eventId)
+      .not('seat_id', 'is', null)
+    if (refError) throw new Error(refError.message)
+
+    const staleSet = new Set(staleCandidates)
+    const pointingAtStale = (refs ?? []).filter((t) => t.seat_id && staleSet.has(t.seat_id))
+
+    // Unsold inventory can let go of a seat the organizer deleted: an
+    // 'available' ticket is a minted placeholder, not someone's ticket. Freeing
+    // it is what lets the seat actually be removed instead of lingering
+    // forever. 'reserved' is a checkout in flight, and 'valid'/'used' are real
+    // tickets — those keep their seat, and the seat survives with them.
+    const releasable = pointingAtStale.filter((t) => t.status === 'available').map((t) => t.id)
+    if (releasable.length > 0) {
+      const { error: clearError } = await supabase
+        .from('tickets')
+        .update({ seat_id: null })
+        .in('id', releasable)
+      if (clearError) throw new Error(clearError.message)
+    }
+
+    const stillReferenced = new Set(
+      pointingAtStale.filter((t) => t.status !== 'available').map((t) => t.seat_id as string)
+    )
+    const staleSeatIds = staleCandidates.filter((id) => !stillReferenced.has(id))
+
+    if (staleSeatIds.length > 0) {
+      const { error: delSeatError } = await supabase
+        .from('seats')
+        .delete()
+        .in('id', staleSeatIds)
+      if (delSeatError) throw new Error(delSeatError.message)
+    }
   }
 
   const keptSectionIds = canvasData.sections.map((s) => s.id)

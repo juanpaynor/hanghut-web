@@ -632,3 +632,31 @@ export async function correctOrderEmail(
     revalidatePath(`/organizer/events/${eventId}`)
     return data as Awaited<ReturnType<typeof correctOrderEmail>> & { ok: true }
 }
+
+/** One paid ticket whose email hard-bounced — the buyer never received it. */
+export interface DeliveryFailure {
+    ticket_id: string
+    intent_id: string
+    recipient: string
+    buyer_name: string | null
+    bounced_at: string
+    bounce_count: number
+    ticket_status: string
+}
+
+/**
+ * Buyers on this event who paid and whose ticket email bounced.
+ *
+ * Read-side only — it joins live bounce events to the address each order is
+ * currently set to deliver to, so fixing the address with correctOrderEmail()
+ * makes the entry disappear on its own. Same authority as the door.
+ */
+export async function getDeliveryFailures(eventId: string): Promise<DeliveryFailure[]> {
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('get_event_delivery_failures', { p_event_id: eventId })
+    if (error) {
+        console.error('Failed to load delivery failures:', error)
+        return []
+    }
+    return (data ?? []) as DeliveryFailure[]
+}

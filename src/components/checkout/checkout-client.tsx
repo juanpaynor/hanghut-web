@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { normalizeEmail, emailFormatError, suggestEmail } from '@/lib/email/validate'
 import dynamic from 'next/dynamic'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
@@ -245,8 +246,32 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     const totalFees = passed.total
     const total = subtotal + totalFees
 
+    // Typo guards on the buyer's email. This field is how a ticket reaches its
+    // owner, and until now nothing checked it: `gmail.con` is a valid address,
+    // just not a real one, and 31 paid orders bounced because of that class of
+    // slip. The suggestion is offered, never applied for them.
+    const [emailError, setEmailError] = useState<string | null>(null)
+    const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null)
+
     const handleGuestChange = (field: string, value: string) => {
         setGuestDetails(prev => ({ ...prev, [field]: value }))
+        // Clear while typing — nagging mid-word is how people abandon a form.
+        if (field === 'email') { setEmailError(null); setEmailSuggestion(null) }
+    }
+
+    const checkEmail = () => {
+        const raw = guestDetails.email
+        if (!raw.trim()) { setEmailError(null); setEmailSuggestion(null); return }
+        const err = emailFormatError(raw)
+        setEmailError(err)
+        setEmailSuggestion(err ? null : suggestEmail(raw))
+    }
+
+    const applySuggestion = () => {
+        if (!emailSuggestion) return
+        setGuestDetails(prev => ({ ...prev, email: emailSuggestion }))
+        setEmailSuggestion(null)
+        setEmailError(null)
     }
 
     const applyPromo = async () => {
@@ -296,6 +321,27 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             return
         }
 
+        // A structurally broken address can't be fixed later — the ticket has
+        // nowhere to go. A SUSPECTED typo only warns (see the inline hint); we
+        // never block a buyer over a domain we merely don't recognise.
+        if (!effectiveUser) {
+            const err = emailFormatError(guestDetails.email)
+            if (err) {
+                setEmailError(err)
+                toast({ title: 'Check your email address', description: err, variant: 'destructive' })
+                return
+            }
+        }
+
+        // One normalized copy for everything sent onward, so a pasted
+        // "Name <addr>" or a stray trailing bracket never reaches the DB.
+        const guestPayload = effectiveUser
+            ? undefined
+            : { ...guestDetails, email: normalizeEmail(guestDetails.email) }
+        if (guestPayload && guestPayload.email !== guestDetails.email) {
+            setGuestDetails(prev => ({ ...prev, email: guestPayload.email }))
+        }
+
         // [NEW] Validate Terms Validation
         if (!termsAccepted) {
             toast({
@@ -336,7 +382,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
 
         // [Workaround] Subscribe directly via server action since Edge Function might miss it
         if (newsletterSubscribed && event.organizer_id) {
-            const email = effectiveUser?.email || guestDetails.email
+            const email = effectiveUser?.email || guestPayload!.email
             const name = effectiveUser ? (effectiveUser.user_metadata?.full_name || effectiveUser.email) : guestDetails.name
 
             // Execute in background
@@ -363,8 +409,8 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                     p_event_id: event.id,
                     p_answers: answers,
                     p_tier_id: tier.id || null,
-                    p_guest_email: !effectiveUser ? guestDetails.email : null,
-                    p_guest_name: !effectiveUser ? guestDetails.name : null,
+                    p_guest_email: guestPayload?.email ?? null,
+                    p_guest_name: guestPayload?.name ?? null,
                 })
 
                 if (regError) {
@@ -425,7 +471,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 // otherwise only see whether someone ELSE does, which lets a buyer
                 // on a lapsed hold take seats already released back to the pool.
                 seat_session_id: seatSessionForIntent || undefined,
-                guest_details: !effectiveUser ? guestDetails : undefined,
+                guest_details: guestPayload,
                 promo_code: appliedPromo ? appliedPromo.code : undefined,
                 subscribed_to_newsletter: newsletterSubscribed,
                 registration_id: registrationId || undefined,
@@ -721,11 +767,33 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                         <Input
                                             id="email"
                                             type="email"
+                                            inputMode="email"
+                                            autoComplete="email"
                                             placeholder="juan@example.com"
                                             value={guestDetails.email}
                                             onChange={(e) => handleGuestChange('email', e.target.value)}
-                                            className="bg-muted/30"
+                                            onBlur={checkEmail}
+                                            aria-invalid={!!emailError}
+                                            aria-describedby={emailError ? 'email-error' : emailSuggestion ? 'email-suggestion' : undefined}
+                                            className={emailError ? 'bg-muted/30 border-destructive' : 'bg-muted/30'}
                                         />
+                                        {emailError && (
+                                            <p id="email-error" className="text-xs text-destructive">{emailError}</p>
+                                        )}
+                                        {!emailError && emailSuggestion && (
+                                            <p id="email-suggestion" className="text-xs text-muted-foreground">
+                                                Did you mean{' '}
+                                                <button
+                                                    type="button"
+                                                    onClick={applySuggestion}
+                                                    className="font-semibold text-foreground underline underline-offset-2 hover:no-underline"
+                                                >
+                                                    {emailSuggestion}
+                                                </button>
+                                                ?
+                                            </p>
+                                        )}
+                                        <p className="text-xs text-muted-foreground">Your ticket is sent here.</p>
                                     </div>
                                 </div>
                                 <div className="space-y-2">

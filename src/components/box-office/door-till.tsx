@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { suggestEmail } from '@/lib/email/validate'
 import Link from 'next/link'
 import {
     Minus, Plus, Banknote, CreditCard, Landmark, Gift, Check, Undo2,
@@ -369,6 +370,20 @@ export function DoorTill({
                                         <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email"
                                             placeholder="Leave blank if they'd rather not"
                                             className="h-14 text-base" autoComplete="off" autoCapitalize="none" />
+                                        {(() => {
+                                            // Door staff type fast on a phone; a mistyped domain here
+                                            // loses the ticket just as surely as at checkout.
+                                            const hint = suggestEmail(email)
+                                            return hint ? (
+                                                <p className="mt-1.5 text-xs text-muted-foreground">
+                                                    Did you mean{' '}
+                                                    <button type="button" onClick={() => setEmail(hint)}
+                                                        className="font-semibold text-foreground underline underline-offset-2">
+                                                        {hint}
+                                                    </button>?
+                                                </p>
+                                            ) : null
+                                        })()}
                                     </Field>
                                 </div>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { normalizeEmail, isEmailUsable, suggestEmail } from '@/lib/email/validate'
 import { motion, AnimatePresence } from 'motion/react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -83,7 +84,9 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
     function stepValid(): boolean {
         if (!current) return false
         if (current === 'identity') {
-            return name.trim().length > 0 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())
+            // Shared with checkout so both doors into a ticket agree on what a
+            // usable address is.
+            return name.trim().length > 0 && isEmailUsable(email)
         }
         const q = current
         if (!q.is_required) return true
@@ -114,7 +117,7 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
             const { data, error: rpcError } = await supabase.rpc('submit_event_request', {
                 p_event_id: event.id,
                 p_answers: payload,
-                p_guest_email: isLoggedIn ? null : email.trim(),
+                p_guest_email: isLoggedIn ? null : normalizeEmail(email),
                 p_guest_name: isLoggedIn ? null : name.trim(),
             })
 
@@ -139,7 +142,7 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
             } else {
                 setPhase('approved')
                 // brief success beat before handing off to the ticket selector
-                const guest = isLoggedIn ? undefined : { name: name.trim(), email: email.trim() }
+                const guest = isLoggedIn ? undefined : { name: name.trim(), email: normalizeEmail(email) }
                 setTimeout(() => onApproved(regId, guest), 1100)
             }
         } catch {
@@ -202,7 +205,19 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-sm font-medium">Email</label>
-                                                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" />
+                                                <Input type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" />
+                                                {(() => {
+                                                    const hint = suggestEmail(email)
+                                                    return hint ? (
+                                                        <p className="text-xs text-muted-foreground">
+                                                            Did you mean{' '}
+                                                            <button type="button" onClick={() => setEmail(hint)}
+                                                                className="font-semibold text-foreground underline underline-offset-2 hover:no-underline">
+                                                                {hint}
+                                                            </button>?
+                                                        </p>
+                                                    ) : null
+                                                })()}
                                                 <p className="text-xs text-muted-foreground">Your ticket and updates go here.</p>
                                             </div>
                                         </div>

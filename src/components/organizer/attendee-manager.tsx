@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { Attendee, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getEventTiers, getEventTierSales, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters, type TierSales } from '@/lib/organizer/attendee-actions'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { Attendee, getDeliveryFailures, type DeliveryFailure, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getEventTiers, getEventTierSales, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters, type TierSales } from '@/lib/organizer/attendee-actions'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
@@ -125,6 +125,14 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
 
     // Top-of-page stats (filter-independent)
     const [stats, setStats] = useState<{ attendees: number; checkedIn: number; revenue: number } | null>(null)
+    // Buyers whose ticket email hard-bounced. Nothing used to surface this —
+    // the order looked delivered and the buyer simply never turned up with a
+    // ticket. Reloaded after a correction so a fixed row leaves the list.
+    const [failures, setFailures] = useState<DeliveryFailure[]>([])
+    const reloadFailures = useCallback(() => {
+        getDeliveryFailures(eventId).then(setFailures).catch(() => { /* non-fatal */ })
+    }, [eventId])
+    useEffect(() => { reloadFailures() }, [reloadFailures])
     // Per-tier sales breakdown (how many bought each type, not just who scanned in)
     const [tierSales, setTierSales] = useState<TierSales[] | null>(null)
     const tierSoldTotal = useMemo(
@@ -216,6 +224,7 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
             toast({ title: 'Could not update', description: res.error, variant: 'destructive' })
             return
         }
+        reloadFailures()
         toast({
             title: res.email_sent ? 'Ticket re-sent' : 'Address updated',
             description: res.email_sent
@@ -500,6 +509,44 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
 
     return (
         <div className="space-y-4">
+            {failures.length > 0 && (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+                    <div className="flex items-start gap-2.5">
+                        <MailWarning className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                        <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold">
+                                {failures.length} {failures.length === 1 ? 'buyer' : 'buyers'} never received their ticket
+                            </p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                                Their email address rejected the delivery. Fix the address and we&apos;ll resend.
+                            </p>
+                            <ul className="mt-3 space-y-1.5">
+                                {failures.map(f => (
+                                    <li key={f.ticket_id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                                        <span className="font-medium">{f.buyer_name || 'Guest'}</span>
+                                        <span className="break-all text-muted-foreground line-through">{f.recipient}</span>
+                                        <button
+                                            type="button"
+                                            className="font-medium text-destructive underline underline-offset-2 hover:no-underline"
+                                            onClick={() => {
+                                                setNewEmail('')
+                                                setFixReason('')
+                                                setFixEmailFor({
+                                                    attendee: { id: f.ticket_id, guest_info: { name: f.buyer_name || '', email: f.recipient } } as Attendee,
+                                                    name: f.buyer_name || 'Guest',
+                                                })
+                                            }}
+                                        >
+                                            Fix &amp; resend
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div className="rounded-xl border bg-card p-4">
