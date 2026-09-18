@@ -92,13 +92,22 @@ export function RegistrationGate({
     const [claimed, setClaimed] = useState(false)
     const [claimFailed, setClaimFailed] = useState(false)
     const [isLoggedIn, setIsLoggedIn] = useState(false)
+    const [viewerEmail, setViewerEmail] = useState<string | null>(null)
+    /** Token for the ticket we just issued. The page was server-rendered before
+     *  this ticket existed, so `ticketToken` is null for anyone who registers
+     *  live — which is why "View ticket" used to fall back to the signed-in-only
+     *  /account page. */
+    const [claimedToken, setClaimedToken] = useState<string | null>(null)
     const [rsvpSubmitting, setRsvpSubmitting] = useState(false)
     const claimStartedRef = useRef(false)
 
     const registered = !!regId
 
     useEffect(() => {
-        createClient().auth.getUser().then(({ data }) => setIsLoggedIn(!!data.user))
+        createClient().auth.getUser().then(({ data }) => {
+            setIsLoggedIn(!!data.user)
+            setViewerEmail(data.user?.email ?? null)
+        })
     }, [])
 
     // Mirror a server-resolved approval into sessionStorage so checkout agrees.
@@ -126,8 +135,10 @@ export function RegistrationGate({
                         source: 'web',
                     },
                 })
-                if (!error && (data as any)?.success) setClaimed(true)
-                else setClaimFailed(true)
+                if (!error && (data as any)?.success) {
+                    setClaimedToken((data as any).data?.access_token ?? null)
+                    setClaimed(true)
+                } else setClaimFailed(true)
             } catch {
                 setClaimFailed(true)
             }
@@ -171,16 +182,26 @@ export function RegistrationGate({
 
     // ── Already going (has a ticket, or just claimed a free one) ──────────────
     if (hasTicket || claimed) {
+        // Prefer the token from the ticket we just issued, then the one the page
+        // was rendered with. /t/<token> is public, so either one shows the ticket
+        // without a sign-in; /account is the last resort and does require one.
+        const token = claimedToken ?? ticketToken
+        const sentTo = guest?.email ?? viewerEmail
         return (
             <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-5 text-center">
                 <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-green-500" />
                 <p className="font-semibold">You&apos;re going!</p>
                 <p className="mt-1 text-sm text-muted-foreground">Your ticket is confirmed.</p>
-                <Button asChild className="mt-3 gap-1.5">
-                    <Link href={ticketToken ? `/t/${ticketToken}` : '/account'}>
-                        <Ticket className="h-4 w-4" /> View ticket
+                <Button asChild size="lg" className="mt-3 gap-1.5">
+                    <Link href={token ? `/t/${token}` : '/account'}>
+                        <Ticket className="h-4 w-4" /> {token ? 'Show my ticket' : 'View ticket'}
                     </Link>
                 </Button>
+                {token && (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                        {sentTo ? `We emailed it to ${sentTo} too.` : 'We emailed you a copy too.'}
+                    </p>
+                )}
             </div>
         )
     }

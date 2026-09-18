@@ -628,6 +628,12 @@ serve(async (req) => {
                     data: {
                         intent_id: intentId,
                         free: true,
+                        // The hosted ticket page (/t/<token>) is public and
+                        // token-addressed, so an RSVP can be shown its ticket
+                        // immediately without an account. Nothing else knows
+                        // this token at claim time — the page was rendered
+                        // before the intent existed.
+                        access_token: intent.access_token,
                         total_amount: 0,
                         tickets_reserved: quantity,
                         tier_name: tierName,
