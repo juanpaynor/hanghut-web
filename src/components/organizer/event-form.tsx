@@ -25,6 +25,7 @@ import { useToast } from '@/hooks/use-toast'
 import { TicketTiersManager } from '@/components/organizer/ticket-tiers-manager'
 import { SubscriberDiscountsSection, type SubscriptionTierBasic, type ExistingDiscount } from '@/components/organizer/subscriber-discounts-section'
 import { createClient } from '@/lib/supabase/client'
+import { plainTextToHtml } from '@/lib/plain-text-to-html'
 
 // New events pick a Category from the server lookup (event_categories). We still derive
 // and write the legacy event_type enum during the transition so the old app's map +
@@ -133,8 +134,12 @@ export function EventForm({
         title: initialData?.title || '',
         description: initialData?.description || '',
         // Prefer stored rich HTML; fall back to existing plain text so legacy
-        // events keep their description when edited.
-        description_html: initialData?.description_html || initialData?.description || '',
+        // events keep their description when edited. That fallback MUST be
+        // converted, not passed through: description holds real newlines, and
+        // newlines are whitespace in HTML, so handing it raw to the rich-text
+        // editor collapsed the whole thing into one paragraph on open — then
+        // the next save wrote that collapsed version back over the good text.
+        description_html: initialData?.description_html || plainTextToHtml(initialData?.description) || '',
         event_type: initialData?.event_type || 'concert',
         category: initialData?.category || '',
         venue_name: initialData?.venue_name || '',
@@ -542,14 +547,26 @@ export function EventForm({
             formDataToSend.append('title', formData.title)
             // Rich body goes to description_html; a stripped plain-text version
             // feeds SEO meta, share text, and event cards.
-            const plainDescription = formData.description_html
+            // Guard against a blank editor wiping a real description. The editor
+            // is uncontrolled, so a desync submitted '' and blanked the column —
+            // one client lost a 666-character description to eleven consecutive
+            // saves this way. An editor holding nothing but empty paragraphs is
+            // treated as "no change", not as "clear it".
+            const hasRealContent = formData.description_html
+                .replace(/<p>(\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '')
+                .replace(/<[^>]*>/g, '')
+                .trim().length > 0
+            const originalHtml = initialData?.description_html || plainTextToHtml(initialData?.description) || ''
+            const outgoingHtml = hasRealContent ? formData.description_html : originalHtml
+
+            const plainDescription = outgoingHtml
                 .replace(/<[^>]*>/g, ' ')
                 .replace(/&nbsp;/g, ' ')
                 .replace(/&amp;/g, '&')
                 .replace(/\s+/g, ' ')
                 .trim()
             formDataToSend.append('description', plainDescription.slice(0, 5000))
-            formDataToSend.append('description_html', formData.description_html)
+            formDataToSend.append('description_html', outgoingHtml)
             formDataToSend.append('category', formData.category)
             formDataToSend.append('event_type', CATEGORY_TO_EVENT_TYPE[formData.category] || 'other')
             formDataToSend.append('venue_name', formData.venue_name)

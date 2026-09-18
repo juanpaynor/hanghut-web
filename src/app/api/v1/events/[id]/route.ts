@@ -1,5 +1,7 @@
 import { authenticateApiKey, isAuthError } from '@/lib/api/api-middleware'
 import { apiSuccess, apiError, handleCors } from '@/lib/api/api-helpers'
+import { sanitize } from '@/lib/sanitize'
+import { plainTextToHtml } from '@/lib/plain-text-to-html'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { dispatchWebhook } from '@/lib/api/webhook-dispatcher'
 
@@ -131,7 +133,7 @@ export async function PUT(
     }
 
     // Build update object from allowed fields
-    const allowedFields = ['title', 'description', 'start_datetime', 'end_datetime', 'venue_name', 'address', 'city', 'latitude', 'longitude', 'capacity', 'event_type', 'ticket_price', 'cover_image_url', 'status']
+    const allowedFields = ['title', 'description', 'description_html', 'start_datetime', 'end_datetime', 'venue_name', 'address', 'city', 'latitude', 'longitude', 'capacity', 'event_type', 'ticket_price', 'cover_image_url', 'status']
     const updates: Record<string, any> = {}
     for (const field of allowedFields) {
         if (body[field] !== undefined) {
@@ -141,6 +143,16 @@ export async function PUT(
 
     if (Object.keys(updates).length === 0) {
         return apiError('No valid fields to update', 400)
+    }
+    // HTML from an API caller is untrusted — sanitize on the way in so the
+    // event page never renders anything the editor's own paste path wouldn't.
+    if (updates.description_html != null) {
+        if (typeof updates.description_html !== 'string') return apiError('description_html must be a string', 400)
+        updates.description_html = sanitize(updates.description_html)
+    } else if (typeof updates.description === 'string') {
+        // A caller syncing only plain text would otherwise leave a stale (or
+        // absent) description_html, and the page prefers that column.
+        updates.description_html = plainTextToHtml(updates.description) || null
     }
     if (updates.event_type != null && !EVENT_TYPES.includes(updates.event_type)) {
         return apiError(`event_type must be one of: ${EVENT_TYPES.join(', ')}`, 400)

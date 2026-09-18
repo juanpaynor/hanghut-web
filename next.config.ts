@@ -52,6 +52,25 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // Partner-hosted assets on Cloudflare. Partners who bring their own
+      // storage (rather than uploading to ours) land here — an event whose
+      // cover lives on a host that is NOT in this list renders as nothing,
+      // because the optimizer answers /_next/image with
+      // 400 "url parameter is not allowed" even though the URL itself is
+      // perfectly public. R2 public buckets:
+      {
+        protocol: 'https',
+        hostname: '**.r2.dev',
+        port: '',
+        pathname: '/**',
+      },
+      // Cloudflare Images delivery.
+      {
+        protocol: 'https',
+        hostname: 'imagedelivery.net',
+        port: '',
+        pathname: '/**',
+      },
       // App store badges
       {
         protocol: 'https',

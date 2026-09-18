@@ -1,6 +1,8 @@
 import { authenticateApiKey, isAuthError } from '@/lib/api/api-middleware'
 import { apiSuccess, apiError, handleCors } from '@/lib/api/api-helpers'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sanitize } from '@/lib/sanitize'
+import { plainTextToHtml } from '@/lib/plain-text-to-html'
 
 // Mirrors the Postgres `event_type` enum. Keep in sync with the DB.
 const EVENT_TYPES = ['concert', 'workshop', 'conference', 'sports', 'social', 'food', 'nightlife', 'art', 'other'] as const
@@ -132,7 +134,7 @@ export async function POST(request: Request) {
     }
 
     const {
-        title, description, start_datetime, end_datetime, venue_name, address, city,
+        title, description, description_html, start_datetime, end_datetime, venue_name, address, city,
         capacity, event_type, ticket_price, cover_image_url, latitude, longitude, sales_end_datetime,
     } = body
 
@@ -140,6 +142,7 @@ export async function POST(request: Request) {
     if (!start_datetime || Number.isNaN(Date.parse(start_datetime))) return apiError('start_datetime is required (ISO 8601)', 400)
     if (end_datetime != null && Number.isNaN(Date.parse(end_datetime))) return apiError('end_datetime must be ISO 8601', 400)
     if (description != null && typeof description !== 'string') return apiError('description must be a string', 400)
+    if (description_html != null && typeof description_html !== 'string') return apiError('description_html must be a string', 400)
     // Validate up front: an unknown value used to reach Postgres and come back as a
     // 500 ("invalid input value for enum event_type"), which told the caller nothing.
     if (event_type != null && !EVENT_TYPES.includes(event_type)) {
@@ -188,6 +191,14 @@ export async function POST(request: Request) {
             organizer_id: auth.partnerId,
             title,
             description: description || null,
+            // The event page prefers description_html and only falls back to the
+            // plain column. Without this the API could never produce a formatted
+            // description, and opening such an event in the dashboard editor fed
+            // plain text with real newlines into an HTML editor, which collapses
+            // them. Derive it when the caller sends only plain text.
+            description_html: description_html
+                ? sanitize(description_html)
+                : plainTextToHtml(description) || null,
             start_datetime,
             end_datetime: end_datetime || null,
             sales_end_datetime: salesEnd,

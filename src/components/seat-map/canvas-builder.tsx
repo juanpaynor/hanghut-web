@@ -210,7 +210,12 @@ const RowLabels = memo(function RowLabels({
             key={`${row.id}-${end}`}
             x={anchors[end].x}
             y={anchors[end].y}
-            draggable={editable}
+            // Draggable only once the row is SELECTED. Every map gets rows via
+            // ensureRows on load, so a large venue renders hundreds of these
+            // chips; leaving them all draggable blanketed the canvas in drag
+            // targets that swallowed the start of a marquee drag. Click still
+            // selects the row from anywhere — then the chip can be moved.
+            draggable={editable && selected}
             name="row-label"
             onClick={(e) => { e.cancelBubble = true; onClick?.(row.id) }}
             onTap={(e) => { e.cancelBubble = true; onClick?.(row.id) }}
@@ -502,6 +507,13 @@ export function CanvasBuilder({
   const dragGroupRef = useRef<{ startX: number; startY: number; others: { node: Konva.Node; x: number; y: number }[] } | null>(null)
   // Middle-mouse panning (works regardless of the active tool)
   const middlePanRef = useRef<{ startX: number; startY: number; offX: number; offY: number } | null>(null)
+  /** Set when a marquee drag just finished, to swallow the `click` the browser
+   *  fires straight after `mouseup`. Without it that click lands on the stage
+   *  background and DESELECT_ALLs the seats the marquee just selected — the
+   *  reducer has already flushed `isDrawing: false`, so the click handler's
+   *  own `!state.isDrawing` guard no longer recognises it as part of a drag.
+   *  A ref, not state: it must be readable in the same tick it is written. */
+  const suppressClickRef = useRef(false)
 
   // Track mouse position for live drawing preview
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
@@ -839,6 +851,10 @@ export function CanvasBuilder({
   const handleMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       if (readOnly) return
+      // Any new press starts a fresh interaction, so a suppress flag left over
+      // from a drag whose click never arrived (released off-stage, or swallowed
+      // by the browser) can't eat this one.
+      suppressClickRef.current = false
       const stage = stageRef.current
       if (!stage) return
       const pointer = stage.getPointerPosition()
@@ -986,6 +1002,9 @@ export function CanvasBuilder({
           const maxY = Math.max(y1, y)
           // Only select if dragged enough
           if (maxX - minX > 5 || maxY - minY > 5) {
+            // A real drag happened — whatever click follows is its tail, not a
+            // fresh click, whether it lands on the background, a section or a seat.
+            suppressClickRef.current = true
             const selectedIds: string[] = []
             state.sections.forEach((section) => {
               section.seats.forEach((seat) => {
@@ -1046,6 +1065,8 @@ export function CanvasBuilder({
       if (readOnly) return
       // Ignore middle-button clicks — those are panning, not selection.
       if ('button' in e.evt && (e.evt as MouseEvent).button === 1) return
+      // Tail of a marquee drag — consume it so it can't undo the selection.
+      if (suppressClickRef.current) { suppressClickRef.current = false; return }
       const stage = stageRef.current
       if (!stage) return
       const pointer = stage.getPointerPosition()
@@ -1100,6 +1121,8 @@ export function CanvasBuilder({
   const handleSectionClick = useCallback(
     (sectionId: string, e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
       if (readOnly) return
+      // Tail of a marquee drag that happened to release over this section.
+      if (suppressClickRef.current) { suppressClickRef.current = false; return }
       // Ignore clicks/double-clicks that originated on a seat — those select the
       // seat, not the section/zone. (Seats handle their own clicks; this guards
       // against event bubbling and the draw-seat tool where seats don't.)
@@ -1132,6 +1155,9 @@ export function CanvasBuilder({
   const handleSeatClick = useCallback(
     (seatId: string, _e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
       if (readOnly || state.tool !== 'select') return
+      // Tail of a marquee drag that released over a seat — toggling it here
+      // would punch a hole in the selection the marquee just made.
+      if (suppressClickRef.current) { suppressClickRef.current = false; return }
       dispatch({ type: 'TOGGLE_SELECT_SEAT', seatId })
     },
     [readOnly, state.tool, dispatch]

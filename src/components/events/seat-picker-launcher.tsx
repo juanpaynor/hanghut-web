@@ -60,11 +60,20 @@ export function SeatPickerLauncher({ eventId, fullWidth = false, maxPerOrder }: 
             <Dialog open={open} onOpenChange={setOpen}>
                 {/* Fixed-height flex column: the header stays put and the picker
                     fills the rest, so its pinned selection bar / Continue button
-                    is always visible without scrolling the dialog. */}
-                <DialogContent className="max-w-4xl w-[95vw] h-[92vh] flex flex-col gap-3 overflow-hidden">
-                    <DialogHeader className="shrink-0">
+                    is always visible without scrolling the dialog.
+
+                    Phones get the whole screen — 100dvh, not 100vh, so iOS's
+                    collapsing address bar can't crop the Continue button — with
+                    no rounding, border or wide padding stealing space. From sm
+                    up it becomes a floating panel again, and it is allowed to
+                    grow to 1400px so a real venue map has room; max-w-4xl used
+                    to cap it at 896px no matter how big the screen was. */}
+                <DialogContent className="w-screen h-[100dvh] max-w-none rounded-none border-0 p-4 gap-3 flex flex-col overflow-hidden sm:w-[96vw] sm:h-[94vh] sm:max-w-[1400px] sm:rounded-lg sm:border sm:p-6">
+                    <DialogHeader className="shrink-0 pr-10 text-left">
                         <DialogTitle>Choose Your Seats</DialogTitle>
-                        <DialogDescription>
+                        {/* Kept for screen readers on phones, where the line is
+                            not worth the vertical space the map needs. */}
+                        <DialogDescription className="sr-only sm:not-sr-only">
                             Tap a section and we&apos;ll find the best seats together — or pick your own.
                         </DialogDescription>
                     </DialogHeader>

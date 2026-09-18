@@ -1014,6 +1014,49 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         })
     }, [view, cancelCamera])
 
+    // ── Pinch to zoom (touch) ────────────────────────────────────────────
+    // The stage is `draggable`, so one finger already pans. Two fingers had no
+    // effect at all: zoom was wheel-only, leaving phone buyers with just the
+    // +/- buttons to read a venue map. Anchors on the midpoint between the
+    // fingers and reuses the wheel's 0.2-5 clamp so all three zoom paths agree.
+    const pinchRef = useRef<{ dist: number; center: { x: number; y: number } } | null>(null)
+
+    const handleTouchMove = useCallback((e: Konva.KonvaEventObject<TouchEvent>) => {
+        const touches = e.evt.touches
+        if (touches.length < 2) return
+        e.evt.preventDefault()
+        const stage = stageRef.current
+        if (!stage) return
+        // A pinch usually starts as a one-finger drag; hand over cleanly or the
+        // stage keeps panning under the gesture and the map skates away.
+        if (stage.isDragging()) stage.stopDrag()
+        cancelCamera()
+
+        const box = stage.container().getBoundingClientRect()
+        const [t1, t2] = [touches[0], touches[1]]
+        const center = {
+            x: (t1.clientX + t2.clientX) / 2 - box.left,
+            y: (t1.clientY + t2.clientY) / 2 - box.top,
+        }
+        const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY)
+
+        const prev = pinchRef.current
+        if (!prev || prev.dist <= 0) { pinchRef.current = { dist, center }; return }
+
+        setView(v => {
+            const newScale = Math.max(0.2, Math.min(5, v.scale * (dist / prev.dist)))
+            // World point under the pinch midpoint stays under it, and the map
+            // also follows the midpoint if the fingers travel (pinch + drag).
+            const world = { x: (prev.center.x - v.x) / v.scale, y: (prev.center.y - v.y) / v.scale }
+            return { scale: newScale, x: center.x - world.x * newScale, y: center.y - world.y * newScale }
+        })
+        pinchRef.current = { dist, center }
+    }, [cancelCamera])
+
+    // Clear between gestures, otherwise the next pinch starts from a stale
+    // distance and jumps. Fires when either finger lifts.
+    const handleTouchEnd = useCallback(() => { pinchRef.current = null }, [])
+
     const zoomButton = useCallback((factor: number) => {
         const center = { x: stageSize.width / 2, y: stageSize.height / 2 }
         const newScale = Math.max(0.2, Math.min(5, view.scale * factor))
@@ -1246,6 +1289,13 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                 </div>
             </div>
 
+            {/* Below lg the map stacks above the panels (phone/tablet: the sheet
+                behaves like a bottom sheet). At lg and up they sit side by side,
+                so opening a section no longer halves the map — the map keeps the
+                full height of the dialog and the panels get their own rail.
+                The ResizeObserver on containerRef feeds the new px size to the
+                Konva stage either way. */}
+            <div className="flex-1 min-h-0 min-w-0 flex flex-col lg:flex-row gap-3">
             {/* Map canvas — flexes to fill the modal so the selection bar below
                 stays visible without scrolling. Min height keeps it usable on
                 short screens; the ResizeObserver feeds the real px height to the
@@ -1314,6 +1364,8 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                     y={view.y}
                     draggable
                     onWheel={handleWheel}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
                     onDragStart={cancelCamera}
                     onDragEnd={(e) => setView(v => ({ ...v, x: e.target.x(), y: e.target.y() }))}
                 >
@@ -1521,6 +1573,9 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                 )}
             </div>
 
+            {/* Panel rail: sheets + selection bar. A column on phones (below the
+                map), a fixed-width scrolling rail beside it on desktop. */}
+            <div className="flex flex-col gap-3 min-w-0 shrink-0 lg:w-[380px] lg:min-h-0 lg:overflow-y-auto lg:shrink-0">
             {/* Best-available sheet — tap a seated section, choose how many, we pick */}
             {autoSheet && (() => {
                 const sh = autoSheet
@@ -1769,6 +1824,8 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                     </div>
                 )}
             </div>}
+            </div>{/* /panel rail */}
+            </div>{/* /map + rail */}
         </div>
     )
 }

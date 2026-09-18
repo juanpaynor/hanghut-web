@@ -760,8 +760,10 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
 
             {/* Preview as buyer */}
             <Dialog open={previewState.open} onOpenChange={(o) => { if (!o) setPreviewState({ open: false, bundle: null, loading: false }) }}>
-                <DialogContent className="max-w-4xl w-[95vw] h-[92vh] flex flex-col gap-3 overflow-hidden">
-                    <DialogHeader className="shrink-0">
+                {/* Same sizing as the real buyer dialog in seat-picker-launcher —
+                    a preview at a different size is not a preview. */}
+                <DialogContent className="w-screen h-[100dvh] max-w-none rounded-none border-0 p-4 gap-3 flex flex-col overflow-hidden sm:w-[96vw] sm:h-[94vh] sm:max-w-[1400px] sm:rounded-lg sm:border sm:p-6">
+                    <DialogHeader className="shrink-0 pr-10 text-left">
                         <DialogTitle>Choose Your Seats</DialogTitle>
                         <DialogDescription>Exactly what buyers see on the event page{previewState.bundle?.source === 'draft' ? ' — built from your draft' : ''}.</DialogDescription>
                     </DialogHeader>

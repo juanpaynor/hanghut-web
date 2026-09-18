@@ -8,7 +8,7 @@ import { Bold, Italic, List, ListOrdered, Link as LinkIcon, Undo, Redo, Striketh
 import { Toggle } from '@/components/ui/toggle'
 import { Separator } from '@/components/ui/separator'
 import { createClient } from '@/lib/supabase/client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 interface RichTextEditorProps {
@@ -51,6 +51,23 @@ export function RichTextEditor({ value, onChange, disabled }: RichTextEditorProp
             },
         },
     })
+
+    // Tiptap reads `content` ONCE, at mount. Nothing re-seeded it when the parent
+    // changed `value`, so the editor could sit empty (or holding stale content)
+    // while the parent believed it held the description — and the next save wrote
+    // that empty string over a real one. Adopt an external value whenever it
+    // genuinely differs, but never while the user is typing here: setContent
+    // would fight the cursor.
+    useEffect(() => {
+        if (!editor) return
+        const next = value || ''
+        if (next === editor.getHTML()) return
+        if (editor.isFocused) return
+        // emitUpdate=false — this is us catching up to the parent, not an edit,
+        // and emitting would loop straight back through onChange.
+        editor.commands.setContent(next, { emitUpdate: false })
+        setRawHtml(next)
+    }, [value, editor])
 
     function switchTab(tab: EditorTab) {
         if (tab === activeTab) return
