@@ -333,12 +333,78 @@ res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http|
 event = JSON.parse(res.body)['data']`,
 }
 
-// ─── List Attendees ───
-export const listAttendeesSamples: CodeSample = {
-    curl: `curl "https://www.hanghut.com/api/v1/events/8db0f243-.../attendees?status=sold" \\
+// ─── List Sections (seated events) ───
+export const listSectionsSamples: CodeSample = {
+    curl: `curl "https://www.hanghut.com/api/v1/events/8db0f243-.../sections" \\
   -H "Authorization: Bearer hh_live_your_key"`,
     javascript: `const res = await fetch(
-  \`https://www.hanghut.com/api/v1/events/\${eventId}/attendees?status=sold\`,
+  \`https://www.hanghut.com/api/v1/events/\${eventId}/sections\`,
+  {
+    headers: { 'Authorization': \`Bearer \${API_KEY}\` }
+  }
+);
+const { data } = await res.json();
+
+if (!data.seated) {
+  // General admission — no section_id needed at checkout.
+  return;
+}
+
+// Only offer sections that can actually seat the party together.
+const partySize = 4;
+const options = data.sections.filter(
+  s => s.on_sale && s.largest_block >= partySize
+);`,
+    python: `import requests
+
+res = requests.get(
+    f"https://www.hanghut.com/api/v1/events/{event_id}/sections",
+    headers={"Authorization": f"Bearer {api_key}"}
+)
+data = res.json()["data"]
+
+if data["seated"]:
+    party_size = 4
+    options = [
+        s for s in data["sections"]
+        if s["on_sale"] and s["largest_block"] >= party_size
+    ]`,
+    php: `$url = "https://www.hanghut.com/api/v1/events/{$eventId}/sections";
+$ch = curl_init($url);
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_HTTPHEADER => ["Authorization: Bearer {$apiKey}"],
+]);
+$data = json_decode(curl_exec($ch))->data;
+curl_close($ch);
+
+$partySize = 4;
+$options = array_filter($data->sections, fn($s) =>
+    $s->on_sale && $s->largest_block >= $partySize
+);`,
+    ruby: `require 'net/http'
+require 'json'
+
+uri = URI("https://www.hanghut.com/api/v1/events/#{event_id}/sections")
+req = Net::HTTP::Get.new(uri)
+req['Authorization'] = "Bearer #{api_key}"
+res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http|
+  http.request(req)
+}
+data = JSON.parse(res.body)['data']
+
+party_size = 4
+options = data['sections'].select { |s|
+  s['on_sale'] && s['largest_block'] >= party_size
+}`,
+}
+
+// ─── List Attendees ───
+export const listAttendeesSamples: CodeSample = {
+    curl: `curl "https://www.hanghut.com/api/v1/events/8db0f243-.../attendees?status=valid" \\
+  -H "Authorization: Bearer hh_live_your_key"`,
+    javascript: `const res = await fetch(
+  \`https://www.hanghut.com/api/v1/events/\${eventId}/attendees?status=valid\`,
   {
     headers: { 'Authorization': \`Bearer \${API_KEY}\` }
   }
@@ -351,14 +417,14 @@ data.attendees.forEach(a => {
 
 response = requests.get(
     f"https://www.hanghut.com/api/v1/events/{event_id}/attendees",
-    params={"status": "sold"},
+    params={"status": "valid"},
     headers={"Authorization": f"Bearer {api_key}"}
 )
 data = response.json()["data"]
 for attendee in data["attendees"]:
     print(f"{attendee['customer']['name']} — {attendee['tier']['name']}")`,
     php: `<?php
-$url = "https://www.hanghut.com/api/v1/events/{$eventId}/attendees?status=sold";
+$url = "https://www.hanghut.com/api/v1/events/{$eventId}/attendees?status=valid";
 $ch = curl_init($url);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
@@ -373,7 +439,7 @@ foreach ($data->attendees as $a) {
     ruby: `require 'net/http'
 require 'json'
 
-uri = URI("https://www.hanghut.com/api/v1/events/#{event_id}/attendees?status=sold")
+uri = URI("https://www.hanghut.com/api/v1/events/#{event_id}/attendees?status=valid")
 req = Net::HTTP::Get.new(uri)
 req['Authorization'] = "Bearer #{api_key}"
 
@@ -508,9 +574,9 @@ export const verifyTicketSamples: CodeSample = {
 );
 const { data: ticket } = await res.json();
 
-if (ticket.status === 'sold') {
+if (ticket.status === 'valid') {
   console.log(\`✅ VALID — \${ticket.customer.name}\`);
-} else if (ticket.status === 'checked_in') {
+} else if (ticket.status === 'used') {
   console.log(\`⚠️ ALREADY USED at \${ticket.checked_in_at}\`);
 } else {
   console.log(\`❌ INVALID — status: \${ticket.status}\`);
@@ -523,9 +589,9 @@ response = requests.get(
 )
 ticket = response.json()["data"]
 
-if ticket["status"] == "sold":
+if ticket["status"] == "valid":
     print(f"✅ VALID — {ticket['customer']['name']}")
-elif ticket["status"] == "checked_in":
+elif ticket["status"] == "used":
     print(f"⚠️ ALREADY USED at {ticket['checked_in_at']}")
 else:
     print(f"❌ INVALID — status: {ticket['status']}")`,
@@ -539,9 +605,9 @@ curl_setopt_array($ch, [
 ]);
 $ticket = json_decode(curl_exec($ch))->data;
 
-if ($ticket->status === 'sold') {
+if ($ticket->status === 'valid') {
     echo "✅ VALID — {$ticket->customer->name}\\n";
-} elseif ($ticket->status === 'checked_in') {
+} elseif ($ticket->status === 'used') {
     echo "⚠️ ALREADY USED at {$ticket->checked_in_at}\\n";
 } else {
     echo "❌ INVALID — status: {$ticket->status}\\n";
@@ -559,9 +625,9 @@ res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http|
 ticket = JSON.parse(res.body)['data']
 
 case ticket['status']
-when 'sold'
+when 'valid'
   puts "✅ VALID — #{ticket['customer']['name']}"
-when 'checked_in'
+when 'used'
   puts "⚠️ ALREADY USED at #{ticket['checked_in_at']}"
 else
   puts "❌ INVALID — status: #{ticket['status']}"

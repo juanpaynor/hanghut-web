@@ -26,6 +26,8 @@ interface WalletCardProps {
     pendingSettlement: number
     useMainWallet?: boolean
     ledgerBalance?: number
+    /** The lookup failed — show that, never a figure we did not actually read. */
+    balanceUnavailable?: boolean
 }
 
 export function WalletCard({
@@ -36,6 +38,7 @@ export function WalletCard({
     pendingSettlement,
     useMainWallet = false,
     ledgerBalance = 0,
+    balanceUnavailable = false,
 }: WalletCardProps) {
     const [topUpOpen, setTopUpOpen] = useState(false)
     const [amount, setAmount] = useState('')
@@ -245,12 +248,23 @@ export function WalletCard({
                             <Wallet className="h-3.5 w-3.5 text-green-500" />
                             <p className="text-xs text-muted-foreground font-medium">Available Balance</p>
                         </div>
-                        <p className="text-2xl font-bold text-green-600">
-                            ₱{xenditAvailableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                            Settled funds ready to withdraw
-                        </p>
+                        {balanceUnavailable ? (
+                            <>
+                                <p className="text-2xl font-bold text-muted-foreground">—</p>
+                                <p className="text-[10px] text-amber-600 mt-1 font-medium">
+                                    Couldn&apos;t reach Xendit. This is not a zero balance — refresh to retry.
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-2xl font-bold text-green-600">
+                                    ₱{xenditAvailableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground mt-1">
+                                    Settled funds ready to withdraw
+                                </p>
+                            </>
+                        )}
                     </div>
 
                     {/* Pending Settlement */}
@@ -259,12 +273,23 @@ export function WalletCard({
                             <Clock className="h-3.5 w-3.5 text-amber-500" />
                             <p className="text-xs text-muted-foreground font-medium">Pending Settlement</p>
                         </div>
-                        <p className="text-2xl font-bold text-amber-600">
-                            ₱{pendingSettlement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                            Incoming funds (settles in ~1 day)
-                        </p>
+                        {balanceUnavailable ? (
+                            <>
+                                <p className="text-2xl font-bold text-muted-foreground">—</p>
+                                <p className="text-[10px] text-muted-foreground mt-1">
+                                    Unknown while the wallet lookup is failing
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-2xl font-bold text-amber-600">
+                                    ₱{pendingSettlement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground mt-1">
+                                    Incoming funds (settles in ~1 day)
+                                </p>
+                            </>
+                        )}
                     </div>
                 </div>
 

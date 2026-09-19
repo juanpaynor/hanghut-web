@@ -14,10 +14,65 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
  */
 
 const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY')
-// Default to a broadly-available Groq production model. Llama 4 Scout was a
-// gated preview model that returns 404 "model_not_found" for accounts without
-// access — override via the GROQ_MODEL secret if you have a preferred model.
-const GROQ_MODEL = Deno.env.get('GROQ_MODEL') || 'llama-3.3-70b-versatile'
+
+/**
+ * Model selection is RESILIENT, not hardcoded, because we have now been broken
+ * twice by the same thing: Llama 4 Scout was a gated preview that 404'd for our
+ * account, and its replacement `llama-3.3-70b-versatile` — still listed as a
+ * production model in Groq's own docs — started answering
+ * "does not exist or you do not have access to it" for OUR key. A model name
+ * baked into the source is a time bomb on someone else's release schedule.
+ *
+ * So: try the preferred model, and if Groq says model_not_found, ask the key
+ * what it CAN actually run and use the best of those. Set GROQ_MODEL to pin a
+ * specific one and skip the discovery path.
+ */
+const GROQ_MODEL = Deno.env.get('GROQ_MODEL') || ''
+
+/** Best-first. Anything the account offers that is not here is still tried
+ *  afterwards, so a brand-new Groq model works without a redeploy.
+ *
+ *  gpt-oss-120b leads because it is what our key can actually run TODAY,
+ *  verified against Groq's /models on 2026-09-20. Our account has no Llama
+ *  access of any kind — not Scout, not 3.3, not 3.1 — which is why two
+ *  successive Llama defaults both 404'd. The Llama entries stay below as
+ *  fallbacks in case that access is ever added. */
+const MODEL_PREFERENCE = [
+    'openai/gpt-oss-120b',
+    'llama-3.3-70b-versatile',
+    'openai/gpt-oss-20b',
+    'qwen/qwen3.8-27b',
+    'llama-3.1-8b-instant',
+]
+
+/** Models that exist on the account but cannot do JSON chat completion. */
+const NOT_CHAT = /whisper|tts|guard|embed|vision-preview|playai/i
+
+async function availableChatModels(): Promise<string[]> {
+    try {
+        const res = await fetch('https://api.groq.com/openai/v1/models', {
+            headers: { 'Authorization': `Bearer ${GROQ_API_KEY}` },
+        })
+        if (!res.ok) {
+            console.error('Groq /models failed', res.status, await res.text())
+            return []
+        }
+        const body = await res.json()
+        const ids: string[] = (body?.data ?? [])
+            .map((m: { id?: string }) => m?.id)
+            .filter((id: unknown): id is string => typeof id === 'string' && !NOT_CHAT.test(id))
+        // Preference order first, then whatever else the account has.
+        const ranked = [
+            ...MODEL_PREFERENCE.filter(m => ids.includes(m)),
+            ...ids.filter(id => !MODEL_PREFERENCE.includes(id)),
+        ]
+        console.log('Groq models available to this key:', ids.join(', ') || '(none)')
+        return ranked
+    } catch (e) {
+        console.error('Groq /models threw', e)
+        return []
+    }
+}
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -123,27 +178,63 @@ WRITING STYLE:
 - Lively and genuine, never corporate. Match the brief's language — English, Tagalog, or Taglish.
 - Never fabricate specifics (dates, prices, venues, lineups) that are not given in the brief or event context.${toneLine}${senderLine}`
 
-        const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const userContent = `${brief.trim()}${eventContext}`
+        const complete = (model: string) => fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${GROQ_API_KEY}`,
             },
             body: JSON.stringify({
-                model: GROQ_MODEL,
+                model,
                 temperature: 0.75,
                 response_format: { type: 'json_object' },
                 messages: [
                     { role: 'system', content: systemPrompt },
-                    { role: 'user', content: `${brief.trim()}${eventContext}` },
+                    { role: 'user', content: userContent },
                 ],
             }),
         })
 
+        // First choice: whatever GROQ_MODEL pins, else the top preference.
+        let candidates = [GROQ_MODEL || MODEL_PREFERENCE[0]]
+        let groqRes = await complete(candidates[0])
+        let usedModel = candidates[0]
+        let lastErrText = ''
+
+        // A 404 here means "this key cannot run that model" — retrying the same
+        // name forever is what left the composer dead. Ask the key what it has
+        // and work down the list instead.
+        if (groqRes.status === 404) {
+            lastErrText = await groqRes.text()
+            console.error('Groq model unavailable', usedModel, lastErrText)
+            const discovered = await availableChatModels()
+            candidates = discovered.filter(m => m !== usedModel).slice(0, 4)
+            for (const model of candidates) {
+                const attempt = await complete(model)
+                if (attempt.ok) {
+                    console.log(`Groq fell back to ${model} (pin GROQ_MODEL to skip discovery)`)
+                    groqRes = attempt
+                    usedModel = model
+                    break
+                }
+                lastErrText = await attempt.text()
+                console.error('Groq fallback failed', model, attempt.status, lastErrText)
+                groqRes = attempt
+            }
+        }
+
         if (!groqRes.ok) {
-            const errText = await groqRes.text()
-            console.error('Groq error', GROQ_MODEL, groqRes.status, errText)
-            return json({ error: `AI error (${groqRes.status}). Please try again.` }, 502)
+            if (groqRes.status !== 404) lastErrText = await groqRes.text()
+            console.error('Groq error', usedModel, groqRes.status, lastErrText)
+            // A 404 is a configuration problem, not a blip. Telling an organizer
+            // to "please try again" sends them into a loop that cannot succeed.
+            const message = groqRes.status === 404
+                ? 'The AI writer is not configured correctly on our side. We have been alerted — please use a template for now.'
+                : groqRes.status === 429
+                    ? 'The AI writer is busy right now. Give it a minute and try again.'
+                    : `AI error (${groqRes.status}). Please try again.`
+            return json({ error: message }, 502)
         }
 
         const groqData = await groqRes.json()

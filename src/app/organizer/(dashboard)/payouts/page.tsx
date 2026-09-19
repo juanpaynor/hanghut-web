@@ -503,6 +503,7 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                         pendingSettlement={walletInfo.useMainWallet ? stats.unsettledEarnings : walletInfo.pendingSettlement}
                         useMainWallet={walletInfo.useMainWallet}
                         ledgerBalance={stats.availableBalance}
+                        balanceUnavailable={walletInfo.balanceUnavailable}
                     />
 
                     {/* Secondary Stats Row */}

@@ -4,11 +4,12 @@ import Link from 'next/link'
 import { Lang } from './code-samples'
 import * as samples from './code-samples'
 import { CodeBlock, ResponseBlock, MethodBadge, ParamTable, StatusTable, AlertBox, LanguageSwitcher } from './api-doc-components'
+import { ApiKeyProvider, ApiKeyBar, TryIt } from './try-it'
 
 /* ─── Sidebar config ─── */
 const SECTIONS = [
     { group: 'Getting Started', items: [{ id: 'overview', label: 'Overview' }, { id: 'authentication', label: 'Authentication' }, { id: 'rate-limits', label: 'Rate Limits' }, { id: 'errors', label: 'Errors' }] },
-    { group: 'Events', items: [{ id: 'list-events', label: 'List Events' }, { id: 'get-event', label: 'Get Event' }, { id: 'create-event', label: 'Create Event' }, { id: 'update-event', label: 'Update Event' }, { id: 'list-attendees', label: 'List Attendees' }] },
+    { group: 'Events', items: [{ id: 'list-events', label: 'List Events' }, { id: 'get-event', label: 'Get Event' }, { id: 'create-event', label: 'Create Event' }, { id: 'update-event', label: 'Update Event' }, { id: 'list-attendees', label: 'List Attendees' }, { id: 'list-sections', label: 'List Sections' }] },
     { group: 'Checkout', items: [{ id: 'create-checkout', label: 'Create Session' }] },
     { group: 'Tickets', items: [{ id: 'verify-ticket', label: 'Verify Ticket' }, { id: 'check-in', label: 'Check In' }, { id: 'refund-ticket', label: 'Refund' }] },
     { group: 'Orders', items: [{ id: 'list-orders', label: 'List Orders' }] },
@@ -112,10 +113,42 @@ const listEventsRes = `{
   }
 }`
 
+const sectionsRes = `{
+  "data": {
+    "seated": true,
+    "selection_mode": "both",
+    "sections": [
+      {
+        "id": "0887cc4a-...",
+        "label": "Orchestra Left",
+        "available": 42,
+        "largest_block": 6,
+        "on_sale": true,
+        "prices": [
+          {
+            "tier_id": "7c33ac2d-...",
+            "name": "Orchestra",
+            "price": 1500,
+            "available": 42,
+            "largest_block": 6
+          }
+        ]
+      }
+    ]
+  }
+}`
+
+const sectionsUnseatedRes = `{
+  "data": {
+    "seated": false,
+    "sections": []
+  }
+}`
+
 const verifyTicketRes = `{
   "data": {
     "id": "a1b2c3d4-...",
-    "status": "sold",
+    "status": "valid",
     "checked_in_at": null,
     "purchased_at": "2026-03-21T10:30:00Z",
     "event": {
@@ -270,7 +303,7 @@ const attendeesRes = `{
       {
         "ticket_id": "a1b2c3d4-...",
         "ticket_number": "TK-00042",
-        "status": "sold",
+        "status": "valid",
         "checked_in_at": null,
         "customer": {
           "name": "Juan Dela Cruz",
@@ -375,6 +408,7 @@ export function ApiDocsClient() {
     )
 
     return (
+        <ApiKeyProvider>
         <div className="min-h-screen bg-[#0a0a0f] text-zinc-300">
             {/* ── Header ── */}
             <header className="sticky top-0 z-50 border-b border-zinc-800/60 bg-[#0a0a0f]/95 backdrop-blur-xl">
@@ -462,9 +496,11 @@ export function ApiDocsClient() {
                                 <div className="space-y-1.5 font-mono text-[13px]">
                                     {[
                                         ['GET', '/events'], ['GET', '/events/:id'], ['POST', '/events'], ['PUT', '/events/:id'],
-                                        ['GET', '/events/:id/attendees'], ['POST', '/checkouts'], ['GET', '/tickets/:id'],
+                                        ['GET', '/events/:id/attendees'], ['GET', '/events/:id/sections'],
+                                        ['POST', '/checkouts'], ['GET', '/tickets/:id'],
                                         ['POST', '/tickets/:id/check-in'], ['POST', '/tickets/:id/refund'], ['GET', '/orders'],
                                         ['POST', '/webhooks'], ['GET', '/analytics/sales'], ['POST', '/promo-codes'],
+                                        ['GET', '/subscription-tiers'], ['GET', '/subscriptions'],
                                     ].map(([method, path]) => {
                                         const color = method === 'GET' ? 'text-blue-400' : method === 'POST' ? 'text-emerald-400' : 'text-amber-400'
                                         return (
@@ -500,6 +536,7 @@ export function ApiDocsClient() {
                                     </div>
                                 </div>
                                 <CodeBlock samples={samples.authSamples} activeLang={lang} label="Example Request" />
+                                <ApiKeyBar />
                             </div>
                         </div>
                     </section>
@@ -510,7 +547,9 @@ export function ApiDocsClient() {
                             <div className="p-8 lg:p-12">
                                 <h2 className="text-xl font-bold text-white mb-3">Rate Limits</h2>
                                 <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">
-                                    Requests are rate limited per API key using a sliding window. Exceeding returns <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">429</code>.
+                                    Keep each API key under 100 requests per minute. Traffic above that ceiling may be
+                                    throttled with <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">429</code>,
+                                    so handle that status with a retry after the window rather than assuming it cannot happen.
                                 </p>
                                 <div className="grid grid-cols-3 gap-3">
                                     {[
@@ -577,11 +616,16 @@ export function ApiDocsClient() {
                                 <ParamTable title="Query Parameters" params={[
                                     { name: 'page', type: 'integer', description: 'Page number', default: '1' },
                                     { name: 'per_page', type: 'integer', description: 'Results per page (max 50)', default: '20' },
-                                    { name: 'status', type: 'string', description: 'Filter: active, draft, cancelled', default: 'active' },
+                                    { name: 'status', type: 'string', description: 'Exact match on one of draft, active, paused, hidden, sold_out, cancelled, completed. Not a list — one value per request. Because it defaults to active, a plain call does NOT return your hidden or paused events even though those are still selling.', default: 'active' },
                                 ]} />
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.listEventsSamples} activeLang={lang} label="Request" />
+                                <TryIt method="GET" path="/events" queryParams={[
+                                    { name: 'status', value: 'active' },
+                                    { name: 'per_page', value: '5' },
+                                    { name: 'page', placeholder: '1' },
+                                ]} />
                                 <ResponseBlock status={200} json={listEventsRes} />
                             </div>
                         </div>
@@ -601,6 +645,9 @@ export function ApiDocsClient() {
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.getEventSamples} activeLang={lang} label="Request" />
+                                <TryIt method="GET" path="/events/:id" pathParams={[
+                                    { name: 'id', placeholder: 'Event UUID — copy one from List Events above' },
+                                ]} />
                             </div>
                         </div>
                     </section>
@@ -613,12 +660,13 @@ export function ApiDocsClient() {
                                     <MethodBadge method="POST" />
                                     <code className="font-mono text-white text-lg">/events</code>
                                 </div>
-                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">Create a new event. Events are created in <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">draft</code> status with one <em>General Admission</em> tier sized to <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">capacity</code> at <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">ticket_price</code>. Publish with <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">PATCH {'{'}status: "active"{'}'}</code>.</p>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">Create a new event. Events are created in <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">draft</code> status with one <em>General Admission</em> tier sized to <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">capacity</code> at <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">ticket_price</code>. Publish with <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">PUT {'{'}status: "active"{'}'}</code>.</p>
                                 <ParamTable title="Request Body" params={[
                                     { name: 'title', type: 'string', required: true, description: 'Event name' },
                                     { name: 'start_datetime', type: 'ISO 8601', required: true, description: 'Start date/time' },
                                     { name: 'end_datetime', type: 'ISO 8601', description: 'End date/time' },
-                                    { name: 'description', type: 'string', description: 'Event description shown on the event page. Plain text or HTML.' },
+                                    { name: 'description', type: 'string', description: 'Plain text. Real newlines are preserved — we convert blank lines to paragraphs and single newlines to line breaks when you do not send description_html.' },
+                                    { name: 'description_html', type: 'string', description: 'Formatted description, used in preference to description when both are sent. Sanitized on arrival, so unsupported tags and any script are stripped. Send this if you want links, lists or bold.' },
                                     { name: 'venue_name', type: 'string', description: 'Venue name' },
                                     { name: 'address', type: 'string', description: 'Street address' },
                                     { name: 'city', type: 'string', description: 'City' },
@@ -628,11 +676,32 @@ export function ApiDocsClient() {
                                     { name: 'ticket_price', type: 'number', description: 'Price in PHP for the default General Admission tier (0 = free)' },
                                     { name: 'sales_end_datetime', type: 'ISO 8601', description: 'When sales close. Defaults to one hour before start_datetime.' },
                                     { name: 'event_type', type: 'enum', description: 'One of concert, workshop, conference, sports, social, food, nightlife, art, other. Defaults to other.' },
-                                    { name: 'cover_image_url', type: 'string', description: 'Public HTTPS URL of the cover image' },
+                                    { name: 'cover_image_url', type: 'string', description: 'Public HTTPS URL of the cover image. Stored exactly as sent and served from wherever you host it — we do not copy or re-host the file, so it must stay publicly reachable for as long as the event is live.' },
                                 ]} />
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
+                                <AlertBox type="info">
+                                    <strong>Formatting a description?</strong> Send{' '}
+                                    <code className="font-mono">description_html</code>. Putting HTML in the plain{' '}
+                                    <code className="font-mono">description</code> field works, but it is the field the
+                                    dashboard editor writes back to — so the next person who opens the event in the UI
+                                    and saves it can flatten your markup.
+                                </AlertBox>
                                 <CodeBlock samples={samples.createEventSamples} activeLang={lang} label="Request" />
+                                <TryIt
+                                    method="POST"
+                                    path="/events"
+                                    risk="write"
+                                    effect="It creates a real event on your account — as a draft, so nothing is public until you publish it."
+                                    body={`{
+  "title": "API test event",
+  "start_datetime": "2030-01-01T19:00:00+08:00",
+  "venue_name": "Test Venue",
+  "city": "Manila",
+  "capacity": 10,
+  "ticket_price": 0
+}`}
+                                />
                                 <ResponseBlock status={201} json={createEventRes} />
                             </div>
                         </div>
@@ -646,10 +715,21 @@ export function ApiDocsClient() {
                                     <MethodBadge method="PUT" />
                                     <code className="font-mono text-white text-lg">/events/:id</code>
                                 </div>
-                                <p className="text-[15px] text-zinc-400 leading-relaxed">Update event details. Only include fields you want to change. Set <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">status</code> to <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">active</code> to publish.</p>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-4">Update event details. Only include fields you want to change. Set <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">status</code> to <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">active</code> to publish.</p>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed">Accepts the same fields as <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">POST /events</code>, including <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">description_html</code>. Anything you omit is left untouched.</p>
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.updateEventSamples} activeLang={lang} label="Request" />
+                                <TryIt
+                                    method="PUT"
+                                    path="/events/:id"
+                                    risk="write"
+                                    effect="It edits a live event. Sending status: active publishes it to the public immediately."
+                                    pathParams={[{ name: 'id', placeholder: 'Event UUID' }]}
+                                    body={`{
+  "title": "Updated title"
+}`}
+                                />
                             </div>
                         </div>
                     </section>
@@ -666,12 +746,69 @@ export function ApiDocsClient() {
                                 <ParamTable title="Query Parameters" params={[
                                     { name: 'page', type: 'integer', description: 'Page number', default: '1' },
                                     { name: 'per_page', type: 'integer', description: 'Results per page (max 100)' },
-                                    { name: 'status', type: 'string', description: 'Filter: sold, checked_in, refunded' },
+                                    { name: 'status', type: 'string', description: 'One of valid (sold, not yet scanned), checked_in (scanned at the door), refunded, cancelled. Omit for all. checked_in is an alias we map to the stored value used.' },
                                 ]} />
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.listAttendeesSamples} activeLang={lang} label="Request" />
+                                <TryIt method="GET" path="/events/:id/attendees"
+                                    pathParams={[{ name: 'id', placeholder: 'Event UUID' }]}
+                                    queryParams={[
+                                        { name: 'status', placeholder: 'valid · checked_in · refunded' },
+                                        { name: 'per_page', value: '5' },
+                                    ]} />
                                 <ResponseBlock status={200} json={attendeesRes} />
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* ═══ LIST SECTIONS ═══ */}
+                    <section id="list-sections" className="scroll-mt-16 border-b border-zinc-800/40">
+                        <div className="grid lg:grid-cols-2">
+                            <div className="p-8 lg:p-12">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <MethodBadge method="GET" />
+                                    <code className="font-mono text-white text-lg">/events/:id/sections</code>
+                                </div>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-4">
+                                    For seated events: the sections a checkout can name, with live availability.
+                                    Call this before <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[12px]">POST /checkouts</code> to
+                                    choose a <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[12px]">section_id</code>.
+                                </p>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">
+                                    General admission events answer{' '}
+                                    <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[12px]">{'{'} seated: false, sections: [] {'}'}</code>{' '}
+                                    — a <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[12px]">200</code>, not an error. Branch on{' '}
+                                    <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[12px]">seated</code> rather than treating an
+                                    empty list as a failure.
+                                </p>
+                                <ParamTable title="Path Parameters" params={[{ name: 'id', type: 'uuid', required: true, description: 'Event ID' }]} />
+                                <div className="mt-6">
+                                    <AlertBox type="info">
+                                        <strong>largest_block is the number that matters for parties.</strong>{' '}
+                                        <code className="font-mono">available</code> counts free seats anywhere in the
+                                        section; <code className="font-mono">largest_block</code> is the longest run of
+                                        them side by side. A section with 8 available and a largest_block of 2 cannot
+                                        seat a group of 4 together — we will split them.
+                                    </AlertBox>
+                                </div>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mt-6">
+                                    A section with <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[12px]">on_sale: false</code> is
+                                    visible on the map but not buyable — its tier is locked or outside its sales window.
+                                    Both counts are computed at request time and include seats other buyers are holding,
+                                    so treat them as a snapshot, not a reservation.
+                                </p>
+                            </div>
+                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
+                                <CodeBlock samples={samples.listSectionsSamples} activeLang={lang} label="Request" />
+                                <TryIt method="GET" path="/events/:id/sections" pathParams={[
+                                    { name: 'id', placeholder: 'Event UUID' },
+                                ]} />
+                                <ResponseBlock status={200} json={sectionsRes} />
+                                <div>
+                                    <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 mb-2">General admission event</p>
+                                    <ResponseBlock status={200} json={sectionsUnseatedRes} />
+                                </div>
                             </div>
                         </div>
                     </section>
@@ -702,6 +839,21 @@ export function ApiDocsClient() {
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.createCheckoutSamples} activeLang={lang} label="Request" />
+                                <TryIt
+                                    method="POST"
+                                    path="/checkouts"
+                                    risk="write"
+                                    effect="It holds real tickets out of your inventory and returns a working payment link. The hold releases itself if nobody pays, but until then those seats are unavailable to actual buyers."
+                                    body={`{
+  "event_id": "",
+  "quantity": 1,
+  "customer": {
+    "name": "API Test",
+    "email": "test@example.com"
+  },
+  "success_url": "https://example.com/thanks"
+}`}
+                                />
                                 <ResponseBlock status={201} json={checkoutRes} />
                             </div>
                         </div>
@@ -715,20 +867,24 @@ export function ApiDocsClient() {
                                     <MethodBadge method="GET" />
                                     <code className="font-mono text-white text-lg">/tickets/:id</code>
                                 </div>
-                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">Verify a ticket&apos;s status, check-in state, and associated event/customer details.</p>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-4">Verify a ticket&apos;s status, check-in state, and associated event/customer details.</p>
+                                <div className="mb-6"><AlertBox type="info"><strong>This endpoint returns the stored status verbatim</strong> — a scanned ticket reads <code className="font-mono">used</code> here. <code className="font-mono">/events/:id/attendees</code> aliases that same state to <code className="font-mono">checked_in</code>. Handle both if your code reads from both endpoints.</AlertBox></div>
                                 <ParamTable title="Path Parameters" params={[{ name: 'id', type: 'uuid', required: true, description: 'Ticket ID' }]} />
                                 <div className="mt-6">
                                     <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-3">Ticket Statuses</p>
                                     <StatusTable rows={[
-                                        { status: 'sold', desc: 'Valid, ready for check-in', color: 'bg-emerald-500' },
-                                        { status: 'checked_in', desc: 'Already scanned', color: 'bg-blue-500' },
-                                        { status: 'refunded', desc: 'Refunded', color: 'bg-amber-500' },
-                                        { status: 'cancelled', desc: 'Cancelled', color: 'bg-red-500' },
+                                        { status: 'valid', desc: 'Sold and not yet scanned — admit', color: 'bg-emerald-500' },
+                                        { status: 'used', desc: 'Already scanned at the door', color: 'bg-blue-500' },
+                                        { status: 'refunded', desc: 'Refunded — do not admit', color: 'bg-amber-500' },
+                                        { status: 'cancelled', desc: 'Cancelled — do not admit', color: 'bg-red-500' },
                                     ]} />
                                 </div>
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.verifyTicketSamples} activeLang={lang} label="Request" />
+                                <TryIt method="GET" path="/tickets/:id" pathParams={[
+                                    { name: 'id', placeholder: 'Ticket UUID — from List Attendees' },
+                                ]} />
                                 <ResponseBlock status={200} json={verifyTicketRes} />
                             </div>
                         </div>
@@ -747,6 +903,14 @@ export function ApiDocsClient() {
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.checkInSamples} activeLang={lang} label="Request" />
+                                <TryIt
+                                    method="POST"
+                                    path="/tickets/:id/check-in"
+                                    risk="destructive"
+                                    confirmWord="CHECKIN"
+                                    effect="It marks a real attendee's ticket as used. There is no un-check-in — if that person has not actually arrived, they will be turned away at the door."
+                                    pathParams={[{ name: 'id', placeholder: 'Ticket UUID' }]}
+                                />
                                 <ResponseBlock status={200} json={checkInRes} />
                             </div>
                         </div>
@@ -765,6 +929,14 @@ export function ApiDocsClient() {
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.refundTicketSamples} activeLang={lang} label="Request" />
+                                <TryIt
+                                    method="POST"
+                                    path="/tickets/:id/refund"
+                                    risk="destructive"
+                                    confirmWord="REFUND"
+                                    effect="It voids a real ticket and returns it to inventory. Your customer's ticket stops working and there is no undo."
+                                    pathParams={[{ name: 'id', placeholder: 'Ticket UUID' }]}
+                                />
                                 <ResponseBlock status={200} json={refundRes} />
                             </div>
                         </div>
@@ -787,6 +959,10 @@ export function ApiDocsClient() {
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.listOrdersSamples} activeLang={lang} label="Request" />
+                                <TryIt method="GET" path="/orders" queryParams={[
+                                    { name: 'event_id', placeholder: 'Optional — filter to one event' },
+                                    { name: 'per_page', value: '5' },
+                                ]} />
                                 <ResponseBlock status={200} json={listOrdersRes} />
                             </div>
                         </div>
@@ -833,6 +1009,16 @@ export function ApiDocsClient() {
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.registerWebhookSamples} activeLang={lang} label="Request" />
+                                <TryIt
+                                    method="POST"
+                                    path="/webhooks"
+                                    risk="write"
+                                    effect="It registers a real endpoint that will start receiving your live order traffic."
+                                    body={`{
+  "url": "https://example.com/hanghut-webhook",
+  "events": ["order.completed"]
+}`}
+                                />
                                 <ResponseBlock status={201} json={registerWebhookRes} />
                             </div>
                         </div>
@@ -855,6 +1041,11 @@ export function ApiDocsClient() {
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.analyticsSamples} activeLang={lang} label="Request" />
+                                <TryIt method="GET" path="/analytics/sales" queryParams={[
+                                    { name: 'event_id', placeholder: 'Optional — one event' },
+                                    { name: 'from', placeholder: 'Optional — ISO date' },
+                                    { name: 'to', placeholder: 'Optional — ISO date' },
+                                ]} />
                                 <ResponseBlock status={200} json={analyticsRes} />
                             </div>
                         </div>
@@ -880,6 +1071,7 @@ export function ApiDocsClient() {
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.listSubscriptionTiersSamples} activeLang={lang} label="Request" />
+                                <TryIt method="GET" path="/subscription-tiers" />
                                 <ResponseBlock status={200} json={subscriptionTiersRes} />
                             </div>
                         </div>
@@ -914,6 +1106,10 @@ export function ApiDocsClient() {
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.listSubscriptionsSamples} activeLang={lang} label="Request" />
+                                <TryIt method="GET" path="/subscriptions" queryParams={[
+                                    { name: 'status', placeholder: 'active · cancelled' },
+                                    { name: 'per_page', value: '5' },
+                                ]} />
                                 <ResponseBlock status={200} json={subscriptionsRes} />
                             </div>
                         </div>
@@ -938,6 +1134,9 @@ export function ApiDocsClient() {
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.listSubscriptionsSamples} activeLang={lang} label="Request" />
+                                <TryIt method="GET" path="/subscriptions/:id" pathParams={[
+                                    { name: 'id', placeholder: 'Subscription UUID' },
+                                ]} />
                                 <ResponseBlock status={200} json={subscriptionsRes} />
                             </div>
                         </div>
@@ -1011,6 +1210,19 @@ export function ApiDocsClient() {
                             </div>
                             <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
                                 <CodeBlock samples={samples.createPromoSamples} activeLang={lang} label="Request" />
+                                <TryIt
+                                    method="POST"
+                                    path="/promo-codes"
+                                    risk="write"
+                                    effect="It creates a live, redeemable discount code on a real event."
+                                    body={`{
+  "event_id": "",
+  "code": "APITEST10",
+  "discount_type": "percentage",
+  "discount_amount": 10,
+  "usage_limit": 1
+}`}
+                                />
                                 <ResponseBlock status={201} json={promoRes} />
                             </div>
                         </div>
@@ -1026,5 +1238,6 @@ export function ApiDocsClient() {
                 </main>
             </div>
         </div>
+        </ApiKeyProvider>
     )
 }

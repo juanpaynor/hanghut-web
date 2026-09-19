@@ -27,6 +27,7 @@ export async function getWalletInfo(partnerId: string) {
             xenditAvailableBalance: 0,
             pendingSettlement: 0,
             useMainWallet: false,
+            balanceUnavailable: false,
         }
     }
 
@@ -35,6 +36,12 @@ export async function getWalletInfo(partnerId: string) {
     //    Skip the API call entirely; the payouts page uses the transactions ledger instead.
     let xenditAvailableBalance = 0
     let pendingSettlement = 0
+    // "We could not find out" is a different fact from "it is zero", and on a
+    // wallet the difference is the whole message. This used to collapse every
+    // failure into 0, so a 403 from the balance function rendered as a
+    // confident "₱0.00 available" on a wallet holding ₱50,078.90 — the partner
+    // and the staff looking at it both concluded the money was gone.
+    let balanceUnavailable = false
 
     if (partner.xendit_account_id && !partner.use_main_wallet) {
         try {
@@ -43,12 +50,18 @@ export async function getWalletInfo(partnerId: string) {
                 { body: { partner_id: partnerId } }
             )
 
-            if (!fnError && data) {
+            if (!fnError && data && !data.error) {
                 xenditAvailableBalance = data.available_balance || 0
                 pendingSettlement = data.pending_settlement || 0
+                // The function itself reached Xendit but Xendit refused.
+                balanceUnavailable = data.balance_unavailable === true
+            } else {
+                console.error('[Wallet] Balance lookup failed:', fnError ?? data?.error)
+                balanceUnavailable = true
             }
         } catch (err) {
             console.error('[Wallet] Failed to fetch Xendit balance:', err)
+            balanceUnavailable = true
         }
     }
 
@@ -59,6 +72,7 @@ export async function getWalletInfo(partnerId: string) {
         xenditAvailableBalance,
         pendingSettlement,
         useMainWallet: partner.use_main_wallet ?? false,
+        balanceUnavailable,
     }
 }
 
