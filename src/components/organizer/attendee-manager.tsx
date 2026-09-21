@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { Attendee, getDeliveryFailures, type DeliveryFailure, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, getAttendeeStats, getEventPaymentMethods, getEventTiers, getEventTierSales, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters, type TierSales } from '@/lib/organizer/attendee-actions'
+import { Attendee, getDeliveryFailures, type DeliveryFailure, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, deleteFreeOrders, type SkippedOrder, getAttendeeStats, getEventPaymentMethods, getEventTiers, getEventTierSales, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters, type TierSales } from '@/lib/organizer/attendee-actions'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
@@ -27,7 +27,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users, SlidersHorizontal, X, MailWarning } from 'lucide-react'
+import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users, SlidersHorizontal, X, MailWarning, Trash2 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
@@ -387,6 +387,63 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
 
     const selectedAttendeesData = attendees.filter(a => selectedAttendees.has(a.id))
 
+    // ─── Removing test orders ───────────────────────────────────────────────
+    // A ₱0 order cannot be refunded by any path we have (request-refund rejects a
+    // zero amount; record_manual_refund is QRPH-only), so the Refund button on one
+    // is a dead end. Those get Remove instead. The server re-checks every rule
+    // here — this only decides which button to show.
+    const [removeModalOpen, setRemoveModalOpen] = useState(false)
+    const [isRemoving, setIsRemoving] = useState(false)
+
+    const selectedFreeIntentIds = useMemo(() => {
+        const ids = new Set<string>()
+        selectedAttendeesData.forEach(a => {
+            if (!a.purchase_intent_id) return
+            if (Number(a.order_total ?? 0) !== 0) return
+            if (a.checked_in_at) return
+            ids.add(a.purchase_intent_id)
+        })
+        return Array.from(ids)
+    }, [selectedAttendeesData])
+
+    // Only offer Remove when EVERY selected ticket qualifies. A mixed selection
+    // silently deleting half of itself is worse than offering nothing.
+    const allSelectedAreFree =
+        selectedAttendeesData.length > 0 &&
+        selectedAttendeesData.every(a =>
+            a.purchase_intent_id && Number(a.order_total ?? 0) === 0 && !a.checked_in_at)
+
+    const processRemove = async () => {
+        setIsRemoving(true)
+        const res = await deleteFreeOrders(selectedFreeIntentIds, eventId)
+        setIsRemoving(false)
+        setRemoveModalOpen(false)
+
+        if (res.error) {
+            toast({ title: 'Could not remove', description: res.error, variant: 'destructive' })
+            return
+        }
+
+        setSelectedAttendees(new Set())
+        const result = await getEventAttendees(eventId, filters)
+        setAttendees(result.attendees)
+        setTotal(result.total)
+
+        const skipped = res.skipped ?? []
+        if (skipped.length) {
+            toast({
+                title: res.deleted ? `Removed ${res.deleted}, kept ${skipped.length}` : 'Nothing removed',
+                description: skipped.map((s: SkippedOrder) => `${s.label}: ${s.reason}`).join(' · '),
+                variant: res.deleted ? 'default' : 'destructive',
+            })
+        } else {
+            toast({
+                title: `Removed ${res.deleted} order${res.deleted === 1 ? '' : 's'}`,
+                description: 'Tickets and counts have been updated.',
+            })
+        }
+    }
+
     const [exporting, setExporting] = useState<'csv' | 'pdf' | null>(null)
 
     /**
@@ -737,17 +794,31 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                     <div className="ml-auto flex items-center gap-2 flex-wrap">
                         {selectedAttendees.size > 0 && (
                             <>
-                                <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    onClick={() => {
-                                        const selected = attendees.filter(a => selectedAttendees.has(a.id))
-                                        initiateRefund(selected)
-                                    }}
-                                >
-                                    <RefreshCw className="w-4 h-4 mr-2" />
-                                    Refund ({selectedAttendees.size})
-                                </Button>
+                                {allSelectedAreFree ? (
+                                    /* Free orders have nothing to refund. Offering Refund
+                                       here sent organizers into a failure they could not
+                                       act on — this is the action that actually applies. */
+                                    <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={() => setRemoveModalOpen(true)}
+                                    >
+                                        <Trash2 className="w-4 h-4 mr-2" />
+                                        Remove ({selectedAttendees.size})
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={() => {
+                                            const selected = attendees.filter(a => selectedAttendees.has(a.id))
+                                            initiateRefund(selected)
+                                        }}
+                                    >
+                                        <RefreshCw className="w-4 h-4 mr-2" />
+                                        Refund ({selectedAttendees.size})
+                                    </Button>
+                                )}
                                 <TicketPrintModal
                                     attendees={selectedAttendeesData}
                                     eventTitle={eventTitle}
@@ -1000,6 +1071,63 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
             )}
 
             {/* Refund Confirmation Modal */}
+            {/* Remove free/test orders */}
+            <AlertDialog open={removeModalOpen} onOpenChange={setRemoveModalOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            Remove {selectedFreeIntentIds.length} order{selectedFreeIntentIds.length === 1 ? '' : 's'}?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription asChild>
+                            <div className="space-y-3 text-sm">
+                                <p>
+                                    This deletes the order, its tickets and its registration answers.
+                                    It cannot be undone, and the ticket holder is not notified.
+                                </p>
+                                {/* Name them. On a genuinely free event every attendee is a
+                                    ₱0 order, so this same button clears real people — seeing
+                                    who is about to go is the difference between tidying up a
+                                    test and quietly deleting a guest list. */}
+                                <div className="rounded-md border bg-muted/40 px-3 py-2 max-h-40 overflow-y-auto">
+                                    <ul className="space-y-1">
+                                        {selectedAttendeesData.slice(0, 12).map(a => (
+                                            <li key={a.id} className="truncate text-xs">
+                                                {a.guest_info?.name || a.user?.display_name || 'Guest'}
+                                                <span className="text-muted-foreground">
+                                                    {' — '}{a.guest_info?.email || a.user?.email || 'no email'}
+                                                </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    {selectedAttendeesData.length > 12 && (
+                                        <p className="text-xs text-muted-foreground mt-1.5">
+                                            + {selectedAttendeesData.length - 12} more
+                                        </p>
+                                    )}
+                                </div>
+                                <p className="text-muted-foreground">
+                                    Your ticket counts will drop to match. Only free orders with no
+                                    payment record and no check-in can be removed — anything else in
+                                    your selection is kept and named afterwards.
+                                </p>
+                            </div>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isRemoving}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={(e) => { e.preventDefault(); processRemove() }}
+                            disabled={isRemoving}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            {isRemoving
+                                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Removing…</>
+                                : <><Trash2 className="w-4 h-4 mr-2" />Remove</>}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
             <AlertDialog open={refundModalOpen} onOpenChange={setRefundModalOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader>

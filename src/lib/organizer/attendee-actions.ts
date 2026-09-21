@@ -660,3 +660,123 @@ export async function getDeliveryFailures(eventId: string): Promise<DeliveryFail
     }
     return (data ?? []) as DeliveryFailure[]
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Removing test orders
+ *
+ * Partners test their own event before going live, which leaves a real order
+ * sitting in their counts. Refunding it is not the answer and never was: a
+ * ₱0 order fails every refund path we have (request-refund rejects a zero
+ * amount, record_manual_refund only accepts QRPH), so the only way to clear one
+ * used to be for us to delete rows by hand in SQL.
+ *
+ * This removes it properly, but ONLY for orders that cannot represent money:
+ * zero total, no ledger row, nothing refunded, nobody checked in. Anything that
+ * fails one of those is skipped by name rather than silently, so a partner can
+ * never quietly delete a paid ticket — that is what refunds are for.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export interface SkippedOrder { id: string; label: string; reason: string }
+
+export interface DeleteOrdersResult {
+    success?: boolean
+    deleted?: number
+    skipped?: SkippedOrder[]
+    error?: string
+}
+
+export async function deleteFreeOrders(
+    intentIds: string[],
+    eventId: string,
+): Promise<DeleteOrdersResult> {
+    if (!intentIds?.length) return { error: 'Nothing selected.' }
+
+    const supabase = await createClient()
+    const admin = createAdminClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+
+    // Acting partner = owner OR platform-support seat, matching the rest of the
+    // dashboard. Comparing partners.user_id directly would lock out ghost mode.
+    const { getActingPartnerId } = await import('@/lib/auth/cached')
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (!actingPartnerId) return { error: 'No partner account' }
+
+    const { data: event } = await admin
+        .from('events')
+        .select('id, organizer_id')
+        .eq('id', eventId)
+        .maybeSingle()
+    if (!event || event.organizer_id !== actingPartnerId) return { error: 'Not authorized for this event' }
+
+    const { data: intents } = await admin
+        .from('purchase_intents')
+        .select('id, event_id, total_amount, refunded_amount, payment_method, guest_name, guest_email, metadata')
+        .in('id', intentIds)
+
+    const skipped: SkippedOrder[] = []
+    const deletable: string[] = []
+
+    for (const id of intentIds) {
+        const pi = intents?.find(x => x.id === id)
+        const label = pi?.guest_name || pi?.guest_email || id.slice(0, 8)
+
+        if (!pi) { skipped.push({ id, label, reason: 'order not found' }); continue }
+        if (pi.event_id !== eventId) { skipped.push({ id, label, reason: 'belongs to another event' }); continue }
+        if (Number(pi.total_amount) !== 0) { skipped.push({ id, label, reason: 'a paid order — refund it instead' }); continue }
+        if (Number(pi.refunded_amount) !== 0) { skipped.push({ id, label, reason: 'has a refund on record' }); continue }
+
+        // A ledger row means money was accounted for, whatever the total says.
+        const { count: txnCount } = await admin
+            .from('transactions')
+            .select('id', { count: 'exact', head: true })
+            .eq('purchase_intent_id', id)
+        if ((txnCount ?? 0) > 0) { skipped.push({ id, label, reason: 'has a ledger entry' }); continue }
+
+        // Someone actually attended on this ticket — that is a record, not a test.
+        const { count: scannedCount } = await admin
+            .from('tickets')
+            .select('id', { count: 'exact', head: true })
+            .eq('purchase_intent_id', id)
+            .not('checked_in_at', 'is', null)
+        if ((scannedCount ?? 0) > 0) { skipped.push({ id, label, reason: 'someone was checked in on it' }); continue }
+
+        deletable.push(id)
+    }
+
+    let deleted = 0
+    for (const id of deletable) {
+        // Registrations are NOT cascaded from the intent (tickets.registration_id is
+        // ON DELETE SET NULL), so collect them before the tickets disappear or the
+        // registration row is orphaned and keeps showing in the Responses tab.
+        const { data: tks } = await admin
+            .from('tickets')
+            .select('registration_id')
+            .eq('purchase_intent_id', id)
+
+        const pi = intents?.find(x => x.id === id)
+        const regIds = Array.from(new Set([
+            ...(tks || []).map(t => t.registration_id).filter(Boolean) as string[],
+            ...((pi?.metadata as any)?.registration_id ? [(pi!.metadata as any).registration_id as string] : []),
+        ]))
+
+        // Cascades tickets + transactions. Counter triggers on `tickets` recount
+        // events.tickets_sold and ticket_tiers.quantity_sold on the DELETE, so the
+        // numbers correct themselves — do not adjust them here.
+        const { error: delErr } = await admin.from('purchase_intents').delete().eq('id', id)
+        if (delErr) {
+            skipped.push({ id, label: id.slice(0, 8), reason: delErr.message })
+            continue
+        }
+
+        if (regIds.length) {
+            // Cascades registration_answers.
+            await admin.from('event_registrations').delete().in('id', regIds)
+        }
+        deleted++
+    }
+
+    revalidatePath(`/organizer/events/${eventId}`)
+    return { success: true, deleted, skipped }
+}
