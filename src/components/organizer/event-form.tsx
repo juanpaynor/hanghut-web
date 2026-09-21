@@ -16,7 +16,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair, Plus, Trash2, Check, Copy, ExternalLink, Code2, Send } from 'lucide-react'
+import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair, Plus, Trash2, Check, Copy, ExternalLink, Code2, Send, Globe } from 'lucide-react'
 import { createEvent, updateEvent } from '@/lib/organizer/event-actions'
 import { RegistrationQuestionsManager, RegistrationQuestion } from '@/components/organizer/registration-questions-manager'
 import { isoToManilaLocal, manilaLocalToISO, formatInManila } from '@/lib/datetime'
@@ -47,6 +47,8 @@ interface EventFormData {
     description_html: string
     event_type: string
     category: string
+    is_online: boolean
+    online_url: string
     venue_name: string
     address: string
     city: string
@@ -142,6 +144,8 @@ export function EventForm({
         description_html: initialData?.description_html || plainTextToHtml(initialData?.description) || '',
         event_type: initialData?.event_type || 'concert',
         category: initialData?.category || '',
+        is_online: initialData?.is_online ?? false,
+        online_url: initialData?.online_url || '',
         venue_name: initialData?.venue_name || '',
         address: initialData?.address || '',
         city: initialData?.city || '',
@@ -409,14 +413,24 @@ export function EventForm({
         if (!formData.category) {
             newErrors.category = 'Category is required'
         }
-        if (!formData.venue_name) {
-            newErrors.venue_name = 'Venue name is required'
+        // A joining link is optional (organizers often add it closer to the day),
+        // but a malformed one is worse than none: it reaches attendees looking
+        // official and sends them nowhere.
+        if (formData.is_online && formData.online_url && !/^https?:\/\/\S+$/i.test(formData.online_url.trim())) {
+            newErrors.online_url = 'Enter a full link starting with https://'
         }
-        if (!formData.address) {
-            newErrors.address = 'Address is required'
-        }
-        if (!formData.latitude || !formData.longitude) {
-            newErrors.location = 'Please select a location from the autocomplete'
+        // An online event has no venue to validate. Requiring one here is what
+        // forced organizers to invent an address for a Zoom call.
+        if (!formData.is_online) {
+            if (!formData.venue_name) {
+                newErrors.venue_name = 'Venue name is required'
+            }
+            if (!formData.address) {
+                newErrors.address = 'Address is required'
+            }
+            if (!formData.latitude || !formData.longitude) {
+                newErrors.location = 'Please select a location from the autocomplete'
+            }
         }
         if (!formData.start_datetime) {
             newErrors.start_datetime = 'Start date and time is required'
@@ -493,9 +507,14 @@ export function EventForm({
             if (!formData.title || formData.title.length < 5) e.title = 'Title must be at least 5 characters'
             if (!formData.category) e.category = 'Pick a category'
         } else if (key === 'when') {
-            if (!formData.venue_name) e.venue_name = 'Venue name is required'
-            if (!formData.address) e.address = 'Address is required'
-            if (!formData.latitude || !formData.longitude) e.location = 'Pick a location from the suggestions'
+            if (formData.is_online && formData.online_url && !/^https?:\/\/\S+$/i.test(formData.online_url.trim())) {
+                e.online_url = 'Enter a full link starting with https://'
+            }
+            if (!formData.is_online) {
+                if (!formData.venue_name) e.venue_name = 'Venue name is required'
+                if (!formData.address) e.address = 'Address is required'
+                if (!formData.latitude || !formData.longitude) e.location = 'Pick a location from the suggestions'
+            }
             if (!formData.start_datetime) e.start_datetime = 'Start date and time is required'
             else if (new Date(formData.start_datetime) <= new Date() && !isEditing) e.start_datetime = 'Event must be in the future'
             if (formData.end_datetime && new Date(formData.end_datetime) <= new Date(formData.start_datetime)) e.end_datetime = 'End time must be after start time'
@@ -569,6 +588,8 @@ export function EventForm({
             formDataToSend.append('description_html', outgoingHtml)
             formDataToSend.append('category', formData.category)
             formDataToSend.append('event_type', CATEGORY_TO_EVENT_TYPE[formData.category] || 'other')
+            formDataToSend.append('is_online', formData.is_online ? 'true' : 'false')
+            formDataToSend.append('online_url', formData.online_url || '')
             formDataToSend.append('venue_name', formData.venue_name)
             formDataToSend.append('address', formData.address)
             formDataToSend.append('city', formData.city)
@@ -969,9 +990,69 @@ export function EventForm({
                 {/* Location & Venue */}
                 <Card className="p-6">
                     <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-                        <MapPin className="h-6 w-6" />
-                        Location & Venue
+                        {formData.is_online ? <Globe className="h-6 w-6" /> : <MapPin className="h-6 w-6" />}
+                        {formData.is_online ? 'Where it happens' : 'Location & Venue'}
                     </h2>
+
+                    {/* Online events have no venue. The venue fields are not just
+                        skipped in validation — they are removed, so nobody fills in
+                        a placeholder address that later shows on a map. */}
+                    <div className="flex items-start justify-between gap-4 rounded-lg border p-4 mb-4">
+                        <div className="space-y-0.5">
+                            <Label htmlFor="is_online" className="text-base">This is an online event</Label>
+                            <p className="text-sm text-muted-foreground">
+                                No venue or map. Share the joining link in your event description
+                                or the ticket email.
+                            </p>
+                        </div>
+                        <Switch
+                            id="is_online"
+                            checked={formData.is_online}
+                            onCheckedChange={(checked) => {
+                                handleInputChange('is_online', checked)
+                                if (checked) {
+                                    // Drop any half-entered venue so it cannot be saved
+                                    // behind the toggle and resurface if it is turned off.
+                                    handleInputChange('venue_name', '')
+                                    handleInputChange('address', '')
+                                    handleInputChange('city', '')
+                                    handleInputChange('latitude', null)
+                                    handleInputChange('longitude', null)
+                                } else {
+                                    // A venue event cannot hold a join link — the CHECK
+                                    // constraint rejects it, and a stranded meeting URL
+                                    // nothing renders is worse than no URL.
+                                    handleInputChange('online_url', '')
+                                }
+                            }}
+                        />
+                    </div>
+
+                    {formData.is_online ? (
+                        <div className="space-y-4">
+                            <div>
+                                <Label htmlFor="online_url">Joining link</Label>
+                                <Input
+                                    id="online_url"
+                                    type="url"
+                                    value={formData.online_url}
+                                    onChange={(e) => handleInputChange('online_url', e.target.value)}
+                                    placeholder="https://zoom.us/j/…"
+                                    className={errors.online_url ? 'border-red-500' : ''}
+                                />
+                                {errors.online_url
+                                    ? <p className="text-sm text-red-500 mt-1">{errors.online_url}</p>
+                                    : <p className="text-sm text-muted-foreground mt-1">
+                                        Only people holding a ticket can see this. It appears on their
+                                        ticket page, never on the public event page. You can add it later.
+                                      </p>}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                                Attendees will see <span className="font-medium text-foreground">Online event</span> instead
+                                of an address.
+                            </p>
+                        </div>
+                    ) : (
                     <div className="space-y-4">
                         <div>
                             <Label htmlFor="venue_name">Venue Name *</Label>
@@ -1003,6 +1084,7 @@ export function EventForm({
                             </div>
                         )}
                     </div>
+                    )}
                 </Card>
 
                 {/* Date & Time */}

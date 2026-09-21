@@ -1,6 +1,6 @@
 import { TicketQR } from '@/components/tickets/ticket-qr'
 import { TicketPdfButton } from '@/components/tickets/ticket-pdf-button'
-import { CalendarClock, MapPin, Ticket as TicketIcon, Armchair, CheckCircle2, ExternalLink } from 'lucide-react'
+import { CalendarClock, MapPin, Ticket as TicketIcon, Armchair, CheckCircle2, ExternalLink, Globe, Video } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatEventDateTimeWithEnd } from '@/lib/datetime'
 
@@ -46,7 +46,18 @@ interface TicketBranding {
 export interface TicketOrder {
     order_id: string
     buyer_name: string | null
-    event: { id: string; title: string; venue_name: string | null; start_datetime: string | null; end_datetime: string | null; cover_image_url: string | null }
+    event: {
+        id: string
+        title: string
+        venue_name: string | null
+        start_datetime: string | null
+        end_datetime: string | null
+        cover_image_url: string | null
+        /** Online events have no venue. */
+        is_online?: boolean | null
+        /** Released by get_ticket_order only to a COMPLETED order — never public. */
+        online_url?: string | null
+    }
     organizer: { name: string | null; logo_url: string | null; branding: TicketBranding | null }
     tickets: OrderTicket[]
 }
@@ -250,7 +261,12 @@ export function TicketOrderView({
                                 <span>{eventDate}</span>
                             </p>
                         )}
-                        {event.venue_name && (
+                        {event.is_online ? (
+                            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                                <Globe className="mt-px h-3.5 w-3.5 shrink-0" />
+                                <span>Online event</span>
+                            </p>
+                        ) : event.venue_name && (
                             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                                 <MapPin className="mt-px h-3.5 w-3.5 shrink-0" />
                                 <span>{event.venue_name}</span>
@@ -365,10 +381,37 @@ export function TicketOrderView({
                                 <CalendarClock className="h-4 w-4 shrink-0" /> {eventDate}
                             </p>
                         )}
-                        {event.venue_name && (
+                        {event.is_online ? (
+                            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Globe className="h-4 w-4 shrink-0" /> Online event
+                            </p>
+                        ) : event.venue_name && (
                             <p className="flex items-center gap-2 text-sm text-muted-foreground">
                                 <MapPin className="h-4 w-4 shrink-0" /> {event.venue_name}
                             </p>
+                        )}
+
+                        {/* The join link. Reaching this page means holding the order
+                            token, so this is the one surface allowed to show it. A
+                            refunded order gets null from the RPC and falls through
+                            to the "not posted yet" line below. */}
+                        {event.is_online && (
+                            event.online_url ? (
+                                <a
+                                    href={event.online_url}
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                    className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+                                >
+                                    <Video className="h-4 w-4 shrink-0" />
+                                    Join the event
+                                </a>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">
+                                    The joining link hasn&apos;t been posted yet — check back here
+                                    closer to the start time.
+                                </p>
+                            )
                         )}
                     </div>
                     {/* Organizer's custom note */}

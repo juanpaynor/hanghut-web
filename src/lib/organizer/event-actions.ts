@@ -33,6 +33,36 @@ async function resolveManagerPartner(
     return null
 }
 
+
+/**
+ * The joining link for an online event.
+ *
+ * It lives in `event_online_access`, NOT on `events`, because `events` is a table
+ * anonymous visitors can read by design — a meeting URL sitting on that row would
+ * be one `?select=online_url` away from public. The separate table is deny-by-
+ * default under RLS and is read for attendees only by get_ticket_order, against
+ * the order's access token.
+ *
+ * Turning an event back into a venue event deletes the row rather than blanking
+ * it, so a stale link cannot linger where nothing renders it.
+ */
+async function saveOnlineJoinLink(
+    supabase: { from: (t: string) => any },
+    eventId: string,
+    isOnline: boolean,
+    rawUrl: string | null,
+) {
+    const url = isOnline ? (rawUrl || '').trim() : ''
+    if (!url) {
+        await supabase.from('event_online_access').delete().eq('event_id', eventId)
+        return
+    }
+    await supabase
+        .from('event_online_access')
+        .upsert({ event_id: eventId, join_url: url, updated_at: new Date().toISOString() },
+                { onConflict: 'event_id' })
+}
+
 export async function createEvent(formData: FormData) {
     const supabase = await createClient()
 
@@ -128,6 +158,7 @@ export async function createEvent(formData: FormData) {
         const defaultSalesEnd = new Date(new Date(startDatetime).getTime() - 3600000).toISOString()
 
         const isExternal = formData.get('is_external') === 'true'
+        const isOnline = formData.get('is_online') === 'true'
         const externalTicketUrl = formData.get('external_ticket_url') as string || null
         const externalProviderName = formData.get('external_provider_name') as string || null
 
@@ -142,11 +173,14 @@ export async function createEvent(formData: FormData) {
             category: (formData.get('category') as string) || null,
             rsvp_enabled: formData.get('rsvp_enabled') === 'true',
             rsvp_button_label: (formData.get('rsvp_button_label') as string) || null,
-            venue_name: formData.get('venue_name') as string,
-            address: formData.get('address') as string,
-            city: formData.get('city') as string,
-            latitude: parseFloat(formData.get('latitude') as string),
-            longitude: parseFloat(formData.get('longitude') as string),
+            venue_name: isOnline ? null : (formData.get('venue_name') as string),
+            address: isOnline ? null : (formData.get('address') as string),
+            city: isOnline ? null : (formData.get('city') as string),
+            // An online event has no coordinates, and parseFloat('') is NaN, which
+            // serialises to null and used to hit the NOT NULL. Both are explicit now.
+            latitude: isOnline ? null : parseFloat(formData.get('latitude') as string),
+            longitude: isOnline ? null : parseFloat(formData.get('longitude') as string),
+            is_online: isOnline,
             start_datetime: startDatetime,
             end_datetime: manilaLocalToISO(formData.get('end_datetime') as string) || null,
             sales_end_datetime: salesEndDatetime || defaultSalesEnd,
@@ -188,6 +222,8 @@ export async function createEvent(formData: FormData) {
             console.error('Event creation error:', eventError)
             return { error: 'Failed to create event: ' + eventError.message }
         }
+
+        await saveOnlineJoinLink(supabase, event.id, isOnline, formData.get('online_url') as string | null)
 
         // 5. Create ticket tiers (internal ticketing only). Prefer the tiers built
         //    in the create wizard; fall back to a single default "General Admission".
@@ -377,6 +413,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
         const salesEndDatetime = manilaLocalToISO(formData.get('sales_end_datetime') as string)
         const defaultSalesEnd = new Date(new Date(startDatetime).getTime() - 3600000).toISOString()
         const isExternal = formData.get('is_external') === 'true'
+        const isOnline = formData.get('is_online') === 'true'
         const newCapacity = isExternal ? 999999 : parseInt(formData.get('capacity') as string)
 
         const updateData = {
@@ -387,11 +424,14 @@ export async function updateEvent(eventId: string, formData: FormData) {
             category: (formData.get('category') as string) || null,
             rsvp_enabled: formData.get('rsvp_enabled') === 'true',
             rsvp_button_label: (formData.get('rsvp_button_label') as string) || null,
-            venue_name: formData.get('venue_name') as string,
-            address: formData.get('address') as string,
-            city: formData.get('city') as string,
-            latitude: parseFloat(formData.get('latitude') as string),
-            longitude: parseFloat(formData.get('longitude') as string),
+            venue_name: isOnline ? null : (formData.get('venue_name') as string),
+            address: isOnline ? null : (formData.get('address') as string),
+            city: isOnline ? null : (formData.get('city') as string),
+            // An online event has no coordinates, and parseFloat('') is NaN, which
+            // serialises to null and used to hit the NOT NULL. Both are explicit now.
+            latitude: isOnline ? null : parseFloat(formData.get('latitude') as string),
+            longitude: isOnline ? null : parseFloat(formData.get('longitude') as string),
+            is_online: isOnline,
             start_datetime: startDatetime,
             end_datetime: manilaLocalToISO(formData.get('end_datetime') as string) || null,
             sales_end_datetime: salesEndDatetime || defaultSalesEnd,
@@ -425,6 +465,8 @@ export async function updateEvent(eventId: string, formData: FormData) {
             .eq('id', eventId)
 
         if (updateError) throw updateError
+
+        await saveOnlineJoinLink(adminSupabase, eventId, isOnline, formData.get('online_url') as string | null)
 
         revalidatePath('/organizer/events')
         revalidatePath(`/organizer/events/${eventId}`)

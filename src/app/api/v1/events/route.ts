@@ -35,6 +35,7 @@ export async function GET(request: Request) {
             status,
             start_datetime,
             end_datetime,
+            is_online,
             venue_name,
             address,
             city,
@@ -136,6 +137,7 @@ export async function POST(request: Request) {
     const {
         title, description, description_html, start_datetime, end_datetime, venue_name, address, city,
         capacity, event_type, ticket_price, cover_image_url, latitude, longitude, sales_end_datetime,
+        is_online, online_url,
     } = body
 
     if (!title || typeof title !== 'string') return apiError('title is required', 400)
@@ -157,24 +159,32 @@ export async function POST(request: Request) {
     const price = Number(ticket_price ?? 0)
     if (!Number.isFinite(price) || price < 0) return apiError('ticket_price must be a number ≥ 0', 400)
 
-    // Coordinates: the table requires them. Accept them directly, otherwise
-    // geocode from whatever location text we were given.
-    let lat = latitude == null ? NaN : Number(latitude)
-    let lng = longitude == null ? NaN : Number(longitude)
-    if ((latitude != null || longitude != null) && (!Number.isFinite(lat) || !Number.isFinite(lng))) {
-        return apiError('latitude and longitude must both be numbers', 400)
-    }
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        const query = [venue_name, address, city].filter((v) => typeof v === 'string' && v.trim()).join(', ')
-        const geo = query ? await geocode(query) : null
-        if (!geo) {
-            return apiError(
-                'Could not locate this event. Pass latitude and longitude, or give a fuller address (venue_name, address, city) we can geocode.',
-                400,
-            )
+    // Online events have no coordinates at all — geocoding one would invent a
+    // place that does not exist, and the table no longer demands a point.
+    const isOnline = is_online === true
+    let lat: number | null = null
+    let lng: number | null = null
+
+    if (!isOnline) {
+        // Coordinates: a physical event still requires them. Accept them directly,
+        // otherwise geocode from whatever location text we were given.
+        lat = latitude == null ? NaN : Number(latitude)
+        lng = longitude == null ? NaN : Number(longitude)
+        if ((latitude != null || longitude != null) && (!Number.isFinite(lat) || !Number.isFinite(lng))) {
+            return apiError('latitude and longitude must both be numbers', 400)
         }
-        lat = geo.latitude
-        lng = geo.longitude
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            const query = [venue_name, address, city].filter((v) => typeof v === 'string' && v.trim()).join(', ')
+            const geo = query ? await geocode(query) : null
+            if (!geo) {
+                return apiError(
+                    'Could not locate this event. Pass latitude and longitude, give a fuller address (venue_name, address, city) we can geocode, or set is_online: true.',
+                    400,
+                )
+            }
+            lat = geo.latitude
+            lng = geo.longitude
+        }
     }
 
     const supabase = createAdminClient()
@@ -202,9 +212,11 @@ export async function POST(request: Request) {
             start_datetime,
             end_datetime: end_datetime || null,
             sales_end_datetime: salesEnd,
-            venue_name: venue_name || null,
-            address: address || null,
-            city: city || null,
+            is_online: isOnline,
+            // The CHECK rejects a join link on a venue event.
+            venue_name: isOnline ? null : (venue_name || null),
+            address: isOnline ? null : (address || null),
+            city: isOnline ? null : (city || null),
             latitude: lat,
             longitude: lng,
             capacity: cap,
@@ -216,11 +228,22 @@ export async function POST(request: Request) {
             cover_image_url: cover_image_url || null,
             status: 'draft',
         })
-        .select('id, title, status, start_datetime, end_datetime, venue_name, address, city, latitude, longitude, capacity, event_type, ticket_price, cover_image_url, created_at')
+        .select('id, title, status, start_datetime, end_datetime, is_online, venue_name, address, city, latitude, longitude, capacity, event_type, ticket_price, cover_image_url, created_at')
         .single()
 
     if (error) {
         return apiError(`Failed to create event: ${error.message}`, 500)
+    }
+
+    // The joining link lives in event_online_access, not on `events` — that table
+    // is anon-readable by design, so a meeting URL on the row would be one
+    // ?select= away from public. Attendees receive it only through
+    // get_ticket_order, against their order's access token.
+    if (isOnline && typeof online_url === 'string' && online_url.trim()) {
+        await supabase.from('event_online_access').insert({
+            event_id: event.id,
+            join_url: online_url.trim(),
+        })
     }
 
     // One General Admission tier, like the dashboard's create flow — buyers

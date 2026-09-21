@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
-import { Calendar, MapPin, Share2, ShieldCheck, Ticket, Phone, ExternalLink, AlertCircle } from 'lucide-react'
+import { Calendar, MapPin, Share2, ShieldCheck, Ticket, Phone, ExternalLink, AlertCircle, Globe } from 'lucide-react'
 import type { Metadata } from 'next'
 import { SeatPickerLauncher } from '@/components/events/seat-picker-launcher'
 import { EventGallery } from '@/components/events/event-gallery'
@@ -89,6 +89,13 @@ const getEvent = cache(async (idOrSlug: string, allowAnyStatus = false) => {
     if (error || !event) {
         return null
     }
+
+    // This select is a wildcard, and this page is public — anything on the row
+    // reaches anonymous visitors in the RSC payload. online_url is the actual
+    // meeting link for an online event; whoever holds it can walk into a paid
+    // event. It is released only by get_ticket_order, against an order token,
+    // so it must not ride along here. Drop it before the row goes anywhere.
+    delete (event as Record<string, unknown>).online_url
 
     // Use the DB column directly — triggers keep it up to date
     // Only fall back to admin count if tickets_sold looks stale (0 but has tiers with sales)
@@ -753,7 +760,9 @@ export default async function PublicEventPage({
                             title={event.title}
                             startDatetime={event.start_datetime}
                             endDatetime={event.end_datetime}
-                            location={event.venue_name ? `${event.venue_name}, ${event.address || ''} ${event.city || ''}`.trim() : event.city}
+                            location={event.is_online
+                                ? 'Online event'
+                                : event.venue_name ? `${event.venue_name}, ${event.address || ''} ${event.city || ''}`.trim() : event.city}
                             description={event.description}
                             eventId={event.id}
                         />
@@ -761,10 +770,30 @@ export default async function PublicEventPage({
                 </div>
                 <div className="p-6 flex items-start gap-4 hover:bg-muted/30 transition-colors">
                     <div className="p-3 bg-primary/10 rounded-2xl text-primary">
-                        <MapPin className="h-6 w-6" />
+                        {event.is_online ? <Globe className="h-6 w-6" /> : <MapPin className="h-6 w-6" />}
                     </div>
                     <div>
-                        {venueVisible ? (
+                        {event.is_online ? (
+                            /* No address, no map link — an online event has neither, and
+                               a Get Directions link to `null,null` is worse than nothing.
+                               The joining link lives on the ticket, not here: this page is
+                               public, so printing it would hand the room to anyone. */
+                            <>
+                                <p className="font-semibold text-lg">Online event</p>
+                                {viewerHasTicket && viewerTicketToken ? (
+                                    <a
+                                        href={`/t/${viewerTicketToken}`}
+                                        className="text-sm text-primary font-medium hover:underline mt-1 inline-block"
+                                    >
+                                        Open your ticket for the joining link
+                                    </a>
+                                ) : (
+                                    <p className="text-muted-foreground text-sm mt-1">
+                                        Joining details are sent to attendees.
+                                    </p>
+                                )}
+                            </>
+                        ) : venueVisible ? (
                             <>
                                 <p className="font-semibold text-lg line-clamp-1">{event.venue_name}</p>
                                 <p className="text-muted-foreground line-clamp-2">{event.address}, {event.city}</p>
@@ -1373,7 +1402,7 @@ export default async function PublicEventPage({
                         </div>
                         <div className="p-3 border-r-2 border-t-2 md:border-t-0 border-foreground">
                             <div className="opacity-50">Venue</div>
-                            <div className="font-bold normal-case tracking-normal font-sans truncate">{venueVisible ? (event.venue_name || event.city) : event.city}</div>
+                            <div className="font-bold normal-case tracking-normal font-sans truncate">{event.is_online ? 'Online event' : venueVisible ? (event.venue_name || event.city) : event.city}</div>
                         </div>
                         <div className="p-3 border-t-2 md:border-t-0 border-foreground">
                             <div className="opacity-50">From</div>
@@ -1543,7 +1572,9 @@ export default async function PublicEventPage({
                             <div className="text-muted-foreground leading-loose" style={{ fontFamily: 'var(--font-heading)' }}>
                                 <p>{whenLong}</p>
                                 <p>{formatEventTime(event.start_datetime)}</p>
-                                {venueVisible && event.venue_name && <p>{event.venue_name}{event.city ? ` · ${event.city}` : ''}</p>}
+                                {event.is_online
+                                    ? <p>Online event</p>
+                                    : venueVisible && event.venue_name && <p>{event.venue_name}{event.city ? ` · ${event.city}` : ''}</p>}
                             </div>
                             {showCountdown && <div className="mt-8 flex justify-center"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} /></div>}
                             {showSocialProof && recentNames.length > 0 && <div className="mt-6 flex justify-center"><SocialProofTicker names={recentNames} /></div>}

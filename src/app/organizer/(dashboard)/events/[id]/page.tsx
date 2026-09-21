@@ -65,6 +65,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         initialAnswerStats,
         { data: rawSubscriptionTiers },
         { data: rawExistingDiscounts },
+        { data: onlineAccess },
     ] = await Promise.all([
         // Partner pricing (fields not already on the cached partner)
         supabase
@@ -119,6 +120,16 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
             .from('event_subscription_discounts')
             .select('subscription_tier_id, discount_type, discount_value, max_tickets')
             .eq('event_id', id),
+
+        // The joining link for an online event. It is deliberately NOT a column on
+        // `events` (that table is anon-readable), so the edit form has to be handed
+        // it separately — otherwise editing an online event would show an empty
+        // field and wipe the saved link on save.
+        supabase
+            .from('event_online_access')
+            .select('join_url')
+            .eq('event_id', id)
+            .maybeSingle(),
     ])
 
     const stats = statsRows?.[0] ?? { sold_count: 0, checked_in_count: 0, gross_revenue: 0, refunded_amount: 0 }
@@ -177,7 +188,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
             <EventDashboardTabs
                 partnerId={partner.id}
                 commissionRate={commissionRate}
-                event={event}
+                event={{ ...event, online_url: onlineAccess?.join_url ?? null }}
                 eventId={event.id}
                 tiers={tiers || []}
                 initialAttendees={attendees}
