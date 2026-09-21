@@ -23,37 +23,153 @@ export interface EventRegistration {
     created_at: string
     user?: { full_name: string | null; email: string | null } | null
     tier?: { name: string } | null
-    answers: { question_label: string; answer: any }[]
+    /**
+     * Keyed by question id, NOT by label. The label used to be nested inside
+     * every answer row, which meant a 94-character question was re-sent once
+     * per answer: 2,061 rows for one 521-person event, ~92% of a 210 kB payload
+     * being the same four strings. Labels now travel once, in `questions`.
+     */
+    answers: { question_id: string; answer: any }[]
 }
 
-export async function getEventRegistrations(
-    eventId: string,
-    status?: string
-): Promise<EventRegistration[]> {
+/** Sent ONCE per response, not once per answer. */
+export interface RegistrationQuestion {
+    id: string
+    label: string
+    question_type: string
+    display_order: number
+}
+
+export interface RegistrationsPage {
+    registrations: EventRegistration[]
+    questions: RegistrationQuestion[]
+    /**
+     * Whole-event totals from SQL — never derived from the page in the browser.
+     * `total` counts EVERY registration including cancelled ones, because the
+     * non-approval list shows every row; summing the three review buckets
+     * instead would print a count that disagreed with the list beneath it.
+     */
+    counts: { pending: number; approved: number; rejected: number; total: number }
+    page: number
+    per_page: number
+    total_pages: number
+}
+
+// Not exported: a "use server" module may only export async functions.
+const REGISTRATIONS_PER_PAGE = 25
+
+/**
+ * Resolve the acting partner and confirm they own this event.
+ * Shared so the read path and the export path can never disagree about access.
+ */
+async function authorizeEvent(eventId: string): Promise<string | null> {
     const supabase = await createClient()
     const adminClient = createAdminClient()
 
-    // Verify the caller is the organizer for this event
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return []
+    if (!user) return null
 
-    // Resolve through the acting partner (owner OR platform-support seat), the
-    // same way the rest of the dashboard does. Comparing partners.user_id to
-    // the caller meant a ghost seat saw an empty Registrations tab on an event
-    // that had hundreds.
+    // Acting partner (owner OR platform-support seat), the same way the rest of
+    // the dashboard does. Comparing partners.user_id to the caller meant a ghost
+    // seat saw an empty Registrations tab on an event that had hundreds.
     const actingPartnerId = await getActingPartnerId(user.id)
-    if (!actingPartnerId) return []
+    if (!actingPartnerId) return null
+
     const { data: ownerCheck } = await adminClient
         .from('events')
         .select('id, organizer_id')
         .eq('id', eventId)
-        .single()
-    if (!ownerCheck || ownerCheck.organizer_id !== actingPartnerId) return []
+        .maybeSingle()
+    if (!ownerCheck || ownerCheck.organizer_id !== actingPartnerId) return null
 
-    // Use admin client to bypass RLS on the nested joins (users, registration_answers, registration_questions)
-    let query = adminClient
+    return actingPartnerId
+}
+
+/** Registration ids whose owner matches a free-text search. */
+async function searchMatchedUserIds(term: string): Promise<string[]> {
+    const adminClient = createAdminClient()
+    // 45 of 824 registrations on prod are signed-in users carrying NO guest_name
+    // or guest_email, so searching the guest columns alone silently loses them.
+    // Resolve matching users first and include them by id.
+    const { data } = await adminClient
+        .from('users')
+        .select('id')
+        .or(`display_name.ilike.%${term}%,email.ilike.%${term}%`)
+        .limit(500)
+    return (data ?? []).map((u: any) => u.id)
+}
+
+const STATUS_GROUPS = {
+    pending: ['pending'],
+    approved: ['approved', 'auto_approved'],
+    rejected: ['rejected'],
+} as const
+
+export type RegistrationStatusGroup = keyof typeof STATUS_GROUPS
+
+/**
+ * One PAGE of registrations, plus whole-event counts and the question list.
+ *
+ * Deliberately returns counts from SQL rather than letting the client count the
+ * array it was given: the moment this paginates, `registrations.filter(...)`
+ * in the browser is counting one page and calling it the total.
+ */
+export async function getEventRegistrations(
+    eventId: string,
+    opts: {
+        statusGroup?: RegistrationStatusGroup
+        page?: number
+        perPage?: number
+        search?: string
+    } = {}
+): Promise<RegistrationsPage> {
+    const empty: RegistrationsPage = {
+        registrations: [],
+        questions: [],
+        counts: { pending: 0, approved: 0, rejected: 0, total: 0 },
+        page: 1,
+        per_page: opts.perPage ?? REGISTRATIONS_PER_PAGE,
+        total_pages: 0,
+    }
+
+    const partnerId = await authorizeEvent(eventId)
+    if (!partnerId) return empty
+
+    const adminClient = createAdminClient()
+    const perPage = Math.min(100, Math.max(1, opts.perPage ?? REGISTRATIONS_PER_PAGE))
+    const page = Math.max(1, opts.page ?? 1)
+    const search = opts.search?.trim() || ''
+
+    const matchedUserIds = search ? await searchMatchedUserIds(search) : []
+
+    const applyFilters = (q: any) => {
+        if (opts.statusGroup) q = q.in('status', STATUS_GROUPS[opts.statusGroup] as unknown as string[])
+        if (search) {
+            const clauses = [
+                `guest_name.ilike.%${search}%`,
+                `guest_email.ilike.%${search}%`,
+                ...(matchedUserIds.length ? [`user_id.in.(${matchedUserIds.join(',')})`] : []),
+            ]
+            q = q.or(clauses.join(','))
+        }
+        return q
+    }
+
+    // Counts, questions and the page itself are independent — fetch together.
+    const countFor = (group: RegistrationStatusGroup) =>
+        adminClient
+            .from('event_registrations')
+            .select('id', { count: 'exact', head: true })
+            .eq('event_id', eventId)
+            .in('status', STATUS_GROUPS[group] as unknown as string[])
+
+    const from = (page - 1) * perPage
+    const to = from + perPage - 1
+
+    let rowsQuery = adminClient
         .from('event_registrations')
-        .select(`
+        .select(
+            `
             id,
             event_id,
             user_id,
@@ -65,32 +181,46 @@ export async function getEventRegistrations(
             reviewed_by,
             reviewed_at,
             created_at,
-            user:users!event_registrations_user_id_fkey (
-                display_name,
-                email
-            ),
-            registration_answers (
-                answer,
-                registration_questions (
-                    label
-                )
-            )
-        `)
+            user:users!event_registrations_user_id_fkey ( display_name, email ),
+            registration_answers ( question_id, answer )
+        `,
+            { count: 'exact' }
+        )
         .eq('event_id', eventId)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
+        .range(from, to)
 
-    if (status) {
-        query = query.eq('status', status)
-    }
+    rowsQuery = applyFilters(rowsQuery)
 
-    const { data, error } = await query
+    const [
+        { data: rows, error, count: filteredCount },
+        { data: questions },
+        { count: pendingCount },
+        { count: approvedCount },
+        { count: rejectedCount },
+        { count: allCount },
+    ] = await Promise.all([
+        rowsQuery,
+        adminClient
+            .from('registration_questions')
+            .select('id, label, question_type, display_order')
+            .eq('event_id', eventId)
+            .order('display_order', { ascending: true }),
+        countFor('pending'),
+        countFor('approved'),
+        countFor('rejected'),
+        adminClient
+            .from('event_registrations')
+            .select('id', { count: 'exact', head: true })
+            .eq('event_id', eventId),
+    ])
 
     if (error) {
         console.error('getEventRegistrations error:', JSON.stringify(error), error)
-        return []
+        return empty
     }
 
-    const registrations: EventRegistration[] = (data || []).map((r: any) => ({
+    const registrations: EventRegistration[] = (rows || []).map((r: any) => ({
         id: r.id,
         event_id: r.event_id,
         user_id: r.user_id,
@@ -105,12 +235,177 @@ export async function getEventRegistrations(
         user: r.user ? { full_name: r.user.display_name, email: r.user.email } : null,
         tier: null,
         answers: (r.registration_answers || []).map((a: any) => ({
-            question_label: a.registration_questions?.label || 'Unknown',
+            question_id: a.question_id,
             answer: a.answer,
         })),
     }))
 
-    return registrations
+    return {
+        registrations,
+        questions: (questions ?? []) as RegistrationQuestion[],
+        counts: {
+            pending: pendingCount ?? 0,
+            approved: approvedCount ?? 0,
+            rejected: rejectedCount ?? 0,
+            total: allCount ?? 0,
+        },
+        page,
+        per_page: perPage,
+        total_pages: Math.max(1, Math.ceil((filteredCount ?? 0) / perPage)),
+    }
+}
+
+/**
+ * The whole event as CSV, built on the server.
+ *
+ * This exists because pagination breaks the old export: it stringified whatever
+ * array the browser happened to be holding, so a paginated tab would have
+ * quietly exported page one and called it the attendee list. Phase 3 turns this
+ * into a streamed route with tier/payment columns; for now it is correct and
+ * capped, which is the part that matters.
+ */
+export type AnswerFieldKind = 'choice' | 'contact' | 'freetext' | 'longform'
+
+export interface AnswerQuestionStats {
+    question_id: string
+    label: string
+    question_type: string
+    display_order: number
+    kind: AnswerFieldKind
+    kind_source: 'inferred' | 'override'
+    /** People who answered. For multi-select this is lower than `selections`. */
+    answered: number
+    selections: number
+    distinct_values: number
+    distribution: { value: string; n: number }[]
+    tail_values: number
+    tail_answers: number
+}
+
+export interface AnswerStats {
+    registrations: number
+    questions: AnswerQuestionStats[]
+}
+
+/**
+ * Per-question analytics, computed entirely in Postgres.
+ *
+ * The RPC gates itself on can_manage_partner — it is reachable over PostgREST,
+ * so the caller's check is not the only thing standing between a stranger and
+ * an organizer's answers.
+ */
+export async function getEventAnswerStats(eventId: string): Promise<AnswerStats | null> {
+    const partnerId = await authorizeEvent(eventId)
+    if (!partnerId) return null
+
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('get_event_answer_stats', { p_event_id: eventId })
+
+    if (error) {
+        console.error('getEventAnswerStats error:', error)
+        return null
+    }
+    return data as AnswerStats
+}
+
+/**
+ * Override how a question is treated. Inference is right nearly always, but it
+ * is inference — an organizer who knows their own form must be able to correct
+ * it, and the correction has to stick.
+ */
+export async function setQuestionAnalyticsKind(
+    eventId: string,
+    questionId: string,
+    kind: AnswerFieldKind | null
+): Promise<{ success: boolean; error?: string }> {
+    const partnerId = await authorizeEvent(eventId)
+    if (!partnerId) return { success: false, error: 'Unauthorized' }
+
+    const adminClient = createAdminClient()
+    const { error } = await adminClient
+        .from('registration_questions')
+        .update({ analytics_kind: kind })
+        .eq('id', questionId)
+        .eq('event_id', eventId)
+
+    if (error) {
+        console.error('setQuestionAnalyticsKind error:', error)
+        return { success: false, error: 'Could not update.' }
+    }
+    revalidatePath(`/organizer/events/${eventId}`)
+    return { success: true }
+}
+
+export async function exportEventRegistrationsCsv(
+    eventId: string
+): Promise<{ csv?: string; filename?: string; error?: string }> {
+    const partnerId = await authorizeEvent(eventId)
+    if (!partnerId) return { error: 'Unauthorized' }
+
+    const adminClient = createAdminClient()
+
+    const [{ data: event }, { data: questions }] = await Promise.all([
+        adminClient.from('events').select('title').eq('id', eventId).maybeSingle(),
+        adminClient
+            .from('registration_questions')
+            .select('id, label, display_order')
+            .eq('event_id', eventId)
+            .order('display_order', { ascending: true }),
+    ])
+
+    const EXPORT_CAP = 20000
+    const { data: rows, error } = await adminClient
+        .from('event_registrations')
+        .select(
+            `
+            guest_email, guest_name, status, created_at,
+            user:users!event_registrations_user_id_fkey ( display_name, email ),
+            registration_answers ( question_id, answer )
+        `
+        )
+        .eq('event_id', eventId)
+        .order('created_at', { ascending: true })
+        .limit(EXPORT_CAP)
+
+    if (error) {
+        console.error('exportEventRegistrationsCsv error:', error)
+        return { error: 'Could not build the export.' }
+    }
+
+    const cell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const cols = (questions ?? []) as { id: string; label: string }[]
+    const header = ['Name', 'Email', 'Status', 'Submitted', ...cols.map(q => q.label)]
+
+    const body = (rows ?? []).map((r: any) => {
+        const byQuestion = new Map<string, any>(
+            (r.registration_answers || []).map((a: any) => [a.question_id, a.answer])
+        )
+        return [
+            r.user?.display_name || r.guest_name || '',
+            r.user?.email || r.guest_email || '',
+            r.status,
+            formatInManila(r.created_at, {
+                year: 'numeric', month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit',
+            }),
+            ...cols.map(q => {
+                const v = byQuestion.get(q.id)
+                return Array.isArray(v) ? v.join('; ') : v ?? ''
+            }),
+        ]
+            .map(cell)
+            .join(',')
+    })
+
+    const slug = (event?.title || 'event')
+        .replace(/[^a-z0-9]+/gi, '-')
+        .replace(/^-|-$/g, '')
+        .toLowerCase()
+
+    return {
+        csv: [header.map(cell).join(','), ...body].join('\n'),
+        filename: `${slug}-registrations.csv`,
+    }
 }
 
 export async function approveRegistration(

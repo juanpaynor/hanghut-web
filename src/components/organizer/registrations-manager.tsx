@@ -1,48 +1,37 @@
 'use client'
 
-import { useState, useEffect, useTransition } from 'react'
+import { useState, useEffect, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
-import { Check, X, Clock, Users, ChevronDown, ChevronUp, Loader2, RefreshCw, Download } from 'lucide-react'
-import { approveRegistration, rejectRegistration, EventRegistration } from '@/lib/organizer/registration-management-actions'
+import { Check, X, Clock, Users, ChevronDown, ChevronUp, Loader2, RefreshCw, Download, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+    approveRegistration,
+    rejectRegistration,
+    getEventRegistrations,
+    exportEventRegistrationsCsv,
+    getEventAnswerStats,
+    EventRegistration,
+    RegistrationsPage,
+    RegistrationQuestion,
+    RegistrationStatusGroup,
+    AnswerStats,
+} from '@/lib/organizer/registration-management-actions'
+import { AnswerInsights } from '@/components/organizer/answer-insights'
+import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 interface Props {
     eventId: string
     eventTitle?: string
-    initialRegistrations: EventRegistration[]
+    initialPage: RegistrationsPage
+    initialStats?: AnswerStats | null
     /** Approval-gated event: show the pending/approved/rejected queue. Off = a
      *  flat list of responses (auto-approve has nothing to review). */
     approvalMode?: boolean
-}
-
-const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`
-
-/** One row per registration, one column per question — the shape a spreadsheet
- *  wants, not one row per answer. Question columns come from the union of labels
- *  actually answered so a question added mid-event still lands in its own column. */
-function registrationsToCsv(regs: EventRegistration[]): string {
-    const labels: string[] = []
-    for (const r of regs) for (const a of r.answers) if (!labels.includes(a.question_label)) labels.push(a.question_label)
-    const headers = ['Name', 'Email', 'Status', 'Submitted', ...labels]
-    const rows = regs.map(r => {
-        const byLabel = new Map(r.answers.map(a => [a.question_label, a.answer]))
-        return [
-            r.user?.full_name || r.guest_name || '',
-            r.user?.email || r.guest_email || '',
-            STATUS_BADGE[r.status]?.label ?? r.status,
-            new Date(r.created_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }),
-            ...labels.map(l => {
-                const v = byLabel.get(l)
-                return Array.isArray(v) ? v.join('; ') : v ?? ''
-            }),
-        ].map(csvCell).join(',')
-    })
-    return [headers.map(csvCell).join(','), ...rows].join('\n')
 }
 
 const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -56,10 +45,13 @@ const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'second
 function RegistrationCard({
     reg,
     eventId,
+    labelFor,
     onUpdate,
 }: {
     reg: EventRegistration
     eventId: string
+    /** Answers arrive keyed by question id; the label lives in one shared list. */
+    labelFor: (questionId: string) => string
     onUpdate: (id: string, newStatus: string) => void
 }) {
     const { toast } = useToast()
@@ -183,7 +175,7 @@ function RegistrationCard({
                         <div className="mt-2 space-y-2">
                             {reg.answers.map((a, i) => (
                                 <div key={i} className="bg-muted/50 rounded p-2">
-                                    <p className="text-xs font-medium text-muted-foreground">{a.question_label}</p>
+                                    <p className="text-xs font-medium text-muted-foreground">{labelFor(a.question_id)}</p>
                                     <p className="text-sm mt-0.5">
                                         {Array.isArray(a.answer) ? a.answer.join(', ') : String(a.answer ?? '—')}
                                     </p>
@@ -197,49 +189,180 @@ function RegistrationCard({
     )
 }
 
-export function RegistrationsManager({ eventId, eventTitle, initialRegistrations, approvalMode = true }: Props) {
-    const router = useRouter()
-    const [registrations, setRegistrations] = useState<EventRegistration[]>(initialRegistrations)
-    const [isRefreshing, setIsRefreshing] = useState(false)
+export function RegistrationsManager({ eventId, eventTitle, initialPage, initialStats = null, approvalMode = true }: Props) {
+    const { toast } = useToast()
+    const [data, setData] = useState<RegistrationsPage>(initialPage)
+    const [statusGroup, setStatusGroup] = useState<RegistrationStatusGroup | undefined>(
+        approvalMode ? 'pending' : undefined
+    )
+    const [page, setPage] = useState(1)
+    const [search, setSearch] = useState('')
+    const [loading, setLoading] = useState(false)
+    const [exporting, setExporting] = useState(false)
+    const [stats, setStats] = useState<AnswerStats | null>(initialStats)
 
-    // Auto-refresh every 30 seconds
+    // Stats are whole-event totals, so they do NOT move when the reader pages
+    // or searches — only when the underlying answers change.
+    const refreshStats = useCallback(async () => {
+        setStats(await getEventAnswerStats(eventId))
+    }, [eventId])
+
+    // Labels travel once per response, not once per answer, so the card looks
+    // them up here instead of carrying a copy on every row.
+    const labelFor = useCallback(
+        (questionId: string) =>
+            data.questions.find(q => q.id === questionId)?.label ?? 'Unknown question',
+        [data.questions]
+    )
+
+    const load = useCallback(
+        async (opts: { page?: number; statusGroup?: RegistrationStatusGroup; search?: string }) => {
+            setLoading(true)
+            try {
+                const next = await getEventRegistrations(eventId, {
+                    page: opts.page ?? page,
+                    statusGroup: opts.statusGroup !== undefined ? opts.statusGroup : statusGroup,
+                    search: opts.search !== undefined ? opts.search : search,
+                })
+                setData(next)
+            } finally {
+                setLoading(false)
+            }
+        },
+        [eventId, page, statusGroup, search]
+    )
+
+    // Debounced server-side search. Filtering in the browser would mean fetching
+    // every registration first, which is the thing this page stopped doing.
     useEffect(() => {
-        const interval = setInterval(() => {
-            router.refresh()
-        }, 30000)
-        return () => clearInterval(interval)
-    }, [router])
+        if (search === '' && page === 1 && data === initialPage) return
+        const t = setTimeout(() => {
+            setPage(1)
+            void load({ page: 1, search })
+        }, 250)
+        return () => clearTimeout(t)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [search])
 
-    // Sync when server re-renders with fresh data
-    useEffect(() => {
-        setRegistrations(initialRegistrations)
-    }, [initialRegistrations])
-
-    const handleRefresh = () => {
-        setIsRefreshing(true)
-        router.refresh()
-        setTimeout(() => setIsRefreshing(false), 1000)
+    const goToPage = (p: number) => {
+        setPage(p)
+        void load({ page: p })
     }
 
-    const handleUpdate = (id: string, newStatus: string) => {
-        setRegistrations(prev => prev.map(r => r.id === id ? { ...r, status: newStatus as any } : r))
+    const switchTab = (group: RegistrationStatusGroup) => {
+        setStatusGroup(group)
+        setPage(1)
+        void load({ page: 1, statusGroup: group })
     }
 
-    const pending = registrations.filter(r => r.status === 'pending')
-    const approved = registrations.filter(r => r.status === 'approved' || r.status === 'auto_approved')
-    const rejected = registrations.filter(r => r.status === 'rejected')
+    const handleRefresh = () => void load({})
 
-    const exportCsv = () => {
-        const blob = new Blob(['\uFEFF' + registrationsToCsv(registrations)], { type: 'text/csv;charset=utf-8;' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${(eventTitle || 'event').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}-registrations.csv`
-        a.click()
-        URL.revokeObjectURL(url)
+    // An approve/reject changes which tab a row belongs to, so refetch rather
+    // than patching it in place and leaving the counts stale.
+    const handleUpdate = (_id: string, _newStatus: string) => {
+        void load({})
+        void refreshStats()
     }
 
-    if (registrations.length === 0) {
+    const exportCsv = async () => {
+        setExporting(true)
+        try {
+            const res = await exportEventRegistrationsCsv(eventId)
+            if (res.error || !res.csv) {
+                toast({ title: 'Export failed', description: res.error, variant: 'destructive' })
+                return
+            }
+            const blob = new Blob(['\uFEFF' + res.csv], { type: 'text/csv;charset=utf-8;' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = res.filename || `${(eventTitle || 'event')}-registrations.csv`
+            a.click()
+            URL.revokeObjectURL(url)
+        } finally {
+            setExporting(false)
+        }
+    }
+
+    const { counts, questions, registrations } = data
+
+    const exportButton = (
+        <Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting} className="gap-1.5">
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            Export CSV
+        </Button>
+    )
+
+    const refreshButton = (
+        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading} className="gap-1.5">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+        </Button>
+    )
+
+    // Local state, not URL params: the shared SearchInput/PaginationControls
+    // push to the router, and this manager sits inside a <Tabs> on the event
+    // page where a URL change would snap the user back to the first tab.
+    const searchBox = (
+        <div className="relative w-full sm:w-64">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search name or email…"
+                className="pl-8 h-9 text-sm"
+            />
+        </div>
+    )
+
+    const list = (
+        <>
+            {registrations.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                    {search ? `No responses match “${search}”.` : 'Nothing here yet.'}
+                </p>
+            ) : (
+                <div className="space-y-3">
+                    {registrations.map(reg => (
+                        <RegistrationCard
+                            key={reg.id}
+                            reg={reg}
+                            eventId={eventId}
+                            labelFor={labelFor}
+                            onUpdate={handleUpdate}
+                        />
+                    ))}
+                </div>
+            )}
+            {data.total_pages > 1 && (
+                <div className="flex items-center justify-between gap-3 pt-4 border-t">
+                    <p className="text-xs text-muted-foreground">
+                        Page {data.page} of {data.total_pages}
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={data.page <= 1 || loading}
+                            onClick={() => goToPage(data.page - 1)}
+                        >
+                            <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Previous
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={data.page >= data.total_pages || loading}
+                            onClick={() => goToPage(data.page + 1)}
+                        >
+                            Next <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                        </Button>
+                    </div>
+                </div>
+            )}
+        </>
+    )
+
+    if (counts.total === 0 && !search) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground border-2 border-dashed rounded-xl">
                 <Users className="h-10 w-10 mb-3 opacity-40" />
@@ -253,37 +376,24 @@ export function RegistrationsManager({ eventId, eventTitle, initialRegistrations
         )
     }
 
-    const exportButton = (
-        <Button variant="outline" size="sm" onClick={exportCsv} className="gap-1.5">
-            <Download className="h-3.5 w-3.5" />
-            Export CSV
-        </Button>
-    )
-
     // Auto-approve: nothing to review, so no queue — one list, newest first,
     // with the answers expandable on each card.
     if (!approvalMode) {
-        const list = [...registrations].reverse()
         return (
             <div className="space-y-4">
                 <div className="flex items-center gap-3 flex-wrap">
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border rounded-lg text-sm">
                         <Users className="h-4 w-4" />
-                        <span><strong>{list.length}</strong> {list.length === 1 ? 'response' : 'responses'}</span>
+                        <span><strong>{counts.total}</strong> {counts.total === 1 ? 'response' : 'responses'}</span>
                     </div>
+                    {searchBox}
                     <div className="ml-auto flex items-center gap-2">
                         {exportButton}
-                        <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-1.5">
-                            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-                            Refresh
-                        </Button>
+                        {refreshButton}
                     </div>
                 </div>
-                <div className="space-y-3">
-                    {list.map(reg => (
-                        <RegistrationCard key={reg.id} reg={reg} eventId={eventId} onUpdate={handleUpdate} />
-                    ))}
-                </div>
+                <AnswerInsights eventId={eventId} stats={stats} onRefresh={refreshStats} />
+                {list}
             </div>
         )
     }
@@ -293,56 +403,36 @@ export function RegistrationsManager({ eventId, eventTitle, initialRegistrations
             <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
                     <Clock className="h-4 w-4" />
-                    <span><strong>{pending.length}</strong> pending</span>
+                    <span><strong>{counts.pending}</strong> pending</span>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
                     <Check className="h-4 w-4" />
-                    <span><strong>{approved.length}</strong> approved</span>
+                    <span><strong>{counts.approved}</strong> approved</span>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
                     <X className="h-4 w-4" />
-                    <span><strong>{rejected.length}</strong> rejected</span>
+                    <span><strong>{counts.rejected}</strong> rejected</span>
                 </div>
+                {searchBox}
                 <div className="ml-auto flex items-center gap-2">
                     {exportButton}
-                    <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-1.5">
-                        <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-                        Refresh
-                    </Button>
+                    {refreshButton}
                 </div>
             </div>
 
-            <Tabs defaultValue="pending">
+            <AnswerInsights eventId={eventId} stats={stats} onRefresh={refreshStats} />
+
+            <Tabs value={statusGroup} onValueChange={v => switchTab(v as RegistrationStatusGroup)}>
                 <TabsList>
                     <TabsTrigger value="pending">
-                        Pending {pending.length > 0 && <Badge variant="secondary" className="ml-1.5 h-5 px-1.5">{pending.length}</Badge>}
+                        Pending {counts.pending > 0 && <Badge variant="secondary" className="ml-1.5 h-5 px-1.5">{counts.pending}</Badge>}
                     </TabsTrigger>
                     <TabsTrigger value="approved">Approved</TabsTrigger>
                     <TabsTrigger value="rejected">Rejected</TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="pending" className="mt-4 space-y-3">
-                    {pending.length === 0 ? (
-                        <p className="text-sm text-muted-foreground py-8 text-center">No pending requests.</p>
-                    ) : pending.map(reg => (
-                        <RegistrationCard key={reg.id} reg={reg} eventId={eventId} onUpdate={handleUpdate} />
-                    ))}
-                </TabsContent>
-
-                <TabsContent value="approved" className="mt-4 space-y-3">
-                    {approved.length === 0 ? (
-                        <p className="text-sm text-muted-foreground py-8 text-center">No approved registrations yet.</p>
-                    ) : approved.map(reg => (
-                        <RegistrationCard key={reg.id} reg={reg} eventId={eventId} onUpdate={handleUpdate} />
-                    ))}
-                </TabsContent>
-
-                <TabsContent value="rejected" className="mt-4 space-y-3">
-                    {rejected.length === 0 ? (
-                        <p className="text-sm text-muted-foreground py-8 text-center">No rejected registrations.</p>
-                    ) : rejected.map(reg => (
-                        <RegistrationCard key={reg.id} reg={reg} eventId={eventId} onUpdate={handleUpdate} />
-                    ))}
+                <TabsContent value={statusGroup ?? 'pending'} className="mt-4 space-y-3">
+                    {list}
                 </TabsContent>
             </Tabs>
         </div>

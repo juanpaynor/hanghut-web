@@ -48,7 +48,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
     const { getEventAttendees } = await import('@/lib/organizer/attendee-actions')
     const { getPromoCodes } = await import('@/lib/organizer/promo-actions')
     const { getRegistrationQuestions } = await import('@/lib/organizer/registration-actions')
-    const { getEventRegistrations } = await import('@/lib/organizer/registration-management-actions')
+    const { getEventRegistrations, getEventAnswerStats } = await import('@/lib/organizer/registration-management-actions')
 
     const [
         { data: partnerPricing },
@@ -62,6 +62,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         { data: statsRows },
         registrationQuestions,
         initialRegistrations,
+        initialAnswerStats,
         { data: rawSubscriptionTiers },
         { data: rawExistingDiscounts },
     ] = await Promise.all([
@@ -101,6 +102,10 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
 
         // Registration requests
         getEventRegistrations(id),
+
+        // Per-question answer analytics — whole-event aggregates from SQL, so
+        // this is a few hundred bytes no matter how large the event gets.
+        getEventAnswerStats(id),
 
         // Partner's subscription tiers (for subscriber discounts section)
         supabase
@@ -192,6 +197,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                 )}
                 initialQuestions={registrationQuestions}
                 initialRegistrations={initialRegistrations}
+                initialAnswerStats={initialAnswerStats}
                 subscriptionTiers={rawSubscriptionTiers || []}
                 existingDiscounts={rawExistingDiscounts || []}
                 subscriptionsEnabled={(partner as any).subscriptions_enabled === true}

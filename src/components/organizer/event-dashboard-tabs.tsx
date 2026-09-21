@@ -17,7 +17,7 @@ import { Attendee } from '@/lib/organizer/attendee-actions'
 import { PromoCode } from '@/lib/organizer/promo-actions'
 import { RegistrationQuestionsManager, RegistrationQuestion } from '@/components/organizer/registration-questions-manager'
 import { RegistrationsManager } from '@/components/organizer/registrations-manager'
-import { EventRegistration } from '@/lib/organizer/registration-management-actions'
+import { RegistrationsPage, AnswerStats } from '@/lib/organizer/registration-management-actions'
 import { type SubscriptionTierBasic, type ExistingDiscount } from '@/components/organizer/subscriber-discounts-section'
 import { formatInManila } from '@/lib/datetime'
 
@@ -42,7 +42,8 @@ interface EventDashboardTabsProps {
     passPercentageToCustomer: boolean
     fixedFeePerTicket: number
     initialQuestions: RegistrationQuestion[]
-    initialRegistrations: EventRegistration[]
+    initialRegistrations: RegistrationsPage
+    initialAnswerStats?: AnswerStats | null
     subscriptionTiers?: SubscriptionTierBasic[]
     existingDiscounts?: ExistingDiscount[]
     subscriptionsEnabled?: boolean
@@ -64,6 +65,7 @@ export function EventDashboardTabs({
     fixedFeePerTicket,
     initialQuestions,
     initialRegistrations,
+    initialAnswerStats = null,
     subscriptionTiers = [],
     existingDiscounts = [],
     subscriptionsEnabled = false,
@@ -76,7 +78,7 @@ export function EventDashboardTabs({
     // Registrations exist for ANY event with questions (auto-approve just skips
     // the review step), not only approval-gated ones. Gating the tab on
     // require_approval hid every auto-approved answer from the organizer.
-    const showRegistrations = !!event.require_approval || initialQuestions.length > 0 || initialRegistrations.length > 0
+    const showRegistrations = !!event.require_approval || initialQuestions.length > 0 || initialRegistrations.counts.total > 0
     const tabCount = 7
         + (showRegistrations ? 1 : 0)
         + (event.seating_type === 'assigned_seating' ? 1 : 0)
@@ -118,9 +120,9 @@ export function EventDashboardTabs({
                     <TabsTrigger value="registrations" className="flex items-center gap-2">
                         <UserCheck className="h-4 w-4" />
                         {event.require_approval ? 'Registrations' : 'Responses'}
-                        {initialRegistrations.filter(r => r.status === 'pending').length > 0 && (
+                        {initialRegistrations.counts.pending > 0 && (
                             <span className="ml-1 bg-amber-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-bold">
-                                {initialRegistrations.filter(r => r.status === 'pending').length}
+                                {initialRegistrations.counts.pending}
                             </span>
                         )}
                     </TabsTrigger>
@@ -238,7 +240,8 @@ export function EventDashboardTabs({
                     <RegistrationsManager
                         eventId={eventId}
                         eventTitle={event.title}
-                        initialRegistrations={initialRegistrations}
+                        initialPage={initialRegistrations}
+                        initialStats={initialAnswerStats}
                         approvalMode={!!event.require_approval}
                     />
                 </TabsContent>
