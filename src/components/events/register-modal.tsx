@@ -12,7 +12,7 @@ import { Check, ChevronLeft, ChevronRight, Loader2, Clock, PartyPopper } from 'l
 import type { QuestionForForm } from './registration-questions-form'
 import { RegistrationFileInput } from './registration-file-input'
 import { QuestionHelp } from './question-help'
-import { visibleQuestions } from '@/lib/events/question-visibility'
+import { visibleQuestions, isSectionBlock } from '@/lib/events/question-visibility'
 
 interface RegisterModalProps {
     open: boolean
@@ -112,7 +112,7 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
     }
 
     function questionAnswered(q: QuestionForForm): boolean {
-        if (!q.is_required) return true
+        if (isSectionBlock(q) || !q.is_required) return true
         const v = answers[q.id]
         if (Array.isArray(v)) return v.length > 0
         return !!v && String(v).trim().length > 0
@@ -144,6 +144,7 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
             // Only send what was actually asked. A hidden question has no answer
             // and must not be reported as one.
             const payload = shown
+                .filter((q) => !isSectionBlock(q))
                 .map((q) => {
                     const v = answers[q.id]
                     if (v == null || (Array.isArray(v) ? v.length === 0 : String(v).trim() === '')) return null
@@ -394,6 +395,19 @@ function QuestionStep({ q, value, onChange, eventId, compact }: {
     // long, drop to a readable, scrollable paragraph style instead.
     const longLabel = q.label.length > 90
 
+    // A section is a divider with a heading and (usually) an image — no input,
+    // no asterisk, and visually set apart from the questions it introduces.
+    if (q.question_type === 'section') {
+        return (
+            <div className={cn('space-y-3', compact && 'border-t pt-6 first:border-t-0 first:pt-0')}>
+                <h3 className={cn('font-bold tracking-tight', compact ? 'text-base' : 'text-lg sm:text-xl')}>
+                    {q.label}
+                </h3>
+                <QuestionHelp text={q.help_text} imageUrl={q.help_image_url} />
+            </div>
+        )
+    }
+
     return (
         <div className="space-y-4">
             <h3 className={cn(
@@ -416,6 +430,20 @@ function QuestionStep({ q, value, onChange, eventId, compact }: {
                     value={str}
                     onChange={(e) => onChange(e.target.value)}
                 />
+            )}
+
+            {/* Seven shirt sizes as radio buttons is a very long phone screen. */}
+            {q.question_type === 'dropdown' && (
+                <select
+                    value={str}
+                    onChange={(e) => onChange(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                    <option value="">Choose…</option>
+                    {q.options.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                </select>
             )}
 
             {q.question_type === 'file' && (

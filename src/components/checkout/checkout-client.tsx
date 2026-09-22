@@ -26,7 +26,7 @@ import { resolvePlatformPct, resolveFixedFee, computePassedFees } from '@/lib/pa
 import { CheckCircle2, ClipboardList, Armchair } from 'lucide-react'
 import { formatEventShortWithEnd } from '@/lib/datetime'
 import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
-import { visibleQuestions, tierOnlyQuestions } from '@/lib/events/question-visibility'
+import { visibleQuestions, tierOnlyQuestions, isSectionBlock } from '@/lib/events/question-visibility'
 
 // Conditionally rendered (approval/invite events or events with custom questions),
 // so it's code-split: normal checkouts never load this chunk. Default SSR keeps
@@ -38,7 +38,7 @@ const RegistrationQuestionsCard = dynamic(
 interface RegistrationQuestion {
     id: string
     label: string
-    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company' | 'file' | 'date'
+    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company' | 'file' | 'date' | 'dropdown' | 'section'
     options: string[] | null
     is_required: boolean
     display_order: number
@@ -401,7 +401,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         // asked, so it cannot be missing.
         if (questionsToAsk.length > 0) {
             for (const q of questionsToAsk) {
-                if (q.is_required) {
+                if (q.is_required && !isSectionBlock(q)) {
                     const val = regAnswers[q.id]
                     const empty = val === undefined || val === null || val === '' ||
                         (Array.isArray(val) && val.length === 0)
@@ -436,11 +436,26 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             // Skip if user is returning with an already-approved registration_id
             let registrationId = approvedRegistrationId
 
-            if (requireApproval && !registrationId) {
-                const answers = questionsToAsk.map(q => ({
-                    question_id: q.id,
-                    answer: regAnswers[q.id] ?? null,
-                }))
+            // Also when the event does NOT require approval but still asks
+            // questions and we have no registration to attach them to.
+            //
+            // Sinadya-style flow: the buyer normally registers on the event page
+            // and checkout finds that registration in sessionStorage. When it
+            // can't — a new tab, another device, cleared storage — checkout
+            // re-asks every question, and this branch used to be skipped because
+            // require_approval was false. The answers were collected and then
+            // silently dropped on the floor: no registration existed to hold
+            // them, so nothing was written. Calling the RPC here creates the
+            // registration (auto_approved for a no-approval event) AND enforces
+            // the required questions server-side, tier-scoped ones included.
+            const needsRegistration = requireApproval || questionsToAsk.length > 0
+            if (needsRegistration && !registrationId) {
+                const answers = questionsToAsk
+                    .filter(q => !isSectionBlock(q))
+                    .map(q => ({
+                        question_id: q.id,
+                        answer: regAnswers[q.id] ?? null,
+                    }))
 
                 const { data: regResult, error: regError } = await supabase.rpc('submit_event_request', {
                     p_event_id: event.id,
@@ -482,11 +497,11 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             // before rewriting, which would throw away everything the register
             // step collected.
             const tierAnswers = questionsToAsk
-                .filter(q => (q.tier_ids ?? []).length > 0)
+                .filter(q => !isSectionBlock(q) && (q.tier_ids ?? []).length > 0)
                 .map(q => ({ question_id: q.id, answer: answerText(regAnswers[q.id]) }))
                 .filter(a => a.answer.trim() !== '')
 
-            if (registrationId && tierAnswers.length > 0) {
+            if (approvedRegistrationId && registrationId && tierAnswers.length > 0) {
                 const { error: answerError } = await supabase.rpc('upsert_registration_answers', {
                     p_registration_id: registrationId,
                     p_answers: tierAnswers,

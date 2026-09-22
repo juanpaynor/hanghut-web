@@ -67,19 +67,30 @@ export async function saveRegistrationQuestions(eventId: string, questions: Regi
 
         const existingIds = new Set((existingRows || []).map(r => r.id as string))
 
-        // key → id for EVERY question in the payload, new ones included, so a
-        // dependency can point at a sibling created in the same save.
+        // One id per question, decided positionally in a single pass.
+        //
+        // This used to look the id up in a key→id map, which silently had no
+        // entry for a question carrying neither a key nor an id — and an older
+        // client bundle (from before `key` existed) sends exactly that. The
+        // lookup returned undefined, the non-null assertion hid it, and the
+        // undefined landed in a NOT NULL column. Indexing by position cannot
+        // miss, so the payload's shape no longer decides whether a row is
+        // writable.
+        const ids = questions.map(q =>
+            q.id && existingIds.has(q.id) ? q.id : crypto.randomUUID()
+        )
+
+        // key → id, used only to resolve a conditional question's pointer at a
+        // sibling. A question with no key simply cannot be depended on, which
+        // is correct rather than fatal.
         const idForKey = new Map<string, string>()
-        for (const q of questions) {
+        questions.forEach((q, i) => {
             const key = q.key || q.id
-            if (!key) continue
-            const id = q.id && existingIds.has(q.id) ? q.id : crypto.randomUUID()
-            idForKey.set(key, id)
-        }
+            if (key) idForKey.set(key, ids[i])
+        })
 
         const rows = questions.map((q, index) => {
-            const key = q.key || q.id || ''
-            const id = idForKey.get(key)!
+            const id = ids[index]
             const dependsOnId = q.depends_on_key ? idForKey.get(q.depends_on_key) ?? null : null
             return {
                 id,
@@ -87,7 +98,10 @@ export async function saveRegistrationQuestions(eventId: string, questions: Regi
                 label: q.label.trim(),
                 question_type: q.question_type,
                 options: cleanOptions(q.options),
-                is_required: !!q.is_required,
+                // A section takes no answer, so it can never be required — the
+                // database rejects the combination rather than letting it block
+                // every submission on a question with no input.
+                is_required: q.question_type === 'section' ? false : !!q.is_required,
                 display_order: index,
                 help_text: q.help_text?.trim() || null,
                 help_image_url: q.help_image_url?.trim() || null,
@@ -131,6 +145,23 @@ export async function saveRegistrationQuestions(eventId: string, questions: Regi
                     { onConflict: 'id' },
                 )
             if (upsertError) throw upsertError
+
+            // A dropdown IS a choice question, but get_event_answer_stats infers
+            // the analytics kind from question_type and predates this type — so
+            // shirt sizes would chart correctly under the heading "Short
+            // answers". Seed the override, and only on rows being created:
+            // doing it on every save would silently undo an organizer's own
+            // "treat as…" choice each time they edited anything.
+            const newChoiceIds = rows
+                .filter((r, i) => !existingIds.has(r.id) && questions[i].question_type === 'dropdown')
+                .map(r => r.id)
+            if (newChoiceIds.length > 0) {
+                const { error: kindError } = await adminSupabase
+                    .from('registration_questions')
+                    .update({ analytics_kind: 'choice' })
+                    .in('id', newChoiceIds)
+                if (kindError) console.error('analytics_kind seed failed', kindError)
+            }
 
             const linked = rows.filter(r => r.depends_on_question_id)
             for (const r of linked) {

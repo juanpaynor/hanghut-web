@@ -19,6 +19,15 @@ export interface VisibilityQuestion {
     tier_ids?: string[] | null
 }
 
+/**
+ * A section renders a heading and an image and takes no answer. It is still a
+ * row in the list — so it can be ordered, tier-scoped and branched like
+ * anything else — but it must never be validated, submitted, or counted.
+ */
+export function isSectionBlock(q: { question_type?: string }): boolean {
+    return q.question_type === 'section'
+}
+
 /** Answers keyed by question id. Multi-choice arrives as an array or as JSON text. */
 export type AnswerMap = Record<string, string | string[] | undefined | null>
 
@@ -65,9 +74,20 @@ export function conditionMet(q: VisibilityQuestion, answers: AnswerMap): boolean
 /**
  * The questions to render, in order.
  *
- * Walks in display order so a chain works: a question whose controller is
- * itself hidden stays hidden, rather than appearing because the controller
- * happens to hold a stale answer from before it was hidden.
+ * Two passes, because a SECTION is not independent: it exists to introduce the
+ * questions beneath it. If those questions move — to checkout, because they're
+ * tier-scoped, or out of view because a condition isn't met — the section has
+ * to move with them. Otherwise the organizer has to hand-scope every heading to
+ * match whatever sits under it, which is both tedious and the easiest thing in
+ * this whole feature to get silently wrong: a size chart left behind at the
+ * register step while the shirt dropdown it explains appears at checkout.
+ *
+ * So a section's scope is INHERITED from its group (itself through to the next
+ * section). An explicit scope on the section can still narrow that, but nothing
+ * needs to be set for the common case.
+ *
+ * The same rule kills empty headings: a section whose whole group is hidden
+ * renders nothing rather than a title with a blank space under it.
  */
 export function visibleQuestions<T extends VisibilityQuestion>(
     questions: T[],
@@ -75,29 +95,69 @@ export function visibleQuestions<T extends VisibilityQuestion>(
     tierId: string | null,
 ): T[] {
     const shown = new Set<string>()
-    const out: T[] = []
+    const keep: boolean[] = []
 
+    // Pass 1 — the answerable questions. Order matters: a question whose
+    // controller is itself hidden stays hidden, rather than reappearing because
+    // the controller holds a stale answer from before it was hidden.
     for (const q of questions) {
-        if (!appliesToTier(q, tierId)) continue
-        if (q.depends_on_question_id && !shown.has(q.depends_on_question_id)) continue
-        if (!conditionMet(q, answers)) continue
-        shown.add(q.id)
-        out.push(q)
+        if (isSectionBlock(q)) { keep.push(false); continue }
+        const ok = appliesToTier(q, tierId)
+            && (!q.depends_on_question_id || shown.has(q.depends_on_question_id))
+            && conditionMet(q, answers)
+        if (ok) shown.add(q.id)
+        keep.push(ok)
     }
-    return out
+
+    // Pass 2 — sections follow their group.
+    for (let i = 0; i < questions.length; i++) {
+        const q = questions[i]
+        if (!isSectionBlock(q)) continue
+        const allowed = appliesToTier(q, tierId)
+            && (!q.depends_on_question_id || shown.has(q.depends_on_question_id))
+            && conditionMet(q, answers)
+        keep[i] = allowed && groupHasSurvivor(questions, keep, i)
+    }
+
+    return questions.filter((_, i) => keep[i])
+}
+
+/** Did anything between this section and the next one survive? */
+function groupHasSurvivor(
+    questions: VisibilityQuestion[],
+    keep: boolean[],
+    sectionIndex: number,
+): boolean {
+    for (let j = sectionIndex + 1; j < questions.length; j++) {
+        if (isSectionBlock(questions[j])) break
+        if (keep[j]) return true
+    }
+    return false
 }
 
 /**
- * Questions that belong to the CHECKOUT step specifically — the tier-scoped
- * ones. The register step already collected everything else.
+ * Questions that belong to the CHECKOUT step — the tier-scoped ones, plus the
+ * section headings that introduce them.
+ *
+ * The register step already collected everything else. Carrying the heading
+ * across is the point: the size chart has to travel with the dropdown it
+ * explains, or the buyer is asked for a measurement with no way to look it up.
  */
 export function tierOnlyQuestions<T extends VisibilityQuestion>(
     questions: T[],
     answers: AnswerMap,
     tierId: string | null,
 ): T[] {
-    return visibleQuestions(questions, answers, tierId)
-        .filter(q => (q.tier_ids ?? []).length > 0)
+    const visible = visibleQuestions(questions, answers, tierId)
+
+    const keep = visible.map(q => !isSectionBlock(q) && (q.tier_ids ?? []).length > 0)
+    if (!keep.some(Boolean)) return []
+
+    for (let i = 0; i < visible.length; i++) {
+        if (isSectionBlock(visible[i])) keep[i] = groupHasSurvivor(visible, keep, i)
+    }
+
+    return visible.filter((_, i) => keep[i])
 }
 
 /** True when a question was never put in front of this buyer. */

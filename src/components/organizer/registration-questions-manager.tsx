@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 
 export type QuestionType =
     | 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox'
-    | 'social_profile' | 'url' | 'company' | 'file' | 'date'
+    | 'social_profile' | 'url' | 'company' | 'file' | 'date' | 'dropdown' | 'section'
 
 export interface RegistrationQuestion {
     id?: string
@@ -45,6 +45,7 @@ const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
     short_text: 'Short Text',
     long_text: 'Long Text (paragraph)',
     single_choice: 'Single Choice',
+    dropdown: 'Dropdown (single choice)',
     multi_choice: 'Multiple Choice',
     checkbox: 'Checkbox (Yes/No)',
     date: 'Date (birthday, etc.)',
@@ -52,10 +53,14 @@ const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
     url: 'URL',
     company: 'Company / Organization',
     file: 'File upload (ID, receipt, document)',
+    section: 'Section — heading + image, no answer',
 }
 
 /** Question types whose answers are a fixed set, so another question can branch off them. */
-const BRANCHABLE: QuestionType[] = ['single_choice', 'multi_choice', 'checkbox']
+const BRANCHABLE: QuestionType[] = ['single_choice', 'dropdown', 'multi_choice', 'checkbox']
+
+/** Renders a heading and optional image, takes no answer. */
+const isSection = (t: QuestionType) => t === 'section'
 
 function newKey() {
     return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -94,7 +99,8 @@ export function RegistrationQuestionsManager({
         () => initialQuestions.map(q => ({ ...q, key: q.key || q.id || newKey() }))
     )
     const [isSaving, setIsSaving] = useState(false)
-    const [openAdvanced, setOpenAdvanced] = useState<Record<string, boolean>>({})
+    // undefined = follow the auto rule below; true/false = the organizer decided.
+    const [openAdvanced, setOpenAdvanced] = useState<Record<string, boolean | undefined>>({})
     const [layout, setLayout] = useState<'stepper' | 'single'>(initialFormLayout ?? 'stepper')
 
     useEffect(() => {
@@ -166,7 +172,7 @@ export function RegistrationQuestionsManager({
                 toast({ title: 'Missing question text', description: `Question ${i + 1} needs a label.`, variant: 'destructive' })
                 return
             }
-            if (['single_choice', 'multi_choice'].includes(q.question_type) && q.options.filter(o => o.trim()).length < 2) {
+            if (['single_choice', 'dropdown', 'multi_choice'].includes(q.question_type) && q.options.filter(o => o.trim()).length < 2) {
                 toast({ title: 'Not enough options', description: `Question ${i + 1} needs at least 2 options.`, variant: 'destructive' })
                 return
             }
@@ -208,7 +214,7 @@ export function RegistrationQuestionsManager({
     }
 
     const needsOptions = (type: QuestionType) =>
-        type === 'single_choice' || type === 'multi_choice'
+        type === 'single_choice' || type === 'dropdown' || type === 'multi_choice'
 
     /** Answers a question can branch on. */
     const answerValues = (q: RegistrationQuestion | undefined): string[] => {
@@ -293,8 +299,13 @@ export function RegistrationQuestionsManager({
                             .filter(c => BRANCHABLE.includes(c.question_type) && c.label.trim())
                         const controller = questions.find(c => c.key === q.depends_on_key)
                         const scoped = (q.tier_ids || []).length > 0
-                        const advancedOn = openAdvanced[qKey]
-                            || !!q.depends_on_key || scoped || !!q.help_text || !!q.help_image_url
+                        // Open by default when the question already carries a rule or
+                        // media, and always for a section, whose image IS the point.
+                        // An explicit toggle wins over that, so "Hide options" works
+                        // rather than getting stuck open.
+                        const autoOpen = !!q.depends_on_key || scoped || !!q.help_text
+                            || !!q.help_image_url || isSection(q.question_type)
+                        const advancedOn = openAdvanced[qKey] ?? autoOpen
 
                         return (
                         <Card key={qKey} className="p-5 space-y-4">
@@ -305,11 +316,15 @@ export function RegistrationQuestionsManager({
 
                                 <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
                                     <div>
-                                        <Label className="text-xs mb-1 block">Question</Label>
+                                        <Label className="text-xs mb-1 block">
+                                            {isSection(q.question_type) ? 'Section title' : 'Question'}
+                                        </Label>
                                         <Input
                                             value={q.label}
                                             onChange={(e) => updateQuestion(index, { label: e.target.value })}
-                                            placeholder="e.g. What's your job title?"
+                                            placeholder={isSection(q.question_type)
+                                                ? 'e.g. Size Chart'
+                                                : "e.g. What's your job title?"}
                                         />
                                     </div>
                                     <div>
@@ -318,7 +333,10 @@ export function RegistrationQuestionsManager({
                                             value={q.question_type}
                                             onValueChange={(v) => updateQuestion(index, {
                                                 question_type: v as QuestionType,
-                                                options: needsOptions(v as QuestionType) ? (q.options.length ? q.options : ['', '']) : []
+                                                options: needsOptions(v as QuestionType) ? (q.options.length ? q.options : ['', '']) : [],
+                                                // A section takes no answer, so it can never be required —
+                                                // the database rejects the combination outright.
+                                                ...(isSection(v as QuestionType) ? { is_required: false } : {}),
                                             })}
                                         >
                                             <SelectTrigger>
@@ -333,13 +351,15 @@ export function RegistrationQuestionsManager({
                                     </div>
                                 </div>
 
-                                <div className="flex flex-col items-center gap-1 shrink-0">
-                                    <span className="text-xs text-muted-foreground">Required</span>
-                                    <Switch
-                                        checked={q.is_required}
-                                        onCheckedChange={(checked) => updateQuestion(index, { is_required: checked })}
-                                    />
-                                </div>
+                                {!isSection(q.question_type) && (
+                                    <div className="flex flex-col items-center gap-1 shrink-0">
+                                        <span className="text-xs text-muted-foreground">Required</span>
+                                        <Switch
+                                            checked={q.is_required}
+                                            onCheckedChange={(checked) => updateQuestion(index, { is_required: checked })}
+                                        />
+                                    </div>
+                                )}
 
                                 <div className="flex flex-col gap-0.5 shrink-0">
                                     <button type="button" onClick={() => moveQuestion(index, 'up')} disabled={index === 0} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30">
@@ -411,7 +431,9 @@ export function RegistrationQuestionsManager({
                                     className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
                                 >
                                     <Settings2 className="h-3.5 w-3.5" />
-                                    {advancedOn ? 'Hide options' : 'Help image, tiers & rules'}
+                                    {advancedOn
+                                        ? 'Hide options'
+                                        : isSection(q.question_type) ? 'Image, tiers & rules' : 'Help image, tiers & rules'}
                                 </button>
                             </div>
                             )}

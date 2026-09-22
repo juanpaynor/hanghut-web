@@ -205,6 +205,9 @@ export async function getEventRegistrations(
             .from('registration_questions')
             .select('id, label, question_type, display_order')
             .eq('event_id', eventId)
+            // Sections are layout, not data — they would show as a column every
+            // respondent left blank.
+            .neq('question_type', 'section')
             .order('display_order', { ascending: true }),
         countFor('pending'),
         countFor('approved'),
@@ -350,6 +353,9 @@ export async function exportEventRegistrationsCsv(
             .from('registration_questions')
             .select('id, label, display_order')
             .eq('event_id', eventId)
+            // Sections carry no answer — they would export as a column every
+            // respondent left blank.
+            .neq('question_type', 'section')
             .order('display_order', { ascending: true }),
     ])
 
@@ -359,6 +365,7 @@ export async function exportEventRegistrationsCsv(
         .select(
             `
             guest_email, guest_name, status, created_at,
+            tier:ticket_tiers ( name ),
             user:users!event_registrations_user_id_fkey ( display_name, email ),
             registration_answers ( question_id, answer )
         `
@@ -374,7 +381,7 @@ export async function exportEventRegistrationsCsv(
 
     const cell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const cols = (questions ?? []) as { id: string; label: string }[]
-    const header = ['Name', 'Email', 'Status', 'Submitted', ...cols.map(q => q.label)]
+    const header = ['Name', 'Email', 'Ticket', 'Status', 'Submitted', ...cols.map(q => q.label)]
 
     const body = (rows ?? []).map((r: any) => {
         const byQuestion = new Map<string, any>(
@@ -383,6 +390,7 @@ export async function exportEventRegistrationsCsv(
         return [
             r.user?.display_name || r.guest_name || '',
             r.user?.email || r.guest_email || '',
+            r.tier?.name || '',
             r.status,
             formatInManila(r.created_at, {
                 year: 'numeric', month: 'short', day: 'numeric',

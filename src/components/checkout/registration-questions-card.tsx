@@ -6,11 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { ClipboardList } from 'lucide-react'
 import { RegistrationFileInput } from '@/components/events/registration-file-input'
 import { QuestionHelp } from '@/components/events/question-help'
+import { isSectionBlock } from '@/lib/events/question-visibility'
 
 interface RegistrationQuestion {
     id: string
     label: string
-    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company' | 'file' | 'date'
+    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company' | 'file' | 'date' | 'dropdown' | 'section'
     options: string[] | null
     is_required: boolean
     display_order: number
@@ -56,11 +57,27 @@ export function RegistrationQuestionsCard({ eventId, registrationQuestions, regA
             <CardContent className="space-y-5">
                 {registrationQuestions.map((q) => (
                     <div key={q.id} className="space-y-2">
-                        <Label htmlFor={`q_${q.id}`}>
-                            {q.label}
-                            {q.is_required && <span className="text-destructive ml-1">*</span>}
-                        </Label>
+                        {isSectionBlock(q) ? (
+                            <h4 className="text-base font-semibold tracking-tight">{q.label}</h4>
+                        ) : (
+                            <Label htmlFor={`q_${q.id}`}>
+                                {q.label}
+                                {q.is_required && <span className="text-destructive ml-1">*</span>}
+                            </Label>
+                        )}
                         <QuestionHelp text={q.help_text} imageUrl={q.help_image_url} />
+
+                        {q.question_type === 'dropdown' && q.options && (
+                            <select
+                                id={`q_${q.id}`}
+                                value={regAnswers[q.id] ?? ''}
+                                onChange={(e) => setRegAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                                className="w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                                <option value="">Choose…</option>
+                                {q.options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                        )}
 
                         {q.question_type === 'date' && (
                             <Input

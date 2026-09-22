@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Loader2, ClipboardList } from 'lucide-react'
 import { RegistrationFileInput } from './registration-file-input'
 import { QuestionHelp } from './question-help'
-import { visibleQuestions } from '@/lib/events/question-visibility'
+import { visibleQuestions, isSectionBlock } from '@/lib/events/question-visibility'
 import { cn } from '@/lib/utils'
 
 export interface RegistrationAnswer {
@@ -22,7 +22,7 @@ export interface RegistrationAnswer {
 export interface QuestionForForm {
     id: string
     label: string
-    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company' | 'file' | 'date'
+    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company' | 'file' | 'date' | 'dropdown' | 'section'
     options: string[]
     is_required: boolean
     display_order: number
@@ -52,6 +52,10 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
 
     const sortedQuestions = [...questions].sort((a, b) => a.display_order - b.display_order)
     const shown = visibleQuestions(sortedQuestions, answers, null)
+    // Sections are not numbered, so the questions around them stay 1, 2, 3.
+    const numbering = new Map<string, number>()
+    shown.filter(q => !isSectionBlock(q)).forEach((q, i) => numbering.set(q.id, i + 1))
+    const numberOf = (id: string) => numbering.get(id) ?? 0
 
     const setAnswer = (questionId: string, value: string) => {
         setAnswers(prev => ({ ...prev, [questionId]: value }))
@@ -70,7 +74,7 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
         const newErrors: Record<string, string> = {}
         // A hidden question is not missing — it was never asked.
         for (const q of shown) {
-            if (!q.is_required) continue
+            if (isSectionBlock(q) || !q.is_required) continue
             const val = answers[q.id] ?? ''
             if (q.question_type === 'multi_choice') {
                 const arr = val ? JSON.parse(val) : []
@@ -87,10 +91,12 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
             return
         }
 
-        const result: RegistrationAnswer[] = shown.map(q => ({
-            question_id: q.id,
-            answer: answers[q.id] ?? ''
-        }))
+        const result: RegistrationAnswer[] = shown
+            .filter(q => !isSectionBlock(q))
+            .map(q => ({
+                question_id: q.id,
+                answer: answers[q.id] ?? ''
+            }))
         onComplete(result)
     }
 
@@ -106,14 +112,32 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
                 </DialogHeader>
 
                 <div className="space-y-5 py-2">
-                    {shown.map((q, index) => (
-                        <div key={q.id} className="space-y-1.5">
-                            <Label className="text-sm font-medium">
-                                {index + 1}. {q.label}
-                                {q.is_required && <span className="text-destructive ml-1">*</span>}
-                            </Label>
+                    {shown.map((q) => (
+                        <div key={q.id} className={cn('space-y-1.5', isSectionBlock(q) && 'border-t pt-4 first:border-t-0 first:pt-0')}>
+                            {isSectionBlock(q) ? (
+                                <h4 className="text-base font-semibold tracking-tight">{q.label}</h4>
+                            ) : (
+                                <Label className="text-sm font-medium">
+                                    {numberOf(q.id)}. {q.label}
+                                    {q.is_required && <span className="text-destructive ml-1">*</span>}
+                                </Label>
+                            )}
 
                             <QuestionHelp text={q.help_text} imageUrl={q.help_image_url} />
+
+                            {q.question_type === 'dropdown' && (
+                                <select
+                                    value={answers[q.id] ?? ''}
+                                    onChange={e => setAnswer(q.id, e.target.value)}
+                                    className={cn(
+                                        'w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                        errors[q.id] && 'border-destructive'
+                                    )}
+                                >
+                                    <option value="">Choose…</option>
+                                    {q.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
+                            )}
 
                             {q.question_type === 'date' && (
                                 <Input

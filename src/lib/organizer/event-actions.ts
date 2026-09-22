@@ -314,7 +314,7 @@ export async function createEvent(formData: FormData) {
                             label: String(q.label).trim(),
                             question_type: q.question_type,
                             options: opts.length > 0 ? opts : null,
-                            is_required: !!q.is_required,
+                            is_required: q.question_type === 'section' ? false : !!q.is_required,
                             display_order: Number.isFinite(q.display_order) ? q.display_order : i,
                             help_text: q.help_text || null,
                             depends_on_question_id: dependsOn && dependsOn !== id ? dependsOn : null,
