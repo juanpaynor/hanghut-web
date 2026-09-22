@@ -10,6 +10,9 @@ import { createClient } from '@/lib/supabase/client'
 import { cn, hexToHsl } from '@/lib/utils'
 import { Check, ChevronLeft, ChevronRight, Loader2, Clock, PartyPopper } from 'lucide-react'
 import type { QuestionForForm } from './registration-questions-form'
+import { RegistrationFileInput } from './registration-file-input'
+import { QuestionHelp } from './question-help'
+import { visibleQuestions } from '@/lib/events/question-visibility'
 
 interface RegisterModalProps {
     open: boolean
@@ -29,6 +32,9 @@ interface RegisterModalProps {
     /** Art-directed page theme id — stamped on the dialog (which portals out of
      *  the themed page root) so the theme CSS keeps applying at checkout. */
     pageTheme?: string
+    /** 'single' puts every question on one scrolling form; 'stepper' (default)
+     *  walks them one screen at a time. Organizer's choice per event. */
+    formLayout?: 'stepper' | 'single'
 }
 
 type Phase = 'form' | 'submitting' | 'approved' | 'pending'
@@ -39,22 +45,19 @@ const slide = {
     exit: (dir: number) => ({ x: dir > 0 ? -48 : 48, opacity: 0 }),
 }
 
-export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn, onApproved, onPending, themeColor, dark, pageTheme }: RegisterModalProps) {
+export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn, onApproved, onPending, themeColor, dark, pageTheme, formLayout }: RegisterModalProps) {
     // Mirror the event page's theme inside the portal: a `dark` class flips the
     // shadcn tokens to their dark values, and the brand hue overrides --primary.
     const brandHsl = themeColor ? hexToHsl(themeColor) : null
     const brandVars = brandHsl
         ? ({ ['--primary']: brandHsl, ['--ring']: brandHsl, ['--hh-accent']: themeColor } as React.CSSProperties)
         : undefined
+
+    const singlePage = formLayout === 'single'
+
     const sorted = useMemo(
         () => [...questions].sort((a, b) => a.display_order - b.display_order),
         [questions]
-    )
-    // Guests answer an identity step first (name + email) so the registration
-    // can be attributed without a login.
-    const steps = useMemo<('identity' | QuestionForForm)[]>(
-        () => (isLoggedIn ? sorted : ['identity', ...sorted]),
-        [isLoggedIn, sorted]
     )
 
     const [step, setStep] = useState(0)
@@ -66,12 +69,33 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
     const [email, setEmail] = useState('')
     const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
 
+    // No tier is chosen yet — the buyer registers first, picks a ticket second.
+    // Tier-scoped questions are therefore not asked here at all; checkout asks
+    // them once it knows which ticket was picked.
+    const shown = useMemo(
+        () => visibleQuestions(sorted, answers, null),
+        [sorted, answers]
+    )
+
+    // Guests answer an identity step first (name + email) so the registration
+    // can be attributed without a login.
+    const steps = useMemo<('identity' | QuestionForForm)[]>(
+        () => (isLoggedIn ? shown : ['identity', ...shown]),
+        [isLoggedIn, shown]
+    )
+
     const current = steps[step]
     const isLast = step === steps.length - 1
-    const progress = Math.round(((step + 1) / steps.length) * 100)
+    const progress = Math.round(((step + 1) / Math.max(steps.length, 1)) * 100)
 
-    // Logged-in registrant with no questions → nothing to fill in. Register
-    // immediately instead of rendering an empty (undefined) step.
+    // Revealing or hiding a question can shrink the list under the cursor —
+    // never leave the stepper parked past the end.
+    useEffect(() => {
+        if (!singlePage && step > steps.length - 1) setStep(Math.max(steps.length - 1, 0))
+    }, [steps.length, step, singlePage])
+
+    // Nothing to fill in (logged-in registrant, no questions) → register
+    // immediately instead of rendering an empty step.
     useEffect(() => {
         if (open && phase === 'form' && steps.length === 0) submit()
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -81,18 +105,29 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
         setAnswers((prev) => ({ ...prev, [qid]: value }))
     }
 
-    function stepValid(): boolean {
-        if (!current) return false
-        if (current === 'identity') {
-            // Shared with checkout so both doors into a ticket agree on what a
-            // usable address is.
-            return name.trim().length > 0 && isEmailUsable(email)
-        }
-        const q = current
+    function identityValid(): boolean {
+        // Shared with checkout so both doors into a ticket agree on what a
+        // usable address is.
+        return name.trim().length > 0 && isEmailUsable(email)
+    }
+
+    function questionAnswered(q: QuestionForForm): boolean {
         if (!q.is_required) return true
         const v = answers[q.id]
         if (Array.isArray(v)) return v.length > 0
         return !!v && String(v).trim().length > 0
+    }
+
+    function stepValid(): boolean {
+        if (!current) return false
+        if (current === 'identity') return identityValid()
+        return questionAnswered(current)
+    }
+
+    /** Single-page mode: everything on screen must be satisfied at once. */
+    function pageValid(): boolean {
+        if (!isLoggedIn && !identityValid()) return false
+        return shown.every(questionAnswered)
     }
 
     function go(next: number) {
@@ -106,7 +141,9 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
         setError(null)
         try {
             const supabase = createClient()
-            const payload = sorted
+            // Only send what was actually asked. A hidden question has no answer
+            // and must not be reported as one.
+            const payload = shown
                 .map((q) => {
                     const v = answers[q.id]
                     if (v == null || (Array.isArray(v) ? v.length === 0 : String(v).trim() === '')) return null
@@ -157,13 +194,39 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
         else go(step + 1)
     }
 
+    const identityBlock = (
+        <div className="space-y-4">
+            <div className="space-y-2">
+                <label className="text-sm font-medium">Full name</label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Juan dela Cruz" />
+            </div>
+            <div className="space-y-2">
+                <label className="text-sm font-medium">Email</label>
+                <Input type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" />
+                {(() => {
+                    const hint = suggestEmail(email)
+                    return hint ? (
+                        <p className="text-xs text-muted-foreground">
+                            Did you mean{' '}
+                            <button type="button" onClick={() => setEmail(hint)}
+                                className="font-semibold text-foreground underline underline-offset-2 hover:no-underline">
+                                {hint}
+                            </button>?
+                        </p>
+                    ) : null
+                })()}
+                <p className="text-xs text-muted-foreground">Your ticket and updates go here.</p>
+            </div>
+        </div>
+    )
+
     return (
         <Dialog open={open} onOpenChange={(o) => { if (!o) { /* reset on close */ setStep(0); setPhase('form') } onOpenChange(o) }}>
             <DialogContent data-hh-theme={pageTheme || undefined} data-hh-modal={pageTheme ? '' : undefined} className={cn('w-[calc(100%-1.5rem)] sm:w-full max-w-xl overflow-hidden p-0 gap-0 flex flex-col max-h-[88vh] rounded-xl', dark && 'dark bg-background text-foreground')} style={brandVars}>
                 <DialogTitle className="sr-only">Register for {event.title}</DialogTitle>
 
-                {/* Progress bar */}
-                {phase === 'form' && (
+                {/* Progress bar — a step count means nothing on a single page. */}
+                {phase === 'form' && !singlePage && (
                     <div className="h-1 w-full bg-muted">
                         <motion.div
                             className="h-full bg-primary"
@@ -185,7 +248,33 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                     {/* Body */}
                     <div className="flex-1">
                         <AnimatePresence mode="wait" custom={dir} initial={false}>
-                            {phase === 'form' && (
+                            {phase === 'form' && singlePage && (
+                                <motion.div
+                                    key="single"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    className="space-y-7"
+                                >
+                                    {!isLoggedIn && (
+                                        <div className="space-y-4">
+                                            <h3 className="text-base font-bold tracking-tight">Who&apos;s registering?</h3>
+                                            {identityBlock}
+                                        </div>
+                                    )}
+                                    {shown.map((q) => (
+                                        <QuestionStep
+                                            key={q.id}
+                                            q={q}
+                                            value={answers[q.id]}
+                                            onChange={(v) => setAnswer(q.id, v)}
+                                            eventId={event.id}
+                                            compact
+                                        />
+                                    ))}
+                                </motion.div>
+                            )}
+
+                            {phase === 'form' && !singlePage && (
                                 <motion.div
                                     key={step}
                                     custom={dir}
@@ -199,30 +288,10 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                                     {current === 'identity' ? (
                                         <div className="space-y-4">
                                             <h3 className="text-lg sm:text-xl font-bold tracking-tight">First, who&apos;s registering?</h3>
-                                            <div className="space-y-2">
-                                                <label className="text-sm font-medium">Full name</label>
-                                                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Juan dela Cruz" autoFocus />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <label className="text-sm font-medium">Email</label>
-                                                <Input type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" />
-                                                {(() => {
-                                                    const hint = suggestEmail(email)
-                                                    return hint ? (
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Did you mean{' '}
-                                                            <button type="button" onClick={() => setEmail(hint)}
-                                                                className="font-semibold text-foreground underline underline-offset-2 hover:no-underline">
-                                                                {hint}
-                                                            </button>?
-                                                        </p>
-                                                    ) : null
-                                                })()}
-                                                <p className="text-xs text-muted-foreground">Your ticket and updates go here.</p>
-                                            </div>
+                                            {identityBlock}
                                         </div>
                                     ) : current ? (
-                                        <QuestionStep q={current} value={answers[current.id]} onChange={(v) => setAnswer(current.id, v)} />
+                                        <QuestionStep q={current} value={answers[current.id]} onChange={(v) => setAnswer(current.id, v)} eventId={event.id} />
                                     ) : null}
                                 </motion.div>
                             )}
@@ -275,7 +344,16 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                 </div>
 
                 {/* Footer — pinned below the scrollable questions */}
-                {phase === 'form' && current && (
+                {phase === 'form' && singlePage && (
+                    <div className="shrink-0 border-t px-5 sm:px-7 py-4 space-y-3 bg-background">
+                        {error && <p className="text-sm text-destructive">{error}</p>}
+                        <Button className="w-full" onClick={submit} disabled={!pageValid()}>
+                            <PartyPopper className="mr-1.5 h-4 w-4" /> Submit
+                        </Button>
+                    </div>
+                )}
+
+                {phase === 'form' && !singlePage && current && (
                     <div className="shrink-0 border-t px-5 sm:px-7 py-4 space-y-3 bg-background">
                         {error && <p className="text-sm text-destructive">{error}</p>}
                         <div className="flex items-center justify-between">
@@ -301,7 +379,14 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
 }
 
 // ─── Per-question input ──────────────────────────────────────────────────────
-function QuestionStep({ q, value, onChange }: { q: QuestionForForm; value: string | string[] | undefined; onChange: (v: string | string[]) => void }) {
+function QuestionStep({ q, value, onChange, eventId, compact }: {
+    q: QuestionForForm
+    value: string | string[] | undefined
+    onChange: (v: string | string[]) => void
+    eventId: string
+    /** One of many on a single page, rather than the hero of its own screen. */
+    compact?: boolean
+}) {
     const str = typeof value === 'string' ? value : ''
     const arr = Array.isArray(value) ? value : []
     // Long labels (consent/policy text) shouldn't render as a giant hero
@@ -313,17 +398,38 @@ function QuestionStep({ q, value, onChange }: { q: QuestionForForm; value: strin
         <div className="space-y-4">
             <h3 className={cn(
                 'tracking-tight',
-                longLabel
-                    ? 'text-sm sm:text-base font-medium leading-relaxed text-foreground'
-                    : 'text-lg sm:text-xl font-bold'
+                compact
+                    ? 'text-sm font-medium leading-relaxed'
+                    : longLabel
+                        ? 'text-sm sm:text-base font-medium leading-relaxed text-foreground'
+                        : 'text-lg sm:text-xl font-bold'
             )}>
                 {q.label}
                 {q.is_required && <span className="ml-1 text-destructive">*</span>}
             </h3>
 
+            <QuestionHelp text={q.help_text} imageUrl={q.help_image_url} />
+
+            {q.question_type === 'date' && (
+                <Input
+                    type="date"
+                    value={str}
+                    onChange={(e) => onChange(e.target.value)}
+                />
+            )}
+
+            {q.question_type === 'file' && (
+                <RegistrationFileInput
+                    eventId={eventId}
+                    questionId={q.id}
+                    value={str}
+                    onChange={(v) => onChange(v)}
+                />
+            )}
+
             {(q.question_type === 'short_text' || q.question_type === 'url' || q.question_type === 'social_profile' || q.question_type === 'company') && (
                 <Input
-                    autoFocus
+                    autoFocus={!compact}
                     value={str}
                     onChange={(e) => onChange(e.target.value)}
                     placeholder={
@@ -337,7 +443,7 @@ function QuestionStep({ q, value, onChange }: { q: QuestionForForm; value: strin
 
             {q.question_type === 'long_text' && (
                 <textarea
-                    autoFocus
+                    autoFocus={!compact}
                     rows={4}
                     value={str}
                     onChange={(e) => onChange(e.target.value)}
@@ -370,11 +476,12 @@ function QuestionStep({ q, value, onChange }: { q: QuestionForForm; value: strin
                             type="button"
                             onClick={() => onChange(opt)}
                             className={cn(
-                                'flex w-full items-center gap-3 rounded-xl border-2 p-3.5 text-left text-sm transition-all',
+                                'flex w-full items-center gap-3 rounded-xl border-2 text-left text-sm transition-all',
+                                compact ? 'p-3' : 'p-3.5',
                                 str === opt ? 'border-primary bg-primary/5 font-medium' : 'border-border hover:border-primary/40'
                             )}
                         >
-                            <span className={cn('h-4 w-4 rounded-full border-2', str === opt ? 'border-primary bg-primary' : 'border-muted-foreground/40')} />
+                            <span className={cn('h-4 w-4 shrink-0 rounded-full border-2', str === opt ? 'border-primary bg-primary' : 'border-muted-foreground/40')} />
                             {opt}
                         </button>
                     ))}
@@ -391,11 +498,12 @@ function QuestionStep({ q, value, onChange }: { q: QuestionForForm; value: strin
                                 type="button"
                                 onClick={() => onChange(checked ? arr.filter((o) => o !== opt) : [...arr, opt])}
                                 className={cn(
-                                    'flex w-full items-center gap-3 rounded-xl border-2 p-3.5 text-left text-sm transition-all',
+                                    'flex w-full items-center gap-3 rounded-xl border-2 text-left text-sm transition-all',
+                                    compact ? 'p-3' : 'p-3.5',
                                     checked ? 'border-primary bg-primary/5 font-medium' : 'border-border hover:border-primary/40'
                                 )}
                             >
-                                <span className={cn('flex h-4 w-4 items-center justify-center rounded border-2', checked ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40')}>
+                                <span className={cn('flex h-4 w-4 shrink-0 items-center justify-center rounded border-2', checked ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40')}>
                                     {checked && <Check className="h-3 w-3" />}
                                 </span>
                                 {opt}

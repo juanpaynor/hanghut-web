@@ -9,6 +9,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Loader2, ClipboardList } from 'lucide-react'
+import { RegistrationFileInput } from './registration-file-input'
+import { QuestionHelp } from './question-help'
+import { visibleQuestions } from '@/lib/events/question-visibility'
 import { cn } from '@/lib/utils'
 
 export interface RegistrationAnswer {
@@ -19,10 +22,19 @@ export interface RegistrationAnswer {
 export interface QuestionForForm {
     id: string
     label: string
-    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company'
+    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company' | 'file' | 'date'
     options: string[]
     is_required: boolean
     display_order: number
+    /** Guidance shown under the label — e.g. how to read a size chart. */
+    help_text?: string | null
+    /** An image shown with the question. A size chart is the motivating case. */
+    help_image_url?: string | null
+    /** Only ask this when depends_on_question_id holds one of depends_on_values. */
+    depends_on_question_id?: string | null
+    depends_on_values?: string[] | null
+    /** Only ask this of buyers on these ticket tiers. Empty = everyone. */
+    tier_ids?: string[] | null
 }
 
 interface Props {
@@ -37,6 +49,9 @@ interface Props {
 export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose, onComplete, isLoading }: Props) {
     const [answers, setAnswers] = useState<Record<string, string>>({})
     const [errors, setErrors] = useState<Record<string, string>>({})
+
+    const sortedQuestions = [...questions].sort((a, b) => a.display_order - b.display_order)
+    const shown = visibleQuestions(sortedQuestions, answers, null)
 
     const setAnswer = (questionId: string, value: string) => {
         setAnswers(prev => ({ ...prev, [questionId]: value }))
@@ -53,12 +68,16 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
 
     const handleSubmit = () => {
         const newErrors: Record<string, string> = {}
-        for (const q of questions) {
+        // A hidden question is not missing — it was never asked.
+        for (const q of shown) {
             if (!q.is_required) continue
             const val = answers[q.id] ?? ''
             if (q.question_type === 'multi_choice') {
                 const arr = val ? JSON.parse(val) : []
                 if (arr.length === 0) newErrors[q.id] = 'This field is required'
+            } else if (q.question_type === 'file') {
+                // The answer is a JSON record of the upload, not typed text.
+                if (!val.trim()) newErrors[q.id] = 'Please upload a file'
             } else if (!val.trim()) {
                 newErrors[q.id] = 'This field is required'
             }
@@ -68,14 +87,12 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
             return
         }
 
-        const result: RegistrationAnswer[] = questions.map(q => ({
+        const result: RegistrationAnswer[] = shown.map(q => ({
             question_id: q.id,
             answer: answers[q.id] ?? ''
         }))
         onComplete(result)
     }
-
-    const sortedQuestions = [...questions].sort((a, b) => a.display_order - b.display_order)
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
@@ -89,12 +106,33 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
                 </DialogHeader>
 
                 <div className="space-y-5 py-2">
-                    {sortedQuestions.map((q, index) => (
+                    {shown.map((q, index) => (
                         <div key={q.id} className="space-y-1.5">
                             <Label className="text-sm font-medium">
                                 {index + 1}. {q.label}
                                 {q.is_required && <span className="text-destructive ml-1">*</span>}
                             </Label>
+
+                            <QuestionHelp text={q.help_text} imageUrl={q.help_image_url} />
+
+                            {q.question_type === 'date' && (
+                                <Input
+                                    type="date"
+                                    value={answers[q.id] ?? ''}
+                                    onChange={e => setAnswer(q.id, e.target.value)}
+                                    className={cn(errors[q.id] && 'border-destructive')}
+                                />
+                            )}
+
+                            {q.question_type === 'file' && (
+                                <RegistrationFileInput
+                                    eventId={eventId}
+                                    questionId={q.id}
+                                    value={answers[q.id] ?? ''}
+                                    onChange={(v) => setAnswer(q.id, v)}
+                                    disabled={isLoading}
+                                />
+                            )}
 
                             {q.question_type === 'short_text' && (
                                 <Input

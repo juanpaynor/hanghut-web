@@ -67,7 +67,12 @@ export default async function CheckoutPage({
                     question_type,
                     options,
                     is_required,
-                    display_order
+                    display_order,
+                    help_text,
+                    help_image_url,
+                    depends_on_question_id,
+                    depends_on_values,
+                    tier_ids
                 )
             `)
             .eq('id', eventId)

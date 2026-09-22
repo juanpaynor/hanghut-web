@@ -264,7 +264,7 @@ export async function getEventRegistrations(
  * into a streamed route with tier/payment columns; for now it is correct and
  * capped, which is the part that matters.
  */
-export type AnswerFieldKind = 'choice' | 'contact' | 'freetext' | 'longform'
+export type AnswerFieldKind = 'choice' | 'contact' | 'freetext' | 'longform' | 'file'
 
 export interface AnswerQuestionStats {
     question_id: string

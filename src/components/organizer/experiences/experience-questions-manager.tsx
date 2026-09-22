@@ -17,6 +17,7 @@ export function ExperienceQuestionsManager({ tableId, initialQuestions }: Props)
         <RegistrationQuestionsManager
             initialQuestions={initialQuestions}
             saveFn={(questions) => saveExperienceQuestions(tableId, questions)}
+            advanced={false}
             heading="Booking Questions"
             subheading="Guests answer these while booking, before they pay. Their answers show up with each booking."
         />

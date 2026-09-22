@@ -4,21 +4,31 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { ClipboardList } from 'lucide-react'
+import { RegistrationFileInput } from '@/components/events/registration-file-input'
+import { QuestionHelp } from '@/components/events/question-help'
 
 interface RegistrationQuestion {
     id: string
     label: string
-    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company'
+    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company' | 'file' | 'date'
     options: string[] | null
     is_required: boolean
     display_order: number
+    help_text?: string | null
+    help_image_url?: string | null
+    tier_ids?: string[] | null
 }
 
 interface Props {
+    /** Needed to mint an upload URL for file questions. */
+    eventId: string
     registrationQuestions: RegistrationQuestion[]
     regAnswers: Record<string, any>
     setRegAnswers: React.Dispatch<React.SetStateAction<Record<string, any>>>
     requireApproval: boolean
+    /** True when the buyer already registered and these are only the questions
+     *  that depend on the ticket they just picked. */
+    tierOnly?: boolean
 }
 
 /**
@@ -27,18 +37,20 @@ interface Props {
  * approval / custom questions don't ship this code. The parent still owns
  * `regAnswers` and feeds it to the payment flow — behavior is unchanged.
  */
-export function RegistrationQuestionsCard({ registrationQuestions, regAnswers, setRegAnswers, requireApproval }: Props) {
+export function RegistrationQuestionsCard({ eventId, registrationQuestions, regAnswers, setRegAnswers, requireApproval, tierOnly }: Props) {
     return (
         <Card className="border-border/50 shadow-sm">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-primary">
                     <ClipboardList className="w-5 h-5" />
-                    Registration Questions
+                    {tierOnly ? 'A few more details' : 'Registration Questions'}
                 </CardTitle>
                 <CardDescription>
-                    {requireApproval
-                        ? 'The organizer requires approval for this event. Please answer the questions below.'
-                        : 'Please answer the following questions to complete your registration.'}
+                    {tierOnly
+                        ? 'These apply to the ticket you picked.'
+                        : requireApproval
+                            ? 'The organizer requires approval for this event. Please answer the questions below.'
+                            : 'Please answer the following questions to complete your registration.'}
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -48,6 +60,26 @@ export function RegistrationQuestionsCard({ registrationQuestions, regAnswers, s
                             {q.label}
                             {q.is_required && <span className="text-destructive ml-1">*</span>}
                         </Label>
+                        <QuestionHelp text={q.help_text} imageUrl={q.help_image_url} />
+
+                        {q.question_type === 'date' && (
+                            <Input
+                                id={`q_${q.id}`}
+                                type="date"
+                                value={regAnswers[q.id] ?? ''}
+                                onChange={(e) => setRegAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                                className="bg-muted/30"
+                            />
+                        )}
+
+                        {q.question_type === 'file' && (
+                            <RegistrationFileInput
+                                eventId={eventId}
+                                questionId={q.id}
+                                value={regAnswers[q.id] ?? ''}
+                                onChange={(v) => setRegAnswers(prev => ({ ...prev, [q.id]: v }))}
+                            />
+                        )}
                         {(q.question_type === 'short_text' || q.question_type === 'url' || q.question_type === 'social_profile' || q.question_type === 'company') && (
                             <Input
                                 id={`q_${q.id}`}

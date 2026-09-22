@@ -115,3 +115,51 @@ export async function toggleAutomation(trigger_type: AutomationTrigger, enabled:
     revalidatePath('/organizer/marketing')
     return { success: true as const }
 }
+
+export interface AutomationStats {
+    runs: number
+    campaigns: number
+    sent: number
+    delivered: number
+    opened: number
+    clicked: number
+    bounced: number
+    orders: number
+    revenue: number
+    last_fired: string | null
+}
+
+/**
+ * Live performance per automation, so the tab can answer the question it
+ * currently can't: is this thing actually doing anything?
+ *
+ * An automation is the one part of marketing that runs while nobody is looking.
+ * Mimic's abandoned-cart automation had been firing for a day before anyone
+ * could tell from the UI — it showed the same static config card whether the
+ * automation had sent nothing or had recovered money.
+ *
+ * Aggregated in SQL (get_automation_performance) rather than here, because the
+ * naive version of this join fans out: runs × campaigns multiplies every total.
+ */
+export async function getAutomationPerformance(): Promise<Record<string, AutomationStats>> {
+    const supabase = await createClient()
+    const partnerId = await resolvePartnerId(supabase)
+    if (!partnerId) return {}
+
+    const { data, error } = await supabase.rpc('get_automation_performance', { p_partner_id: partnerId })
+    if (error) {
+        console.error('getAutomationPerformance failed', error)
+        return {}
+    }
+    return (data ?? {}) as Record<string, AutomationStats>
+}
+
+/** The partner's own name, for the AI brief and the preview's token merge. */
+export async function getPartnerContext(): Promise<{ id: string; business_name: string } | null> {
+    const supabase = await createClient()
+    const partnerId = await resolvePartnerId(supabase)
+    if (!partnerId) return null
+    const { data } = await supabase
+        .from('partners').select('id, business_name').eq('id', partnerId).maybeSingle()
+    return data ? { id: data.id, business_name: data.business_name } : null
+}

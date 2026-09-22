@@ -21,6 +21,8 @@ import {
     AnswerStats,
 } from '@/lib/organizer/registration-management-actions'
 import { AnswerInsights } from '@/components/organizer/answer-insights'
+import { RegistrationFileLink, collectFilePaths, parseFileAnswerClient } from '@/components/organizer/registration-file-link'
+import { getRegistrationFileUrls } from '@/lib/events/registration-upload-actions'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
@@ -46,12 +48,15 @@ function RegistrationCard({
     reg,
     eventId,
     labelFor,
+    fileUrls,
     onUpdate,
 }: {
     reg: EventRegistration
     eventId: string
     /** Answers arrive keyed by question id; the label lives in one shared list. */
     labelFor: (questionId: string) => string
+    /** Signed URLs for this page's uploads, keyed by storage path. */
+    fileUrls: Record<string, string>
     onUpdate: (id: string, newStatus: string) => void
 }) {
     const { toast } = useToast()
@@ -173,14 +178,30 @@ function RegistrationCard({
 
                     {expanded && (
                         <div className="mt-2 space-y-2">
-                            {reg.answers.map((a, i) => (
-                                <div key={i} className="bg-muted/50 rounded p-2">
-                                    <p className="text-xs font-medium text-muted-foreground">{labelFor(a.question_id)}</p>
-                                    <p className="text-sm mt-0.5">
-                                        {Array.isArray(a.answer) ? a.answer.join(', ') : String(a.answer ?? '—')}
-                                    </p>
-                                </div>
-                            ))}
+                            {reg.answers.map((a, i) => {
+                                // A file answer is a JSON record of an upload, not text —
+                                // printing it raw would show a storage path.
+                                const isFile = typeof a.answer === 'string'
+                                    && a.answer.trim().startsWith('{')
+                                    && a.answer.includes('"path"')
+                                const filePath = isFile ? parseFileAnswerClient(a.answer)?.path : undefined
+                                return (
+                                    <div key={i} className="bg-muted/50 rounded p-2">
+                                        <p className="text-xs font-medium text-muted-foreground">{labelFor(a.question_id)}</p>
+                                        {isFile ? (
+                                            <RegistrationFileLink
+                                                eventId={reg.event_id}
+                                                raw={a.answer}
+                                                url={filePath ? fileUrls[filePath] : undefined}
+                                            />
+                                        ) : (
+                                            <p className="text-sm mt-0.5">
+                                                {Array.isArray(a.answer) ? a.answer.join(', ') : String(a.answer ?? '—')}
+                                            </p>
+                                        )}
+                                    </div>
+                                )
+                            })}
                         </div>
                     )}
                 </div>
@@ -200,6 +221,19 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const [loading, setLoading] = useState(false)
     const [exporting, setExporting] = useState(false)
     const [stats, setStats] = useState<AnswerStats | null>(initialStats)
+    // Signed URLs for the uploads on the CURRENT page only. They expire, so
+    // they are fetched per page rather than held for the whole event.
+    const [fileUrls, setFileUrls] = useState<Record<string, string>>({})
+
+    useEffect(() => {
+        const paths = collectFilePaths(data.registrations)
+        if (!paths.length) { setFileUrls({}); return }
+        let cancelled = false
+        getRegistrationFileUrls(eventId, paths).then(urls => {
+            if (!cancelled) setFileUrls(urls)
+        })
+        return () => { cancelled = true }
+    }, [data.registrations, eventId])
 
     // Stats are whole-event totals, so they do NOT move when the reader pages
     // or searches — only when the underlying answers change.
@@ -329,6 +363,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
                             reg={reg}
                             eventId={eventId}
                             labelFor={labelFor}
+                            fileUrls={fileUrls}
                             onUpdate={handleUpdate}
                         />
                     ))}

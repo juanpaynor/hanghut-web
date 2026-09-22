@@ -10,7 +10,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { BarChart3, Lock, SlidersHorizontal, Loader2, FileText } from 'lucide-react'
+import { BarChart3, Lock, SlidersHorizontal, Loader2, FileText, Paperclip } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import {
     setQuestionAnalyticsKind,
@@ -38,6 +38,7 @@ const KIND_LABEL: Record<AnswerFieldKind, string> = {
     contact: 'Contact data',
     freetext: 'Short answers',
     longform: 'Written answers',
+    file: 'File uploads',
 }
 
 function Bar({ value, n, total }: { value: string; n: number; total: number }) {
@@ -130,7 +131,16 @@ function QuestionBlock({
                 </DropdownMenu>
             </div>
 
-            {q.kind === 'contact' ? (
+            {q.kind === 'file' ? (
+                <div className="flex items-start gap-2 rounded-lg bg-muted/50 px-3 py-2.5">
+                    <Paperclip className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                        <strong>{q.answered.toLocaleString()}</strong>{' '}
+                        {q.answered === 1 ? 'file' : 'files'} uploaded. Open them from each
+                        response, or download them with the export.
+                    </p>
+                </div>
+            ) : q.kind === 'contact' ? (
                 /* Contact values never leave the database for this panel. A list
                    of 472 phone numbers is not an insight, and charting it would
                    put every attendee's number on screen at once. */

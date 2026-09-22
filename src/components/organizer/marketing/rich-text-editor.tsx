@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
+import { PreserveStyles, isComplexEmailHtml } from './preserve-styles'
 import { Bold, Italic, List, ListOrdered, Link as LinkIcon, Undo, Redo, Strikethrough, Image as ImageIcon, Code2, Eye, PenLine } from 'lucide-react'
 import { Toggle } from '@/components/ui/toggle'
 import { Separator } from '@/components/ui/separator'
@@ -21,14 +22,22 @@ type EditorTab = 'visual' | 'html' | 'preview'
 
 export function RichTextEditor({ value, onChange, disabled }: RichTextEditorProps) {
     const [uploading, setUploading] = useState(false)
-    const [activeTab, setActiveTab] = useState<EditorTab>('visual')
+    // A table-based email template cannot survive the Visual tab (no table
+    // extension is loaded), so it opens in HTML rather than being rewritten
+    // into a few bare paragraphs the moment it is shown.
+    const [activeTab, setActiveTab] = useState<EditorTab>(
+        () => (isComplexEmailHtml(value) ? 'html' : 'visual'))
     const [rawHtml, setRawHtml] = useState(value)
+    const [visualBlocked, setVisualBlocked] = useState(false)
     const supabase = createClient()
 
     const editor = useEditor({
         immediatelyRender: false,
         extensions: [
             StarterKit,
+            // Without this, every style="" on the way in is discarded and the
+            // stripped result is what onUpdate saves back.
+            PreserveStyles,
             Link.configure({
                 openOnClick: false,
                 HTMLAttributes: {
@@ -71,6 +80,17 @@ export function RichTextEditor({ value, onChange, disabled }: RichTextEditorProp
 
     function switchTab(tab: EditorTab) {
         if (tab === activeTab) return
+
+        // Going INTO Visual with table markup would silently flatten it — the
+        // editor cannot represent tables, so setContent drops them and the next
+        // keystroke saves the flattened version over the template. Refuse the
+        // switch and explain, rather than destroying their work.
+        if (tab === 'visual' && isComplexEmailHtml(rawHtml)) {
+            setVisualBlocked(true)
+            return
+        }
+        setVisualBlocked(false)
+
         if (activeTab === 'visual' && editor) {
             // sync visual → raw
             const html = editor.getHTML()
@@ -260,6 +280,13 @@ export function RichTextEditor({ value, onChange, disabled }: RichTextEditorProp
 
             {activeTab === 'visual' && (
                 <EditorContent editor={editor} className="flex-1 p-2" />
+            )}
+
+            {visualBlocked && (
+                <p className="px-3 py-2 text-xs text-amber-600 dark:text-amber-500 border-b bg-amber-50 dark:bg-amber-950/30">
+                    This email uses a table layout, which the visual editor can&apos;t show without
+                    breaking it. Edit the HTML here, or use Preview to see how it looks.
+                </p>
             )}
 
             {activeTab === 'html' && (

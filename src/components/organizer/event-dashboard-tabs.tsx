@@ -224,6 +224,8 @@ export function EventDashboardTabs({
                 <RegistrationQuestionsManager
                     eventId={eventId}
                     initialQuestions={initialQuestions}
+                    tiers={tiers}
+                    initialFormLayout={event?.layout_config?.registration?.layout}
                 />
             </TabsContent>
 

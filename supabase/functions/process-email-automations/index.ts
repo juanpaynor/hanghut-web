@@ -53,6 +53,86 @@ function fmtDate(iso?: string | null): string {
     } catch { return "" }
 }
 
+function esc(v: string): string {
+    return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+}
+
+/**
+ * Event tokens for an automation's email.
+ *
+ * An automation is authored once and reused across every event, so the event
+ * cannot be baked in at write time -- which is why announcements had no poster
+ * and no link: the worker only ever supplied the title and the date.
+ *
+ * {{event_card}} expands to the same table-based block the composer's "Insert
+ * event" produces, so an organizer gets the image, price, venue and a Get
+ * Tickets button by typing one token. The atomic tokens are there for anyone
+ * who wants to lay it out themselves.
+ *
+ * Cached per invocation: the time-based scan commonly fires several automations
+ * against the same event, and this would otherwise refetch it each time.
+ */
+const eventTokenCache = new Map<string, Record<string, string>>()
+
+async function eventTokens(supabase: any, eventId?: string | null): Promise<Record<string, string>> {
+    if (!eventId) return {}
+    const hit = eventTokenCache.get(eventId)
+    if (hit) return hit
+
+    const { data: ev } = await supabase
+        .from("events")
+        .select("id, title, cover_image_url, start_datetime, venue_name, city, ticket_price, is_online, ticket_tiers(price, is_active)")
+        .eq("id", eventId)
+        .maybeSingle()
+
+    if (!ev) return {}
+
+    const url = `https://hanghut.com/events/${ev.id}`
+    const image = ev.cover_image_url || ""
+    // Online events have no venue at all -- printing "null, null" in an email
+    // is worse than printing nothing.
+    const venue = ev.is_online
+        ? "Online event"
+        : [ev.venue_name, ev.city].filter(Boolean).join(", ")
+
+    const activeTiers = ((ev.ticket_tiers as { price: number; is_active: boolean }[] | null) || [])
+        .filter((t) => t.is_active)
+    const price = activeTiers.length
+        ? Math.min(...activeTiers.map((t) => Number(t.price)))
+        : Number(ev.ticket_price || 0)
+    const priceLabel = price === 0 ? "Free" : `From \u20b1${price.toLocaleString()}`
+    const dateStr = fmtDate(ev.start_datetime)
+
+    const cover = image
+        ? `<a href="${url}" style="text-decoration:none;"><img src="${esc(image)}" alt="" width="100%" style="display:block;width:100%;height:auto;border:0;" /></a>`
+        : ""
+
+    const card = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;border-collapse:separate;">
+<tr><td style="border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+${cover}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:18px 20px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+<p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#4f46e5;text-transform:uppercase;letter-spacing:.05em;">${esc(priceLabel)}</p>
+<h2 style="margin:0 0 10px;font-size:20px;line-height:1.25;font-weight:800;color:#111827;">${esc(ev.title || "")}</h2>
+${dateStr ? `<p style="margin:0 0 4px;font-size:14px;color:#475569;">\ud83d\udcc5 ${esc(dateStr)}</p>` : ""}
+${venue ? `<p style="margin:0 0 16px;font-size:14px;color:#475569;">\ud83d\udccd ${esc(venue)}</p>` : '<div style="height:12px"></div>'}
+<a href="${url}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:11px 26px;border-radius:999px;">Get Tickets \u2192</a>
+</td></tr></table>
+</td></tr></table>`
+
+    const tokens: Record<string, string> = {
+        event_title: ev.title ?? "",
+        event_date: dateStr,
+        event_url: url,
+        event_image: image,
+        event_venue: venue,
+        event_price: priceLabel,
+        event_card: card,
+    }
+    eventTokenCache.set(eventId, tokens)
+    return tokens
+}
+
 // Calendar-quarter key matching SQL to_char(now(),'YYYY"Q"Q'), e.g. "2026Q3".
 // The winback dedup_key is "<email>:<quarterKey>" so a customer is re-eligible
 // for a winback email at most once per quarter.
@@ -204,8 +284,7 @@ serve(async () => {
                 summary.event_driven++
             } else if (trigger === "new_event") {
                 const eventId = String(m.event_id)
-                const { data: ev } = await supabase
-                    .from("events").select("title, start_datetime").eq("id", eventId).maybeSingle()
+                const evTokens = await eventTokens(supabase, eventId)
                 const { data: subs } = await supabase
                     .from("partner_subscribers")
                     .select("email, unsubscribe_token, full_name")
@@ -217,7 +296,7 @@ serve(async () => {
                     automation_id: auto.id, partner_id: partnerId, trigger_type: "new_event",
                     subject: auto.subject, html_content: auto.html_content, sender_name: senderName,
                     recipients, dedup_key: eventId,
-                    tokens: { event_title: ev?.title ?? "", event_date: fmtDate(ev?.start_datetime), business_name: senderName },
+                    tokens: { ...evTokens, business_name: senderName },
                     segment: "all_subscribers", event_id: eventId,
                 })
                 summary.event_driven++
@@ -250,7 +329,13 @@ serve(async () => {
                 automation_id: row.automation_id, partner_id: row.partner_id, trigger_type: row.trigger_type,
                 subject: row.subject, html_content: row.html_content, sender_name: row.business_name || "HangHut",
                 recipients, dedup_key: row.event_id,
-                tokens: { event_title: row.event_title ?? "", event_date: fmtDate(row.trigger_type === "post_event" ? row.event_end : row.event_start), business_name: row.business_name || "HangHut" },
+                tokens: {
+                    ...(await eventTokens(supabase, row.event_id)),
+                    // A post-event email should date itself from when the event
+                    // ENDED, so this deliberately overrides the card's start date.
+                    event_date: fmtDate(row.trigger_type === "post_event" ? row.event_end : row.event_start),
+                    business_name: row.business_name || "HangHut",
+                },
                 segment: "event_attendees", event_id: row.event_id,
             })
             summary.time_based++
@@ -273,6 +358,7 @@ serve(async () => {
                 recipients: [{ email: row.guest_email, unsubscribe_token: null, first_name: firstName(row.guest_name) }],
                 dedup_key: row.dedup_key ?? String(row.intent_id),
                 tokens: {
+                    ...(await eventTokens(supabase, row.event_id)),
                     event_title: row.event_title ?? "",
                     checkout_url: row.checkout_url ?? "",
                     business_name: sender,

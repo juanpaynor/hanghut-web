@@ -1054,6 +1054,7 @@ export default async function PublicEventPage({
                             rsvpMode={rsvpMode}
                             rsvpLabel={rsvpLabel}
                             tierDisplay={event.layout_config?.tiers}
+                            formLayout={event.layout_config?.registration?.layout}
                         />
                         {!isLoggedIn && (
                             <LoginNudge

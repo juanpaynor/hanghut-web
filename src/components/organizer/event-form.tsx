@@ -642,11 +642,19 @@ export function EventForm({
                     .map((q, i) => {
                         const opts = (q.options || []).map(o => o.trim()).filter(Boolean)
                         return {
+                            key: q.key,
                             label: q.label.trim(),
                             question_type: q.question_type,
                             options: opts,
                             is_required: q.is_required,
                             display_order: i,
+                            help_text: q.help_text || null,
+                            // Tier scoping and help images aren't offered here —
+                            // no tiers exist yet and there's no event id to
+                            // upload against. Conditionals do work, so they have
+                            // to survive the trip.
+                            depends_on_key: q.depends_on_key || null,
+                            depends_on_values: q.depends_on_values || null,
                         }
                     })
                     .filter(q => !['single_choice', 'multi_choice'].includes(q.question_type) || q.options.length >= 2)

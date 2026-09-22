@@ -291,26 +291,55 @@ export async function createEvent(formData: FormData) {
             if (rawQ) {
                 const parsed = JSON.parse(rawQ)
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    const qRows = parsed
+                    const kept = parsed
                         .filter((q: any) => q && typeof q.label === 'string' && q.label.trim())
-                        .map((q: any, i: number) => {
-                            const opts = Array.isArray(q.options)
-                                ? q.options.filter((o: any) => typeof o === 'string' && o.trim())
-                                : []
-                            return {
-                                event_id: event.id,
-                                label: String(q.label).trim(),
-                                question_type: q.question_type,
-                                options: opts.length > 0 ? opts : null,
-                                is_required: !!q.is_required,
-                                display_order: Number.isFinite(q.display_order) ? q.display_order : i,
-                            }
-                        })
+
+                    // Ids are assigned HERE so a conditional question can point
+                    // at a sibling from the same wizard session — neither row
+                    // exists yet, so the client's own key is the only handle.
+                    const idForKey = new Map<string, string>()
+                    for (const q of kept) {
+                        if (q.key) idForKey.set(String(q.key), crypto.randomUUID())
+                    }
+
+                    const qRows = kept.map((q: any, i: number) => {
+                        const opts = Array.isArray(q.options)
+                            ? q.options.filter((o: any) => typeof o === 'string' && o.trim())
+                            : []
+                        const id = (q.key && idForKey.get(String(q.key))) || crypto.randomUUID()
+                        const dependsOn = q.depends_on_key ? idForKey.get(String(q.depends_on_key)) ?? null : null
+                        return {
+                            id,
+                            event_id: event.id,
+                            label: String(q.label).trim(),
+                            question_type: q.question_type,
+                            options: opts.length > 0 ? opts : null,
+                            is_required: !!q.is_required,
+                            display_order: Number.isFinite(q.display_order) ? q.display_order : i,
+                            help_text: q.help_text || null,
+                            depends_on_question_id: dependsOn && dependsOn !== id ? dependsOn : null,
+                            depends_on_values: Array.isArray(q.depends_on_values) && q.depends_on_values.length > 0
+                                ? q.depends_on_values
+                                : null,
+                        }
+                    })
                     if (qRows.length > 0) {
+                        // Two passes: the dependency pointer is a self-FK, so a
+                        // row cannot name a sibling that hasn't landed yet.
                         const { error: qError } = await adminSupabase
                             .from('registration_questions')
-                            .insert(qRows)
-                        if (qError) console.error('Registration question creation error:', qError)
+                            .insert(qRows.map(({ depends_on_question_id, ...rest }: any) => rest))
+                        if (qError) {
+                            console.error('Registration question creation error:', qError)
+                        } else {
+                            for (const r of qRows.filter((r: any) => r.depends_on_question_id)) {
+                                const { error: linkError } = await adminSupabase
+                                    .from('registration_questions')
+                                    .update({ depends_on_question_id: r.depends_on_question_id })
+                                    .eq('id', r.id)
+                                if (linkError) console.error('Question dependency link error:', linkError)
+                            }
+                        }
                     }
                 }
             }

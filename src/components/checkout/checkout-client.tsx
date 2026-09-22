@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { normalizeEmail, emailFormatError, suggestEmail } from '@/lib/email/validate'
 import dynamic from 'next/dynamic'
 import Image from 'next/image'
@@ -26,6 +26,7 @@ import { resolvePlatformPct, resolveFixedFee, computePassedFees } from '@/lib/pa
 import { CheckCircle2, ClipboardList, Armchair } from 'lucide-react'
 import { formatEventShortWithEnd } from '@/lib/datetime'
 import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
+import { visibleQuestions, tierOnlyQuestions } from '@/lib/events/question-visibility'
 
 // Conditionally rendered (approval/invite events or events with custom questions),
 // so it's code-split: normal checkouts never load this chunk. Default SSR keeps
@@ -37,10 +38,15 @@ const RegistrationQuestionsCard = dynamic(
 interface RegistrationQuestion {
     id: string
     label: string
-    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company'
+    question_type: 'short_text' | 'long_text' | 'single_choice' | 'multi_choice' | 'checkbox' | 'social_profile' | 'url' | 'company' | 'file' | 'date'
     options: string[] | null
     is_required: boolean
     display_order: number
+    help_text?: string | null
+    help_image_url?: string | null
+    depends_on_question_id?: string | null
+    depends_on_values?: string[] | null
+    tier_ids?: string[] | null
 }
 
 interface SubscriberDiscount {
@@ -91,6 +97,10 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     // returns 'approved' for invited emails (pre-cleared) and 'pending' for request-to-join.
     const requireApproval = event.require_approval === true || event.invite_only === true
     const hasQuestions = registrationQuestions.length > 0
+    const sortedQuestions = useMemo(
+        () => [...registrationQuestions].sort((a, b) => a.display_order - b.display_order),
+        [registrationQuestions]
+    )
     const [regAnswers, setRegAnswers] = useState<Record<string, any>>({})
     const [registrationPending, setRegistrationPending] = useState(false)
     const [approvedRegistrationId, setApprovedRegistrationId] = useState<string | null>(
@@ -99,6 +109,31 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         serverApprovedRegistrationId
         ?? (typeof window !== 'undefined' ? sessionStorage.getItem(`approved_reg_${event.id}`) : null)
     )
+
+    /**
+     * The questions THIS page asks.
+     *
+     * A buyer who already registered answered everything the register step could
+     * show them — everything except the questions scoped to a ticket tier, which
+     * that step could not know about because the tier hadn't been picked yet.
+     * Those are asked here, and only those.
+     *
+     * A buyer who has not registered (approval events, or a direct checkout
+     * link) gets the full set that applies to their tier.
+     */
+    const questionsToAsk = useMemo(
+        () => approvedRegistrationId
+            ? tierOnlyQuestions(sortedQuestions, regAnswers, tier.id)
+            : visibleQuestions(sortedQuestions, regAnswers, tier.id),
+        [approvedRegistrationId, sortedQuestions, regAnswers, tier.id]
+    )
+
+    /** Serialise an answer the way registration_answers stores it. */
+    const answerText = (v: any): string =>
+        Array.isArray(v) ? JSON.stringify(v)
+            : typeof v === 'boolean' ? String(v)
+                : v == null ? ''
+                    : String(v)
 
     // Promo Code State
     const [promoCodeInput, setPromoCodeInput] = useState('')
@@ -361,9 +396,11 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             return
         }
 
-        // Validate required registration questions
-        if ((requireApproval || hasQuestions) && !approvedRegistrationId) {
-            for (const q of registrationQuestions) {
+        // Validate required registration questions. Only the ones actually on
+        // screen — a question hidden by its tier or its condition was never
+        // asked, so it cannot be missing.
+        if (questionsToAsk.length > 0) {
+            for (const q of questionsToAsk) {
                 if (q.is_required) {
                     const val = regAnswers[q.id]
                     const empty = val === undefined || val === null || val === '' ||
@@ -400,7 +437,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             let registrationId = approvedRegistrationId
 
             if (requireApproval && !registrationId) {
-                const answers = registrationQuestions.map(q => ({
+                const answers = questionsToAsk.map(q => ({
                     question_id: q.id,
                     answer: regAnswers[q.id] ?? null,
                 }))
@@ -435,6 +472,29 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
 
                 // auto_approved — proceed to checkout with the registration_id
                 registrationId = regResult?.registration_id || null
+            }
+
+            // ── STEP 1b: Attach the tier's own answers ──
+            // Tier-scoped questions are asked HERE, after the ticket is picked,
+            // so they arrive after the registration already exists. They go in
+            // through upsert_registration_answers rather than a second
+            // submit_event_request: that call deletes every existing answer
+            // before rewriting, which would throw away everything the register
+            // step collected.
+            const tierAnswers = questionsToAsk
+                .filter(q => (q.tier_ids ?? []).length > 0)
+                .map(q => ({ question_id: q.id, answer: answerText(regAnswers[q.id]) }))
+                .filter(a => a.answer.trim() !== '')
+
+            if (registrationId && tierAnswers.length > 0) {
+                const { error: answerError } = await supabase.rpc('upsert_registration_answers', {
+                    p_registration_id: registrationId,
+                    p_answers: tierAnswers,
+                })
+                // Non-fatal: the buyer has paid intent and a valid registration.
+                // Losing a shirt size is a support conversation, not a reason to
+                // block the sale.
+                if (answerError) console.error('upsert_registration_answers failed', answerError)
             }
 
             // ── STEP 2: Create purchase intent ──
@@ -819,12 +879,14 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
 
                 {/* Registration Questions — hidden when the buyer already answered
                     them in the pre-checkout Register step (approvedRegistrationId set) */}
-                {(requireApproval || hasQuestions) && !approvedRegistrationId && (
+                {questionsToAsk.length > 0 && (
                     <RegistrationQuestionsCard
-                        registrationQuestions={registrationQuestions}
+                        eventId={event.id}
+                        registrationQuestions={questionsToAsk}
                         regAnswers={regAnswers}
                         setRegAnswers={setRegAnswers}
                         requireApproval={requireApproval}
+                        tierOnly={!!approvedRegistrationId}
                     />
                 )}
 

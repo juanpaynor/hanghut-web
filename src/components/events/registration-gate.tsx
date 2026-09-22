@@ -40,6 +40,8 @@ interface RegistrationGateProps {
     rsvpLabel?: string
     /** How tiers are presented (from event.layout_config.tiers). inline defaults on. */
     tierDisplay?: TierDisplayConfig
+    /** How the registration questions are presented (event.layout_config.registration.layout). */
+    formLayout?: 'stepper' | 'single'
 }
 
 /**
@@ -72,6 +74,7 @@ export function RegistrationGate({
     rsvpMode,
     rsvpLabel,
     tierDisplay,
+    formLayout,
 }: RegistrationGateProps) {
     const activeTiers = (tiers || []).filter((t: any) => isTierOnSale(t))
     // A tiered event with nothing on sale is CLOSED — it must not fall through to
@@ -310,6 +313,7 @@ export function RegistrationGate({
                     themeColor={themeColor}
                     dark={dark}
                     pageTheme={pageTheme}
+                    formLayout={formLayout}
                     onApproved={(rid, g) => {
                         if (typeof window !== 'undefined') sessionStorage.setItem(`approved_reg_${eventId}`, rid)
                         setModalOpen(false)
@@ -349,6 +353,7 @@ export function RegistrationGate({
                 themeColor={themeColor}
                 dark={dark}
                 pageTheme={pageTheme}
+                formLayout={formLayout}
                 onApproved={(rid, g) => {
                     if (typeof window !== 'undefined') sessionStorage.setItem(`approved_reg_${eventId}`, rid)
                     setModalOpen(false)
