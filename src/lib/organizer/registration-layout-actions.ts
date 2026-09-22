@@ -55,7 +55,8 @@ export async function setRegistrationFormLayout(
         return { error: 'Could not save the layout.' }
     }
 
+    // Only the organizer page: the public event page is force-dynamic, so
+    // revalidating it would be a no-op that implies caching it doesn't have.
     revalidatePath(`/organizer/events/${eventId}`)
-    revalidatePath(`/events/${eventId}`)
     return { success: true }
 }

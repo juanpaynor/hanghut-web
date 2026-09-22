@@ -146,20 +146,6 @@ export async function getRegistrationFileUrl(
     return { url: data.signedUrl }
 }
 
-/** Safely read a file answer, which is JSON held in a text column. */
-export async function parseFileAnswer(raw: string | null | undefined): Promise<FileAnswer | null> {
-    if (!raw || !raw.trim().startsWith('{')) return null
-    try {
-        const v = JSON.parse(raw)
-        if (v && typeof v.path === 'string') {
-            return { path: v.path, name: v.name || 'file', size: Number(v.size) || 0, type: v.type || '' }
-        }
-    } catch {
-        // A malformed answer is a display problem, never a crash.
-    }
-    return null
-}
-
 /**
  * Viewing links for a whole page of responses, in one call.
  *

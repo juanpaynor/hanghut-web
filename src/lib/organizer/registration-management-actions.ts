@@ -339,16 +339,44 @@ export async function setQuestionAnalyticsKind(
     return { success: true }
 }
 
-export async function exportEventRegistrationsCsv(
+interface ExportBundle {
+    title: string
+    startsAt: string | null
+    venue: string | null
+    questions: { id: string; label: string }[]
+    rows: {
+        name: string
+        email: string
+        ticket: string
+        status: string
+        submitted: string
+        answers: string[]
+    }[]
+}
+
+const EXPORT_CAP = 20000
+
+/**
+ * One loader behind every export.
+ *
+ * CSV and PDF built their own queries once and immediately disagreed about
+ * which columns existed — the CSV gained a Ticket column and the PDF didn't.
+ * Sharing the fetch means a column added for one shows up in the other.
+ */
+async function loadExportBundle(
     eventId: string
-): Promise<{ csv?: string; filename?: string; error?: string }> {
+): Promise<{ bundle?: ExportBundle; error?: string }> {
     const partnerId = await authorizeEvent(eventId)
     if (!partnerId) return { error: 'Unauthorized' }
 
     const adminClient = createAdminClient()
 
     const [{ data: event }, { data: questions }] = await Promise.all([
-        adminClient.from('events').select('title').eq('id', eventId).maybeSingle(),
+        adminClient
+            .from('events')
+            .select('title, start_datetime, venue_name')
+            .eq('id', eventId)
+            .maybeSingle(),
         adminClient
             .from('registration_questions')
             .select('id, label, display_order')
@@ -359,7 +387,6 @@ export async function exportEventRegistrationsCsv(
             .order('display_order', { ascending: true }),
     ])
 
-    const EXPORT_CAP = 20000
     const { data: rows, error } = await adminClient
         .from('event_registrations')
         .select(
@@ -375,45 +402,77 @@ export async function exportEventRegistrationsCsv(
         .limit(EXPORT_CAP)
 
     if (error) {
-        console.error('exportEventRegistrationsCsv error:', error)
+        console.error('loadExportBundle error:', error)
         return { error: 'Could not build the export.' }
     }
 
-    const cell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const cols = (questions ?? []) as { id: string; label: string }[]
-    const header = ['Name', 'Email', 'Ticket', 'Status', 'Submitted', ...cols.map(q => q.label)]
 
-    const body = (rows ?? []).map((r: any) => {
-        const byQuestion = new Map<string, any>(
-            (r.registration_answers || []).map((a: any) => [a.question_id, a.answer])
-        )
-        return [
-            r.user?.display_name || r.guest_name || '',
-            r.user?.email || r.guest_email || '',
-            r.tier?.name || '',
-            r.status,
-            formatInManila(r.created_at, {
-                year: 'numeric', month: 'short', day: 'numeric',
-                hour: '2-digit', minute: '2-digit',
+    return {
+        bundle: {
+            title: event?.title || 'Event',
+            startsAt: event?.start_datetime ?? null,
+            venue: event?.venue_name ?? null,
+            questions: cols.map(q => ({ id: q.id, label: q.label })),
+            rows: (rows ?? []).map((r: any) => {
+                const byQuestion = new Map<string, any>(
+                    (r.registration_answers || []).map((a: any) => [a.question_id, a.answer])
+                )
+                return {
+                    name: r.user?.display_name || r.guest_name || '',
+                    email: r.user?.email || r.guest_email || '',
+                    ticket: r.tier?.name || '',
+                    status: r.status,
+                    submitted: formatInManila(r.created_at, {
+                        year: 'numeric', month: 'short', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                    }),
+                    answers: cols.map(q => {
+                        const v = byQuestion.get(q.id)
+                        return Array.isArray(v) ? v.join('; ') : String(v ?? '')
+                    }),
+                }
             }),
-            ...cols.map(q => {
-                const v = byQuestion.get(q.id)
-                return Array.isArray(v) ? v.join('; ') : v ?? ''
-            }),
-        ]
-            .map(cell)
-            .join(',')
-    })
+        },
+    }
+}
 
-    const slug = (event?.title || 'event')
+function exportSlug(title: string): string {
+    return (title || 'event')
         .replace(/[^a-z0-9]+/gi, '-')
         .replace(/^-|-$/g, '')
         .toLowerCase()
+}
+
+export async function exportEventRegistrationsCsv(
+    eventId: string
+): Promise<{ csv?: string; filename?: string; error?: string }> {
+    const { bundle, error } = await loadExportBundle(eventId)
+    if (error || !bundle) return { error: error || 'Could not build the export.' }
+
+    const cell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const header = ['Name', 'Email', 'Ticket', 'Status', 'Submitted', ...bundle.questions.map(q => q.label)]
+    const body = bundle.rows.map(r =>
+        [r.name, r.email, r.ticket, r.status, r.submitted, ...r.answers].map(cell).join(',')
+    )
 
     return {
         csv: [header.map(cell).join(','), ...body].join('\n'),
-        filename: `${slug}-registrations.csv`,
+        filename: `${exportSlug(bundle.title)}-registrations.csv`,
     }
+}
+
+/**
+ * The same data, unformatted, for the client to lay out as a PDF.
+ *
+ * The PDF is built in the browser rather than here: jsPDF already ships in the
+ * bundle for the attendee export, and streaming a generated binary back through
+ * a server action would mean base64 through the RSC payload for no gain.
+ */
+export async function getEventResponsesExport(
+    eventId: string
+): Promise<{ bundle?: ExportBundle; error?: string }> {
+    return loadExportBundle(eventId)
 }
 
 export async function approveRegistration(

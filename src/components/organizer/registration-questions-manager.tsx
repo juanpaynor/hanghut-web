@@ -187,9 +187,14 @@ export function RegistrationQuestionsManager({
         }
 
         setIsSaving(true)
+        // No assertion here on purpose. `eventId!` would pass undefined straight
+        // through to the server on a misconfigured mount, which is how a null
+        // id reached a NOT NULL column once already.
         const result = saveFn
             ? await saveFn(questions)
-            : await saveRegistrationQuestions(eventId!, questions)
+            : eventId
+                ? await saveRegistrationQuestions(eventId, questions)
+                : { error: 'No event to save these questions to.' }
         setIsSaving(false)
 
         if (result.error) {
@@ -343,9 +348,14 @@ export function RegistrationQuestionsManager({
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {Object.entries(QUESTION_TYPE_LABELS).map(([value, label]) => (
-                                                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                                                ))}
+                                                {Object.entries(QUESTION_TYPE_LABELS)
+                                                    // A section exists to carry a heading and an image.
+                                                    // Where there is nowhere to store the image, offering
+                                                    // it promises something the editor cannot deliver.
+                                                    .filter(([value]) => advanced || value !== 'section')
+                                                    .map(([value, label]) => (
+                                                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                                                    ))}
                                             </SelectContent>
                                         </Select>
                                     </div>

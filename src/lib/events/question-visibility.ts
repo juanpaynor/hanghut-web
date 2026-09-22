@@ -159,13 +159,3 @@ export function tierOnlyQuestions<T extends VisibilityQuestion>(
 
     return visible.filter((_, i) => keep[i])
 }
-
-/** True when a question was never put in front of this buyer. */
-export function isHidden(
-    q: VisibilityQuestion,
-    questions: VisibilityQuestion[],
-    answers: AnswerMap,
-    tierId: string | null,
-): boolean {
-    return !visibleQuestions(questions, answers, tierId).some(v => v.id === q.id)
-}

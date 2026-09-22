@@ -7,12 +7,16 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
-import { Check, X, Clock, Users, ChevronDown, ChevronUp, Loader2, RefreshCw, Download, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Check, X, Clock, Users, ChevronDown, ChevronUp, Loader2, RefreshCw, Download, Search, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
+import { formatInManila } from '@/lib/datetime'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import {
     approveRegistration,
     rejectRegistration,
     getEventRegistrations,
     exportEventRegistrationsCsv,
+    getEventResponsesExport,
     getEventAnswerStats,
     EventRegistration,
     RegistrationsPage,
@@ -219,7 +223,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const [page, setPage] = useState(1)
     const [search, setSearch] = useState('')
     const [loading, setLoading] = useState(false)
-    const [exporting, setExporting] = useState(false)
+    const [exporting, setExporting] = useState<'csv' | 'pdf' | null>(null)
     const [stats, setStats] = useState<AnswerStats | null>(initialStats)
     // Signed URLs for the uploads on the CURRENT page only. They expire, so
     // they are fetched per page rather than held for the whole event.
@@ -299,7 +303,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     }
 
     const exportCsv = async () => {
-        setExporting(true)
+        setExporting('csv')
         try {
             const res = await exportEventRegistrationsCsv(eventId)
             if (res.error || !res.csv) {
@@ -314,17 +318,97 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             a.click()
             URL.revokeObjectURL(url)
         } finally {
-            setExporting(false)
+            setExporting(null)
+        }
+    }
+
+    /**
+     * Responses as a printable PDF.
+     *
+     * Landscape, because a registration form with six questions has no chance
+     * of fitting portrait — and autoTable wraps rather than truncates, so a long
+     * answer costs height instead of being silently cut off. That matters when
+     * the sheet is being carried to a start line to hand out shirts.
+     */
+    const exportPdf = async () => {
+        setExporting('pdf')
+        try {
+            const res = await getEventResponsesExport(eventId)
+            if (res.error || !res.bundle) {
+                toast({ title: 'Export failed', description: res.error, variant: 'destructive' })
+                return
+            }
+            const b = res.bundle
+
+            const doc = new jsPDF({ orientation: 'landscape' })
+            const pageWidth = doc.internal.pageSize.getWidth()
+
+            doc.setFontSize(16)
+            doc.text(b.title, 14, 16)
+
+            doc.setFontSize(9)
+            doc.setTextColor(110)
+            const meta = [
+                b.startsAt ? formatInManila(b.startsAt, {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit',
+                }) : null,
+                b.venue,
+                `${b.rows.length} response${b.rows.length === 1 ? '' : 's'}`,
+            ].filter(Boolean).join('  ·  ')
+            doc.text(meta, 14, 22)
+            doc.setTextColor(0)
+
+            autoTable(doc, {
+                head: [['Name', 'Email', 'Ticket', 'Status', ...b.questions.map(q => q.label)]],
+                body: b.rows.map(r => [r.name, r.email, r.ticket, r.status, ...r.answers]),
+                startY: 27,
+                theme: 'striped',
+                headStyles: { fillColor: [66, 66, 66] },
+                styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+                // Identity columns stay narrow so the answers get the room.
+                columnStyles: { 0: { cellWidth: 32 }, 1: { cellWidth: 44 }, 2: { cellWidth: 18 }, 3: { cellWidth: 18 } },
+                // A roster gets carried around and pages get separated.
+                didDrawPage: (d) => {
+                    const page = doc.getNumberOfPages()
+                    doc.setFontSize(8)
+                    doc.setTextColor(130)
+                    doc.text(
+                        `${b.title} — page ${page}`,
+                        pageWidth - 14,
+                        doc.internal.pageSize.getHeight() - 8,
+                        { align: 'right' }
+                    )
+                    doc.setTextColor(0)
+                    void d
+                },
+            })
+
+            doc.save(`${(eventTitle || 'event').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}-responses.pdf`)
+            toast({
+                title: 'PDF ready',
+                description: `${b.rows.length} response${b.rows.length === 1 ? '' : 's'} exported.`,
+            })
+        } catch {
+            toast({ title: 'Export failed', description: 'Could not build the PDF.', variant: 'destructive' })
+        } finally {
+            setExporting(null)
         }
     }
 
     const { counts, questions, registrations } = data
 
     const exportButton = (
-        <Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting} className="gap-1.5">
-            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-            Export CSV
-        </Button>
+        <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={!!exporting} className="gap-1.5">
+                {exporting === 'csv' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                Export CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportPdf} disabled={!!exporting} className="gap-1.5">
+                {exporting === 'pdf' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                PDF
+            </Button>
+        </div>
     )
 
     const refreshButton = (
