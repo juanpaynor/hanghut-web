@@ -357,6 +357,31 @@ interface ExportBundle {
 const EXPORT_CAP = 20000
 
 /**
+ * An answer as a person reads it.
+ *
+ * A file answer is JSON living in a text column. Dumping it raw put a
+ * 185-character blob in the cell — unreadable in a spreadsheet, and in the PDF
+ * it let one column claim 146mm and squeeze every other column down to two
+ * characters per line, which rendered the headings vertically, one letter per
+ * row. The filename is what a human actually wants; the path is only useful to
+ * the Responses tab, which already has it.
+ */
+function displayAnswer(raw: unknown): string {
+    if (raw == null) return ''
+    if (Array.isArray(raw)) return raw.join('; ')
+    const s = String(raw)
+    if (s.trim().startsWith('{')) {
+        try {
+            const v = JSON.parse(s)
+            if (v && typeof v.path === 'string') return String(v.name || 'file')
+        } catch {
+            // Not a file record — fall through and show the text as typed.
+        }
+    }
+    return s
+}
+
+/**
  * One loader behind every export.
  *
  * CSV and PDF built their own queries once and immediately disagreed about
@@ -427,10 +452,7 @@ async function loadExportBundle(
                         year: 'numeric', month: 'short', day: 'numeric',
                         hour: '2-digit', minute: '2-digit',
                     }),
-                    answers: cols.map(q => {
-                        const v = byQuestion.get(q.id)
-                        return Array.isArray(v) ? v.join('; ') : String(v ?? '')
-                    }),
+                    answers: cols.map(q => displayAnswer(byQuestion.get(q.id))),
                 }
             }),
         },

@@ -341,10 +341,12 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             const b = res.bundle
 
             const doc = new jsPDF({ orientation: 'landscape' })
+            const MARGIN = 10
             const pageWidth = doc.internal.pageSize.getWidth()
+            const usable = pageWidth - MARGIN * 2
 
             doc.setFontSize(16)
-            doc.text(b.title, 14, 16)
+            doc.text(b.title, MARGIN, 16)
 
             doc.setFontSize(9)
             doc.setTextColor(110)
@@ -356,31 +358,68 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
                 b.venue,
                 `${b.rows.length} response${b.rows.length === 1 ? '' : 's'}`,
             ].filter(Boolean).join('  ·  ')
-            doc.text(meta, 14, 22)
+            doc.text(meta, MARGIN, 22)
             doc.setTextColor(0)
+
+            // EVERY column gets an explicit width.
+            //
+            // Left to size themselves, one long value takes whatever it wants:
+            // a 185-character file answer claimed 146mm of a 269mm page and
+            // starved the other columns to 4mm, so their headings rendered
+            // vertically, one letter per line. Fixed widths mean a long value
+            // costs height, which is recoverable, instead of everyone else's
+            // width, which is not.
+            const idWidths = [30, 42, 16, 18] // Name, Email, Ticket, Status
+            const idTotal = idWidths.reduce((a, c) => a + c, 0)
+            const qCount = b.questions.length
+            // Whole millimetres, minus a safety margin: autoTable's own width
+            // comes out a few units above the sum of the cells (borders), so
+            // budgeting the exact remainder split a four-question form across
+            // two pages sideways for no reason.
+            const SAFETY = 4
+            const budget = usable - idTotal - SAFETY
+            const qWidth = qCount > 0 ? Math.max(18, Math.floor(budget / qCount)) : 0
+
+            // Only split sideways when the table genuinely cannot fit. Left
+            // always on, autoTable emits a second page even for a form that
+            // fits comfortably.
+            const fitsAcross = qCount === 0 || qWidth * qCount <= budget
+
+            // Tighter columns need smaller type, or a narrow column fits one
+            // word per line and the table becomes a column of confetti.
+            const fontSize = qWidth >= 30 ? 8 : qWidth >= 22 ? 7 : 6
+
+            const columnStyles: Record<number, { cellWidth: number }> = {}
+            idWidths.forEach((w, i) => { columnStyles[i] = { cellWidth: w } })
+            for (let i = 0; i < qCount; i++) {
+                columnStyles[idWidths.length + i] = { cellWidth: qWidth }
+            }
 
             autoTable(doc, {
                 head: [['Name', 'Email', 'Ticket', 'Status', ...b.questions.map(q => q.label)]],
-                body: b.rows.map(r => [r.name, r.email, r.ticket, r.status, ...r.answers]),
+                body: b.rows.map(r => [r.name, r.email, r.ticket || '—', r.status, ...r.answers]),
                 startY: 27,
+                margin: { left: MARGIN, right: MARGIN },
                 theme: 'striped',
-                headStyles: { fillColor: [66, 66, 66] },
-                styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
-                // Identity columns stay narrow so the answers get the room.
-                columnStyles: { 0: { cellWidth: 32 }, 1: { cellWidth: 44 }, 2: { cellWidth: 18 }, 3: { cellWidth: 18 } },
-                // A roster gets carried around and pages get separated.
-                didDrawPage: (d) => {
+                headStyles: { fillColor: [66, 66, 66], fontSize, valign: 'middle' },
+                styles: { fontSize, cellPadding: 1.8, overflow: 'linebreak', valign: 'top' },
+                columnStyles,
+                // A form with a dozen questions cannot fit one page across.
+                // Split sideways and repeat the name, rather than shrinking
+                // every column until nothing is legible.
+                horizontalPageBreak: !fitsAcross,
+                horizontalPageBreakRepeat: 0,
+                didDrawPage: () => {
                     const page = doc.getNumberOfPages()
                     doc.setFontSize(8)
                     doc.setTextColor(130)
                     doc.text(
                         `${b.title} — page ${page}`,
-                        pageWidth - 14,
-                        doc.internal.pageSize.getHeight() - 8,
+                        pageWidth - MARGIN,
+                        doc.internal.pageSize.getHeight() - 6,
                         { align: 'right' }
                     )
                     doc.setTextColor(0)
-                    void d
                 },
             })
 
