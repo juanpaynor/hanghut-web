@@ -33,6 +33,20 @@ function adminClient() {
     })
 }
 
+/** Drop image entries whose option label is gone. */
+function pruneOptionImages(
+    images: Record<string, string> | undefined,
+    options: string[] | null,
+): Record<string, string> | null {
+    if (!images || !options?.length) return null
+    const kept: Record<string, string> = {}
+    for (const opt of options) {
+        const url = images[opt]
+        if (typeof url === 'string' && url.trim()) kept[opt] = url.trim()
+    }
+    return Object.keys(kept).length > 0 ? kept : null
+}
+
 function cleanOptions(options: string[] | undefined): string[] | null {
     const kept = (options || []).map(o => o.trim()).filter(Boolean)
     return kept.length > 0 ? kept : null
@@ -109,6 +123,9 @@ export async function saveRegistrationQuestions(eventId: string, questions: Regi
                 depends_on_question_id: dependsOnId && dependsOnId !== id ? dependsOnId : null,
                 depends_on_values: (q.depends_on_values || []).length > 0 ? q.depends_on_values : null,
                 tier_ids: (q.tier_ids || []).length > 0 ? q.tier_ids : null,
+                // Only keep pictures whose option still exists — a renamed or
+                // deleted option must not leave an orphan entry behind.
+                option_images: pruneOptionImages(q.option_images, cleanOptions(q.options)),
             }
         })
 
@@ -206,6 +223,7 @@ export async function getRegistrationQuestions(eventId: string): Promise<Registr
         depends_on_key: q.depends_on_question_id || null,
         depends_on_values: q.depends_on_values || [],
         tier_ids: q.tier_ids || [],
+        option_images: q.option_images || {},
     })) as RegistrationQuestion[]
 }
 

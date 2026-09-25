@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Loader2, ClipboardList } from 'lucide-react'
 import { RegistrationFileInput } from './registration-file-input'
 import { QuestionHelp } from './question-help'
+import { OptionImagePicker, hasOptionImages } from './option-image-picker'
 import { visibleQuestions, isSectionBlock } from '@/lib/events/question-visibility'
 import { cn } from '@/lib/utils'
 
@@ -35,6 +36,8 @@ export interface QuestionForForm {
     depends_on_values?: string[] | null
     /** Only ask this of buyers on these ticket tiers. Empty = everyone. */
     tier_ids?: string[] | null
+    /** A picture per option, keyed by the option's label. */
+    option_images?: Record<string, string> | null
 }
 
 interface Props {
@@ -125,7 +128,20 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
 
                             <QuestionHelp text={q.help_text} imageUrl={q.help_image_url} />
 
-                            {q.question_type === 'dropdown' && (
+                            {hasOptionImages(q.option_images)
+                                && ['single_choice', 'dropdown', 'multi_choice'].includes(q.question_type) && (
+                                <OptionImagePicker
+                                    options={q.options}
+                                    images={q.option_images as Record<string, string>}
+                                    multiple={q.question_type === 'multi_choice'}
+                                    value={q.question_type === 'multi_choice'
+                                        ? (answers[q.id] ? JSON.parse(answers[q.id]) : [])
+                                        : (answers[q.id] ?? '')}
+                                    onChange={(v) => setAnswer(q.id, Array.isArray(v) ? JSON.stringify(v) : v)}
+                                />
+                            )}
+
+                            {!hasOptionImages(q.option_images) && q.question_type === 'dropdown' && (
                                 <select
                                     value={answers[q.id] ?? ''}
                                     onChange={e => setAnswer(q.id, e.target.value)}
@@ -216,7 +232,7 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
                                 </div>
                             )}
 
-                            {q.question_type === 'single_choice' && (
+                            {!hasOptionImages(q.option_images) && q.question_type === 'single_choice' && (
                                 <RadioGroup
                                     value={answers[q.id] ?? ''}
                                     onValueChange={v => setAnswer(q.id, v)}
@@ -231,7 +247,7 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
                                 </RadioGroup>
                             )}
 
-                            {q.question_type === 'multi_choice' && (
+                            {!hasOptionImages(q.option_images) && q.question_type === 'multi_choice' && (
                                 <div className="space-y-1.5 pt-1">
                                     {q.options.map(opt => {
                                         const selected: string[] = answers[q.id] ? JSON.parse(answers[q.id]) : []

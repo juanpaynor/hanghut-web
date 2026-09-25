@@ -39,6 +39,8 @@ export interface RegistrationQuestion {
     depends_on_values?: string[]
     /** Ticket tiers this question applies to. Empty = everyone. */
     tier_ids?: string[]
+    /** A picture per option, keyed by the option's label. */
+    option_images?: Record<string, string>
 }
 
 const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
@@ -155,14 +157,35 @@ export function RegistrationQuestionsManager({
     }
 
     const updateOption = (qIndex: number, oIndex: number, value: string) => {
-        const options = [...(questions[qIndex].options || [])]
+        const q = questions[qIndex]
+        const options = [...(q.options || [])]
+        const previous = options[oIndex]
         options[oIndex] = value
-        updateQuestion(qIndex, { options })
+
+        // Images are keyed by label, so a rename has to carry its picture over
+        // or the option silently loses it mid-edit.
+        let option_images = q.option_images
+        if (previous !== value && option_images?.[previous]) {
+            const { [previous]: moved, ...rest } = option_images
+            option_images = value.trim() ? { ...rest, [value]: moved } : rest
+        }
+        updateQuestion(qIndex, { options, option_images })
     }
 
     const removeOption = (qIndex: number, oIndex: number) => {
-        const options = questions[qIndex].options.filter((_, i) => i !== oIndex)
-        updateQuestion(qIndex, { options })
+        const q = questions[qIndex]
+        const gone = q.options[oIndex]
+        const options = q.options.filter((_, i) => i !== oIndex)
+        const { [gone]: _dropped, ...option_images } = q.option_images ?? {}
+        updateQuestion(qIndex, { options, option_images })
+    }
+
+    const setOptionImage = (qIndex: number, option: string, url: string) => {
+        const current = questions[qIndex].option_images ?? {}
+        const next = { ...current }
+        if (url) next[option] = url
+        else delete next[option]
+        updateQuestion(qIndex, { option_images: next })
     }
 
     const handleSave = async () => {
@@ -401,6 +424,14 @@ export function RegistrationQuestionsManager({
                                                 placeholder={`Option ${oIndex + 1}`}
                                                 className="max-w-sm"
                                             />
+                                            {advanced && (
+                                                <OptionImageButton
+                                                    eventId={eventId}
+                                                    option={opt}
+                                                    url={q.option_images?.[opt] ?? ''}
+                                                    onChange={(url) => setOptionImage(index, opt, url)}
+                                                />
+                                            )}
                                             <button
                                                 type="button"
                                                 onClick={() => removeOption(index, oIndex)}
@@ -410,6 +441,12 @@ export function RegistrationQuestionsManager({
                                             </button>
                                         </div>
                                     ))}
+                                    {advanced && (
+                                        <p className="text-[11px] text-muted-foreground">
+                                            Add a picture to an option and buyers pick from image cards
+                                            instead of a dropdown.
+                                        </p>
+                                    )}
                                     <Button type="button" variant="outline" size="sm" onClick={() => addOption(index)}>
                                         <Plus className="h-3 w-3 mr-1" />
                                         Add Option
@@ -640,6 +677,74 @@ function HelpImageField({ eventId, url, onChange }: {
                         ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Uploading…</>
                         : <><ImagePlus className="h-3.5 w-3.5 mr-1.5" />Add image</>}
                 </Button>
+            )}
+        </div>
+    )
+}
+
+// ─── Per-option picture ──────────────────────────────────────────────────────
+// Small on purpose: it sits inline next to the option's text field, so it shows
+// a thumbnail when set and a single icon button when not.
+function OptionImageButton({ eventId, option, url, onChange }: {
+    eventId?: string
+    option: string
+    url: string
+    onChange: (url: string) => void
+}) {
+    const { toast } = useToast()
+    const inputRef = useRef<HTMLInputElement>(null)
+    const [busy, setBusy] = useState(false)
+
+    // Nowhere to upload to, and nothing to key the picture on.
+    if (!eventId || !option.trim()) return null
+
+    async function pick(file: File) {
+        setBusy(true)
+        const fd = new FormData()
+        fd.append('file', file)
+        const res = await uploadQuestionHelpImage(eventId!, fd)
+        setBusy(false)
+        if (res.error || !res.url) {
+            toast({ title: 'Upload failed', description: res.error, variant: 'destructive' })
+            return
+        }
+        onChange(res.url)
+    }
+
+    return (
+        <div className="flex items-center gap-1.5 shrink-0">
+            <input
+                ref={inputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) pick(f); e.target.value = '' }}
+            />
+            {url ? (
+                <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt={option} className="h-8 w-8 rounded border object-cover" />
+                    <button
+                        type="button"
+                        onClick={() => onChange('')}
+                        className="text-muted-foreground hover:text-destructive"
+                        title={`Remove the picture for "${option}"`}
+                    >
+                        <X className="h-3.5 w-3.5" />
+                    </button>
+                </>
+            ) : (
+                <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => inputRef.current?.click()}
+                    className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+                    title={`Add a picture for "${option}"`}
+                >
+                    {busy
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <ImagePlus className="h-3.5 w-3.5" />}
+                </button>
             )}
         </div>
     )

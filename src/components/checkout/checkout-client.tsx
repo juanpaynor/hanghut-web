@@ -47,6 +47,7 @@ interface RegistrationQuestion {
     depends_on_question_id?: string | null
     depends_on_values?: string[] | null
     tier_ids?: string[] | null
+    option_images?: Record<string, string> | null
 }
 
 interface SubscriberDiscount {

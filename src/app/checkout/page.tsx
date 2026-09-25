@@ -72,7 +72,8 @@ export default async function CheckoutPage({
                     help_image_url,
                     depends_on_question_id,
                     depends_on_values,
-                    tier_ids
+                    tier_ids,
+                    option_images
                 )
             `)
             .eq('id', eventId)

@@ -7,6 +7,7 @@ import { ClipboardList } from 'lucide-react'
 import { RegistrationFileInput } from '@/components/events/registration-file-input'
 import { QuestionHelp } from '@/components/events/question-help'
 import { isSectionBlock } from '@/lib/events/question-visibility'
+import { OptionImagePicker, hasOptionImages } from '@/components/events/option-image-picker'
 
 interface RegistrationQuestion {
     id: string
@@ -18,6 +19,7 @@ interface RegistrationQuestion {
     help_text?: string | null
     help_image_url?: string | null
     tier_ids?: string[] | null
+    option_images?: Record<string, string> | null
 }
 
 interface Props {
@@ -67,7 +69,20 @@ export function RegistrationQuestionsCard({ eventId, registrationQuestions, regA
                         )}
                         <QuestionHelp text={q.help_text} imageUrl={q.help_image_url} />
 
-                        {q.question_type === 'dropdown' && q.options && (
+                        {hasOptionImages(q.option_images) && q.options
+                            && ['single_choice', 'dropdown', 'multi_choice'].includes(q.question_type) && (
+                            <OptionImagePicker
+                                options={q.options}
+                                images={q.option_images as Record<string, string>}
+                                multiple={q.question_type === 'multi_choice'}
+                                value={q.question_type === 'multi_choice'
+                                    ? (Array.isArray(regAnswers[q.id]) ? regAnswers[q.id] : [])
+                                    : (regAnswers[q.id] ?? '')}
+                                onChange={(v) => setRegAnswers(prev => ({ ...prev, [q.id]: v }))}
+                            />
+                        )}
+
+                        {!hasOptionImages(q.option_images) && q.question_type === 'dropdown' && q.options && (
                             <select
                                 id={`q_${q.id}`}
                                 value={regAnswers[q.id] ?? ''}
@@ -120,7 +135,7 @@ export function RegistrationQuestionsCard({ eventId, registrationQuestions, regA
                                 onChange={(e) => setRegAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
                             />
                         )}
-                        {q.question_type === 'single_choice' && q.options && (
+                        {!hasOptionImages(q.option_images) && q.question_type === 'single_choice' && q.options && (
                             <div className="space-y-2">
                                 {q.options.map((opt) => (
                                     <Label key={opt} className="flex items-center gap-3 cursor-pointer font-normal">
@@ -137,7 +152,7 @@ export function RegistrationQuestionsCard({ eventId, registrationQuestions, regA
                                 ))}
                             </div>
                         )}
-                        {q.question_type === 'multi_choice' && q.options && (
+                        {!hasOptionImages(q.option_images) && q.question_type === 'multi_choice' && q.options && (
                             <div className="space-y-2">
                                 {q.options.map((opt) => (
                                     <Label key={opt} className="flex items-center gap-3 cursor-pointer font-normal">

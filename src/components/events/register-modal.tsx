@@ -12,6 +12,7 @@ import { Check, ChevronLeft, ChevronRight, Loader2, Clock, PartyPopper } from 'l
 import type { QuestionForForm } from './registration-questions-form'
 import { RegistrationFileInput } from './registration-file-input'
 import { QuestionHelp } from './question-help'
+import { OptionImagePicker, hasOptionImages } from './option-image-picker'
 import { visibleQuestions, isSectionBlock } from '@/lib/events/question-visibility'
 
 interface RegisterModalProps {
@@ -432,8 +433,21 @@ function QuestionStep({ q, value, onChange, eventId, compact }: {
                 />
             )}
 
+            {/* Pictures beat every other control: a <select> cannot show one. */}
+            {hasOptionImages(q.option_images)
+                && ['single_choice', 'dropdown', 'multi_choice'].includes(q.question_type) && (
+                <OptionImagePicker
+                    options={q.options}
+                    images={q.option_images as Record<string, string>}
+                    multiple={q.question_type === 'multi_choice'}
+                    value={q.question_type === 'multi_choice' ? arr : str}
+                    onChange={onChange}
+                    columns={compact ? 2 : 3}
+                />
+            )}
+
             {/* Seven shirt sizes as radio buttons is a very long phone screen. */}
-            {q.question_type === 'dropdown' && (
+            {!hasOptionImages(q.option_images) && q.question_type === 'dropdown' && (
                 <select
                     value={str}
                     onChange={(e) => onChange(e.target.value)}
@@ -496,7 +510,7 @@ function QuestionStep({ q, value, onChange, eventId, compact }: {
                 </button>
             )}
 
-            {q.question_type === 'single_choice' && (
+            {!hasOptionImages(q.option_images) && q.question_type === 'single_choice' && (
                 <div className="space-y-2">
                     {q.options.map((opt) => (
                         <button
@@ -516,7 +530,7 @@ function QuestionStep({ q, value, onChange, eventId, compact }: {
                 </div>
             )}
 
-            {q.question_type === 'multi_choice' && (
+            {!hasOptionImages(q.option_images) && q.question_type === 'multi_choice' && (
                 <div className="space-y-2">
                     {q.options.map((opt) => {
                         const checked = arr.includes(opt)
