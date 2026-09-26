@@ -27,6 +27,7 @@ import { CheckCircle2, ClipboardList, Armchair } from 'lucide-react'
 import { formatEventShortWithEnd } from '@/lib/datetime'
 import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
 import { visibleQuestions, tierOnlyQuestions, isSectionBlock } from '@/lib/events/question-visibility'
+import { PLATFORM_TERMS_VERSION } from '@/lib/legal/terms-version'
 
 // Conditionally rendered (approval/invite events or events with custom questions),
 // so it's code-split: normal checkouts never load this chunk. Default SSR keeps
@@ -558,6 +559,14 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 // from a web one in purchase_intents, so "how much revenue does the app
                 // drive?" has no answer. Whitelisted server-side; anything else stores NULL.
                 source: 'web',
+                // What the buyer ticked. Only the ACT of accepting is reported —
+                // the server resolves and stores the terms text itself, because a
+                // snapshot this client could author would prove nothing.
+                terms: {
+                    platform_accepted: termsAccepted,
+                    platform_version: PLATFORM_TERMS_VERSION,
+                    organizer_accepted: customTos ? organizerTermsAccepted : false,
+                },
                 // [NEW] Fee Metadata for Edge Function
                 metadata: {
                     pass_fixed: passFixed,

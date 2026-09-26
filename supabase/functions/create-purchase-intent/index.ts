@@ -15,6 +15,19 @@ const corsHeaders = {
 const DEFAULT_PLATFORM_PCT = 2   // new standard commission (%)
 const DEFAULT_FIXED_FEE = 15     // per-ticket fixed booking fee (₱)
 
+// --- TERMS ACCEPTANCE ---
+// Mirror of PLATFORM_TERMS_VERSION in src/lib/legal/terms-version.ts, used only
+// when a client does not report which version it showed. Deno can't import from
+// src/, so keep the two in sync by hand.
+const PLATFORM_TERMS_VERSION = '2026-05-08'
+
+// Web has gated on both acceptances since launch; the app shipped its gate on
+// 2026-09-25 and had NONE before that. Turning this on refuses any paid intent
+// that arrives without a complete acceptance — correct once both platforms are
+// live, and a total outage for app buyers on the old build before then. Flip it
+// when the app team confirms their patch has rolled out (#335).
+const REQUIRE_TERMS_ACCEPTANCE = false
+
 // Mirror of the shape check in src/lib/email/validate.ts. Deno can't import
 // from src/, so keep the two in sync by hand. The client offers domain
 // suggestions; the server only refuses addresses that cannot receive mail at
@@ -81,7 +94,7 @@ serve(async (req) => {
         )
 
         // Parse request body
-        const { event_id, quantity, tier_id, seat_ids, seat_session_id, section_id, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution, source } = await req.json()
+        const { event_id, quantity, tier_id, seat_ids, seat_session_id, section_id, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution, source, terms } = await req.json()
 
         // Which client created this order. Whitelisted rather than stored raw so the column
         // can't drift into 'App'/'ios'/'mobile-web' variants; anything unrecognised is stored
@@ -153,7 +166,7 @@ serve(async (req) => {
         // --- APPROVAL GATE (server-side enforcement) ---
         const { data: gateEvent, error: gateError } = await supabaseClient
             .from('events')
-            .select('require_approval, invite_only')
+            .select('require_approval, invite_only, custom_tos')
             .eq('id', event_id)
             .single()
 
@@ -345,10 +358,11 @@ serve(async (req) => {
         let useMainWallet = false
         let organizerCardsGcashLive = false
         let partnerXenditAccountId: string | null = null
+        let partnerCustomTos: string | null = null
         if (organizerId) {
             const { data: partner } = await supabaseClient
                 .from('partners')
-                .select('custom_percentage, pass_fixed_to_customer, pass_percentage_to_customer, fixed_fee_per_ticket, xendit_account_id, use_main_wallet, xendit_cards_gcash_live')
+                .select('custom_percentage, pass_fixed_to_customer, pass_percentage_to_customer, fixed_fee_per_ticket, xendit_account_id, use_main_wallet, xendit_cards_gcash_live, custom_tos')
                 .eq('id', organizerId)
                 .single()
 
@@ -360,7 +374,60 @@ serve(async (req) => {
             // Use ?? (not ||) so a deliberate 0% / ₱0 is respected.
             platformFeePercentage = partner?.custom_percentage ?? DEFAULT_PLATFORM_PCT
             fixedFeePerTicket = partner?.fixed_fee_per_ticket ?? DEFAULT_FIXED_FEE
+            partnerCustomTos = typeof partner?.custom_tos === 'string' ? partner.custom_tos : null
         }
+
+        // --- TERMS ACCEPTANCE ---
+        // The SNAPSHOT is resolved here, from the database, and never taken from
+        // the request. A client-supplied snapshot would be forgeable, which would
+        // make this record worth less than no record: the one thing it exists to
+        // prove is the one thing the buyer's device must not get to assert.
+        //
+        // Resolution order matches the checkout page exactly — the event's own
+        // terms win, the partner's apply otherwise. Whitespace-only counts as
+        // ABSENT, because an organizer who cleared the field has no terms, and a
+        // blank snapshot above a recorded acceptance is a lie in the audit trail.
+        const eventTos = typeof gateEvent.custom_tos === 'string' ? gateEvent.custom_tos.trim() : ''
+        const partnerTos = typeof partnerCustomTos === 'string' ? partnerCustomTos.trim() : ''
+        const organizerTermsText = eventTos || partnerTos || null
+        const organizerTermsSource = eventTos ? 'event' : partnerTos ? 'partner' : null
+
+        // The client asserts only what it cannot forge anyway: that the buyer
+        // ticked. What they ticked is ours to record.
+        const platformAccepted = terms?.platform_accepted === true
+        const organizerAccepted = terms?.organizer_accepted === true
+        const platformTermsVersion = typeof terms?.platform_version === 'string' && terms.platform_version.trim()
+            ? terms.platform_version.trim()
+            : PLATFORM_TERMS_VERSION
+
+        // Partial acceptance is recorded as NO acceptance. A row saying "agreed"
+        // when only one of two mandatory boxes was ticked is worse than a null,
+        // because a null is honest about the gap and a half-truth is not.
+        const termsComplete = platformAccepted && (!organizerTermsText || organizerAccepted)
+
+        if (REQUIRE_TERMS_ACCEPTANCE && !termsComplete) {
+            return new Response(
+                JSON.stringify({
+                    success: false,
+                    error: {
+                        code: 'TERMS_NOT_ACCEPTED',
+                        message: organizerTermsText && !organizerAccepted
+                            ? "Please accept the organizer's terms and conditions to continue."
+                            : 'Please accept the HangHut Terms of Service to continue.'
+                    }
+                }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+        }
+
+        const termsFields = termsComplete
+            ? {
+                accepted_platform_terms_version: platformTermsVersion,
+                accepted_organizer_terms_text: organizerTermsText,
+                accepted_organizer_terms_source: organizerTermsSource,
+                terms_accepted_at: new Date().toISOString(),
+            }
+            : {}
 
         // --- PROMO CODE LOGIC ---
         let discountAmount = 0
@@ -576,6 +643,7 @@ serve(async (req) => {
                 subscribed_to_newsletter: subscribed_to_newsletter ?? false,
                 attribution: attribution && typeof attribution === 'object' ? attribution : null,
                 source: orderSource,
+                ...termsFields,
                 metadata: Object.keys(combinedMetadata).length > 0 ? combinedMetadata : null
             })
             .eq('id', intentId)

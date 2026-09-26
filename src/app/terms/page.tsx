@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import type { Metadata } from "next"
+import { PLATFORM_TERMS_UPDATED_LABEL } from "@/lib/legal/terms-version"
 
 export const metadata: Metadata = {
     title: "Terms of Service - HangHut",
@@ -11,7 +12,7 @@ export default function TermsOfService() {
     return (
         <div className="container mx-auto py-12 px-4 max-w-3xl">
             <h1 className="text-3xl font-bold mb-2">Terms of Service: Purchase Agreement</h1>
-            <p className="text-sm text-muted-foreground mb-10">Last Updated: May 8, 2026</p>
+            <p className="text-sm text-muted-foreground mb-10">Last Updated: {PLATFORM_TERMS_UPDATED_LABEL}</p>
 
             <div className="space-y-10 text-sm leading-relaxed">
 
