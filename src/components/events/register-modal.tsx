@@ -68,6 +68,9 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
 
     const [name, setName] = useState('')
     const [email, setEmail] = useState('')
+    // The address the registrant has said is right despite a suggestion.
+    // Stored as the address itself so editing it re-arms the check.
+    const [emailTypoAck, setEmailTypoAck] = useState<string | null>(null)
     const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
 
     // No tier is chosen yet — the buyer registers first, picks a ticket second.
@@ -109,7 +112,12 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
     function identityValid(): boolean {
         // Shared with checkout so both doors into a ticket agree on what a
         // usable address is.
-        return name.trim().length > 0 && isEmailUsable(email)
+        if (name.trim().length === 0 || !isEmailUsable(email)) return false
+        // A likely typo has to be answered, not ignored. Free RSVPs issue a
+        // real ticket to this address, so a wrong one fails exactly as badly
+        // as it does on the paid path.
+        const typed = normalizeEmail(email)
+        return !suggestEmail(typed) || emailTypoAck === typed
     }
 
     function questionAnswered(q: QuestionForForm): boolean {
@@ -204,17 +212,26 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
             </div>
             <div className="space-y-2">
                 <label className="text-sm font-medium">Email</label>
-                <Input type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" />
+                <Input type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => { setEmail(e.target.value); setEmailTypoAck(null) }} placeholder="you@email.com" />
                 {(() => {
-                    const hint = suggestEmail(email)
+                    const typed = normalizeEmail(email)
+                    const hint = emailTypoAck === typed ? null : suggestEmail(typed)
                     return hint ? (
-                        <p className="text-xs text-muted-foreground">
-                            Did you mean{' '}
-                            <button type="button" onClick={() => setEmail(hint)}
-                                className="font-semibold text-foreground underline underline-offset-2 hover:no-underline">
-                                {hint}
-                            </button>?
-                        </p>
+                        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 space-y-1.5">
+                            <p className="text-xs text-foreground">
+                                Did you mean <span className="font-semibold">{hint}</span>?
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                <button type="button" onClick={() => { setEmail(hint); setEmailTypoAck(null) }}
+                                    className="rounded border border-input bg-background px-2 py-1 text-xs font-medium hover:bg-muted">
+                                    Use {hint}
+                                </button>
+                                <button type="button" onClick={() => setEmailTypoAck(typed)}
+                                    className="rounded px-2 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+                                    No, it&apos;s correct
+                                </button>
+                            </div>
+                        </div>
                     ) : null
                 })()}
                 <p className="text-xs text-muted-foreground">Your ticket and updates go here.</p>

@@ -289,11 +289,16 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     // slip. The suggestion is offered, never applied for them.
     const [emailError, setEmailError] = useState<string | null>(null)
     const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null)
+    // The address the buyer has explicitly said is right despite the
+    // suggestion. Holding the ADDRESS rather than a boolean matters: edit the
+    // email afterwards and the acknowledgement no longer applies to what is in
+    // the box, so the check runs again.
+    const [emailTypoAck, setEmailTypoAck] = useState<string | null>(null)
 
     const handleGuestChange = (field: string, value: string) => {
         setGuestDetails(prev => ({ ...prev, [field]: value }))
         // Clear while typing — nagging mid-word is how people abandon a form.
-        if (field === 'email') { setEmailError(null); setEmailSuggestion(null) }
+        if (field === 'email') { setEmailError(null); setEmailSuggestion(null); setEmailTypoAck(null) }
     }
 
     const checkEmail = () => {
@@ -309,6 +314,14 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         setGuestDetails(prev => ({ ...prev, email: emailSuggestion }))
         setEmailSuggestion(null)
         setEmailError(null)
+        setEmailTypoAck(null)
+    }
+
+    /** "No, it's correct." Records the exact address so the buyer is asked
+     *  once, not on every attempt — and is asked again if they edit it. */
+    const keepTypedEmail = () => {
+        setEmailTypoAck(normalizeEmail(guestDetails.email))
+        setEmailSuggestion(null)
     }
 
     const applyPromo = async () => {
@@ -359,13 +372,30 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
         }
 
         // A structurally broken address can't be fixed later — the ticket has
-        // nowhere to go. A SUSPECTED typo only warns (see the inline hint); we
-        // never block a buyer over a domain we merely don't recognise.
+        // nowhere to go.
         if (!effectiveUser) {
             const err = emailFormatError(guestDetails.email)
             if (err) {
                 setEmailError(err)
                 toast({ title: 'Check your email address', description: err, variant: 'destructive' })
+                return
+            }
+
+            // A SUSPECTED typo now requires an answer rather than being
+            // dismissible by ignoring it. This used to be a hint the buyer
+            // could walk straight past, and 25 addresses in our own data are
+            // `gmail.con` and friends — every one a paid ticket delivered
+            // nowhere. We still never rewrite what they typed: "it's correct"
+            // is always available and always honoured.
+            const typed = normalizeEmail(guestDetails.email)
+            const sugg = suggestEmail(typed)
+            if (sugg && emailTypoAck !== typed) {
+                setEmailSuggestion(sugg)
+                toast({
+                    title: 'Check your email address',
+                    description: `Did you mean ${sugg}? Your ticket is sent to this address.`,
+                    variant: 'destructive',
+                })
                 return
             }
         }
@@ -559,6 +589,11 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                 // from a web one in purchase_intents, so "how much revenue does the app
                 // drive?" has no answer. Whitelisted server-side; anything else stores NULL.
                 source: 'web',
+                // The buyer was shown a typo suggestion and chose to keep what
+                // they typed. Without this the server cannot tell "a human
+                // confirmed it" from "a client that never checked", and it has
+                // to assume the worse of the two.
+                email_confirmed: !effectiveUser && emailTypoAck === normalizeEmail(guestDetails.email),
                 // What the buyer ticked. Only the ACT of accepting is reported —
                 // the server resolves and stores the terms text itself, because a
                 // snapshot this client could author would prove nothing.
@@ -866,16 +901,32 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                             <p id="email-error" className="text-xs text-destructive">{emailError}</p>
                                         )}
                                         {!emailError && emailSuggestion && (
-                                            <p id="email-suggestion" className="text-xs text-muted-foreground">
-                                                Did you mean{' '}
-                                                <button
-                                                    type="button"
-                                                    onClick={applySuggestion}
-                                                    className="font-semibold text-foreground underline underline-offset-2 hover:no-underline"
-                                                >
-                                                    {emailSuggestion}
-                                                </button>
-                                                ?
+                                            <div id="email-suggestion" className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 space-y-1.5">
+                                                <p className="text-xs text-foreground">
+                                                    Did you mean{' '}
+                                                    <span className="font-semibold">{emailSuggestion}</span>?
+                                                </p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={applySuggestion}
+                                                        className="rounded border border-input bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+                                                    >
+                                                        Use {emailSuggestion}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={keepTypedEmail}
+                                                        className="rounded px-2 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                                                    >
+                                                        No, it&apos;s correct
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {!emailError && !emailSuggestion && emailTypoAck && (
+                                            <p className="text-xs text-muted-foreground">
+                                                Using <span className="font-medium text-foreground">{emailTypoAck}</span> as typed.
                                             </p>
                                         )}
                                         <p className="text-xs text-muted-foreground">Your ticket is sent here.</p>

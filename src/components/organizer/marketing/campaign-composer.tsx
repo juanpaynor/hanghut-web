@@ -17,6 +17,7 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { format } from 'date-fns'
+import { checkEmailList } from '@/lib/marketing/email-check-actions'
 import { getAudienceCount, getRecentlyEmailedCount, getEventAttendeeRecipients, getSegmentRecipients, saveDraft, getDrafts, getDraft, deleteDraft, scheduleCampaign, getScheduledCampaigns, cancelScheduledCampaign, getTemplates, saveAsTemplate, deleteTemplate, buildEventEmailBlock, type EmailTemplate } from '@/lib/marketing/actions'
 import { formatInManila } from '@/lib/datetime'
 
@@ -671,6 +672,36 @@ export function CampaignComposer() {
                 if (specificRecipients.length === 0) throw new Error('No customers selected')
                 body.target_recipients = specificRecipients
                 body.segment = 'specific_customers'
+            }
+
+            // PRE-SEND CHECK. The audience is resolved by now, so this is the
+            // last moment a bad address can be caught before it becomes a
+            // bounce on a shared sending domain. Cheap: one RPC that computes
+            // a suggestion per DISTINCT DOMAIN, not per recipient.
+            //
+            // Advisory, not blocking — the organizer owns their list and may
+            // well know something we don't. But they are told, with a count,
+            // before it costs them.
+            if (Array.isArray(body.target_recipients) && body.target_recipients.length > 0) {
+                const check = await checkEmailList(
+                    body.target_recipients.map((r: any) => r.email).filter(Boolean)
+                )
+                const bad = (check.data?.invalid ?? 0) + (check.data?.typos ?? 0)
+                if (check.data && bad > 0) {
+                    const parts: string[] = []
+                    if (check.data.invalid > 0) parts.push(`${check.data.invalid} can't receive mail`)
+                    if (check.data.typos > 0) parts.push(`${check.data.typos} look mistyped`)
+                    const proceed = window.confirm(
+                        `${bad} of ${check.data.total} addresses look wrong — ${parts.join(', ')}.\n\n`
+                        + `Bounces hurt delivery for everything you send afterwards, including ticket emails. `
+                        + `You can fix them under Marketing -> List Health.\n\n`
+                        + `Send anyway?`
+                    )
+                    if (!proceed) {
+                        setSending(false)
+                        return
+                    }
+                }
             }
 
             // Call Edge Function

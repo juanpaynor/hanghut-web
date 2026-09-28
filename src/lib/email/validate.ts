@@ -11,6 +11,13 @@
  * Deliberately suggestion-only for domains: we never rewrite what someone
  * typed. A wrong auto-correct is worse than a typo, and plenty of real buyers
  * are on domains we have never seen.
+ *
+ * THIS FILE IS THE FAST CLIENT-SIDE HINT, NOT THE AUTHORITY. The same rules
+ * live in SQL (`check_email_address`, migration 20260927000000) because Deno
+ * edge functions and the mobile app cannot import from src/. When they
+ * disagree, the database wins — it is the copy that gets to refuse. Keep
+ * KNOWN_DOMAINS in step with the `email_known_domains` table; that table is
+ * the one that can be corrected without a deploy.
  */
 
 /** Domains our buyers actually use, from the live address book. A typed domain
@@ -31,8 +38,11 @@ const KNOWN_DOMAINS = [
     'yahoo.com.ph', 'gmail.com.ph',
     'up.edu.ph', 'dlsu.edu.ph', 'admu.edu.ph', 'ust.edu.ph', 'ess.edu.ph',
     'feu.edu.ph', 'mapua.edu.ph', 'addu.edu.ph', 'usc.edu.ph',
+    // Added after a live sweep flagged real students: pshs.edu.ph sits close
+    // enough to ess.edu.ph that the suggester wanted to "fix" it.
+    'pshs.edu.ph',
     // Ours
-    'hanghut.com',
+    'hanghut.com', 'hanghut.internal',
 ]
 
 const KNOWN_SET = new Set(KNOWN_DOMAINS)

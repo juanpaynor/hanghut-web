@@ -6,13 +6,15 @@ import { SubscribersTable } from '@/components/organizer/marketing/subscribers-t
 import { CampaignComposer } from '@/components/organizer/marketing/campaign-composer'
 import { CampaignHistory } from '@/components/organizer/marketing/campaign-history'
 import { AutomationsManager } from '@/components/organizer/marketing/automations-manager'
-import { Users, Sparkles, Zap, History } from 'lucide-react'
+import { EmailListChecker } from '@/components/organizer/marketing/email-list-checker'
+import { Users, Sparkles, Zap, History, ShieldCheck } from 'lucide-react'
 
 const TABS = [
     { value: 'subscribers', label: 'Subscribers', icon: Users },
     { value: 'campaigns', label: 'Create Campaign', icon: Sparkles },
     { value: 'automations', label: 'Automations', icon: Zap },
     { value: 'history', label: 'Sent History', icon: History },
+    { value: 'list-health', label: 'List Health', icon: ShieldCheck },
 ]
 
 export default function MarketingPage() {
@@ -66,6 +68,9 @@ export default function MarketingPage() {
                 </TabsContent>
                 <TabsContent value="history" className="space-y-4">
                     <CampaignHistory />
+                </TabsContent>
+                <TabsContent value="list-health" className="space-y-4">
+                    <EmailListChecker />
                 </TabsContent>
             </Tabs>
         </div>

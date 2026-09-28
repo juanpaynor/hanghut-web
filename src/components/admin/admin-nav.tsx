@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Users, UsersRound, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet, Sparkles, Mail, Megaphone, Smartphone, Bell, Armchair, Receipt, Link2, Headset } from 'lucide-react'
+import { LayoutDashboard, Users, UsersRound, Shield, ScrollText, Ticket, LogOut, MapPin, AlertTriangle, Briefcase, CalendarDays, Wallet, Sparkles, Mail, Megaphone, Smartphone, Bell, Armchair, Receipt, Link2, Headset, Send } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -101,6 +101,11 @@ const navItems = [
         title: 'Audit Log',
         href: '/admin/audit',
         icon: ScrollText,
+    },
+    {
+        title: 'Marketing',
+        href: '/admin/marketing',
+        icon: Send,
     },
     {
         title: 'Waitlist',

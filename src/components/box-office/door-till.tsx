@@ -373,15 +373,21 @@ export function DoorTill({
                                         {(() => {
                                             // Door staff type fast on a phone; a mistyped domain here
                                             // loses the ticket just as surely as at checkout.
+                                            //
+                                            // Deliberately NOT blocking, unlike checkout and RSVP. The
+                                            // address is optional here, the customer is standing in
+                                            // front of you, and they get admitted either way — so an
+                                            // extra confirmation tap buys a copy of an email while
+                                            // holding up a queue. One large tap to fix it, then move on.
                                             const hint = suggestEmail(email)
                                             return hint ? (
-                                                <p className="mt-1.5 text-xs text-muted-foreground">
-                                                    Did you mean{' '}
-                                                    <button type="button" onClick={() => setEmail(hint)}
-                                                        className="font-semibold text-foreground underline underline-offset-2">
-                                                        {hint}
-                                                    </button>?
-                                                </p>
+                                                <button type="button" onClick={() => setEmail(hint)}
+                                                    className="mt-1.5 flex w-full items-center justify-between rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-left">
+                                                    <span className="text-xs text-muted-foreground">
+                                                        Did you mean <span className="font-semibold text-foreground">{hint}</span>?
+                                                    </span>
+                                                    <span className="ml-2 shrink-0 text-xs font-medium underline underline-offset-2">Use it</span>
+                                                </button>
                                             ) : null
                                         })()}
                                     </Field>

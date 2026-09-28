@@ -94,7 +94,7 @@ serve(async (req) => {
         )
 
         // Parse request body
-        const { event_id, quantity, tier_id, seat_ids, seat_session_id, section_id, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution, source, terms } = await req.json()
+        const { event_id, quantity, tier_id, seat_ids, seat_session_id, section_id, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution, source, terms, email_confirmed } = await req.json()
 
         // Which client created this order. Whitelisted rather than stored raw so the column
         // can't drift into 'App'/'ios'/'mobile-web' variants; anything unrecognised is stored
@@ -134,6 +134,43 @@ serve(async (req) => {
                 )
             }
             guest_details.email = cleanEmail
+
+            // A LIKELY TYPO, not a malformed address. `gmail.con` passes every
+            // structural test above — it is a perfectly valid address that
+            // simply does not exist — so the shape check waves it through and
+            // the ticket is delivered nowhere. 25 addresses already in our data
+            // are this exact mistake.
+            //
+            // The rules live in SQL (check_email_address) rather than here
+            // because the web client, this function and the mobile app must not
+            // be able to disagree about what counts as a typo, and a Deno copy
+            // would drift from the TypeScript one the browser runs.
+            //
+            // `email_confirmed` is the buyer saying "no, it's correct" — always
+            // honoured, because a wrong auto-correct is worse than the typo.
+            // A client that never asked simply does not send it, which is the
+            // safe default: we would rather stop a sale than post a ticket to
+            // an address nobody reads.
+            if (email_confirmed !== true) {
+                const { data: emailCheck, error: emailCheckError } = await supabaseAdmin
+                    .rpc('check_email_address', { p_email: cleanEmail })
+                // Never fail a sale because the checker itself is unavailable.
+                if (emailCheckError) {
+                    console.error('check_email_address failed (non-fatal):', emailCheckError)
+                } else if (emailCheck?.suggestion) {
+                    return new Response(
+                        JSON.stringify({
+                            success: false,
+                            error: {
+                                code: 'EMAIL_LIKELY_TYPO',
+                                message: `Did you mean ${emailCheck.suggestion}? Your ticket is sent to this address.`,
+                                suggestion: emailCheck.suggestion,
+                            }
+                        }),
+                        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                    )
+                }
+            }
         }
 
         // Get user profile for customer details (only if authenticated)
