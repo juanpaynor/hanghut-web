@@ -25,6 +25,7 @@ const NAV_PERMISSIONS: Record<string, AdminRole[]> = {
     '/admin/support':     ['super_admin', 'admin', 'support'],
     '/admin/tickets':     ['super_admin', 'admin', 'support'],
     '/admin/audit':       ['super_admin', 'admin', 'finance_admin'],
+    '/admin/marketing':   ['super_admin', 'admin'],
     '/admin/waitlist':    ['super_admin', 'admin'],
     '/admin/popups':      ['super_admin', 'admin'],
     '/admin/releases':    ['super_admin', 'admin'],

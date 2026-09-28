@@ -71,14 +71,30 @@ function serviceClient() {
     })
 }
 
+/**
+ * Deliberately narrower than the usual `is_admin` check used elsewhere in
+ * /admin. `is_admin` is true for support staff too, and mailing the entire
+ * customer base is not a support action — the nav already limits this page to
+ * super_admin and admin, and a hidden link is not authorisation.
+ */
+const PLATFORM_EMAIL_ROLES = ['super_admin', 'admin']
+
 async function requireAdmin() {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Not authenticated' as const }
     const { data: adminUser } = await supabase
-        .from('users').select('is_admin').eq('id', user.id).single()
-    if (!adminUser?.is_admin) return { error: 'Forbidden' as const }
-    return { user }
+        .from('users').select('is_admin, admin_role').eq('id', user.id).single()
+    if (!adminUser?.is_admin || !PLATFORM_EMAIL_ROLES.includes(adminUser.admin_role ?? '')) {
+        return { error: 'Forbidden' as const }
+    }
+    // The caller's own client goes back with them. The audience RPCs must run
+    // AS the admin, not as the service role: they gate on
+    // can_send_platform_email(), which reads auth.uid(), and the service role
+    // has none — it would be refused, and papering over that by dropping the
+    // SQL gate would leave the database with no opinion about who may mail
+    // every customer.
+    return { user, supabase }
 }
 
 /** The partner row platform mail is sent as, so the UI can name it honestly. */
@@ -114,10 +130,7 @@ export async function getPlatformRecipients(
     const gate = await requireAdmin()
     if ('error' in gate) return { error: gate.error }
 
-    const admin = serviceClient()
-    if (!admin) return { error: 'Server configuration error' }
-
-    const { data, error } = await admin.rpc('get_platform_audience', {
+    const { data, error } = await gate.supabase.rpc('get_platform_audience', {
         p_audience: audience,
         p_event_id: opts?.eventId ?? null,
         p_days: opts?.days ?? 180,
@@ -138,10 +151,7 @@ export async function getPlatformAudienceCounts(): Promise<{
     const gate = await requireAdmin()
     if ('error' in gate) return { error: gate.error }
 
-    const admin = serviceClient()
-    if (!admin) return { error: 'Server configuration error' }
-
-    const { data, error } = await admin.rpc('get_platform_audience_counts')
+    const { data, error } = await gate.supabase.rpc('get_platform_audience_counts')
     if (error) {
         console.error('get_platform_audience_counts failed', error)
         return { error: 'Could not load audience sizes.' }
