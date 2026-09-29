@@ -50,9 +50,18 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
     // Mirror the event page's theme inside the portal: a `dark` class flips the
     // shadcn tokens to their dark values, and the brand hue overrides --primary.
     const brandHsl = themeColor ? hexToHsl(themeColor) : null
-    const brandVars = brandHsl
-        ? ({ ['--primary']: brandHsl, ['--ring']: brandHsl, ['--hh-accent']: themeColor } as React.CSSProperties)
-        : undefined
+    // `88vh` in the className is the FALLBACK. On mobile, `vh` resolves against the
+    // LARGE viewport (browser chrome hidden), so an 88vh modal is routinely taller
+    // than the screen you can actually see: the body then never overflows, nothing
+    // inside scrolls, the touch chains out and the PAGE BEHIND scrolls instead,
+    // while the bottom of the form sits off-screen and unreachable.
+    // `svh` is the small viewport -- what is visible with chrome showing. React
+    // applies this through the CSSOM, so a browser that does not know `svh` simply
+    // rejects it and keeps the class's `vh`.
+    const brandVars = {
+        ...(brandHsl ? { ['--primary']: brandHsl, ['--ring']: brandHsl, ['--hh-accent']: themeColor } : {}),
+        maxHeight: '88svh',
+    } as React.CSSProperties
 
     const singlePage = formLayout === 'single'
 
@@ -418,10 +427,10 @@ function QuestionStep({ q, value, onChange, eventId, compact }: {
                 here and HTML would otherwise collapse every paragraph break into
                 a single space -- a waiver arrives as one unreadable wall.
 
-                A long label also gets its OWN bounded scroll pane rather than
-                growing the step without limit. A 5,875-character consent pushed
-                the Next button off the bottom of the modal and could not be
-                reached, which blocked registration outright. */}
+                A long label is set apart as a document block, but deliberately
+                WITHOUT its own scroller: two nested scroll areas in one small
+                modal meant the consent text scrolled while the checkboxes under
+                it stayed out of reach. The modal body is the single scroller. */}
             <h3 className={cn(
                 'tracking-tight whitespace-pre-wrap',
                 compact
@@ -429,7 +438,7 @@ function QuestionStep({ q, value, onChange, eventId, compact }: {
                     : longLabel
                         ? 'text-sm sm:text-base font-medium leading-relaxed text-foreground'
                         : 'text-lg sm:text-xl font-bold',
-                longLabel && !compact && 'max-h-[45vh] overflow-y-auto overscroll-contain rounded-lg border bg-muted/30 p-3'
+                longLabel && !compact && 'rounded-lg border bg-muted/30 p-3'
             )}>
                 {q.label}
                 {q.is_required && <span className="ml-1 text-destructive">*</span>}

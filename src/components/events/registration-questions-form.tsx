@@ -105,7 +105,14 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
-            <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+            {/* `85vh` is the fallback; `svh` is the SMALL viewport (what is actually
+                visible with browser chrome showing). With `vh` alone this dialog could
+                be taller than the screen, so its own overflow never engaged, the page
+                behind scrolled instead, and anything below the fold was unreachable. */}
+            <DialogContent
+                className="sm:max-w-lg max-h-[85vh] overflow-y-auto overscroll-contain"
+                style={{ maxHeight: '85svh' }}
+            >
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <ClipboardList className="h-5 w-5 text-primary" />
@@ -124,7 +131,7 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
                                 // bounded scroll pane instead of pushing checkout off the page.
                                 <Label className={cn(
                                     'text-sm font-medium whitespace-pre-wrap block',
-                                    q.label.length > 400 && 'max-h-64 overflow-y-auto overscroll-contain rounded-lg border bg-muted/30 p-3 font-normal'
+                                    q.label.length > 400 && 'rounded-lg border bg-muted/30 p-3 font-normal'
                                 )}>
                                     {numberOf(q.id)}. {q.label}
                                     {q.is_required && <span className="text-destructive ml-1">*</span>}
