@@ -38,7 +38,7 @@ interface RegisterModalProps {
     formLayout?: 'stepper' | 'single'
 }
 
-type Phase = 'form' | 'submitting' | 'approved' | 'pending'
+type Phase = 'form' | 'submitting' | 'pending'
 
 const slide = {
     enter: (dir: number) => ({ x: dir > 0 ? 48 : -48, opacity: 0 }),
@@ -187,10 +187,13 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                 setPhase('pending')
                 onPending?.()
             } else {
-                setPhase('approved')
-                // brief success beat before handing off to the ticket selector
+                // Straight through to tickets. There used to be a 1.1s "You're
+                // registered!" beat here; organizers asked for it gone -- for a
+                // paid event it is a second of celebration wedged between the
+                // form and the thing the buyer is actually trying to do. The
+                // spinner stays up until the parent swaps this modal out.
                 const guest = isLoggedIn ? undefined : { name: name.trim(), email: normalizeEmail(email) }
-                setTimeout(() => onApproved(regId, guest), 1100)
+                onApproved(regId, guest)
             }
         } catch {
             setError('Something went wrong. Please try again.')
@@ -319,23 +322,6 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                                 <motion.div key="submitting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 text-center">
                                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                                     <p className="text-sm text-muted-foreground">Submitting your registration…</p>
-                                </motion.div>
-                            )}
-
-                            {phase === 'approved' && (
-                                <motion.div key="approved" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex h-full min-h-[240px] flex-col items-center justify-center gap-4 text-center">
-                                    <motion.div
-                                        initial={{ scale: 0 }}
-                                        animate={{ scale: 1 }}
-                                        transition={{ type: 'spring', stiffness: 260, damping: 18 }}
-                                        className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500 text-white shadow-lg shadow-green-500/30"
-                                    >
-                                        <Check className="h-8 w-8" />
-                                    </motion.div>
-                                    <div>
-                                        <h3 className="text-xl font-bold">You&apos;re registered!</h3>
-                                        <p className="text-sm text-muted-foreground mt-1">Taking you to tickets…</p>
-                                    </div>
                                 </motion.div>
                             )}
 

@@ -38,6 +38,8 @@ interface TicketSelectorProps {
     isSoldOut: boolean
     fullWidth?: boolean
     trigger?: React.ReactNode
+    /** Organizer's custom CTA wording; falls back to "Get Tickets". */
+    ctaLabel?: string
     tiers?: any[]
     autoOpen?: boolean
     onClose?: () => void
@@ -52,6 +54,7 @@ export function TicketSelector({
     isSoldOut,
     fullWidth = false,
     trigger,
+    ctaLabel,
     tiers = [],
     autoOpen = false,
     onClose,
@@ -118,7 +121,7 @@ export function TicketSelector({
                         disabled={isSoldOut}
                     >
                         <Ticket className="h-5 w-5 mr-2" />
-                        {isSoldOut ? 'Sold Out' : 'Get Tickets'}
+                        {isSoldOut ? 'Sold Out' : (ctaLabel?.trim() || 'Get Tickets')}
                     </Button>
                 )}
             </DialogTrigger>

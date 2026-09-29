@@ -38,6 +38,8 @@ interface RegistrationGateProps {
     /** RSVP mode (free events): single custom-labeled button, no quantity/checkout. */
     rsvpMode?: boolean
     rsvpLabel?: string
+    /** Organizer's custom buy-button wording for paid events. */
+    ctaLabel?: string
     /** How tiers are presented (from event.layout_config.tiers). inline defaults on. */
     tierDisplay?: TierDisplayConfig
     /** How the registration questions are presented (event.layout_config.registration.layout). */
@@ -73,6 +75,7 @@ export function RegistrationGate({
     ticketToken,
     rsvpMode,
     rsvpLabel,
+    ctaLabel,
     tierDisplay,
     formLayout,
 }: RegistrationGateProps) {
@@ -159,6 +162,7 @@ export function RegistrationGate({
             fullWidth={fullWidth}
             subscriberDiscount={subscriberDiscount}
             autoOpen={autoOpen}
+            ctaLabel={ctaLabel}
             trigger={autoOpen ? undefined : null}
         />
     )

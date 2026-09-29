@@ -427,7 +427,17 @@ export default async function PublicEventPage({
         ? activeTiers.every((t: any) => Number(t.price) === 0)
         : !hasAnyTier && Number(event.ticket_price) === 0
     const rsvpMode = !!event.rsvp_enabled && isFreeEvent
-    const rsvpLabel = (event.rsvp_button_label || '').trim() || 'RSVP'
+    // rsvp_button_label started life as an RSVP-only field. It is now the
+    // organizer's CTA label for ANY internally-ticketed event -- a running
+    // organizer wanted "Secure your spot!" on a paid race, which the old
+    // free-RSVP-only gate made unreachable. The column keeps its name because
+    // renaming it would break every event already using it.
+    const customCtaLabel = (event.rsvp_button_label || '').trim()
+    const rsvpLabel = customCtaLabel || 'RSVP'
+    /** What the buy/reserve button says. Sold-out wording always wins. */
+    const ctaLabel = rsvpMode
+        ? (isSoldOut ? 'Event full' : rsvpLabel)
+        : (isSoldOut ? 'Sold Out' : (customCtaLabel || 'Get Tickets'))
 
     // External ticketing redirect URL (edge function handles click tracking + 302 redirect)
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -917,9 +927,7 @@ export default async function PublicEventPage({
                         <h2 data-hh-section-title className="text-2xl font-bold">
                             {event.is_external
                                 ? `Get Tickets${event.external_provider_name ? ` on ${event.external_provider_name}` : ''}`
-                                : rsvpMode
-                                    ? (isSoldOut ? 'Event full' : rsvpLabel)
-                                    : (isSoldOut ? 'Sold Out' : 'Get Tickets')}
+                                : ctaLabel}
                         </h2>
                         <p className="text-muted-foreground text-sm">
                             {event.is_external
@@ -1053,6 +1061,7 @@ export default async function PublicEventPage({
                             ticketToken={viewerTicketToken}
                             rsvpMode={rsvpMode}
                             rsvpLabel={rsvpLabel}
+                            ctaLabel={customCtaLabel || undefined}
                             tierDisplay={event.layout_config?.tiers}
                             formLayout={event.layout_config?.registration?.layout}
                         />
@@ -1425,7 +1434,7 @@ export default async function PublicEventPage({
                     {showTickets && <TicketsSection />}
                 </main>
 
-                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : undefined} />
+                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : (customCtaLabel || undefined)} />
             </div>
         )
     }
@@ -1485,7 +1494,7 @@ export default async function PublicEventPage({
                     {showTickets && <TicketsSection />}
                 </main>
 
-                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : undefined} />
+                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : (customCtaLabel || undefined)} />
             </div>
         )
     }
@@ -1540,7 +1549,7 @@ export default async function PublicEventPage({
                     {showTickets && <TicketsSection />}
                 </div>
 
-                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : undefined} />
+                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : (customCtaLabel || undefined)} />
             </div>
         )
     }
@@ -1588,7 +1597,7 @@ export default async function PublicEventPage({
                     {showTickets && <TicketsSection />}
                 </main>
 
-                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : undefined} />
+                <MobileTicketButton showTickets={showTickets} isSoldOut={isSoldOut} isExternal={event.is_external} externalUrl={externalRedirectUrl} eventId={event.id} label={rsvpMode ? rsvpLabel : (customCtaLabel || undefined)} />
             </div>
         )
     }
@@ -1723,7 +1732,7 @@ export default async function PublicEventPage({
                     isExternal={event.is_external}
                     externalUrl={externalRedirectUrl}
                     eventId={event.id}
-                    label={rsvpMode ? rsvpLabel : undefined}
+                    label={rsvpMode ? rsvpLabel : (customCtaLabel || undefined)}
                 />
             </div>
         )
@@ -1827,7 +1836,7 @@ export default async function PublicEventPage({
                 isExternal={event.is_external}
                 externalUrl={externalRedirectUrl}
                 eventId={event.id}
-                label={rsvpMode ? rsvpLabel : undefined}
+                label={rsvpMode ? rsvpLabel : (customCtaLabel || undefined)}
             />
         )
 
@@ -2061,7 +2070,7 @@ export default async function PublicEventPage({
                     isExternal={event.is_external}
                     externalUrl={externalRedirectUrl}
                     eventId={event.id}
-                    label={rsvpMode ? rsvpLabel : undefined}
+                    label={rsvpMode ? rsvpLabel : (customCtaLabel || undefined)}
                 />
             </div>
         )

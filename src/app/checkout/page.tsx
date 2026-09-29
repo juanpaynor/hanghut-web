@@ -61,6 +61,13 @@ export default async function CheckoutPage({
                     quantity_sold,
                     is_active
                 ),
+                event_terms_documents (
+                    id,
+                    title,
+                    body,
+                    is_required,
+                    display_order
+                ),
                 registration_questions (
                     id,
                     label,
@@ -122,6 +129,11 @@ export default async function CheckoutPage({
     // Resolve custom TOS: event-level overrides organizer-level
     const org = Array.isArray(event.organizer) ? event.organizer[0] : event.organizer
     const customTos = event.custom_tos || org?.custom_tos || null
+    // Additional, separately-accepted documents (waiver, privacy consent, …).
+    // Event-level only: these are per-event agreements, so there is deliberately
+    // no organizer-level fallback the way custom_tos has.
+    const termsDocuments = [...((event as any).event_terms_documents || [])]
+        .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
     const organizerName = org?.business_name || 'Organizer'
 
     // 3. Resolve Tier
@@ -227,6 +239,7 @@ export default async function CheckoutPage({
                     user={user}
                     tier={tierToUse}
                     customTos={customTos}
+                    termsDocuments={termsDocuments}
                     organizerName={organizerName}
                     registrationQuestions={(event.registration_questions || []).sort((a: any, b: any) => a.display_order - b.display_order)}
                     subscriberDiscount={subscriberDiscount}

@@ -27,6 +27,7 @@ import { CheckCircle2, ClipboardList, Armchair } from 'lucide-react'
 import { formatEventShortWithEnd } from '@/lib/datetime'
 import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
 import { visibleQuestions, tierOnlyQuestions, isSectionBlock } from '@/lib/events/question-visibility'
+import type { TermsDocument } from '@/lib/legal/terms-documents'
 import { PLATFORM_TERMS_VERSION } from '@/lib/legal/terms-version'
 
 // Conditionally rendered (approval/invite events or events with custom questions),
@@ -72,6 +73,8 @@ interface CheckoutClientProps {
         quantity_sold: number
     }
     customTos?: string | null
+    /** Additional, separately-accepted documents (waiver, privacy consent, …). */
+    termsDocuments?: TermsDocument[]
     organizerName?: string
     registrationQuestions?: RegistrationQuestion[]
     subscriberDiscount?: SubscriberDiscount | null
@@ -84,7 +87,7 @@ interface CheckoutClientProps {
     approvedRegistrationId?: string | null
 }
 
-export function CheckoutClient({ event, quantity, user, tier, customTos, organizerName, registrationQuestions = [], subscriberDiscount = null, selectedSeatIds = [], selectedSeats = [], seatArrangement = null, approvedRegistrationId: serverApprovedRegistrationId = null }: CheckoutClientProps) {
+export function CheckoutClient({ event, quantity, user, tier, customTos, termsDocuments = [], organizerName, registrationQuestions = [], subscriberDiscount = null, selectedSeatIds = [], selectedSeats = [], seatArrangement = null, approvedRegistrationId: serverApprovedRegistrationId = null }: CheckoutClientProps) {
     const router = useRouter()
     const searchParams = useSearchParams()
     const { toast } = useToast()
@@ -155,6 +158,14 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     // [NEW] Terms & Newsletter State
     const [termsAccepted, setTermsAccepted] = useState(false)
     const [organizerTermsAccepted, setOrganizerTermsAccepted] = useState(false)
+    // One tick per additional document, keyed by document id. Separate state
+    // rather than a single boolean precisely because the point of these is that
+    // a waiver is affirmed on its own, not folded into a blanket acceptance.
+    const [acceptedDocs, setAcceptedDocs] = useState<Record<string, boolean>>({})
+    const [openDocId, setOpenDocId] = useState<string | null>(null)
+
+    const requiredDocs = termsDocuments.filter(d => d.is_required !== false)
+    const missingDocs = requiredDocs.filter(d => !acceptedDocs[d.id as string])
     const [showOrganizerTos, setShowOrganizerTos] = useState(false)
     const [newsletterSubscribed, setNewsletterSubscribed] = useState(false)
 
@@ -419,6 +430,16 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
             return
         }
 
+        if (missingDocs.length > 0) {
+            toast({
+                title: 'Please accept all required documents',
+                description: `Still to accept: ${missingDocs.map(d => d.title).join(', ')}.`,
+                variant: 'destructive',
+            })
+            termsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            return
+        }
+
         if (customTos && !organizerTermsAccepted) {
             toast({
                 title: "Organizer Terms Required",
@@ -601,6 +622,13 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                     platform_accepted: termsAccepted,
                     platform_version: PLATFORM_TERMS_VERSION,
                     organizer_accepted: customTos ? organizerTermsAccepted : false,
+                    // Ids only. The server resolves each document's title and
+                    // body and snapshots those itself — a snapshot authored here
+                    // would be exactly as forgeable as the platform one, and for
+                    // a waiver that matters more, not less.
+                    accepted_document_ids: termsDocuments
+                        .filter(d => acceptedDocs[d.id as string])
+                        .map(d => d.id),
                 },
                 // [NEW] Fee Metadata for Edge Function
                 metadata: {
@@ -745,7 +773,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
     // adds a scroll-to-terms nicety when the buyer taps Pay from the mobile bar
     // without the (off-screen) terms checkbox in view.
     const handlePayClick = () => {
-        if (!termsAccepted || (customTos && !organizerTermsAccepted)) {
+        if (!termsAccepted || (customTos && !organizerTermsAccepted) || missingDocs.length > 0) {
             termsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }
         handlePayment()
@@ -1057,12 +1085,50 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, organiz
                                         </span>
                                     </Label>
                                     {showOrganizerTos && (
-                                        <div className="ml-7 p-3 rounded-lg bg-muted/50 border border-border/50 text-xs text-muted-foreground max-h-40 overflow-y-auto whitespace-pre-wrap">
+                                        <div className="ml-7 p-3 rounded-lg bg-muted/50 border border-border/50 text-xs text-muted-foreground max-h-72 overflow-y-auto whitespace-pre-wrap">
                                             {customTos}
                                         </div>
                                     )}
                                 </div>
                             )}
+
+                            {/* Additional documents, each affirmed on its own. A waiver
+                                bundled under a generic terms tick is a weaker record than
+                                one the buyer accepted separately, which is the whole
+                                reason these are not merged into customTos. */}
+                            {termsDocuments.map(doc => {
+                                const id = doc.id as string
+                                const open = openDocId === id
+                                const required = doc.is_required !== false
+                                return (
+                                    <div key={id} className="space-y-1.5">
+                                        <Label className="flex items-start gap-3 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!acceptedDocs[id]}
+                                                onChange={e => setAcceptedDocs(prev => ({ ...prev, [id]: e.target.checked }))}
+                                                className="mt-1 h-4 w-4 rounded border-primary text-primary focus:ring-primary"
+                                            />
+                                            <span className="text-sm">
+                                                I accept{' '}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setOpenDocId(open ? null : id)}
+                                                    className="underline text-primary hover:text-primary/80 text-left"
+                                                >
+                                                    {doc.title}
+                                                </button>
+                                                {required && <span className="text-destructive">*</span>}
+                                            </span>
+                                        </Label>
+                                        {open && (
+                                            <div className="ml-7 p-3 rounded-lg bg-muted/50 border border-border/50 text-xs text-muted-foreground max-h-72 overflow-y-auto whitespace-pre-wrap">
+                                                {doc.body}
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                            })}
 
                             <Label className="flex items-start gap-3 cursor-pointer">
                                 <input

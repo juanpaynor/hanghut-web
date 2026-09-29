@@ -19,6 +19,8 @@ import {
 import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair, Plus, Trash2, Check, Copy, ExternalLink, Code2, Send, Globe } from 'lucide-react'
 import { createEvent, updateEvent } from '@/lib/organizer/event-actions'
 import { RegistrationQuestionsManager, RegistrationQuestion } from '@/components/organizer/registration-questions-manager'
+import { TermsDocumentsManager } from '@/components/organizer/terms-documents-manager'
+import { TERMS_BODY_MAX, type TermsDocument } from '@/lib/legal/terms-documents'
 import { isoToManilaLocal, manilaLocalToISO, formatInManila } from '@/lib/datetime'
 import { GooglePlacesAutocomplete } from '@/components/organizer/google-places-autocomplete'
 import { useToast } from '@/hooks/use-toast'
@@ -199,6 +201,9 @@ export function EventForm({
     // Attendee questions collected in the create wizard (optional). Persisted by
     // createEvent once the event id exists. Editing keeps using the dashboard tab.
     const [questions, setQuestions] = useState<RegistrationQuestion[]>([])
+    // Additional, separately-accepted T&C documents. Persisted by the form's own
+    // Save in both create and edit, so the card has one obvious save action.
+    const [termsDocs, setTermsDocs] = useState<TermsDocument[]>([])
     // Gates the questions editor's mount until the draft is restored, so it seeds
     // from the restored questions rather than an empty list (it reads its initial
     // value once on mount and ignores later prop changes).
@@ -601,6 +606,7 @@ export function EventForm({
             formDataToSend.append('capacity', formData.capacity)
             formDataToSend.append('sales_end_datetime', formData.sales_end_datetime)
             formDataToSend.append('custom_tos', formData.custom_tos)
+            formDataToSend.append('terms_documents', JSON.stringify(termsDocs))
             formDataToSend.append('status', status)
             formDataToSend.append('seating_type', formData.seating_type)
             formDataToSend.append('max_seats_per_order', formData.max_seats_per_order)
@@ -1197,18 +1203,26 @@ export function EventForm({
                             </div>
                         )}
 
-                        {/* RSVP button label (free RSVP mode) */}
-                        {!isEditing && sellMode === 'rsvp' && (
+                        {/* Buy / RSVP button text. Stored in rsvp_button_label for
+                            historical reasons — it began life as an RSVP-only field, and
+                            renaming the column would break every event already using it. */}
+                        {sellMode !== 'external' && (
                             <div>
-                                <Label htmlFor="rsvp_button_label">RSVP button text</Label>
+                                <Label htmlFor="rsvp_button_label">
+                                    {sellMode === 'rsvp' ? 'RSVP button text' : 'Buy button text'}
+                                </Label>
                                 <Input
                                     id="rsvp_button_label"
                                     value={formData.rsvp_button_label}
                                     onChange={(e) => handleInputChange('rsvp_button_label', e.target.value)}
-                                    placeholder="RSVP"
+                                    placeholder={sellMode === 'rsvp' ? 'RSVP' : 'Get Tickets'}
                                     maxLength={30}
                                 />
-                                <p className="text-xs text-muted-foreground mt-1">Attendees reserve with one tap and get a scannable QR — no payment.</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    {sellMode === 'rsvp'
+                                        ? 'Attendees reserve with one tap and get a scannable QR — no payment.'
+                                        : 'Replaces “Get Tickets” everywhere buyers see it. Leave blank to keep the default.'}
+                                </p>
                             </div>
                         )}
 
@@ -2020,12 +2034,20 @@ export function EventForm({
                         value={formData.custom_tos}
                         onChange={(e) => handleInputChange('custom_tos', e.target.value)}
                         placeholder={`e.g., No refunds within 24 hours of the event.\nAttendees must be 18 years or older.\nThe organizer is not liable for lost belongings.`}
-                        rows={6}
-                        maxLength={2000}
+                        rows={10}
+                        maxLength={TERMS_BODY_MAX}
                     />
                     <p className="text-xs text-muted-foreground mt-2">
-                        {formData.custom_tos.length}/2000 characters
+                        {formData.custom_tos.length.toLocaleString()} / {TERMS_BODY_MAX.toLocaleString()} characters
                     </p>
+
+                    <div className="mt-8 pt-6 border-t">
+                        <TermsDocumentsManager
+                            eventId={eventId}
+                            onChange={setTermsDocs}
+                            hideSave
+                        />
+                    </div>
                 </Card>
 
                 {isEditing && (

@@ -28,6 +28,13 @@ const PLATFORM_TERMS_VERSION = '2026-05-08'
 // when the app team confirms their patch has rolled out (#335).
 const REQUIRE_TERMS_ACCEPTANCE = false
 
+// Same posture for the per-document consents (waiver, privacy, …). The WEB
+// checkout blocks on them already. The app does not render them at all yet, so
+// enforcing here would refuse every app purchase of an event that has required
+// documents -- the organizer would see the feature working on web and silently
+// losing app buyers. Record now, enforce once the app ships its gate.
+const REQUIRE_TERMS_DOCUMENTS = false
+
 // Mirror of the shape check in src/lib/email/validate.ts. Deno can't import
 // from src/, so keep the two in sync by hand. The client offers domain
 // suggestions; the server only refuses addresses that cannot receive mail at
@@ -424,6 +431,42 @@ serve(async (req) => {
         // terms win, the partner's apply otherwise. Whitespace-only counts as
         // ABSENT, because an organizer who cleared the field has no terms, and a
         // blank snapshot above a recorded acceptance is a lie in the audit trail.
+        // Additional, separately-accepted documents. Resolved from the database
+        // for the same reason the blob above is: the client says only WHICH
+        // documents it ticked, and the title and body recorded against that
+        // acceptance are ours. For a participant waiver that distinction is the
+        // entire value of the record.
+        const acceptedDocumentIds: string[] = Array.isArray(terms?.accepted_document_ids)
+            ? terms.accepted_document_ids.filter((v: unknown) => typeof v === 'string')
+            : []
+
+        const { data: eventDocs } = await supabaseClient
+            .from('event_terms_documents')
+            .select('id, title, body, is_required, display_order')
+            .eq('event_id', event_id)
+            .order('display_order', { ascending: true })
+
+        const allDocs = eventDocs ?? []
+        const acceptedIdSet = new Set(acceptedDocumentIds)
+        const acceptedDocs = allDocs.filter(d => acceptedIdSet.has(d.id))
+        const missingRequiredDocs = allDocs.filter(
+            d => d.is_required !== false && !acceptedIdSet.has(d.id)
+        )
+
+        if (REQUIRE_TERMS_DOCUMENTS && missingRequiredDocs.length > 0) {
+            return new Response(
+                JSON.stringify({
+                    success: false,
+                    error: {
+                        code: 'TERMS_DOCUMENTS_NOT_ACCEPTED',
+                        message: `Please accept: ${missingRequiredDocs.map(d => d.title).join(', ')}.`,
+                        documents: missingRequiredDocs.map(d => ({ id: d.id, title: d.title })),
+                    }
+                }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+        }
+
         const eventTos = typeof gateEvent.custom_tos === 'string' ? gateEvent.custom_tos.trim() : ''
         const partnerTos = typeof partnerCustomTos === 'string' ? partnerCustomTos.trim() : ''
         const organizerTermsText = eventTos || partnerTos || null
@@ -463,6 +506,21 @@ serve(async (req) => {
                 accepted_organizer_terms_text: organizerTermsText,
                 accepted_organizer_terms_source: organizerTermsSource,
                 terms_accepted_at: new Date().toISOString(),
+            }
+            : {}
+
+        // Recorded independently of termsComplete: a buyer who ticked the waiver
+        // but not the platform terms still ticked the waiver, and dropping that
+        // because a different box was missed would lose the stronger record of
+        // the two.
+        const termsDocumentFields = acceptedDocs.length > 0
+            ? {
+                accepted_terms_documents: acceptedDocs.map(d => ({
+                    id: d.id,
+                    title: d.title,
+                    body: d.body,
+                    is_required: d.is_required !== false,
+                })),
             }
             : {}
 
@@ -681,6 +739,7 @@ serve(async (req) => {
                 attribution: attribution && typeof attribution === 'object' ? attribution : null,
                 source: orderSource,
                 ...termsFields,
+                ...termsDocumentFields,
                 metadata: Object.keys(combinedMetadata).length > 0 ? combinedMetadata : null
             })
             .eq('id', intentId)

@@ -347,12 +347,79 @@ export async function createEvent(formData: FormData) {
             console.error('Question payload parse error:', e)
         }
 
+        await saveTermsDocuments(adminSupabase, event.id, formData.get('terms_documents') as string | null)
+
         revalidatePath('/organizer/events')
         return { success: true, eventId: event.id }
 
     } catch (error) {
         console.error('Unexpected error:', error)
         return { error: 'An unexpected error occurred' }
+    }
+}
+
+/**
+ * Persist the event's additional Terms & Conditions documents.
+ *
+ * Reconciles in place -- updates what stayed, inserts what is new, deletes what
+ * the organizer removed -- rather than wiping and rewriting, so a document's id
+ * survives an edit and the acceptance snapshots recorded against it stay
+ * traceable.
+ *
+ * Non-fatal by design, exactly like the registration-question block: a bad
+ * payload must never sink the event save itself.
+ */
+async function saveTermsDocuments(adminSupabase: any, eventId: string, raw: string | null) {
+    if (raw === null) return // field absent entirely — leave existing rows alone
+    try {
+        const parsed = JSON.parse(raw)
+        if (!Array.isArray(parsed)) return
+
+        const kept = parsed
+            .filter((d: any) => d && typeof d.title === 'string' && d.title.trim()
+                && typeof d.body === 'string' && d.body.trim())
+            .map((d: any, i: number) => ({
+                id: typeof d.id === 'string' && d.id ? d.id : null,
+                title: d.title.trim().slice(0, 120),
+                body: d.body.trim().slice(0, 100000),
+                is_required: d.is_required !== false,
+                display_order: i,
+            }))
+
+        const { data: existing } = await adminSupabase
+            .from('event_terms_documents')
+            .select('id')
+            .eq('event_id', eventId)
+
+        const existingIds: string[] = (existing || []).map((r: any) => r.id)
+        const keptIds = new Set(kept.map(d => d.id).filter(Boolean) as string[])
+        const removed = existingIds.filter(id => !keptIds.has(id))
+
+        if (removed.length > 0) {
+            await adminSupabase.from('event_terms_documents').delete().in('id', removed)
+        }
+
+        for (const doc of kept) {
+            if (doc.id && existingIds.includes(doc.id)) {
+                const { error } = await adminSupabase
+                    .from('event_terms_documents')
+                    .update({
+                        title: doc.title, body: doc.body,
+                        is_required: doc.is_required, display_order: doc.display_order,
+                    })
+                    .eq('id', doc.id)
+                if (error) console.error('Terms document update error:', error)
+            } else {
+                const { error } = await adminSupabase.from('event_terms_documents').insert({
+                    event_id: eventId,
+                    title: doc.title, body: doc.body,
+                    is_required: doc.is_required, display_order: doc.display_order,
+                })
+                if (error) console.error('Terms document insert error:', error)
+            }
+        }
+    } catch (e) {
+        console.error('Terms document payload parse error:', e)
     }
 }
 
@@ -496,6 +563,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
         if (updateError) throw updateError
 
         await saveOnlineJoinLink(adminSupabase, eventId, isOnline, formData.get('online_url') as string | null)
+        await saveTermsDocuments(adminSupabase, eventId, formData.get('terms_documents') as string | null)
 
         revalidatePath('/organizer/events')
         revalidatePath(`/organizer/events/${eventId}`)
