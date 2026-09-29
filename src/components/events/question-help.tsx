@@ -22,7 +22,7 @@ export function QuestionHelp({ text, imageUrl }: {
 
     return (
         <div className="space-y-2">
-            {text && <p className="text-xs leading-relaxed text-muted-foreground">{text}</p>}
+            {text && <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">{text}</p>}
 
             {imageUrl && (
                 <>

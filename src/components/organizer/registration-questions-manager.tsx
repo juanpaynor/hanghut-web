@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -347,13 +348,29 @@ export function RegistrationQuestionsManager({
                                         <Label className="text-xs mb-1 block">
                                             {isSection(q.question_type) ? 'Section title' : 'Question'}
                                         </Label>
-                                        <Input
+                                        {/* Textarea, not Input. Organizers paste whole consent
+                                            documents in here -- a participant waiver arrived as a
+                                            5,875-character label -- and an <input> SILENTLY strips
+                                            every newline on paste, so their paragraph breaks were
+                                            destroyed before they ever reached the database. The
+                                            column is text and the renderers preserve line breaks;
+                                            this was the only place the formatting was being lost. */}
+                                        <Textarea
                                             value={q.label}
                                             onChange={(e) => updateQuestion(index, { label: e.target.value })}
+                                            rows={q.label.length > 180 ? 8 : 2}
+                                            className="min-h-[38px] resize-y"
                                             placeholder={isSection(q.question_type)
                                                 ? 'e.g. Size Chart'
                                                 : "e.g. What's your job title?"}
                                         />
+                                        {q.label.length > 400 && (
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                {q.label.length.toLocaleString()} characters. Long consent text
+                                                is easier to manage as a Terms &amp; Conditions document on the
+                                                event — it gets its own titled checkbox at checkout.
+                                            </p>
+                                        )}
                                     </div>
                                     <div>
                                         <Label className="text-xs mb-1 block">Type</Label>

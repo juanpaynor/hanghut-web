@@ -118,9 +118,14 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
                     {shown.map((q) => (
                         <div key={q.id} className={cn('space-y-1.5', isSectionBlock(q) && 'border-t pt-4 first:border-t-0 first:pt-0')}>
                             {isSectionBlock(q) ? (
-                                <h4 className="text-base font-semibold tracking-tight">{q.label}</h4>
+                                <h4 className="text-base font-semibold tracking-tight whitespace-pre-wrap">{q.label}</h4>
                             ) : (
-                                <Label className="text-sm font-medium">
+                                // Line breaks preserved, and a pasted consent document gets a
+                                // bounded scroll pane instead of pushing checkout off the page.
+                                <Label className={cn(
+                                    'text-sm font-medium whitespace-pre-wrap block',
+                                    q.label.length > 400 && 'max-h-64 overflow-y-auto overscroll-contain rounded-lg border bg-muted/30 p-3 font-normal'
+                                )}>
                                     {numberOf(q.id)}. {q.label}
                                     {q.is_required && <span className="text-destructive ml-1">*</span>}
                                 </Label>

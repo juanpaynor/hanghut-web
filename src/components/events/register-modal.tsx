@@ -259,7 +259,7 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                     </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto px-5 sm:px-7 pt-6 pb-4 min-h-[220px] sm:min-h-[280px]">
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-7 pt-6 pb-4">
                     {/* Header */}
                     <div className="mb-5">
                         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -404,7 +404,7 @@ function QuestionStep({ q, value, onChange, eventId, compact }: {
     if (q.question_type === 'section') {
         return (
             <div className={cn('space-y-3', compact && 'border-t pt-6 first:border-t-0 first:pt-0')}>
-                <h3 className={cn('font-bold tracking-tight', compact ? 'text-base' : 'text-lg sm:text-xl')}>
+                <h3 className={cn('font-bold tracking-tight whitespace-pre-wrap', compact ? 'text-base' : 'text-lg sm:text-xl')}>
                     {q.label}
                 </h3>
                 <QuestionHelp text={q.help_text} imageUrl={q.help_image_url} />
@@ -414,13 +414,22 @@ function QuestionStep({ q, value, onChange, eventId, compact }: {
 
     return (
         <div className="space-y-4">
+            {/* `whitespace-pre-wrap` because organizers paste real documents in
+                here and HTML would otherwise collapse every paragraph break into
+                a single space -- a waiver arrives as one unreadable wall.
+
+                A long label also gets its OWN bounded scroll pane rather than
+                growing the step without limit. A 5,875-character consent pushed
+                the Next button off the bottom of the modal and could not be
+                reached, which blocked registration outright. */}
             <h3 className={cn(
-                'tracking-tight',
+                'tracking-tight whitespace-pre-wrap',
                 compact
                     ? 'text-sm font-medium leading-relaxed'
                     : longLabel
                         ? 'text-sm sm:text-base font-medium leading-relaxed text-foreground'
-                        : 'text-lg sm:text-xl font-bold'
+                        : 'text-lg sm:text-xl font-bold',
+                longLabel && !compact && 'max-h-[45vh] overflow-y-auto overscroll-contain rounded-lg border bg-muted/30 p-3'
             )}>
                 {q.label}
                 {q.is_required && <span className="ml-1 text-destructive">*</span>}
