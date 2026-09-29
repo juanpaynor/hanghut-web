@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/card'
@@ -44,6 +44,10 @@ export function BillingClient({ plan, subscription, entitlement, cycles }: {
 }) {
     const router = useRouter()
     const params = useSearchParams()
+    // The return leg creates a plan and takes a real charge, so it must run
+    // exactly once. React re-invokes effects in development, and the logs showed
+    // two activate calls 10ms apart.
+    const activated = useRef(false)
     const { toast } = useToast()
     const [busy, setBusy] = useState<string | null>(null)
     const [confirmCancel, setConfirmCancel] = useState(false)
@@ -58,39 +62,50 @@ export function BillingClient({ plan, subscription, entitlement, cycles }: {
      * only exists once they've finished, so the second leg has to run on return —
      * it cannot be done at the time we created the session.
      */
+    const activate = async () => {
+        setBusy('activate')
+        // Deliberately sends no ids. The server resolves the partner's live
+        // subscription and the session that captured its card. Requiring
+        // sessionStorage here is what made a lost redirect unrecoverable: the
+        // storage is per-origin and per-tab, and Xendit returns to APP_URL
+        // whatever origin the partner started on.
+        const { data, error } = await createClient().functions.invoke('create-partner-subscription', {
+            body: { action: 'activate' },
+        })
+        sessionStorage.removeItem('hh_billing_session')
+        sessionStorage.removeItem('hh_billing_sub')
+        setBusy(null)
+
+        if (error || (data as any)?.error) {
+            toast({
+                title: 'Could not finish setup',
+                description: (data as any)?.error || 'Please try again.',
+                variant: 'destructive',
+            })
+        } else if ((data as any)?.action_url) {
+            window.location.href = (data as any).action_url
+            return
+        } else {
+            toast({
+                title: (data as any)?.mode === 'replace_card' ? 'Card updated' : 'Subscription started',
+                description: 'A confirmation is on its way to your email.',
+            })
+        }
+        router.replace('/organizer/settings/billing')
+        router.refresh()
+    }
+
     useEffect(() => {
         const status = params.get('status')
-        const session = params.get('payment_session_id') || sessionStorage.getItem('hh_billing_session')
-        const subId = sessionStorage.getItem('hh_billing_sub')
-        if (status !== 'saved' || !session || !subId) return
-
-        ;(async () => {
-            setBusy('activate')
-            const { data, error } = await createClient().functions.invoke('create-partner-subscription', {
-                body: { action: 'activate', subscription_id: subId, payment_session_id: session },
-            })
-            sessionStorage.removeItem('hh_billing_session')
-            sessionStorage.removeItem('hh_billing_sub')
-            setBusy(null)
-
-            if (error || (data as any)?.error) {
-                toast({
-                    title: 'Could not finish setup',
-                    description: (data as any)?.error || 'Please try again.',
-                    variant: 'destructive',
-                })
-            } else if ((data as any)?.action_url) {
-                window.location.href = (data as any).action_url
-                return
-            } else {
-                toast({
-                    title: (data as any)?.mode === 'replace_card' ? 'Card updated' : 'Subscription started',
-                    description: 'A confirmation is on its way to your email.',
-                })
-            }
+        if (status === 'cancelled') {
+            toast({ title: 'Card setup cancelled', description: 'Nothing was charged.' })
             router.replace('/organizer/settings/billing')
-            router.refresh()
-        })()
+            return
+        }
+        if (status !== 'saved') return
+        if (activated.current) return
+        activated.current = true
+        void activate()
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
@@ -193,6 +208,28 @@ export function BillingClient({ plan, subscription, entitlement, cycles }: {
                                     Update card
                                 </Button>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {subscription?.status === 'PENDING' && (
+                    <div className="mt-5 rounded-lg border border-blue-300 bg-blue-50 dark:bg-blue-950/30 p-4">
+                        <p className="font-semibold text-sm">Your subscription isn&apos;t finished</p>
+                        <p className="text-sm text-muted-foreground mt-0.5 mb-3">
+                            We saved your card but never started the plan, so nothing has been charged.
+                            Finish now to activate Pro.
+                        </p>
+                        <div className="flex gap-2 flex-wrap">
+                            <Button size="sm" disabled={busy === 'activate'} onClick={activate}>
+                                {busy === 'activate' && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                                Finish setup
+                            </Button>
+                            <Button size="sm" variant="outline"
+                                disabled={busy === subscription.billing_interval}
+                                onClick={() => start(subscription.billing_interval)}>
+                                {busy === subscription.billing_interval && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                                Start over
+                            </Button>
                         </div>
                     </div>
                 )}

@@ -32,17 +32,26 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Required by the recurring API. None of our older Xendit calls send one, so
-// this is easy to omit by habit -- and the call fails outright without it.
+// Required by the recurring/sessions API. None of our older Xendit calls send
+// one, so this is easy to omit by habit -- and the call fails outright without
+// it.
 const XENDIT_API_VERSION = '2026-01-01'
+
+// The Customers API is versioned SEPARATELY and is not on 2026-01-01. Stamping
+// the recurring version onto /customers moves it to a contract where the field
+// is `client_reference`, and the call 400s with API_VALIDATION_ERROR. 2020-10-31
+// is the version that matches the body we send (reference_id + type +
+// business_detail); the unversioned default is older still and wants
+// `given_names` instead.
+const XENDIT_CUSTOMER_API_VERSION = '2020-10-31'
 
 const PLAN_CODE = 'pro'
 
-function xenditHeaders(key: string) {
+function xenditHeaders(key: string, apiVersion: string = XENDIT_API_VERSION) {
     const h = new Headers()
     h.set('Authorization', `Basic ${btoa(key + ':')}`)
     h.set('Content-Type', 'application/json')
-    h.set('api-version', XENDIT_API_VERSION)
+    h.set('api-version', apiVersion)
     return h
 }
 
@@ -106,7 +115,25 @@ serve(async (req) => {
             .select('id, business_name, user_id')
             .eq('user_id', user.id)
             .maybeSingle()
-        if (!partner) return json({ error: 'Only the partner owner can manage billing.' }, 403)
+        if (!partner) {
+            // Say WHICH problem it is. A HangHut support (ghost) seat is
+            // owner-equivalent everywhere else in the app, so "only the owner can
+            // manage billing" reads as a bug to the person seeing it. It is not:
+            // committing someone's business to a recurring charge is not a
+            // delegated action, and never will be.
+            const { data: seat } = await admin
+                .from('partner_team_members')
+                .select('is_platform_support')
+                .eq('user_id', user.id)
+                .maybeSingle()
+            if (seat?.is_platform_support) {
+                return json({ error: 'Support accounts cannot start or change a subscription. Sign in as the account owner.', code: 'SUPPORT_ACCOUNT' }, 403)
+            }
+            if (seat) {
+                return json({ error: 'Only the account owner can manage billing.', code: 'NOT_OWNER' }, 403)
+            }
+            return json({ error: 'No partner account is linked to this login.', code: 'NO_PARTNER' }, 403)
+        }
 
         const body = await req.json().catch(() => ({}))
         const action = ['activate', 'cancel'].includes(body?.action) ? body.action : 'start'
@@ -181,7 +208,13 @@ serve(async (req) => {
             // constraint violation.
             const { data: existing } = await admin
                 .from('partner_subscriptions')
-                .select('id, status, action_url')
+                // xendit_plan_id / attempt / reference_id are read below to decide
+                // and drive card replacement. Selecting only `id, status` left
+                // them undefined, so `replacingCard` was ALWAYS false: replacing
+                // an expired card would have cancelled the live row and created a
+                // second plan, re-anchoring the billing date and charging again
+                // in the same month.
+                .select('id, status, action_url, xendit_plan_id, attempt, reference_id')
                 .eq('partner_id', partner.id)
                 .in('status', ['PENDING', 'REQUIRES_ACTION', 'ACTIVE'])
                 .maybeSingle()
@@ -206,7 +239,7 @@ serve(async (req) => {
             if (!customerId) {
                 const custRes = await fetch('https://api.xendit.co/customers', {
                     method: 'POST',
-                    headers: xenditHeaders(xenditKey),
+                    headers: xenditHeaders(xenditKey, XENDIT_CUSTOMER_API_VERSION),
                     body: JSON.stringify({
                         reference_id: `partner_${partner.id}`,
                         type: 'BUSINESS',
@@ -217,7 +250,7 @@ serve(async (req) => {
                 const custBody = await custRes.text()
                 if (!custRes.ok) {
                     console.error('Xendit customer create failed:', custBody)
-                    return json({ error: 'Could not start billing setup.' }, 502)
+                    return json(mapXenditError(custBody, 'Could not create your billing profile.'), 502)
                 }
                 customerId = JSON.parse(custBody).id
             }
@@ -267,16 +300,25 @@ serve(async (req) => {
             const sessionRaw = await sessionRes.text()
             if (!sessionRes.ok) {
                 console.error('Xendit SAVE session failed:', sessionRaw)
-                return json({ error: 'Could not start billing setup.' }, 502)
+                return json(mapXenditError(sessionRaw, 'Could not open the card form.'), 502)
             }
             const session = JSON.parse(sessionRaw)
 
+            const sessionId = session.payment_session_id ?? session.id
+            if (!sessionId || !session.payment_link_url) {
+                console.error('Xendit SAVE session missing id or link:', sessionRaw)
+                return json({ error: 'Could not open the card form.' }, 502)
+            }
+
             if (replacingCard) {
+                await admin.from('partner_subscriptions')
+                    .update({ payment_session_id: sessionId })
+                    .eq('id', existing.id)
                 return json({
                     success: true,
                     mode: 'replace_card',
                     subscription_id: existing.id,
-                    payment_session_id: session.payment_session_id ?? session.id,
+                    payment_session_id: sessionId,
                     payment_link_url: session.payment_link_url,
                 })
             }
@@ -301,6 +343,7 @@ serve(async (req) => {
                     xendit_customer_id: customerId,
                     reference_id: referenceId,
                     attempt,
+                    payment_session_id: sessionId,
                     status: 'PENDING',
                 })
                 .select('id')
@@ -315,7 +358,7 @@ serve(async (req) => {
                 success: true,
                 mode: 'new',
                 subscription_id: sub.id,
-                payment_session_id: session.payment_session_id ?? session.id,
+                payment_session_id: sessionId,
                 payment_link_url: session.payment_link_url,
             })
         }
@@ -323,19 +366,33 @@ serve(async (req) => {
         // ====================================================================
         // ACTIVATE — read the token, create the recurring plan
         // ====================================================================
-        const subscriptionId = body?.subscription_id
-        const sessionId = body?.payment_session_id
-        if (!subscriptionId || !sessionId) {
-            return json({ error: 'subscription_id and payment_session_id are required' }, 400)
-        }
+        // BOTH IDS ARE OPTIONAL. They used to be required and came from
+        // sessionStorage, which the browser can lose: a partner who came back on
+        // a different origin or tab landed on a page that silently did nothing,
+        // stranding a saved card. The server already knows which subscription is
+        // live for this partner and which session captured its card, so the
+        // return leg needs no client state at all.
+        const requestedSubId = body?.subscription_id
 
-        const { data: sub } = await admin
+        let subQuery = admin
             .from('partner_subscriptions')
             .select('*')
-            .eq('id', subscriptionId)
             .eq('partner_id', partner.id)   // ownership, not just existence
-            .maybeSingle()
+        subQuery = requestedSubId
+            ? subQuery.eq('id', requestedSubId)
+            : subQuery.in('status', ['PENDING', 'REQUIRES_ACTION', 'ACTIVE'])
+                      .order('created_at', { ascending: false })
+                      .limit(1)
+
+        const { data: sub } = await subQuery.maybeSingle()
         if (!sub) return json({ error: 'Subscription not found' }, 404)
+
+        // Stored id wins over anything the client sends. A client-supplied
+        // session id is an unverified pointer at someone else's saved card.
+        const sessionId = sub.payment_session_id || body?.payment_session_id
+        if (!sessionId) {
+            return json({ error: 'No saved card to finish setting up. Please start again.', code: 'NO_SESSION' }, 409)
+        }
         // NOT short-circuited on ACTIVE. An active subscription reaching this
         // point is a card replacement, which is exactly when a partner most needs
         // it to work -- their card is failing and their access is running out.
@@ -425,9 +482,20 @@ serve(async (req) => {
         if (!planRes.ok) {
             console.error('Xendit recurring plan failed:', planRaw)
             const mapped = mapXenditError(planRaw, 'Could not start the subscription.')
-            await admin.from('partner_subscriptions')
-                .update({ status: 'INACTIVE', last_failure_code: mapped.code ?? 'PLAN_CREATE_FAILED' })
-                .eq('id', sub.id)
+            // DO NOT blindly mark INACTIVE. Two concurrent activates -- React
+            // re-invoking the effect, a double click, a refresh on the return URL
+            // -- both read xendit_plan_id as null and both POST a plan. Xendit
+            // rejects the second on the reused reference_id with
+            // IDEMPOTENCY_ERROR, which arrives AFTER the first one has already
+            // created a live, charged plan. Writing INACTIVE on that response
+            // would bury a subscription the partner has genuinely paid for.
+            // The `is null` guard covers the same race for every other code.
+            if (mapped.code !== 'IDEMPOTENCY_ERROR') {
+                await admin.from('partner_subscriptions')
+                    .update({ status: 'INACTIVE', last_failure_code: mapped.code ?? 'PLAN_CREATE_FAILED' })
+                    .eq('id', sub.id)
+                    .is('xendit_plan_id', null)
+            }
             return json(mapped, 502)
         }
 
