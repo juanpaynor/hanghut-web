@@ -7,7 +7,7 @@ import {
     LayoutDashboard, CalendarDays, Wallet, Mail, Users, ScanLine,
     Settings, Code2, ShieldCheck, ExternalLink, LogOut, Megaphone,
     MousePointerClick, Crown, Compass, BookOpen, CalendarClock, UserSearch,
-    Puzzle, Link2, Shirt, Store, UserCheck, Award,
+    Puzzle, Link2, Shirt, Store, UserCheck, Award, CreditCard,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/auth/cached'
@@ -70,6 +70,7 @@ const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
         title: 'Account',
         items: [
             { label: 'Settings',     href: '/organizer/settings',      icon: Settings,   section: 'settings' },
+            { label: 'Billing',      href: '/organizer/settings/billing', icon: CreditCard, section: 'billing' },
             { label: 'Developers',   href: '/organizer/developers',    icon: Code2,      section: 'developers', capability: 'organizer' },
             { label: 'Embed Widget', href: '/organizer/developers/embed', icon: Puzzle,  section: 'embed', capability: 'organizer' },
             { label: 'Verification', href: '/organizer/verification',  icon: ShieldCheck, section: 'verification' },
@@ -96,6 +97,9 @@ const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
     'box-office':  ['owner', 'manager', 'scanner', 'cashier'],
     checkin:       ['owner', 'manager', 'scanner', 'cashier'],
     settings:      ['owner', 'manager'],
+    // Owner only, matching the page and the edge function: committing the
+    // business to a recurring charge is not a delegated action.
+    billing:       ['owner'],
     developers:    ['owner'],
     embed:         ['owner', 'marketing'],
     verification:  ['owner'],
