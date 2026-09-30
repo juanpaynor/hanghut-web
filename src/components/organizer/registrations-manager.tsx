@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
-import { Check, X, Clock, Users, ChevronDown, ChevronUp, Loader2, RefreshCw, Download, Search, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
+import { Check, X, Clock, Users, ChevronDown, ChevronUp, Loader2, RefreshCw, Download, Search, ChevronLeft, ChevronRight, FileText, Sheet } from 'lucide-react'
 import { formatInManila } from '@/lib/datetime'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -214,6 +214,33 @@ function RegistrationCard({
     )
 }
 
+const exportSlug = (title?: string | null) =>
+    (title || 'event').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()
+
+/**
+ * One download path for every export.
+ *
+ * SheetJS's own `writeFile` sniffs the environment first — it probes for
+ * `fs.writeFileSync` before falling back to a Blob, and under a bundler that
+ * probe is neither a working Node path nor a clean failure. The CSV export has
+ * always downloaded correctly by building the anchor itself, so everything uses
+ * that instead. The object URL is revoked on the next tick, not immediately:
+ * revoking in the same frame as `click()` cancels the download in Safari.
+ */
+function downloadBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => {
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    }, 0)
+}
+
 export function RegistrationsManager({ eventId, eventTitle, initialPage, initialStats = null, approvalMode = true }: Props) {
     const { toast } = useToast()
     const [data, setData] = useState<RegistrationsPage>(initialPage)
@@ -223,7 +250,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const [page, setPage] = useState(1)
     const [search, setSearch] = useState('')
     const [loading, setLoading] = useState(false)
-    const [exporting, setExporting] = useState<'csv' | 'pdf' | null>(null)
+    const [exporting, setExporting] = useState<'csv' | 'pdf' | 'xlsx' | null>(null)
     const [stats, setStats] = useState<AnswerStats | null>(initialStats)
     // Signed URLs for the uploads on the CURRENT page only. They expire, so
     // they are fetched per page rather than held for the whole event.
@@ -310,25 +337,41 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
                 toast({ title: 'Export failed', description: res.error, variant: 'destructive' })
                 return
             }
-            const blob = new Blob(['\uFEFF' + res.csv], { type: 'text/csv;charset=utf-8;' })
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = res.filename || `${(eventTitle || 'event')}-registrations.csv`
-            a.click()
-            URL.revokeObjectURL(url)
+            downloadBlob(
+                new Blob(['\uFEFF' + res.csv], { type: 'text/csv;charset=utf-8;' }),
+                res.filename || `${exportSlug(eventTitle)}-registrations.csv`,
+            )
         } finally {
             setExporting(null)
         }
     }
 
     /**
+     * A question label short enough to sit in a table header.
+     *
+     * Organizers paste entire legal documents into a label: this event's
+     * PARTICIPANT TERMS and DECLARATION OF FITNESS run to 2,774 and 2,860
+     * characters. As a header cell in an 18mm column that is metres tall,
+     * and autoTable cannot split one cell across pages — so it clipped, and
+     * took the whole table with it. Long labels become Q1, Q2 … and the full
+     * text is reproduced in a legend, so nothing is lost.
+     */
+    const HEADER_MAX = 40
+    const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim()
+    const headerFor = (label: string, i: number) =>
+        oneLine(label).length <= HEADER_MAX ? oneLine(label) : `Q${i + 1}`
+    const legendFor = (questions: { label: string }[]) =>
+        questions
+            .map((q, i) => ({ tag: `Q${i + 1}`, label: oneLine(q.label) }))
+            .filter(item => item.label.length > HEADER_MAX)
+
+    /**
      * Responses as a printable PDF.
      *
      * Landscape, because a registration form with six questions has no chance
-     * of fitting portrait — and autoTable wraps rather than truncates, so a long
-     * answer costs height instead of being silently cut off. That matters when
-     * the sheet is being carried to a start line to hand out shirts.
+     * of fitting portrait. Answers wrap rather than truncate, so a long answer
+     * costs height instead of being silently cut off. That matters when the
+     * sheet is being carried to a start line to hand out shirts.
      */
     const exportPdf = async () => {
         setExporting('pdf')
@@ -340,9 +383,30 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             }
             const b = res.bundle
 
-            const doc = new jsPDF({ orientation: 'landscape' })
+            // THE PAGE IS SIZED TO THE TABLE, not the other way round.
+            //
+            // A 21-question form is 26 columns. Forced onto A4 it split into
+            // three sideways pages, and a single runner's answers could only be
+            // read by laying three sheets next to each other — which defeats the
+            // point of carrying one sheet to a start line. Height stays A4
+            // landscape so rows still paginate normally; only width grows.
             const MARGIN = 10
-            const pageWidth = doc.internal.pageSize.getWidth()
+            const SAFETY = 4
+            const ID_WIDTHS = [28, 38, 15, 16, 24] // Name, Email, Ticket, Status, Submitted
+            const ID_TOTAL = ID_WIDTHS.reduce((a, c) => a + c, 0)
+            const Q_MIN = 22          // narrower than this and answers wrap to confetti
+            const A4_LANDSCAPE = 297
+            // A0's long edge. Past that a page stops being openable, let alone
+            // printable, so beyond it we go back to splitting sideways.
+            const MAX_PAGE = 1189
+
+            const qTotal = b.questions.length
+            const pageWidth = Math.min(
+                MAX_PAGE,
+                Math.max(A4_LANDSCAPE, MARGIN * 2 + ID_TOTAL + qTotal * Q_MIN + SAFETY),
+            )
+
+            const doc = new jsPDF({ orientation: 'landscape', format: [pageWidth, 210] })
             const usable = pageWidth - MARGIN * 2
 
             doc.setFontSize(16)
@@ -369,16 +433,15 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             // vertically, one letter per line. Fixed widths mean a long value
             // costs height, which is recoverable, instead of everyone else's
             // width, which is not.
-            const idWidths = [30, 42, 16, 18] // Name, Email, Ticket, Status
-            const idTotal = idWidths.reduce((a, c) => a + c, 0)
-            const qCount = b.questions.length
+            const idWidths = ID_WIDTHS
+            const idTotal = ID_TOTAL
+            const qCount = qTotal
             // Whole millimetres, minus a safety margin: autoTable's own width
             // comes out a few units above the sum of the cells (borders), so
             // budgeting the exact remainder split a four-question form across
             // two pages sideways for no reason.
-            const SAFETY = 4
             const budget = usable - idTotal - SAFETY
-            const qWidth = qCount > 0 ? Math.max(18, Math.floor(budget / qCount)) : 0
+            const qWidth = qCount > 0 ? Math.max(Q_MIN, Math.floor(budget / qCount)) : 0
 
             // Only split sideways when the table genuinely cannot fit. Left
             // always on, autoTable emits a second page even for a form that
@@ -387,17 +450,35 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
 
             // Tighter columns need smaller type, or a narrow column fits one
             // word per line and the table becomes a column of confetti.
-            const fontSize = qWidth >= 30 ? 8 : qWidth >= 22 ? 7 : 6
+            const fontSize = qWidth >= 30 ? 8 : qWidth >= 24 ? 7.5 : 7
+
+            // Spend whatever is left over on the Name column rather than leaving
+            // a ragged right edge. Names are the column most likely to wrap, and
+            // an exactly-filled table also stops autoTable logging its (very
+            // misleadingly worded) leftover-width notice on every export.
+            const widths = [...idWidths]
+            const slack = usable - (idTotal + qCount * qWidth)
+            if (fitsAcross && slack > 0) widths[0] += slack
 
             const columnStyles: Record<number, { cellWidth: number }> = {}
-            idWidths.forEach((w, i) => { columnStyles[i] = { cellWidth: w } })
+            widths.forEach((w, i) => { columnStyles[i] = { cellWidth: w } })
             for (let i = 0; i < qCount; i++) {
-                columnStyles[idWidths.length + i] = { cellWidth: qWidth }
+                columnStyles[widths.length + i] = { cellWidth: qWidth }
             }
 
+            // One cell must never be taller than a page: autoTable clips instead
+            // of splitting, so an over-long value takes its whole row with it.
+            // CSV and XLSX carry the untouched text.
+            const CELL_MAX = 400
+            const clamp = (v: string) => (v.length > CELL_MAX ? v.slice(0, CELL_MAX) + ' …' : v)
+
             autoTable(doc, {
-                head: [['Name', 'Email', 'Ticket', 'Status', ...b.questions.map(q => q.label)]],
-                body: b.rows.map(r => [r.name, r.email, r.ticket || '—', r.status, ...r.answers]),
+                head: [['Name', 'Email', 'Ticket', 'Status', 'Submitted',
+                    ...b.questions.map((q, i) => headerFor(q.label, i))]],
+                body: b.rows.map(r => [
+                    r.name, r.email, r.ticket || '—', r.status, r.submitted,
+                    ...r.answers.map(clamp),
+                ]),
                 startY: 27,
                 margin: { left: MARGIN, right: MARGIN },
                 theme: 'striped',
@@ -423,13 +504,117 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
                 },
             })
 
-            doc.save(`${(eventTitle || 'event').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}-responses.pdf`)
+            // The legend carries every label that was too long to be a header,
+            // in full. Without it the shortened headers would be the second way
+            // this export loses information.
+            const legend = legendFor(b.questions)
+            if (legend.length) {
+                doc.addPage()
+                doc.setFontSize(13)
+                doc.text('Questions in full', MARGIN, 16)
+                doc.setFontSize(9)
+                let y = 24
+                const bottom = doc.internal.pageSize.getHeight() - 14
+                for (const item of legend) {
+                    const lines = doc.splitTextToSize(`${item.tag}   ${item.label}`, usable) as string[]
+                    if (y + lines.length * 4.2 > bottom) {
+                        doc.addPage()
+                        y = 16
+                    }
+                    doc.text(lines, MARGIN, y)
+                    y += lines.length * 4.2 + 4
+                }
+            }
+
+            doc.save(`${exportSlug(eventTitle)}-responses.pdf`)
             toast({
                 title: 'PDF ready',
-                description: `${b.rows.length} response${b.rows.length === 1 ? '' : 's'} exported.`,
+                description: b.truncated
+                    ? `First ${b.rows.length} responses exported — the event exceeds the export limit.`
+                    : `${b.rows.length} response${b.rows.length === 1 ? '' : 's'} exported.`,
+                variant: b.truncated ? 'destructive' : undefined,
             })
         } catch {
             toast({ title: 'Export failed', description: 'Could not build the PDF.', variant: 'destructive' })
+        } finally {
+            setExporting(null)
+        }
+    }
+
+    /**
+     * Responses as a real .xlsx workbook.
+     *
+     * Two sheets, for the same reason the PDF has a legend: a 2,860-character
+     * question label is unusable as a column header, but throwing it away would
+     * make the export incomplete. Headers are shortened on Responses and
+     * reproduced verbatim on Questions. Answers are the full-fidelity form —
+     * file answers keep their storage path, which a signed URL would not
+     * survive being saved in a spreadsheet.
+     */
+    const exportXlsx = async () => {
+        setExporting('xlsx')
+        try {
+            const res = await getEventResponsesExport(eventId)
+            if (res.error || !res.bundle) {
+                toast({ title: 'Export failed', description: res.error, variant: 'destructive' })
+                return
+            }
+            const b = res.bundle
+
+            // Loaded on click, not at import. SheetJS is ~400kB and this page is
+            // already the heaviest in the dashboard; an organizer reviewing
+            // registrations should not download a spreadsheet writer to do it.
+            // `.default ?? module` because SheetJS is CommonJS: depending on how
+            // the bundler interops it, the namespace either carries `utils`
+            // directly or hides it behind `default`. Reading the wrong one is an
+            // undefined-property throw at the point of no return.
+            const mod: any = await import('xlsx')
+            const XLSX = mod?.utils ? mod : mod?.default
+            if (!XLSX?.utils) throw new Error('Could not load the spreadsheet writer.')
+
+            const header = [
+                'Name', 'Email', 'Ticket', 'Status', 'Submitted',
+                ...b.questions.map((q, i) => headerFor(q.label, i)),
+            ]
+            const sheet = XLSX.utils.aoa_to_sheet([
+                header,
+                ...b.rows.map(r => [
+                    r.name, r.email, r.ticket || '', r.status, r.submitted, ...r.answersFull,
+                ]),
+            ])
+            sheet['!cols'] = header.map((_: unknown, i: number) => ({ wch: i < 5 ? 22 : 40 }))
+
+            const wb = XLSX.utils.book_new()
+            XLSX.utils.book_append_sheet(wb, sheet, 'Responses')
+
+            const legend = b.questions.map((q, i) => [headerFor(q.label, i), oneLine(q.label)])
+            if (legend.length) {
+                const qSheet = XLSX.utils.aoa_to_sheet([['Column', 'Question'], ...legend])
+                qSheet['!cols'] = [{ wch: 14 }, { wch: 120 }]
+                XLSX.utils.book_append_sheet(wb, qSheet, 'Questions')
+            }
+
+            const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+            downloadBlob(
+                new Blob([buf], {
+                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                }),
+                `${exportSlug(eventTitle)}-responses.xlsx`,
+            )
+            toast({
+                title: 'Excel file ready',
+                description: b.truncated
+                    ? `First ${b.rows.length} responses exported — the event exceeds the export limit.`
+                    : `${b.rows.length} response${b.rows.length === 1 ? '' : 's'} exported.`,
+                variant: b.truncated ? 'destructive' : undefined,
+            })
+        } catch (e) {
+            console.error('xlsx export failed:', e)
+            toast({
+                title: 'Export failed',
+                description: (e as Error)?.message || 'Could not build the workbook.',
+                variant: 'destructive',
+            })
         } finally {
             setExporting(null)
         }
@@ -442,6 +627,10 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={!!exporting} className="gap-1.5">
                 {exporting === 'csv' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                 Export CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportXlsx} disabled={!!exporting} className="gap-1.5">
+                {exporting === 'xlsx' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sheet className="h-3.5 w-3.5" />}
+                Excel
             </Button>
             <Button variant="outline" size="sm" onClick={exportPdf} disabled={!!exporting} className="gap-1.5">
                 {exporting === 'pdf' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}

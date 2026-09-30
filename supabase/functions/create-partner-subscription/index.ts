@@ -136,7 +136,75 @@ serve(async (req) => {
         }
 
         const body = await req.json().catch(() => ({}))
-        const action = ['activate', 'cancel'].includes(body?.action) ? body.action : 'start'
+        const action = ['activate', 'cancel', 'sync'].includes(body?.action) ? body.action : 'start'
+
+        // ====================================================================
+        // SYNC — ask Xendit what the plan actually is, and believe it
+        // ====================================================================
+        //
+        // WHY THIS EXISTS. The webhook is the only thing that ever moves a
+        // subscription off PENDING, so a missed or unregistered event type leaves
+        // a row frozen in a state that will never correct itself -- and the first
+        // live signup did exactly that: the plan's immediate payment failed, and
+        // no `recurring.plan.inactivated` ever arrived. A subscription that is
+        // dead at Xendit and PENDING here is worse than one that failed loudly,
+        // because nobody is told and nothing retries.
+        //
+        // Xendit's own record is the authority. This pulls it and reconciles.
+        if (action === 'sync') {
+            const { data: sub } = await admin
+                .from('partner_subscriptions')
+                .select('*')
+                .eq('partner_id', partner.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+            if (!sub) return json({ error: 'No subscription to check.' }, 404)
+            if (!sub.xendit_plan_id) {
+                return json({ success: true, status: sub.status, note: 'No plan created yet.' })
+            }
+
+            const planRes = await fetch(
+                `https://api.xendit.co/recurring/plans/${sub.xendit_plan_id}`,
+                { headers: xenditHeaders(xenditKey) },
+            )
+            const planRaw = await planRes.text()
+            if (!planRes.ok) {
+                console.error('Xendit plan fetch failed:', planRaw)
+                return json(mapXenditError(planRaw, 'Could not check the subscription.'), 502)
+            }
+            const remote = JSON.parse(planRaw)
+            const remoteStatus = String(remote.status || '').toUpperCase()
+
+            // Map Xendit's vocabulary onto ours. CANCELLED is preserved: to
+            // Xendit a cancelled plan and a dead-card plan are both INACTIVE,
+            // but to us they mean opposite things -- the partner left, or the
+            // partner's card failed and they should be asked to fix it.
+            const next =
+                remoteStatus === 'ACTIVE' ? 'ACTIVE'
+                : remoteStatus === 'INACTIVE' ? (sub.status === 'CANCELLED' ? 'CANCELLED' : 'INACTIVE')
+                : remoteStatus === 'PENDING' ? 'PENDING'
+                : sub.status
+
+            const patch: Record<string, unknown> = {}
+            if (next !== sub.status) patch.status = next
+            // Only record a failure reason we do not already have; the webhook's
+            // version is richer when it arrives.
+            if (next === 'INACTIVE' && !sub.last_failure_code) {
+                patch.last_failure_code = String(remote.failure_code || 'PLAN_INACTIVE')
+            }
+            if (Object.keys(patch).length) {
+                await admin.from('partner_subscriptions').update(patch).eq('id', sub.id)
+            }
+
+            return json({
+                success: true,
+                status: next,
+                changed: Object.keys(patch).length > 0,
+                xendit_status: remoteStatus,
+                failure_code: remote.failure_code ?? null,
+            })
+        }
 
         // ====================================================================
         // CANCEL — deactivate the plan, but do NOT revoke what they paid for

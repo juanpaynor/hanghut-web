@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -11,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Briefcase, Mail, Lock, ArrowRight, Loader2, Eye, EyeOff, Check } from 'lucide-react'
 import { useLoading } from '@/providers/loading-provider'
 import { OAuthButtons } from '@/components/auth/oauth-buttons'
+import { StageArt } from '@/components/auth/stage-art'
 import {
     Dialog,
     DialogContent,
@@ -19,6 +21,37 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog'
+
+const EASE = [0.22, 1, 0.36, 1] as const
+
+/**
+ * Mount reveal for one block of the sign-in screen.
+ *
+ * `animate`, not `whileInView` like the landing Reveal: everything here is above
+ * the fold, so an in-view trigger would either fire all at once anyway or, worse,
+ * never fire on a short viewport and leave the form invisible. Reduced-motion
+ * viewers get the plain element — no wrapper, no transform, no delay.
+ */
+function Rise({
+    children, delay = 0, reduce, className,
+}: {
+    children: React.ReactNode
+    delay?: number
+    reduce: boolean
+    className?: string
+}) {
+    if (reduce) return <div className={className}>{children}</div>
+    return (
+        <motion.div
+            className={className}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay, ease: EASE }}
+        >
+            {children}
+        </motion.div>
+    )
+}
 
 const VALUE_PROPS = [
     'No monthly fees. No lock-in.',
@@ -42,6 +75,10 @@ export default function OrganizerLoginPage() {
     const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
     const { isLocked, remainingTime, recordAttempt, resetAttempts } = useLoginRateLimit(5, 60000)
     const { showLoading, hideLoading } = useLoading()
+    // `?? false` because useReducedMotion returns null until it has read the
+    // media query — treating null as "reduce" would skip the animation on the
+    // first paint for everyone.
+    const reduce = useReducedMotion() ?? false
 
     // Surface notices/errors forwarded by the OAuth gate or auth callback.
     useEffect(() => {
@@ -154,68 +191,109 @@ export default function OrganizerLoginPage() {
             <div className="hidden lg:flex lg:w-[44%] relative overflow-hidden flex-col justify-between p-12 bg-primary text-primary-foreground">
                 <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary to-purple-700" />
                 <div className="absolute inset-0 bg-noise opacity-20" />
-                <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white/10 blur-3xl" />
 
-                <div className="relative z-10">
-                    <Link href="/" className="inline-block bg-white px-5 py-2.5 rounded transform -rotate-1 shadow-lg hover:scale-105 transition-transform">
+                {/* The art carries the panel's colour now. The three blurred
+                    aurora blobs that used to sit here were both redundant against
+                    its screen-blended colour field and the most expensive thing on
+                    the page — blur-3xl on large elements is a real cost on low-end
+                    phones, for a layer nobody could see once this went in front. */}
+                <StageArt reduce={reduce} />
+
+                <Rise reduce={reduce} className="relative z-10">
+                    <Link href="/" className="inline-block bg-white px-5 py-2.5 rounded transform -rotate-1 shadow-lg transition-transform hover:scale-105 hover:-rotate-2">
                         <span className="font-headline font-bold text-2xl text-primary">HANGHUT</span>
                     </Link>
-                </div>
+                </Rise>
 
                 <div className="relative z-10 space-y-6">
-                    <h1 className="font-headline text-4xl font-black leading-tight tracking-tight">
-                        Grow your events<br />with HangHut.
-                    </h1>
+                    <Rise reduce={reduce} delay={0.1}>
+                        <h1 className="font-headline text-4xl font-black leading-tight tracking-tight">
+                            Grow your events<br />with HangHut.
+                        </h1>
+                    </Rise>
                     <ul className="space-y-3">
-                        {VALUE_PROPS.map((v) => (
-                            <li key={v} className="flex items-center gap-3 text-primary-foreground/90">
-                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20">
+                        {VALUE_PROPS.map((v, i) => (
+                            <motion.li
+                                key={v}
+                                className="flex items-center gap-3 text-primary-foreground/90"
+                                initial={reduce ? false : { opacity: 0, x: -12 }}
+                                animate={reduce ? undefined : { opacity: 1, x: 0 }}
+                                transition={{ duration: 0.45, delay: 0.22 + i * 0.08, ease: EASE }}
+                            >
+                                <motion.span
+                                    className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20"
+                                    initial={reduce ? false : { scale: 0.4, opacity: 0 }}
+                                    animate={reduce ? undefined : { scale: 1, opacity: 1 }}
+                                    transition={{ duration: 0.35, delay: 0.3 + i * 0.08, ease: EASE }}
+                                >
                                     <Check className="h-3.5 w-3.5" />
-                                </span>
+                                </motion.span>
                                 <span className="font-medium">{v}</span>
-                            </li>
+                            </motion.li>
                         ))}
                     </ul>
                 </div>
 
-                <p className="relative z-10 text-sm text-primary-foreground/70">
-                    The all-in-one platform for organizers in the Philippines.
-                </p>
+                <Rise reduce={reduce} delay={0.6} className="relative z-10">
+                    <p className="text-sm text-primary-foreground/70">
+                        The all-in-one platform for organizers in the Philippines.
+                    </p>
+                </Rise>
             </div>
 
             {/* ── Right: form ──────────────────────────────────────────── */}
             <div className="flex-1 flex items-center justify-center p-6 sm:p-10" style={{ backgroundColor: '#FAFAF8' }}>
                 <div className="w-full max-w-md space-y-6">
                     {/* Mobile logo */}
-                    <div className="lg:hidden text-center">
+                    <Rise reduce={reduce} className="lg:hidden text-center">
                         <Link href="/" className="inline-block bg-primary px-5 py-2.5 rounded transform -rotate-1 shadow-lg mb-3">
                             <span className="font-headline font-bold text-2xl text-primary-foreground">HANGHUT</span>
                         </Link>
-                    </div>
+                    </Rise>
 
-                    <div>
+                    <Rise reduce={reduce} delay={0.06}>
                         <div className="flex items-center gap-2 text-muted-foreground mb-1">
                             <Briefcase className="h-4 w-4" />
                             <span className="text-sm font-medium uppercase tracking-wide">Partner Portal</span>
                         </div>
                         <h2 className="text-3xl font-headline font-bold">Welcome back</h2>
                         <p className="text-muted-foreground mt-1">Sign in to your partner dashboard</p>
-                    </div>
+                    </Rise>
 
-                    {notice && (
-                        <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                            <p className="text-sm text-amber-700">{notice}</p>
-                        </div>
-                    )}
+                    {/*
+                      * Height-animated so the form below slides rather than jumps.
+                      * A message that appears instantly under a field the user is
+                      * still looking at is easy to miss — and worse, it shifts the
+                      * Sign In button out from under the cursor mid-click.
+                      */}
+                    <AnimatePresence initial={false}>
+                        {notice && (
+                            <motion.div
+                                key="notice"
+                                className="overflow-hidden"
+                                initial={reduce ? false : { opacity: 0, height: 0 }}
+                                animate={reduce ? undefined : { opacity: 1, height: 'auto' }}
+                                exit={reduce ? undefined : { opacity: 0, height: 0 }}
+                                transition={{ duration: 0.3, ease: EASE }}
+                            >
+                                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                                    <p className="text-sm text-amber-700">{notice}</p>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
 
-                    <OAuthButtons disabled={loading} />
+                    <Rise reduce={reduce} delay={0.12}>
+                        <OAuthButtons disabled={loading} />
+                    </Rise>
 
-                    <div className="relative flex items-center">
+                    <Rise reduce={reduce} delay={0.18} className="relative flex items-center">
                         <div className="flex-grow border-t border-border" />
                         <span className="mx-3 text-xs uppercase tracking-wide text-muted-foreground">or</span>
                         <div className="flex-grow border-t border-border" />
-                    </div>
+                    </Rise>
 
+                    <Rise reduce={reduce} delay={0.24}>
                     <form onSubmit={handleLogin} className="space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="email">Email</Label>
@@ -319,15 +397,26 @@ export default function OrganizerLoginPage() {
                             </div>
                         </div>
 
-                        {error && (
-                            <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
-                                <p className="text-sm text-destructive">{error}</p>
-                            </div>
-                        )}
+                        <AnimatePresence initial={false}>
+                            {error && (
+                                <motion.div
+                                    key="error"
+                                    className="overflow-hidden"
+                                    initial={reduce ? false : { opacity: 0, height: 0 }}
+                                    animate={reduce ? undefined : { opacity: 1, height: 'auto' }}
+                                    exit={reduce ? undefined : { opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.3, ease: EASE }}
+                                >
+                                    <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+                                        <p className="text-sm text-destructive">{error}</p>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
 
                         <Button
                             type="submit"
-                            className="w-full bg-primary hover:bg-primary/90"
+                            className="group w-full bg-primary hover:bg-primary/90"
                             size="lg"
                             disabled={loading}
                         >
@@ -339,13 +428,14 @@ export default function OrganizerLoginPage() {
                             ) : (
                                 <>
                                     Sign In
-                                    <ArrowRight className="ml-2 h-4 w-4" />
+                                    <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                                 </>
                             )}
                         </Button>
                     </form>
+                    </Rise>
 
-                    <div className="text-center space-y-1.5">
+                    <Rise reduce={reduce} delay={0.3} className="text-center space-y-1.5">
                         <p className="text-sm text-muted-foreground">
                             New here?{' '}
                             <Link href="/organizer/register" className="text-primary hover:underline font-medium">
@@ -361,7 +451,7 @@ export default function OrganizerLoginPage() {
                                 Contact Support
                             </a>
                         </p>
-                    </div>
+                    </Rise>
                 </div>
             </div>
         </div>

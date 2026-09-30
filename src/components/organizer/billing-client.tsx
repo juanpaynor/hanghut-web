@@ -95,6 +95,46 @@ export function BillingClient({ plan, subscription, entitlement, cycles }: {
         router.refresh()
     }
 
+    const sync = async (silent = false) => {
+        if (!silent) setBusy('sync')
+        const { data, error } = await createClient().functions.invoke('create-partner-subscription', {
+            body: { action: 'sync' },
+        })
+        if (!silent) setBusy(null)
+        const payload = data as any
+        if (error || payload?.error) {
+            if (!silent) {
+                toast({
+                    title: 'Could not check the subscription',
+                    description: payload?.error || 'Please try again.',
+                    variant: 'destructive',
+                })
+            }
+            return
+        }
+        if (payload?.changed) {
+            if (!silent) toast({ title: `Status updated to ${payload.status}` })
+            router.refresh()
+        } else if (!silent) {
+            toast({ title: `Still ${payload?.status ?? 'unchanged'}`, description: 'Nothing has changed at the payment provider.' })
+        }
+    }
+
+    /**
+     * A PENDING row is a claim we have not verified. The webhook is the only
+     * thing that normally moves a subscription off PENDING, so a missed event
+     * leaves it stuck there forever — which is exactly what happened on the
+     * first live signup. Reconcile against Xendit on load instead of waiting for
+     * someone to notice. Bounded: only fires for PENDING, and not on the return
+     * leg, where `activate` is about to write the status anyway.
+     */
+    useEffect(() => {
+        if (subscription?.status !== 'PENDING') return
+        if (params.get('status') === 'saved') return
+        void sync(true)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [subscription?.status])
+
     useEffect(() => {
         const status = params.get('status')
         if (status === 'cancelled') {
@@ -229,6 +269,11 @@ export function BillingClient({ plan, subscription, entitlement, cycles }: {
                                 onClick={() => start(subscription.billing_interval)}>
                                 {busy === subscription.billing_interval && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                                 Start over
+                            </Button>
+                            <Button size="sm" variant="ghost" disabled={busy === 'sync'}
+                                onClick={() => sync(false)}>
+                                {busy === 'sync' && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                                Check status
                             </Button>
                         </div>
                     </div>

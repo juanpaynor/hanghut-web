@@ -40,7 +40,10 @@ function formatEventDate(isoDate: string): string {
 }
 
 function formatCurrency(amount: number): string {
-    return `PHP ${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+    // The peso sign, not the ISO code. Every price surface in the product uses
+    // it, and "PHP 1,200.00" in the one email a buyer keeps read as a different
+    // company's receipt. The document declares UTF-8, so it renders.
+    return `\u20B1${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
 }
 
 serve(async (req) => {
@@ -49,13 +52,188 @@ serve(async (req) => {
         const requestData: EmailRequest = await req.json()
         const formattedAmount = formatCurrency(Number(requestData.total_amount))
         const formattedDate = formatEventDate(requestData.event_date)
+        // ── Brand ────────────────────────────────────────────────────────
+        //
+        // These are HangHut's real tokens, not approximations. The email used to
+        // run on stock Tailwind defaults -- #0f172a slate, #6366f1, #f3f4f6, Arial
+        // -- none of which appear anywhere in the product. `brand` is the app's
+        // --primary held exactly (243 68% 57%), and `ink` is the landing's
+        // near-black, which is biased indigo rather than grey: next to the brand
+        // colour a true grey reads as a different palette.
+        const C = {
+            brand:     '#4f46e5',
+            brandSoft: '#6d5efc',
+            ink:       '#17152f',
+            muted:     '#5b5878',
+            dim:       '#8a87a4',
+            ground:    '#f6f6fb',
+            panel:     '#fbfbfe',
+            card:      '#ffffff',
+            line:      '#e4e3ec',
+            paid:      '#0f7a4d',
+        }
+        // Poppins is the product's headline face. Gmail strips webfonts, so the
+        // stack has to stand on its own -- the tight tracking below is what
+        // carries the brand when the face falls back.
+        const DISPLAY = `'Poppins','Bricolage Grotesque',-apple-system,'Segoe UI',Helvetica,Arial,sans-serif`
+        const BODY = `'Inter',-apple-system,'Segoe UI',Helvetica,Arial,sans-serif`
+
+        const esc = (v: unknown) =>
+            String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+        const qty = Number(requestData.ticket_quantity) || 1
+        const ticketWord = qty === 1 ? 'ticket' : 'tickets'
+
+        // Outlook renders CSS buttons as bare text links, which loses the single
+        // strongest piece of brand colour in the message. VML gives it the fill
+        // back; every other client ignores the conditional block.
         const ctaButton = requestData.ticket_url
-            ? `<div style="text-align:center;margin:28px 0 8px"><a href="${requestData.ticket_url}" style="display:inline-block;background:#6366f1;color:#fff;text-decoration:none;font-weight:600;padding:14px 32px;border-radius:8px;font-size:16px">View Your Tickets</a></div><p style="text-align:center;color:#94a3b8;font-size:12px;margin:0 0 8px">Open this on your phone at the entrance — a screenshot works too.</p>`
+            ? `
+            <tr><td align="center" style="padding:32px 0 10px">
+              <!--[if mso]>
+              <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                href="${esc(requestData.ticket_url)}" style="height:50px;v-text-anchor:middle;width:260px"
+                arcsize="16%" stroke="f" fillcolor="${C.brand}">
+                <w:anchorlock/>
+                <center style="color:#ffffff;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:bold">View your ${ticketWord}</center>
+              </v:roundrect>
+              <![endif]-->
+              <!--[if !mso]><!-- -->
+              <a href="${esc(requestData.ticket_url)}"
+                 style="display:inline-block;background:${C.brand};color:#ffffff;text-decoration:none;font-family:${DISPLAY};font-weight:700;letter-spacing:-0.01em;padding:15px 34px;border-radius:8px;font-size:16px">View your ${ticketWord}</a>
+              <!--<![endif]-->
+            </td></tr>
+            <tr><td align="center" style="padding:0 0 4px;font-family:${BODY};color:${C.dim};font-size:12px">
+              Open this on your phone at the entrance — a screenshot works too.
+            </td></tr>`
             : ''
+
         const detailCopy = requestData.ticket_url
-            ? `<p style="margin-top:20px;text-align:center;color:#475569">Your <strong>${requestData.ticket_quantity} ticket(s)</strong> with QR codes are on the page above. You can also download a PDF copy from there.</p>`
-            : `<p style="margin-top:24px;text-align:center;color:#475569">Your <strong>${requestData.ticket_quantity} ticket(s)</strong> are confirmed. Log in to your account to view your QR codes.</p>`
-        const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="font-family:Arial,sans-serif;background:#f3f4f6;padding:40px 0;margin:0"><div style="background:#fff;max-width:600px;margin:0 auto;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.05)"><div style="background:#0f172a;padding:40px 20px;text-align:center"><h1 style="color:#fff;margin:0;font-size:24px">Your Order is Confirmed</h1><p style="color:#94a3b8;margin:10px 0 0;font-size:16px">We're excited to see you there!</p></div><div style="padding:40px 30px">${requestData.event_cover_image?`<img src="${requestData.event_cover_image}" style="width:100%;height:200px;object-fit:cover;border-radius:8px;margin-bottom:20px">`:''}<h2 style="color:#0f172a;margin:0 0 20px">${requestData.event_title}</h2><p><strong>Date:</strong> ${formattedDate}</p><p><strong>Location:</strong> ${requestData.event_venue}</p><div style="background:#f0fdf4;border:1px solid #dcfce7;border-radius:8px;padding:16px;margin-top:10px"><p style="margin:0;color:#166534;font-weight:600">Payment Successful</p><p style="margin:2px 0 0;color:#15803d">Total Paid: ${formattedAmount}</p>${requestData.payment_method?`<p style="margin:2px 0 0;color:#15803d">${requestData.payment_method}</p>`:''}</div>${ctaButton}${detailCopy}</div><div style="background:#f8fafc;padding:20px;text-align:center;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0"><p>Ref: ${requestData.transaction_ref}</p><p>&copy; ${new Date().getFullYear()} HangHut. All rights reserved.</p></div></div></body></html>`
+            ? `Your <strong style="color:${C.ink}">${qty} ${ticketWord}</strong> with QR codes are on the page above. You can also download a PDF copy from there.`
+            : `Your <strong style="color:${C.ink}">${qty} ${ticketWord}</strong> are confirmed. Log in to your account to view your QR codes.`
+
+        const row = (label: string, value: string) => `
+            <tr>
+              <td style="padding:0 0 4px;font-family:${BODY};font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:${C.dim}">${label}</td>
+            </tr>
+            <tr>
+              <td style="padding:0 0 18px;font-family:${BODY};font-size:15px;color:${C.ink};line-height:1.45">${value}</td>
+            </tr>`
+
+        const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<!-- Without this, Gmail and Apple Mail auto-invert the card in dark mode and
+     the indigo header comes back as something else entirely. -->
+<meta name="color-scheme" content="light"/>
+<meta name="supported-color-schemes" content="light"/>
+<title>Your ${ticketWord} for ${esc(requestData.event_title)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+  body{margin:0;padding:0;width:100%!important;background:${C.ground}}
+  img{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic}
+  table{border-collapse:collapse}
+  @media (max-width:620px){
+    .hh-pad{padding-left:22px!important;padding-right:22px!important}
+    .hh-h1{font-size:26px!important}
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background:${C.ground}">
+<!-- Preheader: the inbox preview line. Left out, clients scrape whatever text
+     comes first, which was the word "HANGHUT". -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">
+  You're going to ${esc(requestData.event_title)} — ${qty} ${ticketWord} confirmed.
+</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.ground}">
+<tr><td align="center" style="padding:36px 12px">
+
+  <!-- Outlook ignores max-width on a div, so the whole card is a table. -->
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+         style="width:600px;max-width:600px;background:${C.card};border-radius:14px;overflow:hidden;border:1px solid ${C.line}">
+
+    <!-- Header ───────────────────────────────────────────────────── -->
+    <tr><td style="background:${C.brand};background-image:linear-gradient(135deg,${C.brand} 0%,${C.brandSoft} 100%);padding:38px 32px 34px" class="hh-pad">
+      <!-- The wordmark is text, not an image: it survives image blocking, which
+           is the one moment the brand most needs to be present. -->
+      <div style="font-family:${DISPLAY};font-weight:800;font-size:15px;letter-spacing:0.22em;color:#ffffff;opacity:.85">HANGHUT</div>
+      <div class="hh-h1" style="font-family:${DISPLAY};font-weight:800;font-size:30px;letter-spacing:-0.035em;color:#ffffff;line-height:1.15;padding-top:14px">You&rsquo;re going.</div>
+      <div style="font-family:${BODY};font-size:15px;color:#ffffff;opacity:.82;padding-top:8px">${qty} ${ticketWord} confirmed — see you there.</div>
+    </td></tr>
+
+    <!-- Body ─────────────────────────────────────────────────────── -->
+    <tr><td style="padding:32px" class="hh-pad">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        ${requestData.event_cover_image ? `
+        <tr><td style="padding:0 0 24px">
+          <!-- No object-fit: no email client supports it, so the old fixed
+               200px height squashed every wide cover. Natural ratio instead. -->
+          <img src="${esc(requestData.event_cover_image)}" width="536" alt="${esc(requestData.event_title)}"
+               style="width:100%;max-width:536px;height:auto;display:block;border-radius:10px"/>
+        </td></tr>` : ''}
+
+        <tr><td style="padding:0 0 22px;font-family:${DISPLAY};font-weight:700;font-size:23px;letter-spacing:-0.03em;color:${C.ink};line-height:1.25">${esc(requestData.event_title)}</td></tr>
+
+        ${row('When', esc(formattedDate))}
+        ${row('Where', esc(requestData.event_venue))}
+
+        <!-- Payment. A neutral panel with one green line, rather than the old
+             wall of stock green. -->
+        <tr><td style="padding:4px 0 0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                 style="background:${C.panel};border:1px solid ${C.line};border-radius:10px">
+            <tr><td style="padding:16px 18px">
+              <div style="font-family:${BODY};font-size:12px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:${C.paid}">Payment received</div>
+              <div style="font-family:${DISPLAY};font-weight:700;font-size:22px;letter-spacing:-0.02em;color:${C.ink};padding-top:6px">${formattedAmount}</div>
+              ${requestData.payment_method ? `<div style="font-family:${BODY};font-size:13px;color:${C.muted};padding-top:3px">${esc(requestData.payment_method)}</div>` : ''}
+            </td></tr>
+          </table>
+        </td></tr>
+
+        ${ctaButton}
+
+        <tr><td align="center" style="padding:16px 0 0;font-family:${BODY};font-size:14px;color:${C.muted};line-height:1.55">${detailCopy}</td></tr>
+      </table>
+    </td></tr>
+
+    <!-- Footer ───────────────────────────────────────────────────── -->
+    <tr><td style="background:${C.panel};border-top:1px solid ${C.line};padding:22px 32px;text-align:center" class="hh-pad">
+      <div style="font-family:${BODY};font-size:12px;color:${C.dim}">Ref: ${esc(requestData.transaction_ref)}</div>
+      <div style="font-family:${BODY};font-size:12px;color:${C.dim};padding-top:6px">
+        Questions? <a href="mailto:contact@hanghut.com" style="color:${C.brand};text-decoration:none">contact@hanghut.com</a>
+      </div>
+      <div style="font-family:${DISPLAY};font-weight:800;font-size:11px;letter-spacing:0.2em;color:${C.dim};padding-top:14px">HANGHUT</div>
+      <div style="font-family:${BODY};font-size:11px;color:${C.dim};padding-top:4px">&copy; ${new Date().getFullYear()} HangHut. All rights reserved.</div>
+    </td></tr>
+
+  </table>
+</td></tr>
+</table>
+</body></html>`
+
+        // Plain-text alternative. HTML-only is a spam signal, and it is the
+        // version a screen reader and a smartwatch actually get.
+        const text = [
+            `You're going — ${qty} ${ticketWord} confirmed.`,
+            ``,
+            requestData.event_title,
+            `When:  ${formattedDate}`,
+            `Where: ${requestData.event_venue}`,
+            ``,
+            `Payment received: ${formattedAmount}${requestData.payment_method ? ` (${requestData.payment_method})` : ''}`,
+            ...(requestData.ticket_url
+                ? ['', `View your ${ticketWord}: ${requestData.ticket_url}`,
+                   'Open this on your phone at the entrance — a screenshot works too.']
+                : ['', `Log in to your account to view your QR codes.`]),
+            ``,
+            `Ref: ${requestData.transaction_ref}`,
+            `Questions? contact@hanghut.com`,
+            `HangHut`,
+        ].join('\n')
+
         if (!RESEND_API_KEY) throw new Error('Missing RESEND_API_KEY')
         // Only the lightweight calendar invite is attached now — no per-purchase
         // PDF generation (buyers view/download tickets from the hosted page).
@@ -75,8 +253,11 @@ serve(async (req) => {
                     body:JSON.stringify({
                         from:'HangHut Tickets <tickets@hanghut.com>',
                         to:[requestData.email],
-                        subject:`Your Tickets for ${requestData.event_title}`,
+                        // Replies used to land on tickets@, which nobody reads.
+                        reply_to:'contact@hanghut.com',
+                        subject:`Your ${ticketWord} for ${requestData.event_title}`,
                         html,
+                        text,
                         attachments,
                     })
                 })

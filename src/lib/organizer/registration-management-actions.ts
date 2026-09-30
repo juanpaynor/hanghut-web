@@ -350,8 +350,18 @@ interface ExportBundle {
         ticket: string
         status: string
         submitted: string
+        /** Display form — a file answer is its filename. Used by the PDF. */
         answers: string[]
+        /**
+         * Full fidelity — a file answer also carries its storage path. Used by
+         * CSV and XLSX, where losing the pointer to an uploaded ID means the
+         * export cannot be reconciled against the originals. Not the signed
+         * URL: those expire, and a spreadsheet outlives them.
+         */
+        answersFull: string[]
     }[]
+    /** True when EXPORT_CAP was reached and rows were genuinely left behind. */
+    truncated: boolean
 }
 
 const EXPORT_CAP = 20000
@@ -366,14 +376,17 @@ const EXPORT_CAP = 20000
  * row. The filename is what a human actually wants; the path is only useful to
  * the Responses tab, which already has it.
  */
-function displayAnswer(raw: unknown): string {
+function displayAnswer(raw: unknown, withPath = false): string {
     if (raw == null) return ''
     if (Array.isArray(raw)) return raw.join('; ')
     const s = String(raw)
     if (s.trim().startsWith('{')) {
         try {
             const v = JSON.parse(s)
-            if (v && typeof v.path === 'string') return String(v.name || 'file')
+            if (v && typeof v.path === 'string') {
+                const name = String(v.name || 'file')
+                return withPath ? `${name} [${v.path}]` : name
+            }
         } catch {
             // Not a file record — fall through and show the text as typed.
         }
@@ -412,23 +425,36 @@ async function loadExportBundle(
             .order('display_order', { ascending: true }),
     ])
 
-    const { data: rows, error } = await adminClient
-        .from('event_registrations')
-        .select(
+    // PAGED, not one .limit(20000) call. PostgREST silently clamps a response to
+    // the project's max-rows setting, so a single large request returns a short
+    // list with no error and no indication anything is missing -- an export that
+    // quietly loses registrations is worse than one that fails. Ranged pages
+    // cannot be clamped without the short page telling us we are done.
+    const PAGE = 1000
+    const rows: any[] = []
+    let truncated = false
+    for (let offset = 0; offset < EXPORT_CAP; offset += PAGE) {
+        const { data: chunk, error } = await adminClient
+            .from('event_registrations')
+            .select(
+                `
+                guest_email, guest_name, status, created_at,
+                tier:ticket_tiers ( name ),
+                user:users!event_registrations_user_id_fkey ( display_name, email ),
+                registration_answers ( question_id, answer )
             `
-            guest_email, guest_name, status, created_at,
-            tier:ticket_tiers ( name ),
-            user:users!event_registrations_user_id_fkey ( display_name, email ),
-            registration_answers ( question_id, answer )
-        `
-        )
-        .eq('event_id', eventId)
-        .order('created_at', { ascending: true })
-        .limit(EXPORT_CAP)
+            )
+            .eq('event_id', eventId)
+            .order('created_at', { ascending: true })
+            .range(offset, offset + PAGE - 1)
 
-    if (error) {
-        console.error('loadExportBundle error:', error)
-        return { error: 'Could not build the export.' }
+        if (error) {
+            console.error('loadExportBundle error:', error)
+            return { error: 'Could not build the export.' }
+        }
+        rows.push(...(chunk ?? []))
+        if (!chunk || chunk.length < PAGE) break
+        if (rows.length >= EXPORT_CAP) { truncated = true; break }
     }
 
     const cols = (questions ?? []) as { id: string; label: string }[]
@@ -438,8 +464,9 @@ async function loadExportBundle(
             title: event?.title || 'Event',
             startsAt: event?.start_datetime ?? null,
             venue: event?.venue_name ?? null,
+            truncated,
             questions: cols.map(q => ({ id: q.id, label: q.label })),
-            rows: (rows ?? []).map((r: any) => {
+            rows: rows.map((r: any) => {
                 const byQuestion = new Map<string, any>(
                     (r.registration_answers || []).map((a: any) => [a.question_id, a.answer])
                 )
@@ -453,6 +480,7 @@ async function loadExportBundle(
                         hour: '2-digit', minute: '2-digit',
                     }),
                     answers: cols.map(q => displayAnswer(byQuestion.get(q.id))),
+                    answersFull: cols.map(q => displayAnswer(byQuestion.get(q.id), true)),
                 }
             }),
         },
@@ -475,7 +503,7 @@ export async function exportEventRegistrationsCsv(
     const cell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const header = ['Name', 'Email', 'Ticket', 'Status', 'Submitted', ...bundle.questions.map(q => q.label)]
     const body = bundle.rows.map(r =>
-        [r.name, r.email, r.ticket, r.status, r.submitted, ...r.answers].map(cell).join(',')
+        [r.name, r.email, r.ticket, r.status, r.submitted, ...r.answersFull].map(cell).join(',')
     )
 
     return {
