@@ -4,8 +4,21 @@ import { createClient } from '@/lib/supabase/server'
 export async function GET(request: Request) {
     const { searchParams, origin } = new URL(request.url)
     const code = searchParams.get('code')
-    const next = searchParams.get('next') ?? '/admin'
     const error_description = searchParams.get('error_description')
+
+    // `next` is attacker-controllable — this URL goes out in emails and invite
+    // links. Anything but a single-slash site-relative path is dropped: "//evil"
+    // and "/\\evil" are read as protocol-relative by the URL parser and would
+    // send a freshly-authenticated user off-site, and an absolute URL does the
+    // same outright.
+    const requestedNext = searchParams.get('next')
+    const next =
+        requestedNext &&
+        requestedNext.startsWith('/') &&
+        !requestedNext.startsWith('//') &&
+        !requestedNext.startsWith('/\\')
+            ? requestedNext
+            : '/admin'
 
     // Route auth errors back to the login page that matches the flow: partner
     // flows (next under /organizer) → /organizer/login; everything else → /login.

@@ -48,11 +48,19 @@ export default async function BoxOfficePage() {
     // An event that technically ended an hour ago is still the one being worked —
     // and a multi-day event on its second morning still has its doors open.
     // Filtering on start_datetime dropped the latter; see eventsNotEndedBefore.
+    // Status list is deliberately WIDER than the public one. `paused` means the
+    // organizer stopped ONLINE sales — which is the moment door sales matter
+    // most, not a reason to take the till away. Mimic hit exactly that: pausing
+    // to close online sales silently removed the event from this picker, and the
+    // only workaround was to un-pause, which reopened online selling.
+    // `sold_out` stays listed too, because the till is also where the shift is
+    // closed out, and a sold-out door still has a drawer to reconcile.
+    // Excluded: draft (never published), cancelled and completed (nothing to sell).
     const { data: events } = await supabase
         .from('events')
-        .select('id, title, start_datetime, end_datetime, venue_name, is_external')
+        .select('id, title, start_datetime, end_datetime, venue_name, is_external, status')
         .in('organizer_id', partnerIds)
-        .in('status', ['active', 'hidden'])
+        .in('status', ['active', 'hidden', 'paused', 'sold_out'])
         .or(eventsNotEndedBefore(manilaDayStartISO()))
         .order('start_datetime', { ascending: true })
 
@@ -87,6 +95,11 @@ export default async function BoxOfficePage() {
                                 })}
                                 {e.venue_name && ` · ${e.venue_name}`}
                             </p>
+                            {(e.status === 'paused' || e.status === 'sold_out') && (
+                                <span className="mt-1.5 inline-block rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                    {e.status === 'paused' ? 'Online sales paused · door only' : 'Sold out online'}
+                                </span>
+                            )}
                         </div>
                         <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
                     </Link>

@@ -154,8 +154,14 @@ export async function createEvent(formData: FormData) {
         const startDatetime = manilaLocalToISO(formData.get('start_datetime') as string)
         const salesEndDatetime = manilaLocalToISO(formData.get('sales_end_datetime') as string)
 
-        // Default sales_end to 1 hour before event if not provided
-        const defaultSalesEnd = new Date(new Date(startDatetime).getTime() - 3600000).toISOString()
+        // NO silent default. This used to write `start - 1 hour` whenever the
+        // organizer left the field blank, which was harmless only because
+        // nothing enforced the column. Now that create-purchase-intent honours
+        // it (EVENT_SALES_CLOSED), a defaulted value would close online sales an
+        // hour before every event on the platform — a rule no organizer ever
+        // chose. In the last 90 days 88 completed online orders landed inside
+        // that final hour; all of them would have been refused. Blank now means
+        // blank: no cutoff until someone sets one.
 
         const isExternal = formData.get('is_external') === 'true'
         const isOnline = formData.get('is_online') === 'true'
@@ -183,7 +189,7 @@ export async function createEvent(formData: FormData) {
             is_online: isOnline,
             start_datetime: startDatetime,
             end_datetime: manilaLocalToISO(formData.get('end_datetime') as string) || null,
-            sales_end_datetime: salesEndDatetime || defaultSalesEnd,
+            sales_end_datetime: salesEndDatetime || null,
             ticket_price: parseFloat(formData.get('ticket_price') as string) || 0,
             capacity,
             tickets_sold: 0,
@@ -507,7 +513,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
         // 3. Prepare Update Data — same Manila-local → instant conversion as create.
         const startDatetime = manilaLocalToISO(formData.get('start_datetime') as string)
         const salesEndDatetime = manilaLocalToISO(formData.get('sales_end_datetime') as string)
-        const defaultSalesEnd = new Date(new Date(startDatetime).getTime() - 3600000).toISOString()
+        // Same as create: no silent default, see the note there.
         const isExternal = formData.get('is_external') === 'true'
         const isOnline = formData.get('is_online') === 'true'
         const newCapacity = isExternal ? 999999 : parseInt(formData.get('capacity') as string)
@@ -530,7 +536,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
             is_online: isOnline,
             start_datetime: startDatetime,
             end_datetime: manilaLocalToISO(formData.get('end_datetime') as string) || null,
-            sales_end_datetime: salesEndDatetime || defaultSalesEnd,
+            sales_end_datetime: salesEndDatetime || null,
             ticket_price: parseFloat(formData.get('ticket_price') as string) || 0,
             capacity: newCapacity,
             // Same constraint on edit: shrinking capacity below the existing

@@ -401,6 +401,8 @@ function displayAnswer(raw: unknown, withPath = false): string {
  * which columns existed — the CSV gained a Ticket column and the PDF didn't.
  * Sharing the fetch means a column added for one shows up in the other.
  */
+const PAGE = 1000
+
 async function loadExportBundle(
     eventId: string
 ): Promise<{ bundle?: ExportBundle; error?: string }> {
@@ -430,7 +432,6 @@ async function loadExportBundle(
     // list with no error and no indication anything is missing -- an export that
     // quietly loses registrations is worse than one that fails. Ranged pages
     // cannot be clamped without the short page telling us we are done.
-    const PAGE = 1000
     const rows: any[] = []
     let truncated = false
     for (let offset = 0; offset < EXPORT_CAP; offset += PAGE) {
@@ -438,7 +439,7 @@ async function loadExportBundle(
             .from('event_registrations')
             .select(
                 `
-                guest_email, guest_name, status, created_at,
+                id, guest_email, guest_name, status, created_at,
                 tier:ticket_tiers ( name ),
                 user:users!event_registrations_user_id_fkey ( display_name, email ),
                 registration_answers ( question_id, answer )
@@ -457,6 +458,68 @@ async function loadExportBundle(
         if (rows.length >= EXPORT_CAP) { truncated = true; break }
     }
 
+    // TIERS COME FROM `tickets`, NOT `event_registrations.tier_id`.
+    //
+    // That column is populated on only 55 of 1,251 registrations (4.4%), which is
+    // why the Ticket column has always been blank. The issued ticket rows carry
+    // both `registration_id` and the tier, and cover 1,063 of those 1,251 — so
+    // the answer the organizer wants is there, just one table over.
+    //
+    // Paged for the same reason the rows are: a single large request is silently
+    // clamped by PostgREST, and a half-filled tier column is worse than none.
+    const ticketRows: any[] = []
+    for (let offset = 0; offset < EXPORT_CAP; offset += PAGE) {
+        const { data: chunk, error: tErr } = await adminClient
+            .from('tickets')
+            .select('registration_id, status, tier, tier_row:ticket_tiers ( name )')
+            .eq('event_id', eventId)
+            .not('registration_id', 'is', null)
+            .range(offset, offset + PAGE - 1)
+        if (tErr) {
+            // Not fatal. A tier column that fails to resolve should cost the
+            // organizer that column, not the whole export.
+            console.error('loadExportBundle tickets error:', tErr)
+            break
+        }
+        ticketRows.push(...(chunk ?? []))
+        if (!chunk || chunk.length < PAGE) break
+    }
+
+    // "VIP x2; General Admission" — grouped and counted, because one registration
+    // can buy several tickets across different tiers. Refunded ones are labelled
+    // rather than dropped: silently omitting them would have an organizer count
+    // shirts for a ticket that no longer exists, and silently including them
+    // would overcount.
+    const tiersByRegistration = new Map<string, string>()
+    {
+        const grouped = new Map<string, Map<string, number>>()
+        for (const t of ticketRows) {
+            const regId = t.registration_id as string
+            if (!regId) continue
+            // The legacy `tickets.tier` TEXT column holds a SLUG on rows whose
+            // tier_id was never set, so the same tier arrives as both
+            // "General Admission" and "general_admission" and groups as two
+            // entries. Normalising the fallback makes them merge.
+            const raw = (t.tier_row?.name || t.tier || 'Ticket') as string
+            const name = t.tier_row?.name
+                ? raw
+                : raw.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+                      .replace(/\b\w/g, (c) => c.toUpperCase())
+            const label = t.status === 'refunded' ? `${name} (refunded)` : name
+            if (!grouped.has(regId)) grouped.set(regId, new Map())
+            const counts = grouped.get(regId)!
+            counts.set(label, (counts.get(label) ?? 0) + 1)
+        }
+        for (const [regId, counts] of grouped) {
+            tiersByRegistration.set(
+                regId,
+                [...counts.entries()]
+                    .map(([name, n]) => (n > 1 ? `${name} \u00D7${n}` : name))
+                    .join('; '),
+            )
+        }
+    }
+
     const cols = (questions ?? []) as { id: string; label: string }[]
 
     return {
@@ -473,7 +536,9 @@ async function loadExportBundle(
                 return {
                     name: r.user?.display_name || r.guest_name || '',
                     email: r.user?.email || r.guest_email || '',
-                    ticket: r.tier?.name || '',
+                    // Falls back to the registration's own tier_id for the 4.4%
+                    // that have one but never produced a ticket row.
+                    ticket: tiersByRegistration.get(r.id) || r.tier?.name || '',
                     status: r.status,
                     submitted: formatInManila(r.created_at, {
                         year: 'numeric', month: 'short', day: 'numeric',
@@ -501,7 +566,7 @@ export async function exportEventRegistrationsCsv(
     if (error || !bundle) return { error: error || 'Could not build the export.' }
 
     const cell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    const header = ['Name', 'Email', 'Ticket', 'Status', 'Submitted', ...bundle.questions.map(q => q.label)]
+    const header = ['Name', 'Email', 'Ticket tier', 'Status', 'Submitted', ...bundle.questions.map(q => q.label)]
     const body = bundle.rows.map(r =>
         [r.name, r.email, r.ticket, r.status, r.submitted, ...r.answersFull].map(cell).join(',')
     )

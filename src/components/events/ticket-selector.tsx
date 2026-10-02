@@ -81,7 +81,17 @@ export function TicketSelector({
     // Determine effective price and limits based on selection or fallback
     const effectivePrice = selectedTier ? Number(selectedTier.price) : ticketPrice
     const effectiveMin = selectedTier?.min_per_order || minTickets
-    const effectiveMax = selectedTier?.max_per_order || maxTickets
+    // LOWER of the two, not the tier replacing the event. With `||` an organizer
+    // who set "1 per purchase" on the event and never touched the tier was
+    // overridden by the tier's untouched default of 10 — the setting looked
+    // ignored because it was. The same cap is now enforced in
+    // create-purchase-intent, so this is the friendly half of one rule, not the
+    // rule itself.
+    const effectiveMax = Math.min(
+        ...[selectedTier?.max_per_order, maxTickets]
+            .map(Number)
+            .filter((v) => !!v && v > 0),
+    ) || 1
 
     // Determine sold out state for specific tier
     const isTierSoldOut = isSoldOut || (selectedTier

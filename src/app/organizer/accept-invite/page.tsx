@@ -7,10 +7,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, CheckCircle, XCircle, AlertTriangle, Building2, Eye, EyeOff } from 'lucide-react'
+import { Loader2, CheckCircle, XCircle, AlertTriangle, Building2, Eye, EyeOff, Copy, Check, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { acceptInvite, getInviteInfo } from '@/lib/organizer/team-actions'
 import { createClient } from '@/lib/supabase/client'
+import { OAuthButtons } from '@/components/auth/oauth-buttons'
 
 const ROLE_LABELS: Record<string, string> = {
     owner: 'Owner',
@@ -47,6 +48,29 @@ function AcceptInviteContent() {
     const [showPassword, setShowPassword] = useState(false)
     const [authLoading, setAuthLoading] = useState(false)
     const [authError, setAuthError] = useState('')
+
+    // Invites are usually opened straight from Messenger/Instagram, whose in-app
+    // webviews Google refuses OAuth in ("disallowed_useragent"). Detect that and
+    // hand over a copyable link instead of letting them hit a dead end.
+    const [inAppBrowser, setInAppBrowser] = useState(false)
+    const [copied, setCopied] = useState(false)
+
+    useEffect(() => {
+        // In an effect, not during render: the server has no userAgent and a
+        // mismatch would blow up hydration.
+        const ua = navigator.userAgent || ''
+        setInAppBrowser(/FBAN|FBAV|FB_IAB|FBIOS|Messenger|Orca-Android|Instagram|Line\/|MicroMessenger|TikTok/i.test(ua))
+    }, [])
+
+    const copyInviteLink = async () => {
+        try {
+            await navigator.clipboard.writeText(window.location.href)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        } catch {
+            // Clipboard is blocked in some webviews; the URL bar is the fallback.
+        }
+    }
 
     // 1. On mount: fetch invite info + check auth
     useEffect(() => {
@@ -109,7 +133,15 @@ function AcceptInviteContent() {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
 
         if (error) {
-            setAuthError(error.message)
+            // An account created through Google has no password at all, so every
+            // attempt here comes back as the generic "Invalid login credentials".
+            // Name the real cause instead of letting people retype a password
+            // they never set.
+            setAuthError(
+                /invalid login credentials/i.test(error.message)
+                    ? 'That email and password don\u2019t match. If you signed up with Google, use \u201CContinue with Google\u201D above instead \u2014 that account has no password.'
+                    : error.message
+            )
             setAuthLoading(false)
         } else {
             setIsLoggedIn(true)
@@ -188,6 +220,41 @@ function AcceptInviteContent() {
                                         {ROLE_LABELS[inviteRole] || inviteRole}
                                     </Badge>
                                 </p>
+                            </div>
+                        </div>
+
+                        {/* Sign in with the provider the account was actually
+                            created with. Both of these land back on this page via
+                            /auth/callback, where the mount effect sees a session
+                            and auto-accepts. */}
+                        <div className="space-y-4 pt-2">
+                            {inAppBrowser && (
+                                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-left text-sm text-amber-900 space-y-2">
+                                    <p className="flex items-start gap-2">
+                                        <ExternalLink className="h-4 w-4 mt-0.5 shrink-0" />
+                                        <span>
+                                            <strong>Open this in your browser.</strong> Google blocks sign-in inside
+                                            Messenger and Instagram. Tap the <strong>•••</strong> menu and choose
+                                            &ldquo;Open in browser&rdquo;, or copy the link below.
+                                        </span>
+                                    </p>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full gap-2 bg-white"
+                                        onClick={copyInviteLink}
+                                    >
+                                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                                        {copied ? 'Link copied' : 'Copy invite link'}
+                                    </Button>
+                                </div>
+                            )}
+                            <OAuthButtons next={`/organizer/accept-invite?token=${token}`} />
+                            <div className="flex items-center gap-3">
+                                <span className="h-px flex-1 bg-border" />
+                                <span className="text-xs uppercase tracking-wide text-muted-foreground">or</span>
+                                <span className="h-px flex-1 bg-border" />
                             </div>
                         </div>
 

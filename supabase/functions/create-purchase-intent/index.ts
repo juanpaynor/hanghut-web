@@ -210,7 +210,7 @@ serve(async (req) => {
         // --- APPROVAL GATE (server-side enforcement) ---
         const { data: gateEvent, error: gateError } = await supabaseClient
             .from('events')
-            .select('require_approval, invite_only, custom_tos')
+            .select('require_approval, invite_only, custom_tos, status, sales_end_datetime')
             .eq('id', event_id)
             .single()
 
@@ -219,6 +219,60 @@ serve(async (req) => {
                 JSON.stringify({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid Event' } }),
                 { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
+        }
+
+        // --- EVENT-LEVEL SALES WINDOW ---
+        // Checked BEFORE the approval gate, and off the row that gate already
+        // fetched. Both halves matter:
+        //   - Closed is closed regardless of approval. With this below the gate,
+        //     an invite-only event whose sales had ended answered
+        //     REGISTRATION_REQUIRED — telling someone to go register for
+        //     something they can no longer buy. Every Mimic event is
+        //     invite_only, so that was the answer their buyers would have got.
+        //   - Reusing `gateEvent` keeps this at zero extra round trips. A second
+        //     SELECT on the hottest path in the product is not worth a tidier
+        //     code block.
+        //
+        // events.sales_end_datetime was written by the event form and read by
+        // NOBODY until now, so online sales never stopped on their own — Mimic
+        // watched orders land past their own cutoff and reported it. The
+        // tier-level window further down (TIER_SALES_CLOSED) already worked;
+        // this is the same rule one level up, covering the tiered, tier-less and
+        // seated paths alike.
+        //
+        // Door sales are deliberately NOT affected: the box office writes
+        // through the create_box_office_order RPC and never reaches this
+        // function (ALLOWED_SOURCES is web/app/embed/api). Closing ONLINE sales
+        // at a deadline while the door keeps selling is the point of the field.
+        //
+        // `paused` is the manual twin of the same rule and was equally
+        // unenforced here. The public event page already 404s a paused event, so
+        // that arm closes a stale-checkout-tab hole rather than changing any
+        // flow that currently works.
+        if (gateEvent.status === 'paused') {
+            return new Response(
+                JSON.stringify({
+                    success: false,
+                    error: { code: 'EVENT_SALES_PAUSED', message: 'Online sales for this event are paused.' },
+                }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+        }
+        {
+            const salesEndMs = gateEvent.sales_end_datetime
+                ? new Date(gateEvent.sales_end_datetime).getTime()
+                : NaN
+            // An unparseable date must never close an otherwise open event — the
+            // same call tierSaleState makes. A typo should not stop a sale.
+            if (!Number.isNaN(salesEndMs) && salesEndMs < Date.now()) {
+                return new Response(
+                    JSON.stringify({
+                        success: false,
+                        error: { code: 'EVENT_SALES_CLOSED', message: 'Online sales for this event have closed.' },
+                    }),
+                    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
         }
 
         if (gateEvent.require_approval || gateEvent.invite_only) {
@@ -322,7 +376,7 @@ serve(async (req) => {
         if (effectiveTierId) {
             const { data: tier, error: tierError } = await supabaseClient
                 .from('ticket_tiers')
-                .select('price, name, quantity_sold, quantity_total, is_active, sales_start, sales_end, events(organizer_id)')
+                .select('price, name, quantity_sold, quantity_total, is_active, sales_start, sales_end, min_per_order, max_per_order, events(organizer_id, max_tickets_per_purchase)')
                 .eq('id', effectiveTierId)
                 .eq('event_id', event_id)
                 .single()
@@ -366,6 +420,65 @@ serve(async (req) => {
                 )
             }
 
+            // The organizer's per-order limit. UI-ONLY until now: `max_per_order`
+            // and `max_tickets_per_purchase` appeared nowhere in any edge
+            // function, so the entire server-side quantity check was
+            // `quantity < 1`. The web picker clamps correctly, which is why this
+            // looked like it worked -- but the app does not, and it reached this
+            // endpoint with quantity 6 against a tier limited to 1 (Anti Club
+            // Running Club, SINADYA RUN 2026, a 21KM race entry). That intent
+            // expired unpaid; had it been paid, six race entries would have been
+            // issued on a one-per-order tier.
+            //
+            // Enforced here rather than in each client because web, the mobile
+            // app and /api/v1/checkouts are three separate callers and only this
+            // one is common to all of them. Same reason the tier lock moved here.
+            //
+            // The LOWER of the two limits wins. The tier must not be able to
+            // raise an event-level cap: an organizer who sets "1 per purchase" on
+            // the event and never touches the tier would otherwise be overridden
+            // by the tier's untouched default of 10, which is exactly what makes
+            // the setting look broken on other events.
+            const eventMax = Number((tier as any).events?.max_tickets_per_purchase) || null
+            const tierMax = Number(tier.max_per_order) || null
+            const perOrderMax = [eventMax, tierMax].filter((v): v is number => !!v && v > 0)
+            if (perOrderMax.length > 0) {
+                const cap = Math.min(...perOrderMax)
+                if (quantity > cap) {
+                    return new Response(
+                        JSON.stringify({
+                            success: false,
+                            error: {
+                                code: 'QUANTITY_LIMIT',
+                                message: cap === 1
+                                    ? 'Only 1 ticket of this type can be bought per order.'
+                                    : `A maximum of ${cap} tickets of this type can be bought per order.`,
+                                max_per_order: cap,
+                            },
+                        }),
+                        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                    )
+                }
+            }
+
+            // Minimum, for the same reason. A tier sold in pairs is a real
+            // configuration (table seatings), and a client that ignores it
+            // produces an order the organizer cannot honour.
+            const tierMin = Number(tier.min_per_order) || 0
+            if (tierMin > 1 && quantity < tierMin) {
+                return new Response(
+                    JSON.stringify({
+                        success: false,
+                        error: {
+                            code: 'QUANTITY_LIMIT',
+                            message: `This ticket type is sold in a minimum of ${tierMin}.`,
+                            min_per_order: tierMin,
+                        },
+                    }),
+                    { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+
             if (tier.quantity_sold + quantity > tier.quantity_total) {
                 return new Response(JSON.stringify({ success: false, error: { message: 'Selected ticket tier is sold out' } }), { status: 400, headers: corsHeaders })
             }
@@ -377,13 +490,33 @@ serve(async (req) => {
         } else {
             const { data: event, error: eventError } = await supabaseClient
                 .from('events')
-                .select('ticket_price, organizer_id')
+                .select('ticket_price, organizer_id, max_tickets_per_purchase')
                 .eq('id', event_id)
                 .single()
 
             if (eventError || !event) {
                 return new Response(JSON.stringify({ success: false, error: { message: 'Invalid Event' } }), { status: 400, headers: corsHeaders })
             }
+
+            // Same cap on the tier-less path. An event with no tiers was
+            // otherwise unbounded entirely.
+            const eventCap = Number(event.max_tickets_per_purchase) || null
+            if (eventCap && eventCap > 0 && quantity > eventCap) {
+                return new Response(
+                    JSON.stringify({
+                        success: false,
+                        error: {
+                            code: 'QUANTITY_LIMIT',
+                            message: eventCap === 1
+                                ? 'Only 1 ticket can be bought per order for this event.'
+                                : `A maximum of ${eventCap} tickets can be bought per order for this event.`,
+                            max_per_order: eventCap,
+                        },
+                    }),
+                    { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+
             unitPrice = event.ticket_price
             organizerId = event.organizer_id
         }

@@ -37,7 +37,7 @@ import { createClient } from '@/lib/supabase/server'
 import { isUuid } from '@/lib/slug'
 import { cache } from 'react'
 import { LoginNudge } from '@/components/shared/login-nudge'
-import { isTierOnSale, isTierVisible } from '@/lib/tickets/tier-availability'
+import { isTierOnSale, isTierVisible, isEventSalesClosed } from '@/lib/tickets/tier-availability'
 
 export const dynamic = 'force-dynamic' // always fresh — bg style changes show immediately
 
@@ -418,6 +418,14 @@ export default async function PublicEventPage({
         }
     }
 
+    // The event-level cutoff closes the buy path the same way a sold-out event
+    // does — folded into isSoldOut because that flag is already threaded to
+    // every buy surface and means exactly "cannot buy". The wording is handled
+    // separately below: "Sold Out" would be a lie when there are tickets left
+    // and the clock simply ran out.
+    const eventSalesClosed = isEventSalesClosed(event)
+    if (eventSalesClosed) isSoldOut = true
+
     // RSVP mode — free events where the organizer opted into a one-tap RSVP instead
     // of the ticket/quantity/checkout flow. Only valid when the event is actually free.
     // A tiered event with every tier locked is closed, not "free at the event
@@ -435,9 +443,11 @@ export default async function PublicEventPage({
     const customCtaLabel = (event.rsvp_button_label || '').trim()
     const rsvpLabel = customCtaLabel || 'RSVP'
     /** What the buy/reserve button says. Sold-out wording always wins. */
-    const ctaLabel = rsvpMode
-        ? (isSoldOut ? 'Event full' : rsvpLabel)
-        : (isSoldOut ? 'Sold Out' : (customCtaLabel || 'Get Tickets'))
+    const ctaLabel = eventSalesClosed
+        ? 'Sales closed'
+        : rsvpMode
+            ? (isSoldOut ? 'Event full' : rsvpLabel)
+            : (isSoldOut ? 'Sold Out' : (customCtaLabel || 'Get Tickets'))
 
     // External ticketing redirect URL (edge function handles click tracking + 302 redirect)
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL

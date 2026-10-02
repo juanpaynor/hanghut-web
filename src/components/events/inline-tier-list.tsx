@@ -98,7 +98,17 @@ export function InlineTierList({
     const selectedTier = activeTiers.find((t: any) => t.id === selectedTierId)
     const effectivePrice = selectedTier ? Number(selectedTier.price) : ticketPrice
     const effectiveMin = selectedTier?.min_per_order || minTickets
-    const effectiveMax = selectedTier?.max_per_order || maxTickets
+    // LOWER of the two, not the tier replacing the event. With `||` an organizer
+    // who set "1 per purchase" on the event and never touched the tier was
+    // overridden by the tier's untouched default of 10 — the setting looked
+    // ignored because it was. The same cap is now enforced in
+    // create-purchase-intent, so this is the friendly half of one rule, not the
+    // rule itself.
+    const effectiveMax = Math.min(
+        ...[selectedTier?.max_per_order, maxTickets]
+            .map(Number)
+            .filter((v) => !!v && v > 0),
+    ) || 1
     const selectedSoldOut = isSoldOut || (selectedTier ? soldOutOf(selectedTier) : false)
 
     const selectTier = (t: any) => {

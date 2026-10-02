@@ -99,3 +99,31 @@ export function tierSaleLabel(tier: TierWindow, now?: number): string | null {
     if (state === 'closed') return 'Sales closed'
     return 'Not on sale'
 }
+
+/**
+ * The EVENT-level sales cutoff — `events.sales_end_datetime`.
+ *
+ * This is a separate rule from the tier window above, one level up: an
+ * organizer sets one date on the event rather than on each of its tiers. It
+ * went unenforced entirely until 2026-10-03 — the event form wrote the column
+ * and no seller ever read it, so sales simply never stopped. Mimic found it the
+ * hard way, watching orders land past their own cutoff.
+ *
+ * Mirrored inline in create-purchase-intent as EVENT_SALES_CLOSED, for the same
+ * reason the tier rules are: the money path is a Deno edge function and cannot
+ * import this module. Change one, change the other.
+ *
+ * Deliberately NOT consulted by the box office. Door sales go through the
+ * create_box_office_order RPC, and closing online sales at a deadline while the
+ * door keeps selling is the whole point of the setting.
+ */
+export function isEventSalesClosed(
+    event: { sales_end_datetime?: string | null } | null | undefined,
+    now: number = Date.now(),
+): boolean {
+    if (!event?.sales_end_datetime) return false
+    const t = new Date(event.sales_end_datetime).getTime()
+    // An unparseable date must never close an otherwise open event — the same
+    // call tierSaleState makes. A typo should not stop a sale.
+    return !Number.isNaN(t) && t < now
+}

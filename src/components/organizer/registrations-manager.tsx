@@ -392,7 +392,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             // landscape so rows still paginate normally; only width grows.
             const MARGIN = 10
             const SAFETY = 4
-            const ID_WIDTHS = [28, 38, 15, 16, 24] // Name, Email, Ticket, Status, Submitted
+            const ID_WIDTHS = [28, 36, 30, 16, 24] // Name, Email, Ticket tier, Status, Submitted
             const ID_TOTAL = ID_WIDTHS.reduce((a, c) => a + c, 0)
             const Q_MIN = 22          // narrower than this and answers wrap to confetti
             const A4_LANDSCAPE = 297
@@ -473,7 +473,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             const clamp = (v: string) => (v.length > CELL_MAX ? v.slice(0, CELL_MAX) + ' …' : v)
 
             autoTable(doc, {
-                head: [['Name', 'Email', 'Ticket', 'Status', 'Submitted',
+                head: [['Name', 'Email', 'Ticket tier', 'Status', 'Submitted',
                     ...b.questions.map((q, i) => headerFor(q.label, i))]],
                 body: b.rows.map(r => [
                     r.name, r.email, r.ticket || '—', r.status, r.submitted,
@@ -573,7 +573,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             if (!XLSX?.utils) throw new Error('Could not load the spreadsheet writer.')
 
             const header = [
-                'Name', 'Email', 'Ticket', 'Status', 'Submitted',
+                'Name', 'Email', 'Ticket tier', 'Status', 'Submitted',
                 ...b.questions.map((q, i) => headerFor(q.label, i)),
             ]
             const sheet = XLSX.utils.aoa_to_sheet([

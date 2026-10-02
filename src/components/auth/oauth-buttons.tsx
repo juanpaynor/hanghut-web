@@ -26,17 +26,29 @@ function AppleIcon() {
 
 /**
  * Google / Apple sign-in buttons. On click they redirect to the provider and
- * come back via /auth/callback → /organizer/post-login (the shared gate).
+ * come back via /auth/callback → `next` (default /organizer/post-login, the
+ * shared gate). The invite page overrides `next` so the round trip lands back
+ * on the invite instead of the dashboard.
  */
 // `showApple` is off by default until the Apple Services ID / return URL config
 // is finished — flip it on once Sign in with Apple works.
-export function OAuthButtons({ disabled, showApple = false }: { disabled?: boolean; showApple?: boolean }) {
+export function OAuthButtons({
+    disabled,
+    showApple = false,
+    next,
+    label = 'Continue with',
+}: {
+    disabled?: boolean
+    showApple?: boolean
+    next?: string
+    label?: string
+}) {
     const [loading, setLoading] = useState<OAuthProvider | null>(null)
 
     const go = async (provider: OAuthProvider) => {
         setLoading(provider)
         try {
-            await signInWithProvider(provider)
+            await signInWithProvider(provider, next)
             // success → browser redirects to the provider; keep spinner up.
         } catch {
             setLoading(null)
@@ -53,7 +65,7 @@ export function OAuthButtons({ disabled, showApple = false }: { disabled?: boole
                 onClick={() => go('google')}
             >
                 {loading === 'google' ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
-                Continue with Google
+                {label} Google
             </Button>
             {showApple && (
                 <Button
@@ -64,7 +76,7 @@ export function OAuthButtons({ disabled, showApple = false }: { disabled?: boole
                     onClick={() => go('apple')}
                 >
                     {loading === 'apple' ? <Loader2 className="h-4 w-4 animate-spin" /> : <AppleIcon />}
-                    Continue with Apple
+                    {label} Apple
                 </Button>
             )}
         </div>
