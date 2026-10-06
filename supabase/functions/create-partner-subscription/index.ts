@@ -340,6 +340,14 @@ serve(async (req) => {
                 referenceId = `pro_${partner.id}_${attempt}`
             }
 
+            // The mandate's end date shown to the cardholder. Five years out:
+            // long enough that an ongoing subscription is never interrupted by a
+            // mandate quietly lapsing, short enough to be a real consent window
+            // rather than a perpetual one.
+            const expiryDate = new Date()
+            expiryDate.setFullYear(expiryDate.getFullYear() + 5)
+            const recurringExpiry = expiryDate.toISOString().slice(0, 10)
+
             // SAVE session: amount MUST be 0, and PAYMENT_LINK gives us Xendit's
             // hosted card page — no card fields, and no PCI surface, on our side.
             const sessionRes = await fetch('https://api.xendit.co/sessions', {
@@ -360,6 +368,27 @@ serve(async (req) => {
                     // set of wallets, recurring billing is card-only. This also
                     // removes the e-wallet account-linking (AUTH) round trip.
                     allowed_payment_channels: ['CARDS'],
+                    // THE field that makes this token chargeable later. Without
+                    // it Xendit saves a CUSTOMER_UNSCHEDULED token -- fine for a
+                    // customer pressing "pay" again, useless for billing we
+                    // initiate ourselves -- and the first recurring charge comes
+                    // back CHANNEL_UNAVAILABLE. That is exactly what happened to
+                    // attempt 2 on 2026-09-29: plan created, card saved, charge
+                    // refused, and nothing in the subscription row to say why.
+                    //
+                    // recurring_frequency (DAYS) and recurring_expiry are scheme
+                    // mandated whenever card_on_file_type is RECURRING -- Visa
+                    // and Mastercard require the cardholder be told the cadence
+                    // and end date at the moment of consent.
+                    channel_properties: {
+                        cards: {
+                            card_on_file_type: 'RECURRING',
+                            recurring_configuration: {
+                                recurring_frequency: interval === 'YEAR' ? 365 : 30,
+                                recurring_expiry: recurringExpiry,
+                            },
+                        },
+                    },
                     success_return_url: `${appUrl}/organizer/settings/billing?status=saved`,
                     cancel_return_url: `${appUrl}/organizer/settings/billing?status=cancelled`,
                     description: `HangHut Pro — save payment method`,

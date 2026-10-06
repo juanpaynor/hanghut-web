@@ -8,6 +8,8 @@ import { AttendeeManager } from '@/components/organizer/attendee-manager'
 import { PromoCodeManager } from '@/components/organizer/promo-code-manager'
 import { CheckInStats } from '@/components/organizer/check-in-stats'
 import { EventDashboardOverview } from '@/components/organizer/event-dashboard-overview'
+import { StatusLinksManager } from '@/components/organizer/status-links-manager'
+import type { StatusLink } from '@/lib/organizer/status-link-actions'
 import { StorefrontCustomizationForm } from '@/components/organizer/storefront-customization-form'
 import { SeatMapTab } from '@/components/organizer/seat-map-tab'
 import { AnalyticsTabLazy } from '@/components/organizer/analytics-tab-lazy'
@@ -48,6 +50,8 @@ interface EventDashboardTabsProps {
     existingDiscounts?: ExistingDiscount[]
     subscriptionsEnabled?: boolean
     merchEnabled?: boolean
+    statusLinks?: StatusLink[]
+    baseUrl?: string
 }
 
 export function EventDashboardTabs({
@@ -70,6 +74,8 @@ export function EventDashboardTabs({
     existingDiscounts = [],
     subscriptionsEnabled = false,
     merchEnabled = false,
+    statusLinks = [],
+    baseUrl = '',
 }: EventDashboardTabsProps) {
     const [activeTab, setActiveTab] = useState('overview')
 
@@ -141,8 +147,13 @@ export function EventDashboardTabs({
                 )}
             </TabsList>
 
-            <TabsContent value="overview" className="mt-6 animate-in fade-in-50 duration-300">
+            <TabsContent value="overview" className="mt-6 animate-in fade-in-50 duration-300 space-y-8">
                 <EventDashboardOverview event={event} stats={stats} />
+                {/* External events sell elsewhere, so there are no numbers of ours
+                    worth sharing — the status page would read all zeroes. */}
+                {!event.is_external && (
+                    <StatusLinksManager eventId={eventId} baseUrl={baseUrl} initialLinks={statusLinks} />
+                )}
             </TabsContent>
 
             <TabsContent value="analytics" className="mt-6 animate-in fade-in-50 duration-300">

@@ -49,6 +49,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
     const { getPromoCodes } = await import('@/lib/organizer/promo-actions')
     const { getRegistrationQuestions } = await import('@/lib/organizer/registration-actions')
     const { getEventRegistrations, getEventAnswerStats } = await import('@/lib/organizer/registration-management-actions')
+    const { getStatusLinks } = await import('@/lib/organizer/status-link-actions')
 
     const [
         { data: partnerPricing },
@@ -66,6 +67,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         { data: rawSubscriptionTiers },
         { data: rawExistingDiscounts },
         { data: onlineAccess },
+        statusLinksResult,
     ] = await Promise.all([
         // Partner pricing (fields not already on the cached partner)
         supabase
@@ -130,6 +132,10 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
             .select('join_url')
             .eq('event_id', id)
             .maybeSingle(),
+
+        // Shared read-only status links. Cheap (one indexed read) and it keeps the
+        // Overview tab a single server round trip rather than a client fetch.
+        getStatusLinks(id),
     ])
 
     const stats = statsRows?.[0] ?? { sold_count: 0, checked_in_count: 0, gross_revenue: 0, refunded_amount: 0 }
@@ -164,6 +170,9 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         !tiers.some((t: { price: number | string | null }) => Number(t.price ?? 0) > 0) &&
         Number((event as { ticket_price?: number | string | null }).ticket_price ?? 0) === 0
 
+    const statusLinks = statusLinksResult.links ?? []
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://hanghut.com'
+
     return (
         <div className="p-8 pb-20">
             <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -186,6 +195,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
             </div>
 
             <EventDashboardTabs
+                statusLinks={statusLinks}
+                baseUrl={baseUrl}
                 partnerId={partner.id}
                 commissionRate={commissionRate}
                 event={{ ...event, online_url: onlineAccess?.join_url ?? null }}
