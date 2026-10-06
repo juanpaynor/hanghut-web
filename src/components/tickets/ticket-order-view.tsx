@@ -1,5 +1,6 @@
 import { TicketQR } from '@/components/tickets/ticket-qr'
 import { TicketPdfButton } from '@/components/tickets/ticket-pdf-button'
+import { TicketBadges, type TicketBadge } from '@/components/tickets/ticket-badges'
 import { CalendarClock, MapPin, Ticket as TicketIcon, Armchair, CheckCircle2, ExternalLink, Globe, Video } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatEventDateTimeWithEnd } from '@/lib/datetime'
@@ -60,6 +61,12 @@ export interface TicketOrder {
     }
     organizer: { name: string | null; logo_url: string | null; branding: TicketBranding | null }
     tickets: OrderTicket[]
+    /**
+     * Badges this buyer holds from THIS organizer. Served by get_ticket_order,
+     * matched on lowercased email — so a guest who never made an account sees
+     * them here, which for 91% of holders is the only place they ever could.
+     */
+    badges?: TicketBadge[]
 }
 
 // Same palette the builder/buyer map use, so a tier's color is stable everywhere.
@@ -440,6 +447,16 @@ export function TicketOrderView({
                             {order.buyer_name ? ` · ${order.buyer_name}` : ''}
                         </p>
                         {tickets.map((t) => <TicketCard key={t.id} t={t} />)}
+
+                        {/* Badges earned from this organizer. Placed after the
+                            tickets — the ticket is why they opened the page; the
+                            badge is the reward they did not know they had. */}
+                        <TicketBadges
+                            badges={order.badges ?? []}
+                            organizerName={organizer?.name ?? null}
+                            eventTitle={event.title}
+                            accent={accent}
+                        />
 
                         {/* Host links / call-to-action */}
                         {links.length > 0 && (

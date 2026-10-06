@@ -310,3 +310,174 @@ export async function uploadBadgeArt(organizerId: string, formData: FormData) {
     const { data } = admin.storage.from('badge-art').getPublicUrl(path)
     return { success: true, url: data.publicUrl }
 }
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+export interface BadgeHolder {
+    email: string
+    name: string | null
+    earned_at: string
+    grant_type: string
+    has_account: boolean
+    events_purchased: number
+    events_attended: number
+    total_spent: number
+    rfm_segment: string | null
+    last_activity: string | null
+}
+
+export interface BadgeHoldersResult {
+    total: number
+    /**
+     * Present on the FIRST page only (offset 0). It is identical on every page
+     * and is the only part of the response that needs every holder's value
+     * computed, so later pages return null and the client keeps what it has.
+     */
+    summary: null | {
+        holders: number
+        with_account: number
+        hand_granted: number
+        total_spent: number
+        avg_spent: number
+        champions: number
+        first_earned: string | null
+        last_earned: string | null
+    }
+    holders: BadgeHolder[]
+}
+
+export interface BadgeStat {
+    id: string
+    name: string
+    tier: string | null
+    is_active: boolean
+    holders: number
+    visible: number
+    pct_visible: number
+    hand_granted: number
+    earned_30d: number
+    first_earned: string | null
+    last_earned: string | null
+    swept: boolean
+    curve: { week: string; awards: number }[]
+}
+
+export interface BadgeAnalytics {
+    totals: {
+        badges: number
+        active: number
+        awards: number
+        visible: number
+        pct_visible: number
+        awards_30d: number
+        distinct_holders: number
+    }
+    badges: BadgeStat[]
+}
+
+export interface LoyalFan {
+    email: string
+    name: string | null
+    badge_count: number
+    has_account: boolean
+    badges: { id: string; name: string; tier: string | null }[]
+    latest_earned: string
+    events_purchased: number
+    events_attended: number
+    total_spent: number
+    rfm_segment: string | null
+    last_activity: string | null
+}
+
+export interface LoyalCoreResult {
+    total: number
+    summary: {
+        people: number
+        total_spent: number
+        avg_spent: number
+        max_badges: number
+        with_account: number
+    }
+    people: LoyalFan[]
+}
+
+/**
+ * Who holds one badge, with each holder's lifetime value.
+ *
+ * Paged in the database, never in the browser: one live badge already has 306
+ * holders and this is sized for 100 partners. The RPC re-checks ownership
+ * itself — requirePartnerAccess here is the fast rejection, not the boundary.
+ *
+ * The value columns come from organizer_customer_value, which is the Customers
+ * page's own logic rather than a second definition of "total spent". Verified
+ * equal on prod for both badge-holding partners (78 and 522 customers, zero
+ * rows differing either way). If those two ever disagree, that test is the
+ * thing to re-run.
+ */
+export async function getBadgeHolders(
+    organizerId: string,
+    badgeId: string,
+    opts: { limit?: number; offset?: number; search?: string; sort?: 'recent' | 'spend' | 'name' } = {}
+) {
+    const ctx = await requirePartnerAccess(organizerId)
+    if ('error' in ctx) return { error: ctx.error }
+
+    const { data, error } = await ctx.supabase.rpc('get_badge_holders', {
+        p_badge_id: badgeId,
+        p_limit: opts.limit ?? 50,
+        p_offset: opts.offset ?? 0,
+        p_search: opts.search?.trim() || null,
+        p_sort: opts.sort ?? 'recent',
+    })
+
+    if (error) {
+        console.error('getBadgeHolders error:', error)
+        return { error: 'Could not load holders' }
+    }
+    return { result: data as BadgeHoldersResult }
+}
+
+/** Per-badge stats for every badge this partner owns — one grouped pass, not a loop. */
+export async function getBadgeAnalytics(organizerId: string) {
+    const ctx = await requirePartnerAccess(organizerId)
+    if ('error' in ctx) return { error: ctx.error }
+
+    const { data, error } = await ctx.supabase.rpc('get_badge_analytics', {
+        p_organizer_id: organizerId,
+    })
+
+    if (error) {
+        console.error('getBadgeAnalytics error:', error)
+        return { error: 'Could not load badge analytics' }
+    }
+    return { analytics: data as BadgeAnalytics }
+}
+
+/**
+ * The people holding more than one of this partner's badges.
+ *
+ * Holding one badge can mean a single purchase. Holding several means someone
+ * came back across different criteria, which is why this is a better loyalty
+ * signal than any single badge's holder list — on prod the 2+ group averages
+ * roughly 2.5x the spend of single-badge holders.
+ */
+export async function getBadgeLoyalCore(
+    organizerId: string,
+    opts: { minBadges?: number; limit?: number; offset?: number } = {}
+) {
+    const ctx = await requirePartnerAccess(organizerId)
+    if ('error' in ctx) return { error: ctx.error }
+
+    const { data, error } = await ctx.supabase.rpc('get_badge_loyal_core', {
+        p_organizer_id: organizerId,
+        p_min_badges: opts.minBadges ?? 2,
+        p_limit: opts.limit ?? 50,
+        p_offset: opts.offset ?? 0,
+    })
+
+    if (error) {
+        console.error('getBadgeLoyalCore error:', error)
+        return { error: 'Could not load loyal fans' }
+    }
+    return { result: data as LoyalCoreResult }
+}

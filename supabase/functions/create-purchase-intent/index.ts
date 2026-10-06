@@ -792,16 +792,31 @@ serve(async (req) => {
                         console.log(`Subscriber discount applied: -${saving} (${eligibleQty}x tickets, tier ${discountResult.subscription_tier_id})`)
                     }
                 } else if (discountResult?.has_discount === false) {
-                    const fallbackSaving = Number(clientMetadata?.subscriber_saving ?? 0)
-                    if (fallbackSaving > 0) {
-                        subscriberDiscountAmount = fallbackSaving
-                        subscriberDiscountMeta = {
-                            applied: true,
-                            saving: fallbackSaving,
-                            fallback: true,
-                        }
-                        console.log(`Subscriber discount fallback (sub lapsed): -${fallbackSaving}`)
-                    }
+                    // REMOVED 2026-10-06: a client-supplied discount fallback.
+                    //
+                    // This branch used to read `clientMetadata.subscriber_saving` --
+                    // a number straight off the request body -- and subtract it,
+                    // precisely when the server RPC had just answered "this buyer
+                    // gets NO discount". Since net is clamped at
+                    // `max(subtotal - discount, 0)`, any logged-in caller could send
+                    //
+                    //     metadata: { has_subscriber_discount: true,
+                    //                 subscriber_saving: <subtotal> }
+                    //
+                    // and check out a paid ticket for zero. The discount a buyer
+                    // receives is ours to determine, never theirs to assert --
+                    // the same rule the terms snapshot already follows.
+                    //
+                    // Its stated intent was to honour a price the UI had shown when
+                    // a subscription lapsed mid-checkout. That is a real problem and
+                    // this was not a safe answer to it: the fix is to re-price
+                    // server-side from the subscription, not to trust the browser.
+                    //
+                    // Safe to delete outright: across ALL purchase_intents, zero
+                    // rows carry metadata.subscriber_discount at all -- neither this
+                    // fallback nor the legitimate branch above has ever applied
+                    // once. Nothing depends on it.
+                    console.log('Subscriber discount: RPC says not eligible; no discount applied')
                 }
             } catch (e) {
                 console.warn('Subscriber discount check failed (non-fatal):', e)
