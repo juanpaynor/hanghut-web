@@ -193,6 +193,7 @@ export async function getRecentlyEmailedCount(
     eventId?: string,
     segment?: string,
     specificEmails?: string[],
+    tierIds?: string[],
 ): Promise<number> {
     if (!days || days <= 0) return 0
     const supabase = createAdminClient()
@@ -208,7 +209,12 @@ export async function getRecentlyEmailedCount(
             .eq('partner_id', partnerId).eq('is_active', true)
         emails = (data ?? []).map(r => r.email)
     } else if (audienceType === 'event_attendees' && eventId) {
-        emails = await getEventAttendeeEmails(eventId)
+        // The skip-recently-emailed count has to be measured against the SAME
+        // audience the send will use, or the "N already emailed" warning quietly
+        // describes a different group of people than the one being mailed.
+        emails = tierIds && tierIds.length > 0
+            ? (await getEventTierRecipients(eventId, tierIds)).map(r => r.email)
+            : await getEventAttendeeEmails(eventId)
     } else if (audienceType === 'customer_segment' && segment) {
         emails = await getSegmentEmails(partnerId, segment)
     } else if (audienceType === 'specific_customers') {
@@ -230,7 +236,8 @@ export async function getAudienceCount(
     partnerId: string,
     audienceType: 'all_subscribers' | 'event_attendees' | 'customer_segment',
     eventId?: string,
-    segment?: string
+    segment?: string,
+    tierIds?: string[],
 ): Promise<number> {
     const supabase = createAdminClient()
 
@@ -249,6 +256,9 @@ export async function getAudienceCount(
     }
 
     if (audienceType === 'event_attendees' && eventId) {
+        if (tierIds && tierIds.length > 0) {
+            return (await getEventTierRecipients(eventId, tierIds)).length
+        }
         const emails = await getEventAttendeeEmails(eventId)
         return emails.length
     }
@@ -309,6 +319,77 @@ export async function getEventAttendeeRecipients(eventId: string): Promise<Recip
         if (!existing) byEmail.set(email, { email, first_name: first })
         else if (!existing.first_name && first) existing.first_name = first
     }
+    return Array.from(byEmail.values())
+}
+
+/** Tiers of one event, for the campaign composer's audience filter. */
+export async function getEventTiers(eventId: string): Promise<{ id: string; name: string }[]> {
+    const supabase = createAdminClient()
+    const { data } = await supabase
+        .from('ticket_tiers')
+        .select('id, name, sort_order')
+        .eq('event_id', eventId)
+        .order('sort_order', { ascending: true })
+    return (data ?? []).map((t) => ({ id: t.id as string, name: t.name as string }))
+}
+
+/**
+ * Buyers of specific ticket tiers for an event.
+ *
+ * Reads TICKETS, not purchase_intents.tier_id, for three reasons that all bite
+ * in practice:
+ *   - an intent carries ONE tier_id, so a buyer who took VIP and GA in separate
+ *     orders would only ever appear in one audience;
+ *   - filtering on valid|used drops refunded and cancelled tickets, so a refunded
+ *     VIP never receives the VIP-perks email — the exact mis-send this filter
+ *     exists to prevent;
+ *   - the registration export already derives tiers from tickets, so a campaign
+ *     count and the CSV of the same event agree.
+ *
+ * Paged deliberately: PostgREST silently clamps a response at the project's
+ * max-rows with no error, so an unpaged read on a large event would quietly
+ * address a fraction of the audience and report success.
+ */
+export async function getEventTierRecipients(
+    eventId: string,
+    tierIds: string[],
+): Promise<Recipient[]> {
+    if (!tierIds || tierIds.length === 0) return getEventAttendeeRecipients(eventId)
+
+    const supabase = createAdminClient()
+    const PAGE = 1000
+    const byEmail = new Map<string, Recipient>()
+
+    for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+            .from('tickets')
+            .select('purchase_intent_id, purchase_intents!inner ( guest_email, guest_name, status )')
+            .eq('event_id', eventId)
+            .in('tier_id', tierIds)
+            .in('status', ['valid', 'used'])
+            .range(from, from + PAGE - 1)
+
+        if (error) {
+            console.error('getEventTierRecipients error:', error)
+            break
+        }
+        const rows = (data ?? []) as unknown as {
+            purchase_intents: { guest_email: string | null; guest_name: string | null; status: string } | null
+        }[]
+
+        for (const row of rows) {
+            const pi = row.purchase_intents
+            if (!pi || pi.status !== 'completed' || !pi.guest_email) continue
+            const email = pi.guest_email.toLowerCase()
+            const first = firstNameOf(pi.guest_name)
+            const existing = byEmail.get(email)
+            if (!existing) byEmail.set(email, { email, first_name: first })
+            else if (!existing.first_name && first) existing.first_name = first
+        }
+
+        if (rows.length < PAGE) break
+    }
+
     return Array.from(byEmail.values())
 }
 
@@ -566,6 +647,8 @@ export interface DraftInput {
     html_content: string
     segment?: string | null
     event_id?: string | null
+    /** Ticket-tier filter for the event_attendees audience. Empty = every tier. */
+    tier_ids?: string[] | null
 }
 
 export async function saveDraft(input: DraftInput) {
@@ -582,6 +665,12 @@ export async function saveDraft(input: DraftInput) {
         html_content: input.html_content || '',
         segment: input.segment || 'all_subscribers',
         event_id: input.event_id || null,
+        // Only meaningful for the attendee audience; cleared otherwise so a draft
+        // switched from "VIP buyers" to "all subscribers" cannot keep a stale
+        // filter that nothing in the UI would show.
+        tier_ids: input.segment === 'event_attendees' && input.tier_ids?.length
+            ? input.tier_ids
+            : null,
         status: 'draft' as const,
         updated_at: new Date().toISOString(),
     }
@@ -600,13 +689,65 @@ export async function saveDraft(input: DraftInput) {
     return { success: true as const, id: data.id }
 }
 
+/**
+ * Tier names per campaign, for the history table's audience column.
+ *
+ * Deliberately a separate read rather than extra columns on
+ * get_campaign_performance: that RPC returns a TABLE, so widening it means
+ * DROP + CREATE, and the history page would error for whoever loaded it during
+ * the swap. A second small query costs one round trip and risks nothing.
+ *
+ * Returns a map of campaign id -> tier names. Campaigns with no tier filter are
+ * absent from the map, which the UI reads as "everyone".
+ */
+export async function getCampaignTierLabels(): Promise<Record<string, string[]>> {
+    const supabase = await createClient()
+    const partnerId = await resolveMarketingPartnerId(supabase)
+    if (!partnerId) return {}
+
+    const { data: campaigns } = await supabase
+        .from('email_campaigns')
+        .select('id, tier_ids')
+        .eq('partner_id', partnerId)
+        .not('tier_ids', 'is', null)
+
+    const rows = (campaigns ?? []) as { id: string; tier_ids: string[] | null }[]
+    if (rows.length === 0) return {}
+
+    const allIds = Array.from(new Set(rows.flatMap((r) => r.tier_ids ?? [])))
+    if (allIds.length === 0) return {}
+
+    // Admin client: ticket_tiers for a past campaign may belong to an event the
+    // caller can no longer read, and a label going blank would make an old
+    // campaign's audience unauditable — which is the whole point of showing it.
+    const admin = createAdminClient()
+    const { data: tiers } = await admin
+        .from('ticket_tiers')
+        .select('id, name')
+        .in('id', allIds)
+
+    const nameById = new Map<string, string>(
+        ((tiers ?? []) as { id: string; name: string }[]).map((t) => [t.id, t.name]),
+    )
+
+    const out: Record<string, string[]> = {}
+    for (const r of rows) {
+        const names = (r.tier_ids ?? [])
+            // A tier deleted since the send leaves no name. Say so rather than
+            // dropping it silently — "VIP + 1 deleted" is honest, "VIP" is not.
+            .map((id) => nameById.get(id) ?? 'deleted tier')
+        if (names.length > 0) out[r.id] = names
+    }
+    return out
+}
+
 export async function getDrafts() {
     const supabase = await createClient()
     const partnerId = await resolveMarketingPartnerId(supabase)
     if (!partnerId) return []
     const { data } = await supabase
         .from('email_campaigns')
-        .select('id, subject, segment, event_id, updated_at')
+        .select('id, subject, segment, event_id, tier_ids, updated_at')
         .eq('partner_id', partnerId).eq('status', 'draft')
         .order('updated_at', { ascending: false })
     return data ?? []
@@ -618,7 +759,7 @@ export async function getDraft(id: string) {
     if (!partnerId) return null
     const { data } = await supabase
         .from('email_campaigns')
-        .select('id, subject, html_content, segment, event_id')
+        .select('id, subject, html_content, segment, event_id, tier_ids')
         .eq('id', id).eq('partner_id', partnerId).eq('status', 'draft').maybeSingle()
     return data
 }
@@ -650,6 +791,8 @@ export interface ScheduleInput {
     // 'all_subscribers' | 'event_attendees' | a customer-segment key (champion, at_risk, …)
     segment: string
     event_id?: string | null
+    /** Ticket-tier filter for the event_attendees audience. Empty = every tier. */
+    tier_ids?: string[] | null
     scheduled_for: string // ISO timestamp
     // Skip anyone this partner emailed in the last N days (applied at send time).
     exclude_recent_days?: number | null
@@ -685,9 +828,19 @@ export async function scheduleCampaign(input: ScheduleInput) {
 
     if (input.segment === 'event_attendees') {
         if (!input.event_id) return { error: 'Select an event for the attendee audience.' }
-        // Snapshot named recipients now so the scheduled send can personalize {{first_name}}.
-        const recipients = await getEventAttendeeRecipients(input.event_id)
-        if (recipients.length === 0) return { error: 'No attendee emails found for this event.' }
+        // Snapshot named recipients now so the scheduled send can personalize
+        // {{first_name}}. Snapshotting also fixes the tier audience at schedule
+        // time, which is the behaviour you want: a tier deleted or renamed before
+        // the send still mails the people who actually bought it.
+        const tierFilter = input.tier_ids?.length ? input.tier_ids : null
+        const recipients = tierFilter
+            ? await getEventTierRecipients(input.event_id, tierFilter)
+            : await getEventAttendeeRecipients(input.event_id)
+        if (recipients.length === 0) {
+            return { error: tierFilter
+                ? 'Nobody has bought the selected ticket types yet.'
+                : 'No attendee emails found for this event.' }
+        }
         payload.target_recipients = recipients
         recipientCount = recipients.length
     } else if (input.segment !== 'all_subscribers') {
@@ -704,6 +857,9 @@ export async function scheduleCampaign(input: ScheduleInput) {
         html_content: input.html_content,
         segment: input.segment,
         event_id: input.segment === 'event_attendees' ? (input.event_id ?? null) : null,
+        tier_ids: input.segment === 'event_attendees' && input.tier_ids?.length
+            ? input.tier_ids
+            : null,
         status: 'scheduled' as const,
         scheduled_for: when.toISOString(),
         scheduled_payload: payload,

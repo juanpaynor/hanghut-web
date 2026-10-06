@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TrendingUp, ShoppingBag, Megaphone, Loader2 } from 'lucide-react'
 import { format } from 'date-fns'
+import { getCampaignTierLabels } from '@/lib/marketing/actions'
 
 interface Campaign {
     id: string
@@ -64,6 +65,7 @@ function rate(numerator: number, denominator: number): string {
 export function CampaignHistory() {
     const [campaigns, setCampaigns] = useState<Campaign[]>([])
     const [summary, setSummary] = useState<RevenueSummary | null>(null)
+    const [tierLabels, setTierLabels] = useState<Record<string, string[]>>({})
     const [loading, setLoading] = useState(true)
     const supabase = createClient()
 
@@ -98,12 +100,14 @@ export function CampaignHistory() {
             if (!partnerId) return
 
             // Per-campaign engagement + revenue attribution, and the partner-wide rollup.
-            const [{ data: rows, error }, { data: sum }] = await Promise.all([
+            const [{ data: rows, error }, { data: sum }, labels] = await Promise.all([
                 supabase.rpc('get_campaign_performance', { p_partner_id: partnerId }),
                 supabase.rpc('get_marketing_revenue_summary', { p_partner_id: partnerId }),
+                getCampaignTierLabels(),
             ])
             if (error) throw error
 
+            setTierLabels(labels)
             setCampaigns((rows as Campaign[]) || [])
             setSummary((Array.isArray(sum) ? sum[0] : sum) || null)
         } catch (error: any) {
@@ -201,6 +205,13 @@ export function CampaignHistory() {
                                                     ) : (
                                                         <Badge variant="outline" className="text-[10px] font-normal shrink-0 text-muted-foreground">
                                                             Manual
+                                                        </Badge>
+                                                    )}
+                                                    {/* Without this, a tier-targeted campaign reads as
+                                                        "sent to 5 people" with no way to tell which five. */}
+                                                    {tierLabels[campaign.id]?.length > 0 && (
+                                                        <Badge variant="secondary" className="text-[10px] font-normal shrink-0">
+                                                            🎟 {tierLabels[campaign.id].join(', ')}
                                                         </Badge>
                                                     )}
                                                 </div>

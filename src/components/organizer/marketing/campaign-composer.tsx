@@ -12,13 +12,14 @@ import { useToast } from '@/hooks/use-toast'
 import { Loader2, Send, Eye, Edit, Code, Users, Calendar, ChevronDown, FileText, Save, Trash2, CalendarClock, Clock, X, Target, LayoutTemplate, CalendarPlus, Bookmark, Plus, Search, Beaker, Sparkles, Wand2, UserCheck } from 'lucide-react'
 import { RichTextEditor } from './rich-text-editor'
 import { EventCombobox } from './event-combobox'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { format } from 'date-fns'
 import { checkEmailList } from '@/lib/marketing/email-check-actions'
-import { getAudienceCount, getRecentlyEmailedCount, getEventAttendeeRecipients, getSegmentRecipients, saveDraft, getDrafts, getDraft, deleteDraft, scheduleCampaign, getScheduledCampaigns, cancelScheduledCampaign, getTemplates, saveAsTemplate, deleteTemplate, buildEventEmailBlock, type EmailTemplate } from '@/lib/marketing/actions'
+import { getAudienceCount, getRecentlyEmailedCount, getEventAttendeeRecipients, getSegmentRecipients, saveDraft, getDrafts, getDraft, deleteDraft, scheduleCampaign, getScheduledCampaigns, cancelScheduledCampaign, getTemplates, saveAsTemplate, deleteTemplate, buildEventEmailBlock, type EmailTemplate, getEventTiers, getEventTierRecipients } from '@/lib/marketing/actions'
 import { formatInManila } from '@/lib/datetime'
 
 /** datetime-local value (yyyy-MM-ddTHH:mm) in the user's local timezone. */
@@ -89,6 +90,10 @@ export function CampaignComposer() {
     // Hand-picked recipients deep-linked from the Customers page (checkbox selection).
     const [specificRecipients, setSpecificRecipients] = useState<{ email: string; first_name?: string }[]>([])
     const [selectedEventId, setSelectedEventId] = useState<string>('')
+    // Ticket-tier filter for the attendee audience. Empty = every tier, which is
+    // both the default and what the column means when null.
+    const [eventTiers, setEventTiers] = useState<{ id: string; name: string }[]>([])
+    const [selectedTierIds, setSelectedTierIds] = useState<string[]>([])
     const [events, setEvents] = useState<EventOption[]>([])
     const [loadingEvents, setLoadingEvents] = useState(false)
     const [audienceCount, setAudienceCount] = useState<number | null>(null)
@@ -312,6 +317,7 @@ export function CampaignComposer() {
             html_content: content,
             segment: audienceType === 'customer_segment' ? selectedSegment : audienceType,
             event_id: audienceType === 'event_attendees' ? selectedEventId : null,
+            tier_ids: audienceType === 'event_attendees' ? selectedTierIds : null,
             scheduled_for: new Date(scheduledFor).toISOString(),
             exclude_recent_days: skipRecent ? skipRecentDays : null,
         })
@@ -322,10 +328,23 @@ export function CampaignComposer() {
         }
         toast({ title: 'Campaign scheduled', description: `Will send ${format(new Date(scheduledFor), 'MMM d, h:mm a')}.` })
         setSubject(''); setContent(''); setEditorMode('visual')
-        setAudienceType('all_subscribers'); setSelectedEventId(''); setSelectedSegment('')
+        setAudienceType('all_subscribers'); setSelectedEventId(''); setSelectedSegment(''); setSelectedTierIds([])
         setDraftId(null); setScheduleMode(false); setScheduledFor('')
         refreshScheduled(); refreshDrafts()
     }
+
+    // Tiers follow the chosen event. Selections are cleared on change, because a
+    // tier id from the previous event would silently resolve to nobody.
+    useEffect(() => {
+        if (audienceType !== 'event_attendees' || !selectedEventId) {
+            setEventTiers([]); setSelectedTierIds([])
+            return
+        }
+        let cancelled = false
+        setSelectedTierIds([])
+        getEventTiers(selectedEventId).then((t) => { if (!cancelled) setEventTiers(t) })
+        return () => { cancelled = true }
+    }, [audienceType, selectedEventId])
 
     async function handleCancelScheduled(id: string) {
         const res = await cancelScheduledCampaign(id)
@@ -346,6 +365,7 @@ export function CampaignComposer() {
             html_content: content,
             segment: audienceType === 'customer_segment' ? selectedSegment : audienceType,
             event_id: audienceType === 'event_attendees' ? (selectedEventId || null) : null,
+            tier_ids: audienceType === 'event_attendees' ? selectedTierIds : null,
         })
         setSavingDraft(false)
         if (res.error) {
@@ -400,7 +420,7 @@ export function CampaignComposer() {
             return
         }
         loadAudienceCount()
-    }, [audienceType, selectedEventId, selectedSegment])
+    }, [audienceType, selectedEventId, selectedSegment, selectedTierIds])
 
     // Preview of the recently-emailed exclusion. Separate from the audience
     // count so toggling it doesn't refetch the audience.
@@ -418,6 +438,7 @@ export function CampaignComposer() {
                     partnerId, skipRecentDays, audienceType,
                     selectedEventId || undefined, selectedSegment || undefined,
                     audienceType === 'specific_customers' ? specificRecipients.map(r => r.email) : undefined,
+                    selectedTierIds,
                 )
                 if (!cancelled) setSkipCount(n)
             } catch (err) {
@@ -426,7 +447,7 @@ export function CampaignComposer() {
         }
         run()
         return () => { cancelled = true }
-    }, [skipRecent, skipRecentDays, audienceType, selectedEventId, selectedSegment, specificRecipients])
+    }, [skipRecent, skipRecentDays, audienceType, selectedEventId, selectedSegment, specificRecipients, selectedTierIds])
 
     async function getPartnerId() {
         const { data: { user } } = await supabase.auth.getUser()
@@ -511,7 +532,7 @@ export function CampaignComposer() {
         try {
             const partnerId = await getPartnerId()
             if (!partnerId) return
-            const count = await getAudienceCount(partnerId, audienceType, selectedEventId || undefined, selectedSegment || undefined)
+            const count = await getAudienceCount(partnerId, audienceType, selectedEventId || undefined, selectedSegment || undefined, selectedTierIds)
             setAudienceCount(count)
         } catch (err) {
             console.error('Failed to load audience count:', err)
@@ -598,7 +619,12 @@ export function CampaignComposer() {
         const audienceLabel = audienceType === 'all_subscribers'
             ? 'ALL active subscribers'
             : audienceType === 'event_attendees'
-                ? `all attendees of "${selectedEventTitle}"`
+                ? (selectedTierIds.length > 0
+                    ? `${eventTiers
+                        .filter(t => selectedTierIds.includes(t.id))
+                        .map(t => t.name)
+                        .join(' and ')} buyers of "${selectedEventTitle}"`
+                    : `all attendees of "${selectedEventTitle}"`)
                 : audienceType === 'specific_customers'
                     ? `${specificRecipients.length} hand-picked customer${specificRecipients.length !== 1 ? 's' : ''}`
                     : `your "${segmentLabel(selectedSegment)}" segment`
@@ -652,9 +678,13 @@ export function CampaignComposer() {
 
             if (audienceType === 'event_attendees' && selectedEventId) {
                 // All buyers regardless of newsletter opt-in; names carried for {{first_name}}.
-                const recipients = await getEventAttendeeRecipients(selectedEventId)
+                const recipients = selectedTierIds.length > 0
+                    ? await getEventTierRecipients(selectedEventId, selectedTierIds)
+                    : await getEventAttendeeRecipients(selectedEventId)
                 if (recipients.length === 0) {
-                    throw new Error("No attendee emails found for this event")
+                    throw new Error(selectedTierIds.length > 0
+                        ? "Nobody has bought the selected ticket types yet"
+                        : "No attendee emails found for this event")
                 }
                 body.target_recipients = recipients
                 body.segment = 'event_attendees'
@@ -910,6 +940,41 @@ export function CampaignComposer() {
                                     loading={loadingEvents}
                                     attendeesOnly
                                 />
+
+                                {eventTiers.length > 1 && (
+                                    <div className="rounded-lg border border-border bg-muted/30 p-3">
+                                        <p className="text-sm font-medium">Ticket types</p>
+                                        <p className="mt-0.5 text-xs text-muted-foreground">
+                                            Leave all unticked to email every buyer. Refunded tickets are
+                                            never included.
+                                        </p>
+                                        <div className="mt-2.5 space-y-2">
+                                            {eventTiers.map((t) => (
+                                                <label key={t.id} className="flex items-center gap-2.5 text-sm">
+                                                    <Checkbox
+                                                        checked={selectedTierIds.includes(t.id)}
+                                                        onCheckedChange={(v) =>
+                                                            setSelectedTierIds((prev) =>
+                                                                v === true
+                                                                    ? [...prev, t.id]
+                                                                    : prev.filter((id) => id !== t.id))
+                                                        }
+                                                    />
+                                                    <span>{t.name}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                        {selectedTierIds.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedTierIds([])}
+                                                className="mt-2.5 text-xs font-medium text-primary"
+                                            >
+                                                Clear — email all ticket types
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -973,7 +1038,15 @@ export function CampaignComposer() {
                                 ) : null}
                                 {audienceType === 'event_attendees' && selectedEvent && (
                                     <span className="text-xs text-muted-foreground">
-                                        all buyers from {selectedEvent.title}
+                                        {/* Must name the tier filter. Saying "all buyers" beside a
+                                            correctly filtered count reads as a broken count, which is
+                                            exactly how this was first reported. */}
+                                        {selectedTierIds.length > 0
+                                            ? `${eventTiers
+                                                .filter(t => selectedTierIds.includes(t.id))
+                                                .map(t => t.name)
+                                                .join(' and ')} buyers from ${selectedEvent.title}`
+                                            : `all buyers from ${selectedEvent.title}`}
                                     </span>
                                 )}
                             </div>
