@@ -356,13 +356,14 @@ export async function toggleExperiencePromoCode(
 /**
  * Experience twin of updatePromoCode.
  *
- * NOTE: no experience promo code has ever existed on prod, and it is not for
- * want of trying -- both "manage" policies on promo_codes filter on
- * `event_id IN (...)`, and for an experience code event_id is NULL, so the
- * predicate is NULL and never true. createExperiencePromoCode() cannot insert
- * and this cannot update until a policy covering experience_id exists. Written
- * as the twin so the pair stays symmetrical; it fails closed ("Not authorized")
- * rather than silently reporting success.
+ * Until 20261007130000_experience_promo_codes_fix this whole path was dead:
+ * both "manage" policies filtered on `event_id IN (...)`, and for an experience
+ * code event_id is NULL, so the predicate was NULL and never true -- no
+ * experience promo code could be inserted or edited, which is why prod held
+ * zero of them. That migration adds a policy keyed on experience_id (host,
+ * partner owner, or partner team member, matching
+ * experience-question-actions.ts) and the partial unique index that makes the
+ * 23505 branch below reachable.
  */
 export async function updateExperiencePromoCode(
     codeId: string,
