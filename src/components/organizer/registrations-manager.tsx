@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
@@ -251,6 +252,9 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const [search, setSearch] = useState('')
     const [loading, setLoading] = useState(false)
     const [exporting, setExporting] = useState<'csv' | 'pdf' | 'xlsx' | null>(null)
+    // Defaults ON. An abandoned checkout still writes a registration row, so the
+    // unfiltered file is the one that needs justifying, not this one.
+    const [paidOnly, setPaidOnly] = useState(true)
     const [stats, setStats] = useState<AnswerStats | null>(initialStats)
     // Signed URLs for the uploads on the CURRENT page only. They expire, so
     // they are fetched per page rather than held for the whole event.
@@ -332,7 +336,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const exportCsv = async () => {
         setExporting('csv')
         try {
-            const res = await exportEventRegistrationsCsv(eventId)
+            const res = await exportEventRegistrationsCsv(eventId, { paidOnly })
             if (res.error || !res.csv) {
                 toast({ title: 'Export failed', description: res.error, variant: 'destructive' })
                 return
@@ -341,6 +345,12 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
                 new Blob(['\uFEFF' + res.csv], { type: 'text/csv;charset=utf-8;' }),
                 res.filename || `${exportSlug(eventTitle)}-registrations.csv`,
             )
+        } catch (e) {
+            // Previously there was no catch: a thrown server action cleared the
+            // spinner via finally but surfaced NOTHING to the organizer, so a
+            // failed export was indistinguishable from one that downloaded.
+            console.error('CSV export failed:', e)
+            toast({ title: 'Export failed', description: 'Could not build the CSV.', variant: 'destructive' })
         } finally {
             setExporting(null)
         }
@@ -376,7 +386,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const exportPdf = async () => {
         setExporting('pdf')
         try {
-            const res = await getEventResponsesExport(eventId)
+            const res = await getEventResponsesExport(eventId, { paidOnly })
             if (res.error || !res.bundle) {
                 toast({ title: 'Export failed', description: res.error, variant: 'destructive' })
                 return
@@ -392,7 +402,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             // landscape so rows still paginate normally; only width grows.
             const MARGIN = 10
             const SAFETY = 4
-            const ID_WIDTHS = [28, 36, 30, 16, 24] // Name, Email, Ticket tier, Status, Submitted
+            const ID_WIDTHS = [26, 34, 22, 26, 16, 22] // Name, Email, Payment, Ticket tier, Status, Submitted
             const ID_TOTAL = ID_WIDTHS.reduce((a, c) => a + c, 0)
             const Q_MIN = 22          // narrower than this and answers wrap to confetti
             const A4_LANDSCAPE = 297
@@ -473,10 +483,10 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             const clamp = (v: string) => (v.length > CELL_MAX ? v.slice(0, CELL_MAX) + ' …' : v)
 
             autoTable(doc, {
-                head: [['Name', 'Email', 'Ticket tier', 'Status', 'Submitted',
+                head: [['Name', 'Email', 'Payment', 'Ticket tier', 'Status', 'Submitted',
                     ...b.questions.map((q, i) => headerFor(q.label, i))]],
                 body: b.rows.map(r => [
-                    r.name, r.email, r.ticket || '—', r.status, r.submitted,
+                    r.name, r.email, r.payment, r.ticket || '—', r.status, r.submitted,
                     ...r.answers.map(clamp),
                 ]),
                 startY: 27,
@@ -526,7 +536,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
                 }
             }
 
-            doc.save(`${exportSlug(eventTitle)}-responses.pdf`)
+            doc.save(`${exportSlug(eventTitle)}-responses${paidOnly ? '-paid' : ''}.pdf`)
             toast({
                 title: 'PDF ready',
                 description: b.truncated
@@ -554,7 +564,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const exportXlsx = async () => {
         setExporting('xlsx')
         try {
-            const res = await getEventResponsesExport(eventId)
+            const res = await getEventResponsesExport(eventId, { paidOnly })
             if (res.error || !res.bundle) {
                 toast({ title: 'Export failed', description: res.error, variant: 'destructive' })
                 return
@@ -573,16 +583,18 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             if (!XLSX?.utils) throw new Error('Could not load the spreadsheet writer.')
 
             const header = [
-                'Name', 'Email', 'Ticket tier', 'Status', 'Submitted',
+                'Name', 'Email', 'Payment', 'Ticket tier', 'Status', 'Submitted',
                 ...b.questions.map((q, i) => headerFor(q.label, i)),
             ]
             const sheet = XLSX.utils.aoa_to_sheet([
                 header,
                 ...b.rows.map(r => [
-                    r.name, r.email, r.ticket || '', r.status, r.submitted, ...r.answersFull,
+                    r.name, r.email, r.payment, r.ticket || '', r.status, r.submitted, ...r.answersFull,
                 ]),
             ])
-            sheet['!cols'] = header.map((_: unknown, i: number) => ({ wch: i < 5 ? 22 : 40 }))
+            // 6 identity columns now, not 5 — widths must follow or Payment
+            // takes an answer-column width and the sheet reads wrong.
+            sheet['!cols'] = header.map((_: unknown, i: number) => ({ wch: i < 6 ? 22 : 40 }))
 
             const wb = XLSX.utils.book_new()
             XLSX.utils.book_append_sheet(wb, sheet, 'Responses')
@@ -599,7 +611,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
                 new Blob([buf], {
                     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 }),
-                `${exportSlug(eventTitle)}-responses.xlsx`,
+                `${exportSlug(eventTitle)}-responses${paidOnly ? '-paid' : ''}.xlsx`,
             )
             toast({
                 title: 'Excel file ready',
@@ -624,9 +636,21 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
 
     const exportButton = (
         <div className="flex items-center gap-2">
+            {/* One switch, all three formats — rather than a paid/all pair per
+                format, which would have been six buttons and a standing invitation
+                for the PDF and the CSV to be filtered differently. */}
+            <label className="flex cursor-pointer select-none items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium">
+                <Checkbox
+                    checked={paidOnly}
+                    onCheckedChange={v => setPaidOnly(v === true)}
+                    disabled={!!exporting}
+                    aria-label="Export only people who paid"
+                />
+                Paid only
+            </label>
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={!!exporting} className="gap-1.5">
                 {exporting === 'csv' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                Export CSV
+                CSV
             </Button>
             <Button variant="outline" size="sm" onClick={exportXlsx} disabled={!!exporting} className="gap-1.5">
                 {exporting === 'xlsx' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sheet className="h-3.5 w-3.5" />}

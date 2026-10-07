@@ -349,6 +349,15 @@ interface ExportBundle {
         email: string
         ticket: string
         status: string
+        /**
+         * Did this person actually pay?
+         *
+         * `status` is the APPROVAL state (pending/approved/rejected) and on an
+         * auto-approving event it reads "auto_approved" on every single row —
+         * which is why organizers were exporting this file AND the customers
+         * file and reconciling them by hand, name by name.
+         */
+        payment: PaymentState
         submitted: string
         /** Display form — a file answer is its filename. Used by the PDF. */
         answers: string[]
@@ -402,6 +411,18 @@ function displayAnswer(raw: unknown, withPath = false): string {
  * Sharing the fetch means a column added for one shows up in the other.
  */
 const PAGE = 1000
+
+/**
+ * Paid-ness of a registration.
+ *
+ * Deliberately four states, not a boolean. Across the platform 28 registrations
+ * have a live ticket with no completed intent (free entries, box office, comps)
+ * and 24 have a completed intent with NO ticket — people who paid and cannot get
+ * in. Collapsing those into "paid" hides the second group, which is the one that
+ * needs someone to do something.
+ */
+export type PaymentState = 'Paid' | 'Paid - no ticket issued' | 'Refunded' | 'Unpaid'
+
 
 async function loadExportBundle(
     eventId: string
@@ -520,6 +541,50 @@ async function loadExportBundle(
         }
     }
 
+    // PAID-BUT-NO-TICKET: the ticket rows alone are not the whole truth.
+    //
+    // A registration's paid-ness is checked against BOTH the issued tickets and
+    // the completed purchase intents, matched on the canonical lowercased email.
+    // Platform-wide the two disagree on ~52 of 1,362 registrations: 28 have a
+    // ticket and no intent (free, box office, comped) and 24 have an intent and
+    // no ticket — the late-payment class, where someone paid and has nothing to
+    // show at the door. Those must surface, not silently read as "Paid".
+    const paidEmails = new Set<string>()
+    for (let offset = 0; offset < EXPORT_CAP; offset += PAGE) {
+        const { data: chunk, error: iErr } = await adminClient
+            .from('purchase_intents')
+            .select('guest_email, user:users!purchase_intents_user_id_fkey ( email )')
+            .eq('event_id', eventId)
+            .eq('status', 'completed')
+            .range(offset, offset + PAGE - 1)
+        if (iErr) {
+            console.error('loadExportBundle intents error:', iErr)
+            break
+        }
+        for (const i of chunk ?? []) {
+            const em = ((i as any).user?.email || (i as any).guest_email || '').toLowerCase().trim()
+            if (em) paidEmails.add(em)
+        }
+        if (!chunk || chunk.length < PAGE) break
+    }
+
+    // Live vs refunded per registration, from the ticket rows already fetched.
+    const liveTickets = new Set<string>()
+    const refundedOnly = new Set<string>()
+    for (const t of ticketRows) {
+        const regId = t.registration_id as string
+        if (!regId) continue
+        if (t.status === 'refunded' || t.status === 'cancelled') refundedOnly.add(regId)
+        else liveTickets.add(regId)
+    }
+
+    const paymentFor = (regId: string, email: string): PaymentState => {
+        if (liveTickets.has(regId)) return 'Paid'
+        if (paidEmails.has(email.toLowerCase().trim())) return 'Paid - no ticket issued'
+        if (refundedOnly.has(regId)) return 'Refunded'
+        return 'Unpaid'
+    }
+
     const cols = (questions ?? []) as { id: string; label: string }[]
 
     return {
@@ -533,9 +598,11 @@ async function loadExportBundle(
                 const byQuestion = new Map<string, any>(
                     (r.registration_answers || []).map((a: any) => [a.question_id, a.answer])
                 )
+                const email = r.user?.email || r.guest_email || ''
                 return {
                     name: r.user?.display_name || r.guest_name || '',
-                    email: r.user?.email || r.guest_email || '',
+                    email,
+                    payment: paymentFor(r.id, email),
                     // Falls back to the registration's own tier_id for the 4.4%
                     // that have one but never produced a ticket row.
                     ticket: tiersByRegistration.get(r.id) || r.tier?.name || '',
@@ -559,21 +626,45 @@ function exportSlug(title: string): string {
         .toLowerCase()
 }
 
+/**
+ * Registrations as CSV.
+ *
+ * `paidOnly` exists because an abandoned checkout still writes a registration —
+ * it has to, it is where the answers live — so the export mixed people who paid
+ * with people who only started. On SINADYA RUN 2026 that was 12 of 28 rows, and
+ * the organizer was reconciling them against a second export by hand.
+ */
+/**
+ * 'Paid - no ticket issued' counts as paid: they paid. It keeps its own label in
+ * the Payment column so the gap stays visible inside the filtered file.
+ *
+ * Not exported — a "use server" module may only export async functions — which
+ * is also why it lives here rather than in the component: CSV filters here, and
+ * the PDF/XLSX bundle filters here too, so one definition serves all three.
+ */
+function keepPaid(rows: ExportBundle['rows'], paidOnly?: boolean) {
+    if (!paidOnly) return rows
+    return rows.filter(r => r.payment === 'Paid' || r.payment === 'Paid - no ticket issued')
+}
+
 export async function exportEventRegistrationsCsv(
-    eventId: string
+    eventId: string,
+    opts: { paidOnly?: boolean } = {}
 ): Promise<{ csv?: string; filename?: string; error?: string }> {
     const { bundle, error } = await loadExportBundle(eventId)
     if (error || !bundle) return { error: error || 'Could not build the export.' }
 
+    const rows = keepPaid(bundle.rows, opts.paidOnly)
+
     const cell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    const header = ['Name', 'Email', 'Ticket tier', 'Status', 'Submitted', ...bundle.questions.map(q => q.label)]
-    const body = bundle.rows.map(r =>
-        [r.name, r.email, r.ticket, r.status, r.submitted, ...r.answersFull].map(cell).join(',')
+    const header = ['Name', 'Email', 'Payment', 'Ticket tier', 'Status', 'Submitted', ...bundle.questions.map(q => q.label)]
+    const body = rows.map(r =>
+        [r.name, r.email, r.payment, r.ticket, r.status, r.submitted, ...r.answersFull].map(cell).join(',')
     )
 
     return {
         csv: [header.map(cell).join(','), ...body].join('\n'),
-        filename: `${exportSlug(bundle.title)}-registrations.csv`,
+        filename: `${exportSlug(bundle.title)}-registrations${opts.paidOnly ? '-paid' : ''}.csv`,
     }
 }
 
@@ -585,9 +676,14 @@ export async function exportEventRegistrationsCsv(
  * a server action would mean base64 through the RSC payload for no gain.
  */
 export async function getEventResponsesExport(
-    eventId: string
+    eventId: string,
+    opts: { paidOnly?: boolean } = {}
 ): Promise<{ bundle?: ExportBundle; error?: string }> {
-    return loadExportBundle(eventId)
+    const res = await loadExportBundle(eventId)
+    if (!res.bundle || !opts.paidOnly) return res
+    // Filtered HERE, not in the component, so PDF and XLSX cannot disagree with
+    // the CSV about who counts as paid.
+    return { bundle: { ...res.bundle, rows: keepPaid(res.bundle.rows, true) } }
 }
 
 export async function approveRegistration(

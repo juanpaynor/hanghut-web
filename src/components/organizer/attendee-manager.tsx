@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { Attendee, getDeliveryFailures, type DeliveryFailure, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, deleteFreeOrders, type SkippedOrder, getAttendeeStats, getEventPaymentMethods, getEventTiers, getEventTierSales, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters, type TierSales } from '@/lib/organizer/attendee-actions'
+import { Attendee, getDeliveryFailures, type DeliveryFailure, getOrderEmailLog, getSentEmail, resendOrderEmail, type OrderEmail, type SentEmail, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, deleteFreeOrders, type SkippedOrder, getAttendeeStats, getEventPaymentMethods, getEventTiers, getEventTierSales, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters, type TierSales } from '@/lib/organizer/attendee-actions'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
@@ -27,7 +27,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users, SlidersHorizontal, X, MailWarning, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users, SlidersHorizontal, X, MailWarning, Trash2, Mail, Send } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
@@ -129,6 +129,77 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
     // the order looked delivered and the buyer simply never turned up with a
     // ticket. Reloaded after a correction so a fixed row leaves the list.
     const [failures, setFailures] = useState<DeliveryFailure[]>([])
+
+    /* ── What we actually sent ──────────────────────────────────────────── */
+    const [emailLogFor, setEmailLogFor] = useState<{ attendee: Attendee; name: string } | null>(null)
+    const [emailLog, setEmailLog] = useState<OrderEmail[] | null>(null)
+    const [viewingEmail, setViewingEmail] = useState<SentEmail | null>(null)
+    const [emailBodyError, setEmailBodyError] = useState<string | null>(null)
+    const [loadingEmail, setLoadingEmail] = useState(false)
+    const [resendingId, setResendingId] = useState<string | null>(null)
+
+    // Closing is its own function because it has to reset FOUR things: leaving
+    // loadingEmail true would wedge the View buttons next time the dialog opens.
+    const closeEmailDialog = () => {
+        setEmailLogFor(null)
+        setViewingEmail(null)
+        setEmailBodyError(null)
+        setLoadingEmail(false)
+    }
+
+    // Last-resort unsticker.
+    //
+    // This deliberately does NOT live in closeEmailDialog: that runs during
+    // onOpenChange, BEFORE Radix unmounts the layer and runs its own cleanup, so
+    // clearing the style there is undone a moment later — it would have looked
+    // like a guard while doing nothing. A timeout after the close puts it after
+    // Radix, which is the only place it can actually help.
+    //
+    // The real fix is modal={false} on the actions menu below. If that holds,
+    // this never fires.
+    useEffect(() => {
+        if (emailLogFor) return
+        const t = setTimeout(() => {
+            if (document.body.style.pointerEvents === 'none') {
+                console.warn('Dialog cleanup left body pointer-events:none — clearing')
+                document.body.style.pointerEvents = ''
+            }
+        }, 150)
+        return () => clearTimeout(t)
+    }, [emailLogFor])
+
+    const openEmailLog = async (attendee: Attendee, name: string) => {
+        setEmailLogFor({ attendee, name })
+        setEmailLog(null)
+        setViewingEmail(null)
+        setEmailBodyError(null)
+        if (!attendee.purchase_intent_id) { setEmailLog([]); return }
+        setEmailLog(await getOrderEmailLog(attendee.purchase_intent_id))
+    }
+
+    // One Resend call per click, never prefetched for the table: a 500-attendee
+    // event would otherwise make 500 API calls on page load.
+    const openEmailBody = async (resendId: string) => {
+        const intentId = emailLogFor?.attendee.purchase_intent_id
+        if (!intentId) return
+        setLoadingEmail(true)
+        setEmailBodyError(null)
+        const res = await getSentEmail(intentId, resendId)
+        if (res.ok) setViewingEmail(res.email)
+        else setEmailBodyError(res.error)
+        setLoadingEmail(false)
+    }
+
+    const handleResend = async (ticketId: string) => {
+        setResendingId(ticketId)
+        const res = await resendOrderEmail(ticketId, eventId)
+        if (res.ok) {
+            toast({ title: 'Email queued', description: `Resending to ${res.email}` })
+        } else {
+            toast({ title: "Couldn't resend", description: res.error, variant: 'destructive' })
+        }
+        setResendingId(null)
+    }
     const reloadFailures = useCallback(() => {
         getDeliveryFailures(eventId).then(setFailures).catch(() => { /* non-fatal */ })
     }, [eventId])
@@ -596,6 +667,14 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                                         >
                                             Fix &amp; resend
                                         </button>
+                                        <button
+                                            type="button"
+                                            className="font-medium underline underline-offset-2 hover:no-underline disabled:opacity-50"
+                                            disabled={resendingId === f.ticket_id}
+                                            onClick={() => handleResend(f.ticket_id)}
+                                        >
+                                            {resendingId === f.ticket_id ? 'Resending…' : 'Just resend'}
+                                        </button>
                                     </li>
                                 ))}
                             </ul>
@@ -1000,7 +1079,28 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                                             )}
                                         </TableCell>
                                         <TableCell className="text-right">
-                                            <DropdownMenu>
+                                            {/*
+                                              * modal={false} is load-bearing, not cosmetic.
+                                              *
+                                              * Radix DropdownMenu is modal by default, and both it
+                                              * and Dialog manage `pointer-events: none` on <body>.
+                                              * Opening a dialog from a menu ITEM unmounts the menu
+                                              * while the dialog mounts, and the two cleanups race —
+                                              * when the menu's loses, the body keeps pointer-events
+                                              * none after the dialog closes and the whole dashboard
+                                              * goes dead until a reload.
+                                              *
+                                              * This has been latent on every dialog opened from this
+                                              * menu. It only became visible with "See email sent"
+                                              * because that one is read-only: Fix-email and the
+                                              * answers dialog both call revalidatePath, and the
+                                              * re-render was quietly papering over the stuck body.
+                                              *
+                                              * Non-modal means the menu no longer touches body
+                                              * pointer-events at all. It still closes on outside
+                                              * click and on Escape.
+                                              */}
+                                            <DropdownMenu modal={false}>
                                                 <DropdownMenuTrigger asChild>
                                                     <Button variant="ghost" className="h-8 w-8 p-0">
                                                         <span className="sr-only">Open menu</span>
@@ -1023,6 +1123,19 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                                                             View answers
                                                         </DropdownMenuItem>
                                                     )}
+                                                    <DropdownMenuItem onClick={() => openEmailLog(attendee, name)}>
+                                                        <Mail className="w-4 h-4 mr-2" />
+                                                        See email sent
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                        onClick={() => handleResend(attendee.id)}
+                                                        disabled={resendingId === attendee.id}
+                                                    >
+                                                        {resendingId === attendee.id
+                                                            ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                            : <Send className="w-4 h-4 mr-2" />}
+                                                        Resend email
+                                                    </DropdownMenuItem>
                                                     <DropdownMenuItem onClick={() => openFixEmail(attendee, name)}>
                                                         <MailWarning className="w-4 h-4 mr-2" />
                                                         Fix email &amp; resend
@@ -1299,6 +1412,105 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                                     Update &amp; resend
                                 </Button>
                             </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {/* ── What we actually sent ─────────────────────────────────── */}
+            {/*
+              * Radix puts `pointer-events: none` on <body> while a modal layer is
+              * open and restores it during cleanup. On close it also returns focus
+              * to the trigger — here a DropdownMenuItem that unmounted long ago,
+              * while the element holding focus may sit inside the sandboxed iframe
+              * being torn down in the same render. If that focus return throws, the
+              * restore never runs and the ENTIRE dashboard stays unclickable until a
+              * reload. That is the bug this guards: it only ever appeared after
+              * pressing View, because that is the only path that mounts an iframe.
+              *
+              * onCloseAutoFocus removes the race (nothing is lost — the trigger no
+              * longer exists to focus). The body check below is a deliberate safety
+              * net, not a second theory: the cost of being wrong here is a dead
+              * dashboard, so it is worth one defensive line.
+              */}
+            <Dialog open={!!emailLogFor} onOpenChange={o => { if (!o) closeEmailDialog() }}>
+                <DialogContent
+                    className="max-w-2xl"
+                    onCloseAutoFocus={e => e.preventDefault()}
+                >
+                    <DialogHeader>
+                        <DialogTitle>Email sent to {emailLogFor?.name}</DialogTitle>
+                    </DialogHeader>
+
+                    {emailLog === null ? (
+                        <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                        </div>
+                    ) : emailLog.length === 0 ? (
+                        <div className="space-y-2 py-6 text-sm text-muted-foreground">
+                            <p className="font-medium text-foreground">No email on record for this order.</p>
+                            <p>
+                                We only started keeping the provider&apos;s reference recently, so orders
+                                from before that have nothing to show unless the email bounced.
+                            </p>
+                        </div>
+                    ) : !viewingEmail ? (
+                        <div className="space-y-2">
+                            {emailBodyError && (
+                                <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                                    {emailBodyError}
+                                </p>
+                            )}
+                            <ul className="divide-y rounded-lg border">
+                                {emailLog.map((m, i) => (
+                                    <li key={`${m.resend_id ?? 'none'}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 p-3 text-sm">
+                                        <Badge
+                                            variant={m.status === 'bounced' ? 'destructive' : 'secondary'}
+                                            className="capitalize"
+                                        >
+                                            {m.status ?? 'unknown'}
+                                        </Badge>
+                                        <span className="min-w-0 flex-1 truncate">
+                                            {m.subject ?? 'Your tickets'}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                            {format(new Date(m.occurred_at), 'MMM d, h:mm a')}
+                                        </span>
+                                        {m.resend_id && (
+                                            <button
+                                                type="button"
+                                                className="font-medium text-primary underline underline-offset-2 hover:no-underline disabled:opacity-50"
+                                                disabled={loadingEmail}
+                                                onClick={() => openEmailBody(m.resend_id!)}
+                                            >
+                                                {loadingEmail ? 'Opening…' : 'View'}
+                                            </button>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium">{viewingEmail.subject}</p>
+                                    <p className="truncate text-xs text-muted-foreground">
+                                        To {viewingEmail.to?.join(', ')} · {viewingEmail.last_event ?? 'unknown'}
+                                    </p>
+                                </div>
+                                <Button variant="ghost" size="sm" onClick={() => setViewingEmail(null)}>
+                                    Back
+                                </Button>
+                            </div>
+                            {/* Sandboxed: an email body is untrusted-shaped content, and the
+                                sandbox costs nothing. allow-same-origin is deliberately absent. */}
+                            <iframe
+                                title="Sent email"
+                                sandbox=""
+                                srcDoc={viewingEmail.html ?? `<pre>${viewingEmail.text ?? ''}</pre>`}
+                                className="h-[55vh] w-full rounded-lg border bg-white"
+                            />
                         </div>
                     )}
                 </DialogContent>

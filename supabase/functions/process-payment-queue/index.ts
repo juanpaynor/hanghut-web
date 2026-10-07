@@ -138,11 +138,69 @@ serve(async (req) => {
           } catch (e) {
             console.warn('⚠️ Could not resolve ticket_url (sending without link):', e)
           }
-          const { error } = await supabase.functions.invoke('send-ticket-email', {
+          const { data: sendResult, error } = await supabase.functions.invoke('send-ticket-email', {
             body,
           })
           if (error) throw new Error(`send-ticket-email failed: ${error.message}`)
           console.log(`✅ Ticket email sent to ${body?.email}`)
+
+          // Record the send. Resend's id came back in the response and was
+          // discarded here for the life of the product, which is why the most
+          // important email we send is the only one with no delivery record:
+          // email_sends held 5,300 rows and every one was a marketing campaign.
+          //
+          // This is the single instrumentation point for ticket mail -- paid,
+          // free, box office, kiosk and organizer email corrections all enqueue
+          // send_ticket_email and all arrive here -- so one write covers every
+          // producer, including ones written later.
+          //
+          // Non-fatal on purpose: the buyer HAS their ticket by now. Failing the
+          // queue message over a bookkeeping row would re-send a real email.
+          try {
+            const resendId: string | null = (sendResult as { id?: string } | null)?.id ?? null
+            if (resendId) {
+              // Resolve the order from the first ticket. body.tickets carries
+              // qr_code = "ticketId:eventId:...", the same shape the ticket_url
+              // lookup above relies on.
+              let intentId: string | null = null
+              let partnerId: string | null = null
+              const qr: string | undefined = body?.tickets?.[0]?.qr_code
+              const tId = qr ? qr.split(':')[0] : null
+              if (tId) {
+                const { data: tk } = await supabase
+                  .from('tickets')
+                  .select('purchase_intent_id, event_id')
+                  .eq('id', tId)
+                  .maybeSingle()
+                intentId = tk?.purchase_intent_id ?? null
+                if (tk?.event_id) {
+                  const { data: ev } = await supabase
+                    .from('events')
+                    .select('organizer_id')
+                    .eq('id', tk.event_id)
+                    .maybeSingle()
+                  // Stamped so the existing partner-scoped RLS policy on
+                  // email_sends lets an organizer read their own ticket sends
+                  // directly, exactly as it already does for campaigns.
+                  partnerId = ev?.organizer_id ?? null
+                }
+              }
+              const { error: logErr } = await supabase.from('email_sends').insert({
+                kind: 'ticket',
+                resend_id: resendId,
+                recipient: body?.email ?? null,
+                partner_id: partnerId,
+                purchase_intent_id: intentId,
+                subject: `Your tickets for ${body?.event_title ?? 'your event'}`,
+                status: 'sent',
+              })
+              if (logErr) console.warn('⚠️ Could not log ticket email send:', logErr.message)
+            } else {
+              console.warn('⚠️ send-ticket-email returned no id; nothing to log')
+            }
+          } catch (e) {
+            console.warn('⚠️ Logging the ticket email failed (non-fatal):', e)
+          }
           break
         }
 

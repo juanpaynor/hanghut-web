@@ -633,6 +633,114 @@ export async function correctOrderEmail(
     return data as Awaited<ReturnType<typeof correctOrderEmail>> & { ok: true }
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * What we actually sent
+ *
+ * Resend keeps the rendered message and its delivery state. We hold the id in
+ * email_sends (recorded by process-payment-queue) or, for anything that
+ * bounced, in email_events — the webhook has always captured those even with no
+ * send row. get_order_email_log unions the two, so orders that bounced before
+ * any of this existed still have something to show.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export interface OrderEmail {
+    resend_id: string | null
+    recipient: string
+    status: string | null
+    subject: string | null
+    occurred_at: string
+    /** 'ledger' = recorded at send time. 'webhook' = reconstructed from a bounce. */
+    source: 'ledger' | 'webhook'
+}
+
+export async function getOrderEmailLog(intentId: string): Promise<OrderEmail[]> {
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('get_order_email_log', { p_intent_id: intentId })
+    if (error) {
+        console.error('Failed to load order email log:', error.message)
+        return []
+    }
+    return (data ?? []) as OrderEmail[]
+}
+
+export interface SentEmail {
+    id: string
+    subject: string | null
+    to: string[]
+    from: string | null
+    created_at: string | null
+    last_event: string | null
+    html: string | null
+    text: string | null
+}
+
+/**
+ * Fetch one sent email's body and current delivery state from Resend.
+ *
+ * Goes through an edge function because RESEND_API_KEY lives in edge secrets,
+ * not in the Next runtime. The intent id travels with the request and the
+ * function re-checks it: a Resend id is an account-wide handle, so a
+ * client-supplied one must never be trusted on its own.
+ */
+export async function getSentEmail(
+    intentId: string,
+    resendId: string
+): Promise<{ ok: true; email: SentEmail } | { ok: false; error: string; retained?: false }> {
+    const supabase = await createClient()
+    const { data, error } = await supabase.functions.invoke('get-sent-email', {
+        body: { intent_id: intentId, resend_id: resendId },
+    })
+
+    if (error) {
+        console.error('getSentEmail failed:', error.message)
+        return { ok: false, error: 'Could not load this email.' }
+    }
+    if (data?.error === 'NOT_RETAINED') {
+        return {
+            ok: false,
+            retained: false,
+            error: 'This email is old enough that Resend no longer keeps a copy.',
+        }
+    }
+    if (data?.error) return { ok: false, error: data.error as string }
+
+    return { ok: true, email: data as SentEmail }
+}
+
+/**
+ * Send the ticket email again, to the same address.
+ *
+ * correct_order_email already re-sends, but only as a side effect of CHANGING
+ * the address — it refuses when the address is unchanged. That left the common
+ * case unanswerable: a good address whose delivery failed once has nothing to
+ * correct, it just needs sending again.
+ */
+export async function resendOrderEmail(
+    ticketId: string,
+    eventId: string
+): Promise<{ ok: true; email: string } | { ok: false; error: string }> {
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('resend_order_email', { p_ticket_id: ticketId })
+
+    if (error) {
+        const MESSAGES: Record<string, string> = {
+            TICKET_NOT_FOUND: 'That ticket no longer exists.',
+            NOT_YOUR_EVENT: 'You don’t have permission to resend for this order.',
+            ADDRESS_SUPPRESSED:
+                'That address is blocked after a previous bounce — resending would fail again. Fix the address instead.',
+        }
+        const hit = Object.keys(MESSAGES).find((k) => error.message?.includes(k))
+        console.error('resendOrderEmail failed:', error.message)
+        return { ok: false, error: hit ? MESSAGES[hit] : 'Could not resend. Please try again.' }
+    }
+
+    const res = data as { ok: boolean; email?: string; error?: string }
+    if (!res?.ok) return { ok: false, error: res?.error || 'Could not resend.' }
+
+    revalidatePath(`/organizer/events/${eventId}`)
+    return { ok: true, email: res.email! }
+}
+
 /** One paid ticket whose email hard-bounced — the buyer never received it. */
 export interface DeliveryFailure {
     ticket_id: string
