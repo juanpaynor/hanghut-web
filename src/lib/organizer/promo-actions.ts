@@ -100,6 +100,95 @@ export async function togglePromoCode(codeId: string, isActive: boolean, eventId
     return { success: true }
 }
 
+/**
+ * Edit an existing code.
+ *
+ * `code` itself is only editable while the code has never been redeemed. Once
+ * it has, the string is out in the world -- on a poster, in a DM, in somebody's
+ * notes -- and renaming it silently breaks every copy. The discount, limit,
+ * expiry and app-only flag stay editable forever: past orders stored their own
+ * `discount_amount` on the purchase_intent, so changing it here never
+ * re-prices anything already sold.
+ */
+export async function updatePromoCode(codeId: string, eventId: string, formData: FormData) {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const code = (formData.get('code') as string | null)?.toUpperCase().trim() ?? ''
+    const discount_type = formData.get('discount_type') as DiscountType
+    const discount_amount = parseFloat(formData.get('discount_amount') as string)
+    const usage_limit_raw = formData.get('usage_limit') as string
+    const expires_at_raw = formData.get('expires_at') as string
+    const app_only = formData.get('app_only') === 'true'
+
+    if (!(discount_amount > 0)) {
+        return { error: 'Discount amount must be positive' }
+    }
+    if (discount_type === 'percentage' && discount_amount > 100) {
+        return { error: 'Percentage cannot exceed 100%' }
+    }
+
+    const { data: existing } = await supabase
+        .from('promo_codes')
+        .select('code, usage_count')
+        .eq('id', codeId)
+        .single()
+
+    if (!existing) return { error: 'Promo code not found' }
+
+    const usage_limit = usage_limit_raw ? parseInt(usage_limit_raw) : null
+    // A limit under what has already been redeemed renders as "Limit Reached"
+    // and reads like a bug. Setting it EQUAL to usage_count is the legitimate
+    // way to stop a code mid-flight, so only below is refused.
+    if (usage_limit !== null && usage_limit < existing.usage_count) {
+        return {
+            error: `Usage limit cannot be below the ${existing.usage_count} already redeemed. `
+                 + `Set it to ${existing.usage_count} to stop the code, or switch it off.`,
+        }
+    }
+
+    const renaming = code && code !== existing.code
+    if (renaming && existing.usage_count > 0) {
+        return { error: 'This code has been used, so its name is locked. Create a new code instead.' }
+    }
+    if (renaming && code.length < 3) {
+        return { error: 'Code must be at least 3 characters' }
+    }
+
+    // RLS decides whether this caller owns the code. PostgREST reports no error
+    // when a policy simply matches no rows, so the update is asked to return the
+    // row -- an empty result is a denial, not a success.
+    const { data: updated, error } = await supabase
+        .from('promo_codes')
+        .update({
+            ...(renaming ? { code } : {}),
+            discount_type,
+            discount_amount,
+            usage_limit,
+            expires_at: expires_at_raw || null,
+            app_only,
+        })
+        .eq('id', codeId)
+        .eq('event_id', eventId)
+        .select('id')
+
+    if (error) {
+        console.error('Error updating promo code:', error)
+        if (error.code === '23505') {
+            return { error: 'This code already exists for this event' }
+        }
+        return { error: 'Failed to update promo code' }
+    }
+    if (!updated || updated.length === 0) {
+        return { error: 'Not authorized to edit this promo code' }
+    }
+
+    revalidatePath(`/organizer/events/${eventId}`)
+    return { success: true }
+}
+
 export async function deletePromoCode(codeId: string, eventId: string) {
     const supabase = await createClient()
 
@@ -110,6 +199,16 @@ export async function deletePromoCode(codeId: string, eventId: string) {
 
     if (error) {
         console.error('Error deleting promo code:', error)
+        // purchase_intents.promo_code_id is ON DELETE NO ACTION, so a code that
+        // has ever been attached to an order cannot be removed -- the orders are
+        // the reason, and they are worth more than the row. Say so, instead of
+        // the bare 'Failed to delete' that left organizers with no idea why.
+        if (error.code === '23503') {
+            return {
+                error: 'This code has been used on real orders, so deleting it would '
+                     + 'break their history. Switch it off instead, or edit it.',
+            }
+        }
         return { error: 'Failed to delete promo code' }
     }
 
@@ -250,6 +349,86 @@ export async function toggleExperiencePromoCode(
         console.error('Error toggling experience promo code:', error)
         return { error: 'Failed to update status' }
     }
+    revalidatePath(`/organizer/experiences/${experienceId}/edit`)
+    return { success: true }
+}
+
+/**
+ * Experience twin of updatePromoCode.
+ *
+ * NOTE: no experience promo code has ever existed on prod, and it is not for
+ * want of trying -- both "manage" policies on promo_codes filter on
+ * `event_id IN (...)`, and for an experience code event_id is NULL, so the
+ * predicate is NULL and never true. createExperiencePromoCode() cannot insert
+ * and this cannot update until a policy covering experience_id exists. Written
+ * as the twin so the pair stays symmetrical; it fails closed ("Not authorized")
+ * rather than silently reporting success.
+ */
+export async function updateExperiencePromoCode(
+    codeId: string,
+    experienceId: string,
+    formData: FormData
+) {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const code = (formData.get('code') as string | null)?.toUpperCase().trim() ?? ''
+    const discount_type = formData.get('discount_type') as DiscountType
+    const discount_amount = parseFloat(formData.get('discount_amount') as string)
+    const usage_limit_raw = formData.get('usage_limit') as string
+    const expires_at_raw = formData.get('expires_at') as string
+    const app_only = formData.get('app_only') === 'true'
+
+    if (!(discount_amount > 0)) return { error: 'Discount amount must be positive' }
+    if (discount_type === 'percentage' && discount_amount > 100) {
+        return { error: 'Percentage cannot exceed 100%' }
+    }
+
+    const { data: existing } = await supabase
+        .from('promo_codes').select('code, usage_count').eq('id', codeId).single()
+    if (!existing) return { error: 'Promo code not found' }
+
+    const usage_limit = usage_limit_raw ? parseInt(usage_limit_raw) : null
+    if (usage_limit !== null && usage_limit < existing.usage_count) {
+        return {
+            error: `Usage limit cannot be below the ${existing.usage_count} already redeemed. `
+                 + `Set it to ${existing.usage_count} to stop the code, or switch it off.`,
+        }
+    }
+
+    const renaming = code && code !== existing.code
+    if (renaming && existing.usage_count > 0) {
+        return { error: 'This code has been used, so its name is locked. Create a new code instead.' }
+    }
+    if (renaming && code.length < 3) return { error: 'Code must be at least 3 characters' }
+
+    const { data: updated, error } = await supabase
+        .from('promo_codes')
+        .update({
+            ...(renaming ? { code } : {}),
+            discount_type,
+            discount_amount,
+            usage_limit,
+            expires_at: expires_at_raw || null,
+            app_only,
+        })
+        .eq('id', codeId)
+        .eq('experience_id', experienceId)
+        .select('id')
+
+    if (error) {
+        console.error('Error updating experience promo code:', error)
+        if (error.code === '23505') {
+            return { error: 'This code already exists for this experience' }
+        }
+        return { error: 'Failed to update promo code' }
+    }
+    if (!updated || updated.length === 0) {
+        return { error: 'Not authorized to edit this promo code' }
+    }
+
     revalidatePath(`/organizer/experiences/${experienceId}/edit`)
     return { success: true }
 }

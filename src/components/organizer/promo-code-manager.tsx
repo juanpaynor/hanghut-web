@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, Tag, Loader2, Calendar, Hash, TrendingUp, BarChart3, Smartphone } from 'lucide-react'
+import { Plus, Trash2, Tag, Loader2, Calendar, Hash, TrendingUp, BarChart3, Smartphone, Pencil, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,9 +17,9 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
 import {
-    createPromoCode, deletePromoCode, getPromoCodes, togglePromoCode,
+    createPromoCode, deletePromoCode, getPromoCodes, togglePromoCode, updatePromoCode,
     createExperiencePromoCode, deleteExperiencePromoCode,
-    getExperiencePromoCodes, toggleExperiencePromoCode,
+    getExperiencePromoCodes, toggleExperiencePromoCode, updateExperiencePromoCode,
     PromoCode,
 } from '@/lib/organizer/promo-actions'
 import { format } from 'date-fns'
@@ -43,16 +43,19 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
               list: getExperiencePromoCodes,
               toggle: toggleExperiencePromoCode,
               remove: deleteExperiencePromoCode,
+              update: updateExperiencePromoCode,
           }
         : {
               create: createPromoCode,
               list: getPromoCodes,
               toggle: togglePromoCode,
               remove: deletePromoCode,
+              update: updatePromoCode,
           }
 
     const [codes, setCodes] = useState<PromoCode[]>(initialCodes)
     const [isCreating, setIsCreating] = useState(false)
+    const [editingId, setEditingId] = useState<string | null>(null)
     const [isLoading, setIsLoading] = useState(false)
     const { toast } = useToast()
 
@@ -64,7 +67,36 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
     const [expiresAt, setExpiresAt] = useState('')
     const [appOnly, setAppOnly] = useState(false)
 
-    const handleCreate = async (e: React.FormEvent) => {
+    // The code currently being edited, when any. Carried as the row rather than
+    // just the id because usage_count decides whether the name is editable.
+    const editingCode = editingId ? codes.find(c => c.id === editingId) ?? null : null
+
+    const resetForm = () => {
+        setNewCode('')
+        setDiscountType('percentage')
+        setAmount('')
+        setUsageLimit('')
+        setExpiresAt('')
+        setAppOnly(false)
+        setIsCreating(false)
+        setEditingId(null)
+    }
+
+    const startEdit = (code: PromoCode) => {
+        setIsCreating(false)
+        setEditingId(code.id)
+        setNewCode(code.code)
+        setDiscountType(code.discount_type)
+        setAmount(String(code.discount_amount))
+        setUsageLimit(code.usage_limit ? String(code.usage_limit) : '')
+        // datetime-local wants a zoneless 'yyyy-MM-ddTHH:mm'; the column is a
+        // timestamptz, so it has to be reduced to local wall-clock here or the
+        // input renders empty and a silent save would wipe the expiry.
+        setExpiresAt(code.expires_at ? format(new Date(code.expires_at), "yyyy-MM-dd'T'HH:mm") : '')
+        setAppOnly(code.app_only)
+    }
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setIsLoading(true)
 
@@ -76,7 +108,9 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
         if (expiresAt) formData.append('expires_at', expiresAt)
         formData.append('app_only', appOnly ? 'true' : 'false')
 
-        const result = await actions.create(targetId, formData)
+        const result = editingId
+            ? await actions.update(editingId, targetId, formData)
+            : await actions.create(targetId, formData)
 
         if (result.error) {
             toast({
@@ -87,15 +121,10 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
         } else {
             toast({
                 title: "Success",
-                description: "Promo code created successfully",
+                description: editingId ? "Promo code updated" : "Promo code created successfully",
             })
             refreshCodes()
-            setNewCode('')
-            setAmount('')
-            setUsageLimit('')
-            setExpiresAt('')
-            setAppOnly(false)
-            setIsCreating(false)
+            resetForm()
         }
         setIsLoading(false)
     }
@@ -116,10 +145,14 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
         if (!confirm('Are you sure you want to delete this promo code?')) return
 
         const result = await actions.remove(id, targetId)
-        if (result.success) {
-            setCodes(codes.filter(c => c.id !== id))
-            toast({ title: "Deleted", description: "Promo code deleted" })
+        if (result.error) {
+            // This branch used to be missing entirely: a refused delete -- which is
+            // every code that has ever been redeemed -- did nothing at all on screen.
+            toast({ title: "Can't delete", description: result.error, variant: "destructive" })
+            return
         }
+        setCodes(codes.filter(c => c.id !== id))
+        toast({ title: "Deleted", description: "Promo code deleted" })
     }
 
     // Analytics
@@ -128,6 +161,111 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
     const bestCode = codes.length > 0
         ? codes.reduce((best, c) => c.usage_count > best.usage_count ? c : best, codes[0])
         : null
+
+    // One form serves create and edit. They differ only in which action runs and
+    // whether the name is editable, so a second copy would be two places to fix
+    // every time a field is added.
+    // One form serves create and edit. They differ only in which action runs and
+    // whether the name is editable, so a second copy would be two places to fix
+    // every time a field is added.
+    const nameLocked = !!editingCode && editingCode.usage_count > 0
+    const codeForm = (
+        <Card className="p-6 border-primary/20 bg-primary/5">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <Label>Promo Code *</Label>
+                        <Input
+                            value={newCode}
+                            onChange={e => setNewCode(e.target.value.toUpperCase())}
+                            placeholder="e.g. EARLYBIRD"
+                            required
+                            maxLength={20}
+                            disabled={nameLocked}
+                        />
+                        {nameLocked && (
+                            <p className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
+                                <Lock className="h-3 w-3 mt-0.5 shrink-0" />
+                                <span>
+                                    Locked — redeemed {editingCode!.usage_count}&times; already, and it may be
+                                    on a poster or in someone&apos;s messages.
+                                </span>
+                            </p>
+                        )}
+                    </div>
+                    <div>
+                        <Label>Discount Type</Label>
+                        <Select value={discountType} onValueChange={(v: any) => setDiscountType(v)}>
+                            <SelectTrigger>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="percentage">Percentage Off (%)</SelectItem>
+                                <SelectItem value="fixed_amount">Fixed Amount Off (₱)</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <Label>Discount Value *</Label>
+                        <Input
+                            type="number"
+                            value={amount}
+                            onChange={e => setAmount(e.target.value)}
+                            placeholder={discountType === 'percentage' ? "e.g. 15" : "e.g. 100"}
+                            min="0"
+                            required
+                        />
+                    </div>
+                    <div>
+                        <Label>Usage Limit (Optional)</Label>
+                        <Input
+                            type="number"
+                            value={usageLimit}
+                            onChange={e => setUsageLimit(e.target.value)}
+                            placeholder="Unlimited"
+                            min={editingCode ? Math.max(editingCode.usage_count, 1) : 1}
+                        />
+                        {editingCode && editingCode.usage_count > 0 && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                                Can&apos;t go below {editingCode.usage_count} already redeemed.
+                            </p>
+                        )}
+                    </div>
+                    <div>
+                        <Label>Expires At (Optional)</Label>
+                        <Input
+                            type="datetime-local"
+                            value={expiresAt}
+                            onChange={e => setExpiresAt(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                        <Smartphone className="h-4 w-4 text-amber-600 shrink-0" />
+                        <div className="flex-1">
+                            <p className="text-sm font-medium text-amber-900">App Only</p>
+                            <p className="text-xs text-amber-700">Restrict this code to the HangHut app — won&apos;t work on web checkout</p>
+                        </div>
+                        <Switch checked={appOnly} onCheckedChange={setAppOnly} />
+                    </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                    <Button type="button" variant="ghost" onClick={resetForm}>
+                        Cancel
+                    </Button>
+                    <Button type="submit" disabled={isLoading}>
+                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                        {editingId ? 'Save Changes' : 'Create Code'}
+                    </Button>
+                </div>
+            </form>
+        </Card>
+    )
 
     return (
         <div className="space-y-6">
@@ -139,8 +277,8 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
                     </h2>
                     <p className="text-muted-foreground">Create discount codes for your event</p>
                 </div>
-                {!isCreating && (
-                    <Button onClick={() => setIsCreating(true)}>
+                {!isCreating && !editingId && (
+                    <Button onClick={() => { setEditingId(null); setIsCreating(true) }}>
                         <Plus className="h-4 w-4 mr-2" />
                         New Code
                     </Button>
@@ -176,88 +314,7 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
                 </div>
             )}
 
-            {isCreating && (
-                <Card className="p-6 border-primary/20 bg-primary/5">
-                    <form onSubmit={handleCreate} className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <Label>Promo Code *</Label>
-                                <Input
-                                    value={newCode}
-                                    onChange={e => setNewCode(e.target.value.toUpperCase())}
-                                    placeholder="e.g. EARLYBIRD"
-                                    required
-                                    maxLength={20}
-                                />
-                            </div>
-                            <div>
-                                <Label>Discount Type</Label>
-                                <Select value={discountType} onValueChange={(v: any) => setDiscountType(v)}>
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="percentage">Percentage Off (%)</SelectItem>
-                                        <SelectItem value="fixed_amount">Fixed Amount Off (₱)</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <Label>Discount Value *</Label>
-                                <Input
-                                    type="number"
-                                    value={amount}
-                                    onChange={e => setAmount(e.target.value)}
-                                    placeholder={discountType === 'percentage' ? "e.g. 15" : "e.g. 100"}
-                                    min="0"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <Label>Usage Limit (Optional)</Label>
-                                <Input
-                                    type="number"
-                                    value={usageLimit}
-                                    onChange={e => setUsageLimit(e.target.value)}
-                                    placeholder="Unlimited"
-                                    min="1"
-                                />
-                            </div>
-                            <div>
-                                <Label>Expires At (Optional)</Label>
-                                <Input
-                                    type="datetime-local"
-                                    value={expiresAt}
-                                    onChange={e => setExpiresAt(e.target.value)}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-2">
-                            <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
-                                <Smartphone className="h-4 w-4 text-amber-600 shrink-0" />
-                                <div className="flex-1">
-                                    <p className="text-sm font-medium text-amber-900">App Only</p>
-                                    <p className="text-xs text-amber-700">Restrict this code to the HangHut app — won't work on web checkout</p>
-                                </div>
-                                <Switch checked={appOnly} onCheckedChange={setAppOnly} />
-                            </div>
-                        </div>
-                        <div className="flex justify-end gap-2">
-                            <Button type="button" variant="ghost" onClick={() => setIsCreating(false)}>
-                                Cancel
-                            </Button>
-                            <Button type="submit" disabled={isLoading}>
-                                {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                                Create Code
-                            </Button>
-                        </div>
-                    </form>
-                </Card>
-            )}
+            {isCreating && codeForm}
 
             <div className="grid gap-4">
                 {codes.length === 0 && !isCreating ? (
@@ -271,6 +328,12 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
                             : null
                         const isExpired = code.expires_at && new Date(code.expires_at) < new Date()
                         const isExhausted = code.usage_limit && code.usage_count >= code.usage_limit
+
+                        // The form replaces the row it edits, so the values on screen
+                        // are never two different versions of the same code.
+                        if (editingId === code.id) {
+                            return <div key={code.id}>{codeForm}</div>
+                        }
 
                         return (
                             <Card key={code.id} className={`p-4 ${!code.is_active && 'opacity-60 bg-muted'}`}>
@@ -336,8 +399,17 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
                                         <Button
                                             variant="ghost"
                                             size="icon"
+                                            onClick={() => startEdit(code)}
+                                            aria-label={`Edit ${code.code}`}
+                                        >
+                                            <Pencil className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
                                             className="text-red-500 hover:text-red-700 hover:bg-red-50"
                                             onClick={() => handleDelete(code.id)}
+                                            aria-label={`Delete ${code.code}`}
                                         >
                                             <Trash2 className="h-4 w-4" />
                                         </Button>
