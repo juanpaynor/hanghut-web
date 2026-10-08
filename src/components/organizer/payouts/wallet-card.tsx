@@ -286,7 +286,13 @@ export function WalletCard({
                                     ₱{pendingSettlement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
                                 <p className="text-[10px] text-muted-foreground mt-1">
-                                    Incoming funds (settles in ~1 day)
+                                    {/* Xendit's HOLDING account is not incoming-only: a refund
+                                        being returned to a buyer sits here too, as an OUTGOING
+                                        amount. This used to read "Incoming funds (settles in
+                                        ~1 day)", which rendered a ₱1,430 refund as revenue
+                                        arriving tomorrow — and the "~1 day" was invented, not
+                                        from Xendit. State what we actually know. */}
+                                    Held by Xendit, not yet settled
                                 </p>
                             </>
                         )}

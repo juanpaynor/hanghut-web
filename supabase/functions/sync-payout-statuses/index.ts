@@ -22,7 +22,7 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -52,7 +52,7 @@ serve(async (req) => {
   // payout whose approve-payout run died mid-call still gets reconciled.
   const { data: stuckPayouts, error: fetchError } = await supabase
     .from('payouts')
-    .select('id, xendit_disbursement_id, partner_id, amount, status')
+    .select('id, xendit_disbursement_id, partner_id, amount, status, partner:partners!partner_id ( xendit_account_id )')
     .in('status', ['approved', 'processing'])
     .lt('updated_at', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())
     .not('xendit_disbursement_id', 'is', null)
@@ -80,9 +80,20 @@ serve(async (req) => {
 
   for (const payout of stuckPayouts) {
     try {
+      // approve-payout creates the disbursement ON THE PARTNER'S SUB-ACCOUNT
+      // (for-user-id). Reading it back without that header asks the MASTER
+      // account, where the payout does not exist — so Xendit 404s and this job
+      // skips it, forever. That is why every sub-account payout stayed stuck
+      // while main-wallet ones completed: ₱42,655 (Mimic) sat at 'approved' for
+      // 9 days, and ₱24,000 (Sonnet) for six weeks, both SUCCEEDED at Xendit
+      // the whole time. reconcile-disbursements already got this right.
+      const subAccountId = (payout as any).partner?.xendit_account_id || null
+      const headers: Record<string, string> = { Authorization: authHeader }
+      if (subAccountId) headers['for-user-id'] = subAccountId
+
       const res = await fetch(
         `https://api.xendit.co/v2/payouts/${payout.xendit_disbursement_id}`,
-        { headers: { Authorization: authHeader } },
+        { headers },
       )
 
       if (!res.ok) {
@@ -100,7 +111,12 @@ serve(async (req) => {
       if (xenditStatus === 'SUCCEEDED') {
         await supabase
           .from('payouts')
-          .update({ status: 'completed', completed_at: new Date().toISOString() })
+          // Xendit's own timestamp, not sync time: a payout reconciled days late
+          // must not claim it completed today. Falls back to now if absent.
+          .update({
+            status: 'completed',
+            completed_at: xenditPayout.updated ?? xenditPayout.created ?? new Date().toISOString(),
+          })
           .eq('id', payout.id)
         console.log(`  ✅ Marked completed`)
         results.push({ id: payout.id, amount: Number(payout.amount), xendit_status: xenditStatus, action: 'completed' })
