@@ -236,6 +236,8 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         try { sessionStorage.setItem(`hh_party_${eventId}`, String(n)) } catch { /* noop */ }
     }, [eventId])
     const [viewMode, setViewMode] = useState<'map' | 'list'>('map')
+    const mapVisible = viewMode === 'map' || mapData?.selection_mode === 'pick'
+    const [pendingSectionZoom, setPendingSectionZoom] = useState<MapSection | null>(null)
     // The section sheet. `result` = seats the server picked AND holds for us.
     type AutoResult = { seats: { seat_id: string; row: string; seat: number; label: string }[]; together: string; split: number[] }
     const [autoSheet, setAutoSheet] = useState<{
@@ -573,7 +575,11 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         const update = () => {
             if (containerRef.current) {
                 const rect = containerRef.current.getBoundingClientRect()
-                setStageSize({ width: rect.width, height: rect.height })
+                // List view uses display:none. Keep the last usable canvas size
+                // instead of fitting the camera to a zero-sized stage.
+                if (rect.width <= 0 || rect.height <= 0) return
+                setStageSize(prev => prev.width === rect.width && prev.height === rect.height
+                    ? prev : { width: rect.width, height: rect.height })
             }
         }
         update()
@@ -683,6 +689,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
     // canvas_width/height would render them as a tiny cluster in one corner.
     const fitOverview = useCallback((animate = true) => {
         if (!mapData || mapData.sections.length === 0) return
+        setPendingSectionZoom(null)
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
         const extend = (x: number, y: number) => {
             minX = Math.min(minX, x); maxX = Math.max(maxX, x)
@@ -755,7 +762,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
     const didInitialFitRef = useRef(false)
     const lastFitKeyRef = useRef('')
     useEffect(() => {
-        if (!mapData) return
+        if (!mapData || !mapVisible || pendingSectionZoom) return
         const fitKey = `${mapData.event_id}:${Math.round(stageSize.width)}x${Math.round(stageSize.height)}`
         if (didInitialFitRef.current) {
             if (activeSectionRef.current !== null) return   // zoomed into a section → leave view alone
@@ -775,7 +782,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         didInitialFitRef.current = true
         lastFitKeyRef.current = fitKey
         fitOverview(false)
-    }, [fitOverview, frameSection, mapData, stageSize])
+    }, [fitOverview, frameSection, mapData, stageSize, mapVisible, pendingSectionZoom])
 
     // Zoom into a section. Fit to the SEATS' bounds, not the polygon — a section
     // outline is often far larger than its seated area (see the huge empty lower
@@ -807,10 +814,23 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         setActiveSection(section.id)
     }, [stageSize, flyTo])
 
+    // A list-to-map transition can change both width and height. Wait until
+    // ResizeObserver has measured the visible layout before fitting the seats.
+    useEffect(() => {
+        if (!pendingSectionZoom || !mapVisible || !containerRef.current) return
+        const rect = containerRef.current.getBoundingClientRect()
+        if (rect.width <= 0 || rect.height <= 0
+            || Math.abs(rect.width - stageSize.width) > 0.5
+            || Math.abs(rect.height - stageSize.height) > 0.5) return
+        zoomToSection(pendingSectionZoom)
+        setPendingSectionZoom(null)
+    }, [pendingSectionZoom, mapVisible, stageSize, zoomToSection])
+
     // ─── Interactions ────────────────────────────────────────────────────
     // Seated sections lazily load their seats, then zoom to them; GA zones open
     // the quantity sheet (no seats to load).
     const openAutoSheet = useCallback((section: MapSection, tierId?: string | null) => {
+        setPendingSectionZoom(null)
         const offers = sectionOffers(section)
         const pill = sectionPill(section)
         const preferred = tierId
@@ -828,6 +848,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
     // Leaving a sheet without picking: drop the focus and ease back out to the
     // overview (unless the buyer is already zoomed into seats).
     const leaveSheet = useCallback(() => {
+        setPendingSectionZoom(null)
         setAutoSheet(null)
         setGaSection(null)
         setFocusSectionId(null)
@@ -836,6 +857,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
 
     const handleSectionTap = useCallback(async (section: MapSection) => {
         if (isGASection(section)) {
+            setPendingSectionZoom(null)
             setAutoSheet(null)
             setGaSection(section)
             setGaQty(1)
@@ -851,16 +873,17 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
         // Zoom using the freshly-loaded section (geometryRef is updated synchronously
         // before remerge), so we fit the seats, not the polygon.
         const loaded = geometryRef.current?.sections.find((s: any) => s.id === section.id)
-        zoomToSection(loaded ?? section)
-    }, [loadSection, zoomToSection, selectionMode, openAutoSheet, isPreview, frameSection])
+        setPendingSectionZoom(loaded ?? section)
+    }, [loadSection, selectionMode, openAutoSheet, isPreview, frameSection])
 
-    // "Pick my own seats" from the sheet → the hand-pick flow, unchanged.
+    // "Pick my own seats" also opens the map when the sheet came from list view.
     const pickManually = useCallback(async (section: MapSection) => {
         setAutoSheet(null)
         await loadSection(section.id)
         const loaded = geometryRef.current?.sections.find((s: any) => s.id === section.id)
-        zoomToSection(loaded ?? section)
-    }, [loadSection, zoomToSection])
+        setPendingSectionZoom(loaded ?? section)
+        setViewMode('map')
+    }, [loadSection])
 
     // Seats with a hold request in flight. Rendered as pending so the tap feels
     // answered, WITHOUT claiming the seat is the buyer's before the server says
@@ -1113,7 +1136,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
                 setAutoSheet(prev => prev ? { ...prev, phase: 'result', result, proposal: undefined } : prev)
                 await loadSection(sheet.section.id)
                 const loaded = geometryRef.current?.sections.find((x: any) => x.id === sheet.section.id)
-                if (loaded) zoomToSection(loaded)
+                if (loaded) setPendingSectionZoom(loaded)
                 return
             }
 
@@ -1149,7 +1172,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
             setAutoSheet(prev => prev ? { ...prev, phase: 'choose' } : prev)
             toast({ title: "Couldn't get seats", description: 'Check your connection and try again.' })
         }
-    }, [eventId, loadSection, zoomToSection, refreshStatus, toast, effectiveMaxPerOrder, pickManually])
+    }, [eventId, loadSection, refreshStatus, toast, effectiveMaxPerOrder, pickManually])
 
     const handleContinue = () => {
         if (!selectedTierId || selectedSeats.length === 0) return
@@ -1365,7 +1388,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
             <div
                 ref={containerRef}
                 className={cn('relative w-full flex-1 min-h-[240px] rounded-2xl border bg-white dark:bg-slate-100 overflow-hidden touch-none',
-                    viewMode === 'list' && selectionMode !== 'pick' && 'hidden')}
+                    !mapVisible && 'hidden')}
             >
                 <Stage
                     ref={stageRef}
