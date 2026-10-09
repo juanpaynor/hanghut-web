@@ -45,9 +45,14 @@ export interface RegistrationsPage {
     questions: RegistrationQuestion[]
     /**
      * Whole-event totals from SQL — never derived from the page in the browser.
-     * `total` counts EVERY registration including cancelled ones, because the
-     * non-approval list shows every row; summing the three review buckets
-     * instead would print a count that disagreed with the list beneath it.
+     * `total` counts every registration the list actually shows, which excludes
+     * cancelled ones — summing the three review buckets instead would print a
+     * count that disagreed with the list beneath it.
+     *
+     * Cancelled is excluded everywhere here because expire_stale_registrations()
+     * releases abandoned unpaid checkouts to that status: an organizer asked for
+     * their roster to show paid attendees only, and a released row reappearing as
+     * "cancelled" is the exact noise the release was meant to remove.
      */
     counts: { pending: number; approved: number; rejected: number; total: number }
     page: number
@@ -187,6 +192,7 @@ export async function getEventRegistrations(
             { count: 'exact' }
         )
         .eq('event_id', eventId)
+        .neq('status', 'cancelled')
         .order('created_at', { ascending: false })
         .range(from, to)
 
@@ -215,7 +221,8 @@ export async function getEventRegistrations(
         adminClient
             .from('event_registrations')
             .select('id', { count: 'exact', head: true })
-            .eq('event_id', eventId),
+            .eq('event_id', eventId)
+            .neq('status', 'cancelled'),
     ])
 
     if (error) {
@@ -467,6 +474,7 @@ async function loadExportBundle(
             `
             )
             .eq('event_id', eventId)
+            .neq('status', 'cancelled')
             .order('created_at', { ascending: true })
             .range(offset, offset + PAGE - 1)
 
