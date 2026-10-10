@@ -217,6 +217,29 @@ export async function createEvent(formData: FormData) {
             rejection_email_body: (formData.get('rejection_email_body') as string) || null,
         }
 
+        // 3b. Inherit the partner's house look, if they saved one.
+        //
+        // Without this, every event starts from the platform default and the
+        // organizer re-picks the same settings by hand — prod has one partner
+        // whose 36 events carry a byte-identical design, and another whose 19
+        // drifted across 8 combinations because nothing held a house style.
+        // Applied at CREATE only: changing the house look later must never
+        // reach back and restyle events that are already published.
+        try {
+            const { data: brandRow } = await adminSupabase
+                .from('partners').select('branding').eq('id', partner.id).maybeSingle()
+            const defaults = (brandRow?.branding as Record<string, unknown> | null)?.event_defaults as
+                Record<string, unknown> | undefined
+            if (defaults && Object.keys(defaults).length) {
+                const { theme_color, ...layout } = defaults
+                if (Object.keys(layout).length) (eventData as Record<string, unknown>).layout_config = layout
+                if (typeof theme_color === 'string') (eventData as Record<string, unknown>).theme_color = theme_color
+            }
+        } catch (e) {
+            // A missing house look must never block event creation.
+            console.error('Could not apply partner design defaults:', e)
+        }
+
         // 4. Insert event
         const { data: event, error: eventError } = await adminSupabase
             .from('events')

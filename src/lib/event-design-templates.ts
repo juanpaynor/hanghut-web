@@ -24,7 +24,7 @@ export type EventDesignTemplate = {
     theme: EventThemeId
     theme_color: string
     bg_style: 'default' | 'particles' | 'gradient-mesh' | 'noise' | 'parallax' | 'cover-blur' | 'cover-full' | 'spotlight' | 'paper'
-    page_layout: 'default' | 'poster' | 'minimal' | 'broadside' | 'editorial' | 'cinematic' | 'boutique' | 'stack' | 'split' | 'marquee' | 'stub'
+    page_layout: 'default' | 'poster' | 'minimal' | 'broadside' | 'editorial' | 'cinematic' | 'boutique' | 'stack' | 'split' | 'marquee' | 'stub' | 'billboard'
     font_heading: string
     font_body: string
     heading_color: string | null
@@ -34,6 +34,25 @@ export type EventDesignTemplate = {
 }
 
 export const EVENT_DESIGN_TEMPLATES: EventDesignTemplate[] = [
+    {
+        id: 'headliner',
+        name: 'Headliner',
+        tagline: 'Wide poster up top, tickets pinned alongside',
+        vibe: 'Comedy, gigs & club nights',
+        theme: 'classic',
+        theme_color: '#D4A24C',
+        // The poster is the whole design, so the page is built around it: a
+        // blurred copy of the artwork becomes the ground and the artwork itself
+        // is shown whole on top of it.
+        bg_style: 'cover-blur',
+        page_layout: 'billboard',
+        font_heading: 'inter',
+        font_body: 'inter',
+        heading_color: null,
+        text_color: null,
+        show_countdown: true,
+        show_social_proof: false,
+    },
     {
         id: 'classic',
         name: 'HangHut Classic',

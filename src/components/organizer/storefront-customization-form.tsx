@@ -20,20 +20,74 @@ import { VideoUploader } from "@/components/ui/video-uploader"
 import { DraggableVideoCropper } from "@/components/ui/draggable-video-cropper"
 import { EventDesignGallery } from "@/components/organizer/event-design-gallery"
 import type { EventDesignTemplate } from "@/lib/event-design-templates"
-import { MAXIMALIST_PRESET_CSS } from "@/lib/storefront-custom-css"
+import { DesignCodeAssist } from "@/components/organizer/design-code-assist"
+import { DesignReusePanel } from "@/components/organizer/design-reuse-panel"
+import type { EventDesign } from "@/lib/organizer/event-design-actions"
 import { BgPreview, LayoutPreview } from "@/components/organizer/design-option-preview"
+import { DesignOptionGrid, type DesignOption } from "@/components/organizer/design-option-grid"
 import { cn } from "@/lib/utils"
 
-// Two-pane section nav — one calm screen at a time instead of a 7-card scroll.
+/**
+ * The nav, written as a flow rather than a parts bin.
+ *
+ * It used to read Templates / Theme / Content / Layout & order / Visual style —
+ * three of which ("Theme", "Visual style", "Templates") are names for the same
+ * idea, so "where do I change how it looks" had three plausible answers and no
+ * right one. Brand colour in particular sat under "Theme" next to the video
+ * uploader, nowhere near the background and layout it has to work with.
+ *
+ * Now: start from something that exists, then the look, then what's on the page,
+ * then the order of it, then the escape hatch. 'theme' is gone as a destination —
+ * its card moved under 'style' — but the look section is still two cards, so
+ * nothing had to be rewritten to get there.
+ */
 const DESIGN_SECTIONS = [
-    { id: 'templates', label: 'Templates', icon: Sparkles },
-    { id: 'theme', label: 'Theme', icon: Palette },
+    { id: 'templates', label: 'Start here', icon: Sparkles },
+    { id: 'style', label: 'Look', icon: Palette },
     { id: 'content', label: 'Content', icon: ListMusic },
-    { id: 'layout', label: 'Layout & order', icon: LayoutDashboard },
-    { id: 'style', label: 'Visual style', icon: Type },
+    { id: 'layout', label: 'Sections', icon: LayoutDashboard },
     { id: 'css', label: 'Custom CSS', icon: FileCode, adv: true },
 ] as const
 type DesignSectionId = typeof DESIGN_SECTIONS[number]['id']
+
+/**
+ * Option catalogues, tiered rather than trimmed.
+ *
+ * `popular` is set from what organizers on prod actually ship, not from taste:
+ * of 92 designed events the layouts chosen were default 41, poster 23,
+ * marquee 18, split 5, stack 4 — and backgrounds cover-full 28, default 45,
+ * parallax 10. Everything else stays available; it just stops competing for
+ * attention with the five looks people really use.
+ */
+const BG_OPTIONS: DesignOption[] = [
+    { value: 'cover-full',    label: 'Cover Full',   desc: 'Your poster full-bleed behind everything', popular: true },
+    { value: 'default',       label: 'Clean',        desc: 'Neutral ground, artwork stays in the page', popular: true },
+    { value: 'cover-blur',    label: 'Cover Glow',   desc: 'Your poster, blurred large — its colours fill the page', popular: true },
+    { value: 'spotlight',     label: 'Spotlight',    desc: 'Your poster, lit in the middle and falling off at the edges' },
+    { value: 'paper',         label: 'Paper',        desc: 'Warm off-white with a print tooth' },
+    { value: 'custom-image',  label: 'Custom Image', desc: 'A different photo of your own' },
+    // Superseded, but still selectable for events already using them.
+    { value: 'parallax',      label: 'Parallax',      desc: 'Depth on scroll', legacy: true },
+    { value: 'particles',     label: 'Particles',     desc: 'Floating dots', legacy: true },
+    { value: 'gradient-mesh', label: 'Gradient Mesh', desc: 'Animated blobs', legacy: true },
+    { value: 'noise',         label: 'Film Grain',    desc: 'Textured overlay', legacy: true },
+]
+
+const LAYOUT_OPTIONS: DesignOption[] = [
+    { value: 'default',   label: 'Default',   desc: 'Poster stood up beside a ticket card', popular: true },
+    { value: 'poster',    label: 'Poster',    desc: 'Full-bleed artwork, content at the foot', popular: true },
+    { value: 'marquee',   label: 'Marquee',   desc: 'Name at billboard scale, artwork inset', popular: true },
+    { value: 'split',     label: 'Split',     desc: 'Poster held on one side while details scroll', popular: true },
+    { value: 'stack',     label: 'Stack',     desc: 'One column with a sticky buy bar — phone first', popular: true },
+    { value: 'billboard', label: 'Headliner', desc: 'Wide poster up top, tickets pinned alongside', isNew: true },
+    { value: 'stub',      label: 'Stub',      desc: 'Shaped like a torn ticket, perforated edge' },
+    { value: 'boutique',  label: 'Boutique',  desc: 'Centered invitation, all whitespace' },
+    // Superseded, but still selectable for events already using them.
+    { value: 'minimal',   label: 'Minimal',   desc: 'Single column, no clutter', legacy: true },
+    { value: 'broadside', label: 'Broadside', desc: 'Brutalist gig poster — no cards, giant type', legacy: true },
+    { value: 'editorial', label: 'Editorial', desc: 'Magazine spread — poster beside the story', legacy: true },
+    { value: 'cinematic', label: 'Cinematic', desc: 'Full-bleed poster, content floats in glass', legacy: true },
+]
 
 const formSchema = z.object({
     video_url: z.string().url("Must be a valid URL").optional().or(z.literal('')).or(z.null()).transform(v => v ?? ''),
@@ -200,8 +254,6 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
     const [pageLayout, setPageLayout] = useState<string>(initialData.layout_config?.page_layout || 'default')
     // Superseded background styles / layouts are hidden until asked for, so the
     // picker shows the recommended set without stranding events already on them.
-    const [showLegacyBg, setShowLegacyBg] = useState(false)
-    const [showLegacyLayout, setShowLegacyLayout] = useState(false)
     const [showCountdown, setShowCountdown] = useState<boolean>(initialData.layout_config?.show_countdown ?? false)
     const [countdownLabel, setCountdownLabel] = useState<string>(initialData.layout_config?.countdown_label || 'Event starts in')
     const [showSocialProof, setShowSocialProof] = useState<boolean>(initialData.layout_config?.show_social_proof ?? false)
@@ -352,6 +404,51 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
         })
     }
 
+    /** Everything that constitutes "the look", read at the moment it is asked
+     *  for so it includes edits the organizer has not saved yet. */
+    const currentDesign = (): EventDesign => ({
+        theme: pageThemeId,
+        theme_color: form.getValues('theme_color') || null,
+        bg_style: bgStyle,
+        page_layout: pageLayout,
+        font_heading: fontHeading,
+        font_body: fontBody,
+        heading_color: headingColor || null,
+        text_color: textColor || null,
+        show_countdown: showCountdown,
+        show_social_proof: showSocialProof,
+        custom_css: customCss || null,
+        bg_image_url: bgImageUrl || null,
+        order: layoutOrder,
+        hidden: Array.from(hiddenSections),
+    })
+
+    /** Apply a saved look (house default, or copied off a past event).
+     *  Each field is only written when the source actually carries it, so an
+     *  older saved look can never blank a setting it predates. */
+    const applyDesign = (d: EventDesign, label: string) => {
+        const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
+        if (str(d.theme)) setPageThemeId(str(d.theme)!)
+        if (str(d.theme_color)) form.setValue('theme_color', str(d.theme_color)!, { shouldDirty: true })
+        if (str(d.bg_style)) setBgStyle(str(d.bg_style)!)
+        if (str(d.page_layout)) setPageLayout(str(d.page_layout)!)
+        if (str(d.font_heading)) setFontHeading(str(d.font_heading)!)
+        if (str(d.font_body)) setFontBody(str(d.font_body)!)
+        // Colour overrides are meaningfully "unset", so an explicit null clears.
+        if ('heading_color' in d) setHeadingColor(str(d.heading_color) || '')
+        if ('text_color' in d) setTextColor(str(d.text_color) || '')
+        if (typeof d.show_countdown === 'boolean') setShowCountdown(d.show_countdown)
+        if (typeof d.show_social_proof === 'boolean') setShowSocialProof(d.show_social_proof)
+        if ('custom_css' in d) setCustomCss(str(d.custom_css) || '')
+        if ('bg_image_url' in d) setBgImageUrl(str(d.bg_image_url) || '')
+        if (Array.isArray(d.order)) setLayoutOrder(d.order as string[])
+        if (Array.isArray(d.hidden)) setHiddenSections(new Set(d.hidden as string[]))
+        toast({
+            title: `Applied ${label}`,
+            description: 'Nothing is live yet — press Save Customizations when it looks right.',
+        })
+    }
+
     const toggleVisibility = (section: string) => {
         const newHidden = new Set(hiddenSections)
         if (newHidden.has(section)) {
@@ -463,13 +560,23 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <Sparkles className="h-5 w-5" />
-                                Design Templates
+                                Start here
                             </CardTitle>
                             <CardDescription>
-                                Start from a curated look — one click sets the background, layout, fonts, and colors. You can fine-tune everything below afterwards.
+                                Reuse a look you already have, or start from a curated one. Either way you can change anything afterwards.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="space-y-8">
+                            <DesignReusePanel
+                                eventId={eventId}
+                                currentDesign={currentDesign}
+                                onApply={applyDesign}
+                            />
+                            <div className="border-t pt-6">
+                                <p className="text-sm font-semibold">Or start from a curated look</p>
+                                <p className="text-xs text-muted-foreground mb-4">
+                                    One click sets the background, layout, fonts and colours.
+                                </p>
                             <EventDesignGallery
                                 current={{
                                     theme: pageThemeId,
@@ -479,18 +586,19 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                 }}
                                 onApply={applyTemplate}
                             />
+                            </div>
                         </CardContent>
                     </Card>
 
-                    {/* 1. Media & Theme */}
-                    <Card className={cn(designSection !== 'theme' && 'hidden')}>
+                    {/* 1. Media & Theme — part of the Look section (see DESIGN_SECTIONS) */}
+                    <Card className={cn(designSection !== 'style' && 'hidden')}>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <Palette className="h-5 w-5" />
-                                Theme & Media
+                                Brand colour &amp; video
                             </CardTitle>
                             <CardDescription>
-                                Set your brand color and add a video cover.
+                                The colour every accent, button and highlight on the page follows.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
@@ -592,16 +700,21 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                 name="description_html"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>HTML Description</FormLabel>
+                                        <FormLabel>About section</FormLabel>
                                         <FormControl>
-                                            <Textarea
+                                            <DesignCodeAssist
+                                                mode="html"
+                                                value={field.value || ''}
+                                                onChange={field.onChange}
+                                                eventId={eventId}
                                                 placeholder="<p>Detailed event info...</p>"
-                                                className="font-mono text-sm min-h-[200px]"
-                                                {...field}
+                                                minHeight="min-h-[200px]"
                                             />
                                         </FormControl>
                                         <FormDescription>
-                                            Overrides the standard text description. Supports basic HTML tags.
+                                            Replaces the plain description from the event form. Unlike the
+                                            styling above, this one needs a <b>Save</b> before it shows in
+                                            the preview.
                                         </FormDescription>
                                         <FormMessage />
                                     </FormItem>
@@ -740,7 +853,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <LayoutDashboard className="h-5 w-5" />
-                                Page Arrangement
+                                Sections
                             </CardTitle>
                             <CardDescription>
                                 Reorder sections or hide them from the public page.
@@ -811,10 +924,10 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <Sparkles className="h-5 w-5" />
-                                Visual Style
+                                Background, layout &amp; type
                             </CardTitle>
                             <CardDescription>
-                                Background, layout, fonts, and engagement features.
+                                The shape of the page. Changes show in the preview straight away.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-8">
@@ -822,52 +935,19 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                             {/* Background Style */}
                             <div className="space-y-3">
                                 <Label className="text-sm font-semibold">Background Style</Label>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                    {[
-                                        { value: 'cover-blur',    label: 'Cover Glow',   desc: 'Your poster, blurred large — its colours fill the page' },
-                                        { value: 'cover-full',    label: 'Cover Full',   desc: 'Your poster full-bleed behind everything' },
-                                        { value: 'spotlight',     label: 'Spotlight',    desc: 'Your poster, lit in the middle and falling off at the edges' },
-                                        { value: 'default',       label: 'Clean',        desc: 'Neutral ground, artwork stays in the page' },
-                                        { value: 'paper',         label: 'Paper',        desc: 'Warm off-white with a print tooth' },
-                                        { value: 'custom-image',  label: 'Custom Image', desc: 'A different photo of your own' },
-                                        // Superseded, but still selectable for events already using them.
-                                        { value: 'particles',     label: 'Particles',      desc: 'Floating dots', legacy: true },
-                                        { value: 'gradient-mesh', label: 'Gradient Mesh',  desc: 'Animated blobs', legacy: true },
-                                        { value: 'noise',         label: 'Film Grain',     desc: 'Textured overlay', legacy: true },
-                                        { value: 'parallax',      label: 'Parallax',       desc: 'Depth on scroll', legacy: true },
-                                    ]
-                                        // Retired styles stay in the list only while selected, so a live
-                                        // event never silently loses the look it was published with.
-                                        .filter(opt => !opt.legacy || bgStyle === opt.value || showLegacyBg)
-                                        .map(opt => (
-                                        <button
-                                            key={opt.value}
-                                            type="button"
-                                            onClick={() => setBgStyle(opt.value)}
-                                            className={`p-2 rounded-xl border-2 text-left transition-all ${
-                                                bgStyle === opt.value
-                                                    ? 'border-primary bg-primary/5 shadow-sm'
-                                                    : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                                            }`}
-                                        >
-                                            <BgPreview value={opt.value} accent={form.watch('theme_color') || '#4E47DC'} cover={initialData.cover_image_url || undefined} />
-                                            <div className="font-semibold text-sm mt-2 flex items-center gap-1.5">
-                                                {opt.label}
-                                                {opt.legacy && <span className="text-[10px] font-normal text-muted-foreground border rounded px-1">old</span>}
-                                            </div>
-                                            <div className="text-xs text-muted-foreground leading-snug">{opt.desc}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                                {!showLegacyBg && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowLegacyBg(true)}
-                                        className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                                    >
-                                        Show older background styles
-                                    </button>
-                                )}
+                                <DesignOptionGrid
+                                    options={BG_OPTIONS}
+                                    value={bgStyle}
+                                    onChange={setBgStyle}
+                                    legacyLabel="Show older background styles"
+                                    renderPreview={(v) => (
+                                        <BgPreview
+                                            value={v}
+                                            accent={form.watch('theme_color') || '#4E47DC'}
+                                            cover={initialData.cover_image_url || undefined}
+                                        />
+                                    )}
+                                />
 
                                 {/* Custom image uploader — only shown when custom-image selected */}
                                 {bgStyle === 'custom-image' && (
@@ -926,51 +1006,19 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                             {/* Page Layout */}
                             <div className="space-y-3">
                                 <Label className="text-sm font-semibold">Page Layout</Label>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                    {[
-                                        { value: 'default',   label: 'Default',  desc: 'Poster beside a ticket card' },
-                                        { value: 'poster',    label: 'Poster',   desc: 'Full-bleed artwork, content at the foot' },
-                                        { value: 'stack',     label: 'Stack',    desc: 'One column with a sticky buy bar — phone first' },
-                                        { value: 'split',     label: 'Split',    desc: 'Poster held on one side while details scroll' },
-                                        { value: 'marquee',   label: 'Marquee',  desc: 'Name at billboard scale, artwork inset' },
-                                        { value: 'stub',      label: 'Stub',     desc: 'Shaped like a torn ticket, perforated edge' },
-                                        // Superseded, but still selectable for events already using them.
-                                        { value: 'minimal',   label: 'Minimal',   desc: 'Single column, no clutter', legacy: true },
-                                        { value: 'broadside', label: 'Broadside', desc: 'Brutalist gig poster — no cards, giant type', legacy: true },
-                                        { value: 'editorial', label: 'Editorial', desc: 'Magazine spread — poster beside the story', legacy: true },
-                                        { value: 'cinematic', label: 'Cinematic', desc: 'Full-bleed poster, content floats in glass', legacy: true },
-                                        { value: 'boutique',  label: 'Boutique',  desc: 'Centered invitation, all whitespace', legacy: true },
-                                    ]
-                                        .filter(opt => !opt.legacy || pageLayout === opt.value || showLegacyLayout)
-                                        .map(opt => (
-                                        <button
-                                            key={opt.value}
-                                            type="button"
-                                            onClick={() => setPageLayout(opt.value)}
-                                            className={`p-2 rounded-xl border-2 text-left transition-all ${
-                                                pageLayout === opt.value
-                                                    ? 'border-primary bg-primary/5 shadow-sm'
-                                                    : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                                            }`}
-                                        >
-                                            <LayoutPreview value={opt.value} accent={form.watch('theme_color') || '#4E47DC'} cover={initialData.cover_image_url || undefined} />
-                                            <div className="font-semibold text-sm mt-2 flex items-center gap-1.5">
-                                                {opt.label}
-                                                {opt.legacy && <span className="text-[10px] font-normal text-muted-foreground border rounded px-1">old</span>}
-                                            </div>
-                                            <div className="text-xs text-muted-foreground leading-snug">{opt.desc}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                                {!showLegacyLayout && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowLegacyLayout(true)}
-                                        className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                                    >
-                                        Show older layouts
-                                    </button>
-                                )}
+                                <DesignOptionGrid
+                                    options={LAYOUT_OPTIONS}
+                                    value={pageLayout}
+                                    onChange={setPageLayout}
+                                    legacyLabel="Show older layouts"
+                                    renderPreview={(v) => (
+                                        <LayoutPreview
+                                            value={v}
+                                            accent={form.watch('theme_color') || '#4E47DC'}
+                                            cover={initialData.cover_image_url || undefined}
+                                        />
+                                    )}
+                                />
                             </div>
 
                             {/* Fonts */}
@@ -1082,32 +1130,15 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                            <div className="flex flex-wrap gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setCustomCss(MAXIMALIST_PRESET_CSS)}
-                                >
-                                    <Sparkles className="mr-2 h-4 w-4" />
-                                    Load Maximalist preset
-                                </Button>
-                                {customCss && (
-                                    <Button type="button" variant="ghost" size="sm" onClick={() => setCustomCss('')}>
-                                        <X className="mr-2 h-4 w-4" />
-                                        Clear
-                                    </Button>
-                                )}
-                            </div>
-                            <Textarea
+                            <DesignCodeAssist
+                                mode="css"
                                 value={customCss}
-                                onChange={(e) => setCustomCss(e.target.value)}
-                                placeholder={"[data-hh-theme] h1 {\n  color: #ff5e8a;\n}"}
-                                spellCheck={false}
-                                className="font-mono text-xs min-h-[220px] leading-relaxed"
+                                onChange={setCustomCss}
+                                eventId={eventId}
+                                placeholder={"[data-hh-title] {\n  color: #ff5e8a;\n}"}
                             />
                             <p className="text-xs text-muted-foreground">
-                                CSS only — scripts and <code className="text-xs bg-muted px-1 py-0.5 rounded">&lt;style&gt;</code> tags are stripped for safety. Save, then open your live event page to see it.
+                                CSS only — scripts and <code className="text-xs bg-muted px-1 py-0.5 rounded">&lt;style&gt;</code> tags are stripped for safety. Changes show in the preview as you type.
                             </p>
                         </CardContent>
                     </Card>

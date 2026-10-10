@@ -484,7 +484,7 @@ export default async function PublicEventPage({
     // param wins over the saved value; absent → saved value. `?? ` keeps `''`-safe.
     const ov = <T,>(v: T | undefined, saved: T): T => (isPreview && v !== undefined ? v : saved)
     const bgStyle: BgStyle = ov(sp.hh_bg as BgStyle | undefined, event.layout_config?.bg_style || 'default')
-    const pageLayout: 'default' | 'poster' | 'minimal' | 'broadside' | 'editorial' | 'cinematic' | 'boutique' | 'stack' | 'split' | 'marquee' | 'stub' =
+    const pageLayout: 'default' | 'poster' | 'minimal' | 'broadside' | 'editorial' | 'cinematic' | 'boutique' | 'stack' | 'split' | 'marquee' | 'stub' | 'billboard' =
         ov(sp.hh_layout as any, event.layout_config?.page_layout || 'default')
     // Art-directed theme: restyles cards/badges/buttons/headers via injected CSS
     const pageTheme: string = ov(sp.hh_theme, event.layout_config?.theme || 'classic')
@@ -544,6 +544,19 @@ export default async function PublicEventPage({
         'cover-full', 'spotlight',
     ])
     const isDarkBg = DARK_BG_STYLES.has(bgStyle)
+
+    // Layouts that paint their own dark ground whatever the background style.
+    const FORCE_DARK_LAYOUTS = new Set<string>(['marquee', 'billboard'])
+
+    // Whether the shared BODY sections land on something dark — which is not the
+    // same question as whether the page has a dark background. marquee and stub
+    // both sit on a dark ground but drop their body onto a light panel of their
+    // own, so they must NOT get the dark text rules; these three put the body
+    // straight onto the ground, so they must. The other branches (poster,
+    // cinematic, …) pin their own colours and are left alone.
+    const DARK_BODY_LAYOUTS = new Set<string>(['stack', 'split', 'billboard'])
+    const onDarkBody =
+        (isDarkBg || FORCE_DARK_LAYOUTS.has(pageLayout)) && DARK_BODY_LAYOUTS.has(pageLayout)
 
     // A text colour set only as `color` on the root reaches nothing: every element
     // carrying a Tailwind colour class (text-foreground, text-muted-foreground, …)
@@ -757,9 +770,18 @@ export default async function PublicEventPage({
         </div>
     )
 
+    // Tinted and outlined, not white-with-a-shadow. On the light content panel a
+    // `bg-card border-none shadow-xl` card is white on white — the shadow alone
+    // does not separate it, which is how this read on the Inglisheros page. The
+    // dark-background rule on [data-hh-card] has higher specificity than these
+    // utilities, so glass-on-dark is unchanged.
+    //
+    // Rows stack rather than sitting side by side: this card now shares a row
+    // with the About copy, and two columns inside a half-width column is too
+    // cramped for a venue address.
     const DetailsSection = () => (
-        <Card data-hh-card className="p-0 overflow-hidden border-none shadow-xl my-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x border-b">
+        <Card data-hh-card className="p-0 overflow-hidden border border-border/70 bg-muted/40 shadow-none my-8">
+            <div className="grid grid-cols-1 divide-y">
                 <div className="p-6 flex items-start gap-4 hover:bg-muted/30 transition-colors">
                     <div className="p-3 bg-primary/10 rounded-2xl text-primary">
                         <Calendar className="h-6 w-6" />
@@ -1338,6 +1360,33 @@ export default async function PublicEventPage({
                 !important because headings often carry their own text-* class, which
                 an explicit organizer override should still win against. */}
             <style>{`[data-hh-event] h1,[data-hh-event] h2,[data-hh-event] h3,[data-hh-event] h4{font-family:var(--font-heading)}`}</style>
+            {/* Legibility on a dark ground. The shared body sections are written
+                for a light page — TitleSection's h1 is `text-foreground`, the
+                details card is `bg-muted/40`, About is prose — so without these
+                they render slate-on-black and simply cannot be read. This block
+                used to live ONLY in the default layout's head, which is why every
+                branch below (stack/split/marquee/billboard/stub/…) lost it.
+                Split in two: the TEXT rules stand down when the organizer picked a
+                text colour (they'd otherwise outrank it), while the structural
+                glass/border/header rules always apply. */}
+            {onDarkBody && (
+                <style>{`${!textColor ? `
+[data-hh-event]{color:#f1f5f9}
+[data-hh-event] .text-foreground,[data-hh-event] .text-muted-foreground{color:rgba(248,250,252,0.9)}
+[data-hh-event] [class*=prose] p,[data-hh-event] [class*=prose] li{color:rgba(226,232,240,0.9)}
+[data-hh-event] [class*=prose] h1,[data-hh-event] [class*=prose] h2,[data-hh-event] [class*=prose] h3,[data-hh-event] [class*=prose] h4,[data-hh-event] [class*=prose] strong,[data-hh-event] [class*=prose] blockquote{color:#f8fafc}
+[data-hh-event] [data-hh-card] p,[data-hh-event] [data-hh-card] span{color:rgba(248,250,252,0.85)}
+[data-hh-event] [data-hh-card] .text-muted-foreground{color:rgba(203,213,225,0.8)}
+/* …but NOT on anything that paints its own light surface. The outline button
+   is .bg-background with no text colour of its own, so it inherits: without
+   this, the quantity +/- icons turn white on a white circle and vanish. */
+[data-hh-event] .bg-background,[data-hh-event] .bg-card:not([data-hh-card]),[data-hh-event] .bg-popover,[data-hh-event] input,[data-hh-event] textarea,[data-hh-event] select{color:hsl(var(--foreground))}
+` : ''}
+[data-hh-event] .border-border\/50{border-color:rgba(255,255,255,0.12)}
+[data-hh-event] .divide-x>*,[data-hh-event] .divide-y>*{border-color:rgba(255,255,255,0.1)}
+[data-hh-event] [data-hh-card]{background:rgba(255,255,255,0.08);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.15)${textColor ? '' : ';color:#f1f5f9'}}
+`}</style>
+            )}
             {themeCss && <style>{themeCss}</style>}
             {layoutCss && <style>{layoutCss}</style>}
             {/* Organizer colour picks land AFTER the layout bones: cinematic (and the
@@ -1753,7 +1802,7 @@ export default async function PublicEventPage({
     // art-directed layouts (broadside/editorial/cinematic/boutique) fill their
     // artwork slot with a gradient, which is why they read as coloured
     // rectangles; these don't repeat that.
-    if (pageLayout === 'stack' || pageLayout === 'split' || pageLayout === 'marquee' || pageLayout === 'stub') {
+    if (pageLayout === 'stack' || pageLayout === 'split' || pageLayout === 'marquee' || pageLayout === 'stub' || pageLayout === 'billboard') {
         const FixedBg = () =>
             bgStyle !== 'default' ? (
                 <EventPageBackground
@@ -1768,7 +1817,7 @@ export default async function PublicEventPage({
 
         // Marquee is a poster-hall look, so it commits to a dark ground the way
         // `poster` and `cinematic` already do. The rest follow the chosen ground.
-        const forceDark = pageLayout === 'marquee'
+        const forceDark = FORCE_DARK_LAYOUTS.has(pageLayout)
         const onDark = forceDark || isDarkBg
 
         const Header = () => (
@@ -1831,11 +1880,16 @@ export default async function PublicEventPage({
             </>
         )
 
-        const Sections = () => (
+        // `omit` exists because a branch that writes its own headline would
+        // otherwise print the title twice: mainContentOrder still contains
+        // 'title', and the shared TitleSection renders it again.
+        const Sections = ({ omit }: { omit?: string[] } = {}) => (
             <>
-                {mainContentOrder.map(sectionId => (
-                    <div key={sectionId}>{renderSection(sectionId)}</div>
-                ))}
+                {mainContentOrder
+                    .filter(sectionId => !omit?.includes(sectionId))
+                    .map(sectionId => (
+                        <div key={sectionId}>{renderSection(sectionId)}</div>
+                    ))}
             </>
         )
 
@@ -1874,7 +1928,7 @@ export default async function PublicEventPage({
                             <TitleBlock />
                             <Extras />
                             {showTickets && <TicketsSection />}
-                            <Sections />
+                            <Sections omit={['title']} />
                         </main>
                     </div>
                     <StickyBuyBar />
@@ -1890,11 +1944,33 @@ export default async function PublicEventPage({
                     <PageHead />
                     <FixedBg />
                     <div className="relative z-10 lg:flex lg:items-start">
-                        {/* Poster pane — sticky on desktop, plain banner on mobile */}
+                        {/* Poster pane — sticky on desktop, plain banner on mobile.
+                            `object-cover` in this fixed box CROPPED the artwork: a
+                            portrait gig poster in a full-height pane lost both edges,
+                            which is the "the poster isn't shown properly" complaint
+                            this layout was picked to answer. Same treatment as the
+                            default and billboard layouts now — the poster is shown
+                            whole over a blurred copy of itself, so no aspect ratio
+                            ever cuts it. */}
                         <div className="lg:w-[46%] lg:sticky lg:top-0 lg:h-screen shrink-0">
                             {event.cover_image_url ? (
-                                <div className="relative w-full aspect-[4/3] lg:aspect-auto lg:h-full overflow-hidden">
-                                    <Image src={event.cover_image_url} alt={event.title} fill priority sizes="(max-width:1024px) 100vw, 46vw" className="object-cover" />
+                                <div className="relative w-full aspect-[4/5] sm:aspect-[4/3] lg:aspect-auto lg:h-full overflow-hidden bg-black">
+                                    <Image
+                                        src={event.cover_image_url}
+                                        alt=""
+                                        aria-hidden
+                                        fill
+                                        sizes="(max-width:1024px) 100vw, 46vw"
+                                        className="object-cover scale-110 blur-2xl brightness-[0.45] saturate-150"
+                                    />
+                                    <Image
+                                        src={event.cover_image_url}
+                                        alt={event.title}
+                                        fill
+                                        priority
+                                        sizes="(max-width:1024px) 100vw, 46vw"
+                                        className="object-contain"
+                                    />
                                 </div>
                             ) : (
                                 <div className="w-full aspect-[4/3] lg:h-full bg-gradient-to-br from-zinc-800 to-black" />
@@ -1907,7 +1983,7 @@ export default async function PublicEventPage({
                                 <TitleBlock />
                                 <Extras />
                                 {showTickets && <TicketsSection />}
-                                <Sections />
+                                <Sections omit={['title']} />
                             </main>
                         </div>
                     </div>
@@ -1951,9 +2027,115 @@ export default async function PublicEventPage({
                         {/* Content drops onto a light panel so long copy stays readable */}
                         <div className="relative z-20 bg-background text-foreground rounded-t-3xl shadow-2xl">
                             <div className="container mx-auto px-4 py-16 max-w-3xl">
-                                <Sections />
+                                <Sections omit={['title']} />
                             </div>
                         </div>
+                    </div>
+                    <StickyBuyBar />
+                </div>
+            )
+        }
+
+        // ── BILLBOARD: the poster across the top, then copy beside a pinned
+        //    ticket rail. The counterpart to the default rather than a repeat of
+        //    it: DEFAULT stands the poster UP in a 3:4 frame beside the tickets,
+        //    which suits portrait artwork; BILLBOARD lays it out wide and full
+        //    width, which suits landscape artwork like Comedy Manila's Mad House
+        //    poster. Both show the cover whole over a blurred echo of itself, so
+        //    either choice is about emphasis, never about what gets cropped.
+        if (pageLayout === 'billboard') {
+            return (
+                <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="billboard" className={rootCls} style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+                    <EventViewTracker eventId={event.id} />
+                    <PageHead />
+                    <FixedBg />
+                    <div className="relative z-10">
+                        <Header />
+
+                        {event.cover_image_url && (
+                            <section className="container mx-auto px-4 pt-2 pb-8 max-w-5xl">
+                                <div className="relative w-full aspect-[4/3] max-h-[72vh] overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10">
+                                    <Image
+                                        src={event.cover_image_url}
+                                        alt=""
+                                        aria-hidden
+                                        fill
+                                        sizes="100vw"
+                                        className="object-cover scale-110 blur-2xl brightness-[0.5] saturate-150"
+                                    />
+                                    <Image
+                                        src={event.cover_image_url}
+                                        alt={event.title}
+                                        fill
+                                        priority
+                                        sizes="(max-width: 1024px) 100vw, 64rem"
+                                        className="object-contain"
+                                    />
+                                </div>
+                            </section>
+                        )}
+
+                        <section className="container mx-auto px-4 pb-24 max-w-5xl">
+                            <div className="grid gap-8 lg:gap-12 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] items-start">
+                                <div className="min-w-0 space-y-6">
+                                    {event.organizer && (
+                                        <a
+                                            href={`https://${event.organizer.slug}.hanghut.com`}
+                                            className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-white/55 hover:text-white/80 transition-colors"
+                                        >
+                                            {event.organizer.business_name} presents
+                                        </a>
+                                    )}
+
+                                    <h1
+                                        data-hh-title
+                                        className="font-black uppercase leading-[0.95] tracking-tight text-3xl sm:text-5xl lg:text-6xl break-words"
+                                        style={{ fontFamily: 'var(--font-heading)' }}
+                                    >
+                                        {event.title}
+                                    </h1>
+
+                                    <div className="flex flex-wrap items-start gap-x-8 gap-y-4 text-sm">
+                                        <span className="inline-flex items-start gap-2.5">
+                                            <Calendar className="h-4 w-4 mt-0.5 shrink-0 opacity-60" />
+                                            <span>
+                                                <span className="block font-medium">{whenFull}</span>
+                                                <span className="block opacity-60">{formatEventTime(event.start_datetime)}</span>
+                                            </span>
+                                        </span>
+                                        {event.venue_name && (
+                                            <span className="inline-flex items-start gap-2.5">
+                                                <MapPin className="h-4 w-4 mt-0.5 shrink-0 opacity-60" />
+                                                <span>
+                                                    <span className="block font-medium">{event.venue_name}</span>
+                                                    {event.address && <span className="block opacity-60">{event.address}</span>}
+                                                </span>
+                                            </span>
+                                        )}
+                                        <Badge data-hh-badge variant="secondary" className="shrink-0">
+                                            {event.event_type || 'Event'}
+                                        </Badge>
+                                    </div>
+
+                                    <Extras />
+
+                                    {/* One panel holds the whole body, so the copy reads as a
+                                        single block against the poster rather than as loose
+                                        sections floating on the background. */}
+                                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 sm:p-7 space-y-8">
+                                        <Sections omit={['title']} />
+                                    </div>
+                                </div>
+
+                                {/* Pinned: on this layout the body is long, and the buy
+                                    panel is the one thing that must never scroll away. */}
+                                {showTickets && (
+                                    <div className="lg:sticky lg:top-24">
+                                        <TicketsSection />
+                                    </div>
+                                )}
+                            </div>
+                        </section>
                     </div>
                     <StickyBuyBar />
                 </div>
@@ -1996,7 +2178,7 @@ export default async function PublicEventPage({
                         </div>
 
                         <div className="mt-12">
-                            <Sections />
+                            <Sections omit={['title']} />
                         </div>
                     </main>
                 </div>
@@ -2188,8 +2370,13 @@ export default async function PublicEventPage({
 [data-hh-event]{color:#f1f5f9}
 [data-hh-event] .text-foreground,[data-hh-event] .text-muted-foreground{color:rgba(248,250,252,0.9)}
 [data-hh-event] [class*=prose] p,[data-hh-event] [class*=prose] li{color:rgba(226,232,240,0.9)}
+[data-hh-event] [class*=prose] h1,[data-hh-event] [class*=prose] h2,[data-hh-event] [class*=prose] h3,[data-hh-event] [class*=prose] h4,[data-hh-event] [class*=prose] strong,[data-hh-event] [class*=prose] blockquote{color:#f8fafc}
 [data-hh-event] [data-hh-card] p,[data-hh-event] [data-hh-card] span{color:rgba(248,250,252,0.85)}
 [data-hh-event] [data-hh-card] .text-muted-foreground{color:rgba(203,213,225,0.8)}
+/* …but NOT on anything that paints its own light surface. The outline button
+   is .bg-background with no text colour of its own, so it inherits: without
+   this, the quantity +/- icons turn white on a white circle and vanish. */
+[data-hh-event] .bg-background,[data-hh-event] .bg-card:not([data-hh-card]),[data-hh-event] .bg-popover,[data-hh-event] input,[data-hh-event] textarea,[data-hh-event] select{color:hsl(var(--foreground))}
 ` : ''}${isDarkBg ? `
 [data-hh-event] .border-border\/50{border-color:rgba(255,255,255,0.12)}
 [data-hh-event] .divide-x>*,[data-hh-event] .divide-y>*{border-color:rgba(255,255,255,0.1)}
@@ -2250,59 +2437,154 @@ export default async function PublicEventPage({
             </header>
 
             <main className="relative z-10">
-                {/* Hero: only show the section component when using default bg (no fixed full-page bg) */}
-                {showHero && !isDarkBg && <HeroSection />}
-                {/* When dark bg is active, show a compact title overlay instead of the hero */}
-                {isDarkBg && (
-                    <div className="w-full py-20 px-4 flex flex-col items-center justify-center text-center gap-4" style={{ minHeight: '40vh' }}>
-                        <div className="flex gap-2 justify-center">
-                            <span data-hh-badge className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
-                                {event.event_type || 'Event'}
-                            </span>
-                            {event.is_featured && <span data-hh-badge className="bg-yellow-400/90 text-yellow-900 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">Featured</span>}
-                        </div>
-                        <h1 data-hh-title className="text-4xl md:text-6xl lg:text-7xl font-black text-white drop-shadow-2xl leading-tight tracking-tight max-w-4xl" style={{ fontFamily: 'var(--font-heading)' }}>
-                            {event.title}
-                        </h1>
-                        <div className="flex items-center gap-3 text-white/75 text-sm font-medium flex-wrap justify-center">
-                            <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{whenFull}</span>
-                            {event.venue_name && <><span className="w-1 h-1 rounded-full bg-white/40" /><span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{event.venue_name}</span></>}
-                        </div>
-                        {showCountdown && <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />}
-                        {showSocialProof && recentNames.length > 0 && <SocialProofTicker names={recentNames} />}
-                    </div>
-                )}
+                {/* ── POSTER-FIRST HERO ─────────────────────────────────────────
+                    The poster IS the design. This used to run the cover through
+                    HeroSection: a 65vh full-bleed band with object-cover, or — when
+                    the organizer picked a cover-* background — the poster as
+                    wallpaper with the title written on top of it.
 
-                <div className={cn(
-                    "container mx-auto px-4 relative z-10",
-                    (!isDarkBg && showHero) ? "-mt-8 md:-mt-32" : "mt-4"
-                )}>
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+                    Either way a portrait poster survived only as a horizontal slice
+                    through its middle. On "GB LABRADOR AND THE INGLISHEROS" that cut
+                    the Comedy Manila lockup off the top and "OCT 15 — MONARCH MANILA
+                    · DOORS 7:00 PM" off the bottom: the parts a designer was paid to
+                    put there, which the organizer then had to retype as page fields.
 
-                        {/* LEFT COLUMN: Main Content Stream */}
-                        <div className="lg:col-span-2 space-y-8">
-                            {mainContentOrder.map(sectionId => {
-                                // Specific wrappers for sections could go here if needed
-                                return (
-                                    <div key={sectionId}>
-                                        {renderSection(sectionId)}
-                                    </div>
-                                )
-                            })}
-                        </div>
+                    So the cover is shown WHOLE, at whatever aspect ratio it actually
+                    has, with a blurred copy of itself filling the remainder. Portrait
+                    posters nearly fill the frame; square and landscape covers letterbox
+                    into their own colours instead of being cropped. Nothing is cut. */}
+                <section className="container mx-auto px-4 pt-6 lg:pt-10 pb-12 max-w-7xl">
+                    <div className="grid gap-8 lg:gap-14 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] items-start">
 
-                        {/* RIGHT COLUMN: Sticky Sidebar (Desktop) */}
-                        {showTickets && (
-                            <div className="lg:col-span-1 relative">
-                                <div className="sticky top-24 space-y-6">
-                                    <TicketsSection />
-
-                                    <div className="flex justify-center">
-                                        <ShareButton title={event.title} description={event.description} eventId={event.id} />
-                                    </div>
-                                </div>
+                        {showHero && event.cover_image_url && (
+                            <div className="relative w-full mx-auto max-w-md lg:max-w-none aspect-[3/4] max-h-[78vh] overflow-hidden rounded-2xl shadow-2xl ring-1 ring-black/10 dark:ring-white/10">
+                                {/* Blurred, darkened echo of the poster — only ever
+                                    visible where the poster's own ratio leaves a gap. */}
+                                <Image
+                                    src={event.cover_image_url}
+                                    alt=""
+                                    aria-hidden
+                                    fill
+                                    sizes="(max-width: 1024px) 90vw, 45vw"
+                                    className="object-cover scale-110 blur-2xl brightness-[0.55] saturate-150"
+                                />
+                                <Image
+                                    src={event.cover_image_url}
+                                    alt={event.title}
+                                    fill
+                                    priority
+                                    sizes="(max-width: 1024px) 90vw, 45vw"
+                                    className="object-contain"
+                                />
                             </div>
                         )}
+
+                        <div className="min-w-0 space-y-6">
+                            {event.organizer && (
+                                <a
+                                    href={`https://${event.organizer.slug}.hanghut.com`}
+                                    className="inline-flex items-center gap-3 hover:opacity-80 transition-opacity"
+                                >
+                                    {event.organizer.profile_photo_url ? (
+                                        <div className="relative w-9 h-9 rounded-full overflow-hidden border border-border/60 shrink-0">
+                                            <Image src={event.organizer.profile_photo_url} alt={event.organizer.business_name} fill className="object-cover" />
+                                        </div>
+                                    ) : (
+                                        <div className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0">
+                                            {event.organizer.business_name.charAt(0)}
+                                        </div>
+                                    )}
+                                    <span className="leading-tight">
+                                        <span className="block font-semibold">{event.organizer.business_name}</span>
+                                        <span className="block text-xs text-muted-foreground">presents</span>
+                                    </span>
+                                </a>
+                            )}
+
+                            <div className="flex flex-wrap gap-2">
+                                <span data-hh-badge className="bg-foreground/10 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
+                                    {event.event_type || 'Event'}
+                                </span>
+                                {event.is_featured && (
+                                    <span data-hh-badge className="bg-yellow-400/90 text-yellow-900 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
+                                        Featured
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* Sized against the column, not the viewport: a 12vw title
+                                next to a poster collides with it on wide screens. */}
+                            <h1
+                                data-hh-title
+                                className="font-black leading-[0.95] tracking-tight text-4xl sm:text-5xl lg:text-6xl break-words"
+                                style={{ fontFamily: 'var(--font-heading)' }}
+                            >
+                                {event.title}
+                            </h1>
+
+                            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-x-8 gap-y-3 text-sm">
+                                <span className="inline-flex items-start gap-2.5">
+                                    <Calendar className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                                    <span className="font-medium">{whenFull}</span>
+                                </span>
+                                {event.venue_name && (
+                                    <span className="inline-flex items-start gap-2.5">
+                                        <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                                        <span>
+                                            <span className="block font-medium">{event.venue_name}</span>
+                                            {event.address && <span className="block text-muted-foreground">{event.address}</span>}
+                                        </span>
+                                    </span>
+                                )}
+                            </div>
+
+                            {showCountdown && (
+                                <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />
+                            )}
+                            {showSocialProof && recentNames.length > 0 && (
+                                <SocialProofTicker names={recentNames} />
+                            )}
+
+                            {/* Tickets sit WITH the poster rather than in a sidebar
+                                beside the body copy: deciding to buy happens here. */}
+                            {showTickets && <TicketsSection />}
+
+                            <div className="pt-1">
+                                <ShareButton title={event.title} description={event.description} eventId={event.id} dark={isDarkBg} />
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Long copy drops onto its own panel so it stays readable over a
+                    cover background, the way the marquee layout already does. */}
+                <div className="relative z-20 bg-background text-foreground rounded-t-3xl shadow-2xl">
+                    <div className="container mx-auto px-4 py-12 lg:py-16 max-w-5xl space-y-10">
+                        {/* About and Details read as one band: copy on the left, the
+                            when/where card on the right. Paired only when BOTH are
+                            visible, and emitted at whichever comes first in the
+                            organizer's own section order, so a custom order is still
+                            honoured rather than silently rewritten. */}
+                        {(() => {
+                            const pair = mainContentOrder.includes('about') && mainContentOrder.includes('details')
+                            const anchor = pair
+                                ? (mainContentOrder.indexOf('about') < mainContentOrder.indexOf('details') ? 'about' : 'details')
+                                : null
+                            return mainContentOrder.map(sectionId => {
+                                if (pair && (sectionId === 'about' || sectionId === 'details') && sectionId !== anchor) {
+                                    return null
+                                }
+                                if (pair && sectionId === anchor) {
+                                    return (
+                                        <div key="about-details" className="grid gap-8 lg:grid-cols-[1.15fr_1fr] items-start">
+                                            <div>{renderSection('about')}</div>
+                                            <div>{renderSection('details')}</div>
+                                        </div>
+                                    )
+                                }
+                                return <div key={sectionId}>{renderSection(sectionId)}</div>
+                            })
+                        })()}
                     </div>
                 </div>
             </main>

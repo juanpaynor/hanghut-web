@@ -195,6 +195,29 @@ export function LayoutPreview({ value, accent, cover }: { value: string; accent:
                     </div>
                 </Frame>
             )
+        case 'billboard':
+            return (
+                <Frame style={{ background: '#0B0A0F' }}>
+                    <div className="absolute inset-0 flex flex-col" style={{ padding: '5px' }}>
+                        <Art accent={accent} cover={cover} style={{ height: '46%', borderRadius: 3 }} />
+                        <div className="flex gap-[5px]" style={{ paddingTop: 5, flex: 1 }}>
+                            <div className="flex flex-col gap-[3px]" style={{ flex: 1.5 }}>
+                                <Bar w="80%" c="#F1F0F6" o={0.92} h={3} />
+                                <Bar w="55%" c="#F1F0F6" o={0.4} h={1.5} />
+                                <div style={{ flex: 1, background: 'rgba(241,240,246,0.07)', borderRadius: 2, marginTop: 2 }} />
+                            </div>
+                            <div
+                                className="flex flex-col gap-[3px]"
+                                style={{ flex: 1, background: '#fff', borderRadius: 3, padding: '4px' }}
+                            >
+                                <Bar w="60%" c="#15141C" o={0.8} h={2} />
+                                <Bar w="40%" c="#6A6780" o={0.5} h={1.5} />
+                                {btn({ width: '100%', marginTop: 'auto' })}
+                            </div>
+                        </div>
+                    </div>
+                </Frame>
+            )
         case 'marquee':
             return (
                 <Frame style={{ background: '#0B0A0F' }}>

@@ -36,6 +36,7 @@ export type EventLayoutId =
     | 'split'
     | 'marquee'
     | 'stub'
+    | 'billboard'
 
 /** The four skeletons that ship their own bespoke hero branch. */
 export const NEW_LAYOUTS: EventLayoutId[] = ['broadside', 'editorial', 'cinematic', 'boutique']

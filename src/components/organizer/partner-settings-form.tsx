@@ -27,7 +27,7 @@ import { SectionTemplates } from './section-editor/section-templates'
 import { StorefrontSection, TemplateName } from '@/lib/storefront/section-types'
 import { CustomDomainManager } from './custom-domain-manager'
 import { MembershipTabToggle } from './membership-tab-toggle'
-import { MAXIMALIST_PRESET_CSS } from '@/lib/storefront-custom-css'
+import { MAXIMALIST_PRESET_CSS } from '@/lib/design-code-library'
 
 interface PartnerSettingsFormProps {
     initialData: {
