@@ -252,6 +252,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
     }
     const [bgStyle, setBgStyle] = useState<string>(initialData.layout_config?.bg_style || 'default')
     const [pageLayout, setPageLayout] = useState<string>(initialData.layout_config?.page_layout || 'default')
+    const [contentPanel, setContentPanel] = useState<'auto' | 'light' | 'dark'>(initialData.layout_config?.content_panel || 'auto')
     // Superseded background styles / layouts are hidden until asked for, so the
     // picker shows the recommended set without stranding events already on them.
     const [showCountdown, setShowCountdown] = useState<boolean>(initialData.layout_config?.show_countdown ?? false)
@@ -345,8 +346,9 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
         p.set('hh_cd', showCountdown ? '1' : '0')
         p.set('hh_sp', showSocialProof ? '1' : '0')
         p.set('hh_bgimg', bgImageUrl || '')
+        p.set('hh_panel', contentPanel)
         return p.toString()
-    }, [pageLayout, bgStyle, fontHeading, fontBody, showCountdown, showSocialProof, bgImageUrl])
+    }, [pageLayout, bgStyle, fontHeading, fontBody, showCountdown, showSocialProof, bgImageUrl, contentPanel])
     // Reload the frame when a structural pick changes (debounced; skip first run
     // so we don't double-load on mount).
     const structuralFirstRun = useRef(true)
@@ -411,6 +413,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
         theme_color: form.getValues('theme_color') || null,
         bg_style: bgStyle,
         page_layout: pageLayout,
+        content_panel: contentPanel,
         font_heading: fontHeading,
         font_body: fontBody,
         heading_color: headingColor || null,
@@ -432,6 +435,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
         if (str(d.theme_color)) form.setValue('theme_color', str(d.theme_color)!, { shouldDirty: true })
         if (str(d.bg_style)) setBgStyle(str(d.bg_style)!)
         if (str(d.page_layout)) setPageLayout(str(d.page_layout)!)
+        if (str(d.content_panel)) setContentPanel(str(d.content_panel) as 'auto' | 'light' | 'dark')
         if (str(d.font_heading)) setFontHeading(str(d.font_heading)!)
         if (str(d.font_body)) setFontBody(str(d.font_body)!)
         // Colour overrides are meaningfully "unset", so an explicit null clears.
@@ -477,6 +481,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                     video_position: videoPosition,
                     bg_style: bgStyle,
                     page_layout: pageLayout,
+                    content_panel: contentPanel,
                     show_countdown: showCountdown,
                     countdown_label: countdownLabel,
                     show_social_proof: showSocialProof,
@@ -1019,6 +1024,37 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                         />
                                     )}
                                 />
+                            </div>
+
+                            {/* Content panel ground */}
+                            <div className="space-y-3">
+                                <Label className="text-sm font-semibold">Content panel</Label>
+                                <p className="text-xs text-muted-foreground -mt-1">
+                                    The band your description, gallery and organizer card sit on, below the poster.
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                    {([
+                                        { v: 'auto' as const, label: 'Match the page', hint: 'Dark on a dark background, light otherwise' },
+                                        { v: 'light' as const, label: 'Always light', hint: 'A white band, whatever the background' },
+                                        { v: 'dark' as const, label: 'Always dark', hint: 'A smoked-glass band, whatever the background' },
+                                    ]).map(opt => (
+                                        <button
+                                            key={opt.v}
+                                            type="button"
+                                            title={opt.hint}
+                                            onClick={() => setContentPanel(opt.v)}
+                                            className={cn(
+                                                'rounded-lg border-2 px-3 py-2 text-left transition-all',
+                                                contentPanel === opt.v
+                                                    ? 'border-primary bg-primary/5'
+                                                    : 'border-border hover:border-primary/50 hover:bg-muted/50',
+                                            )}
+                                        >
+                                            <span className="block text-sm font-medium">{opt.label}</span>
+                                            <span className="block text-xs text-muted-foreground">{opt.hint}</span>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
 
                             {/* Fonts */}

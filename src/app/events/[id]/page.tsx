@@ -196,6 +196,7 @@ export default async function PublicEventPage({
         // need no auth gate; the draft-status relaxation below stays owner-gated.
         hh_layout?: string; hh_bg?: string; hh_theme?: string
         hh_fh?: string; hh_fb?: string; hh_cd?: string; hh_sp?: string; hh_bgimg?: string
+        hh_panel?: string
         /** Why checkout sent them back: 'locked' | 'scheduled' | 'closed'. */
         tier?: string
     }>
@@ -495,6 +496,18 @@ export default async function PublicEventPage({
     // Partner/admin custom CSS skin (HelixPay-style). Scoped-by-convention under
     // [data-hh-theme]; sanitized so it can't break out of the <style> tag.
     const customCss = sanitizeCustomCss(event.layout_config?.custom_css)
+    /**
+     * The long-copy panel's own ground.
+     *
+     * It was hardcoded `bg-background` — a white slab dropped between a dark
+     * hero and a dark footer on every dark page, which is not a design choice
+     * anybody made. 'auto' keeps the panel in step with the page: dark when the
+     * page has a dark ground, light otherwise. 'light' preserves the old look
+     * for anyone who wants it, 'dark' forces it the other way.
+     */
+    const contentPanel: 'auto' | 'light' | 'dark' =
+        ov(sp.hh_panel as 'auto' | 'light' | 'dark' | undefined, event.layout_config?.content_panel || 'auto')
+
     const showCountdown = ov(sp.hh_cd !== undefined ? sp.hh_cd === '1' : undefined, event.layout_config?.show_countdown ?? false)
     const countdownLabel = event.layout_config?.countdown_label || 'Event starts in'
     const showSocialProof = ov(sp.hh_sp !== undefined ? sp.hh_sp === '1' : undefined, event.layout_config?.show_social_proof ?? false)
@@ -558,6 +571,31 @@ export default async function PublicEventPage({
     const onDarkBody =
         (isDarkBg || FORCE_DARK_LAYOUTS.has(pageLayout)) && DARK_BODY_LAYOUTS.has(pageLayout)
 
+    /** Does the page have a dark ground anywhere? Separate from onDarkBody,
+     *  which asks the narrower question of whether the BODY sits on it. */
+    const pageHasDarkGround = isDarkBg || FORCE_DARK_LAYOUTS.has(pageLayout)
+
+    /**
+     * Perceived lightness of a hex colour, 0–1.
+     *
+     * Needed because several layouts deliberately have TWO grounds — a dark
+     * poster hero and a light panel for long copy ([data-hh-surface="light"]) —
+     * while the organizer gets ONE text colour. Black made the hero title
+     * disappear; white made the description disappear. No single value can
+     * satisfy both, so the pick is applied to the surface it actually suits and
+     * the opposite surface falls back to a readable default.
+     */
+    const luminance = (hex: string): number => {
+        const h = hex.replace('#', '')
+        const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h
+        if (full.length !== 6) return 0.5
+        const [r, g, b] = [0, 2, 4].map(i => parseInt(full.slice(i, i + 2), 16) / 255)
+        const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+    const textIsLight = textColor ? luminance(textColor) > 0.4 : null
+    const headingIsLight = headingColor ? luminance(headingColor) > 0.4 : null
+
     // A text colour set only as `color` on the root reaches nothing: every element
     // carrying a Tailwind colour class (text-foreground, text-muted-foreground, …)
     // beats an INHERITED value no matter the specificity. So map the pick onto the
@@ -571,6 +609,83 @@ export default async function PublicEventPage({
         const l = parseFloat(m[3])
         return `${m[1]} ${m[2]}% ${(l > 50 ? Math.max(0, l - 24) : Math.min(100, l + 24)).toFixed(1)}%`
     }
+
+    /**
+     * The organizer's colour picks, routed per surface.
+     *
+     * One picker, two grounds: a pick that reads on the dark hero is invisible
+     * on the light copy panel and vice versa — which is exactly what an
+     * organizer hits when black kills the title and white kills the
+     * description. So the pick lands on the ground whose lightness it suits,
+     * and the other ground keeps a readable default. A page with no dark ground
+     * has only one surface, so the pick simply applies everywhere.
+     */
+    const organizerColorCss = (() => {
+        const SAFE_ON_DARK = '#f1f5f9'
+        const SAFE_ON_LIGHT = 'hsl(var(--foreground))'
+        const parts: string[] = []
+
+        if (textColor) {
+            const base = (!pageHasDarkGround || textIsLight) ? 'var(--hh-text)' : SAFE_ON_DARK
+            const onLight = textIsLight ? SAFE_ON_LIGHT : 'var(--hh-text)'
+            const soft = (c: string) =>
+                c.startsWith('hsl(') ? 'hsl(var(--muted-foreground))' : `color-mix(in srgb,${c} 70%,transparent)`
+            parts.push(
+                `[data-hh-event]{color:${base}}`,
+                `[data-hh-event] .text-foreground{color:${base}}`,
+                `[data-hh-event] .text-muted-foreground{color:${soft(base)}}`,
+                // The light copy panel is its own surface and wins on specificity.
+                `[data-hh-event] [data-hh-surface="light"],[data-hh-event] [data-hh-surface="light"] .text-foreground{color:${onLight}}`,
+                `[data-hh-event] [data-hh-surface="light"] .text-muted-foreground{color:${soft(onLight)}}`,
+            )
+        }
+
+        if (headingColor) {
+            const base = (!pageHasDarkGround || headingIsLight) ? 'var(--hh-heading)' : '#ffffff'
+            const onLight = headingIsLight ? SAFE_ON_LIGHT : 'var(--hh-heading)'
+            const h = (scope: string) =>
+                ['h1', 'h2', 'h3', 'h4'].map(t => `${scope} ${t}`).join(',')
+            parts.push(
+                `${h('[data-hh-event]')}{color:${base}!important}`,
+                `${h('[data-hh-event] [data-hh-surface="light"]')}{color:${onLight}!important}`,
+            )
+        }
+
+        return parts.join('')
+    })()
+
+    const panelIsLight = contentPanel === 'light' || (contentPanel === 'auto' && !pageHasDarkGround)
+
+    /** Markup for whichever panel we landed on. `data-hh-surface` is what the
+     *  colour rules key off, so the attribute and the paint must always agree. */
+    const panelProps = panelIsLight
+        ? {
+            'data-hh-surface': 'light' as const,
+            className: 'relative z-20 bg-background text-foreground rounded-t-3xl shadow-2xl',
+        }
+        : {
+            'data-hh-surface': 'dark' as const,
+            className: 'relative z-20 rounded-t-3xl shadow-2xl bg-black/45 supports-[backdrop-filter]:bg-black/30 backdrop-blur-2xl border-t border-white/10',
+        }
+
+    /**
+     * A dark panel cannot rely on the page-level dark rules: those are emitted
+     * only for layouts whose whole body sits on the ground (onDarkBody), and
+     * the layouts that HAVE this panel are precisely the ones excluded from
+     * that. So the dark panel carries its own legibility rules.
+     */
+    const panelCss = panelIsLight ? '' : `
+[data-hh-event] [data-hh-surface="dark"]{color:#f1f5f9}
+[data-hh-event] [data-hh-surface="dark"] .text-foreground{color:rgba(248,250,252,0.92)}
+[data-hh-event] [data-hh-surface="dark"] .text-muted-foreground{color:rgba(203,213,225,0.78)}
+[data-hh-event] [data-hh-surface="dark"] [class*=prose] p,[data-hh-event] [data-hh-surface="dark"] [class*=prose] li{color:rgba(226,232,240,0.9)}
+[data-hh-event] [data-hh-surface="dark"] [class*=prose] h1,[data-hh-event] [data-hh-surface="dark"] [class*=prose] h2,[data-hh-event] [data-hh-surface="dark"] [class*=prose] h3,[data-hh-event] [data-hh-surface="dark"] [class*=prose] h4,[data-hh-event] [data-hh-surface="dark"] [class*=prose] strong{color:#f8fafc}
+[data-hh-event] [data-hh-surface="dark"] [data-hh-card]{background:rgba(255,255,255,0.07);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,0.14);color:#f1f5f9}
+[data-hh-event] [data-hh-surface="dark"] .divide-y>*,[data-hh-event] [data-hh-surface="dark"] .border-b,[data-hh-event] [data-hh-surface="dark"] .border-t{border-color:rgba(255,255,255,0.12)}
+/* Buttons and inputs paint their own light surface, so they keep real
+   foreground ink — the invisible +/- icons all over again otherwise. */
+[data-hh-event] [data-hh-surface="dark"] .bg-background,[data-hh-event] [data-hh-surface="dark"] input,[data-hh-event] [data-hh-surface="dark"] textarea,[data-hh-event] [data-hh-surface="dark"] select{color:hsl(var(--foreground))}
+`
 
     const fontStyle = {
         ...themeStyle,
@@ -1340,6 +1455,15 @@ export default async function PublicEventPage({
         ...layoutOrder.filter((id: string) => id !== 'hero' && id !== 'tickets'),
         ...(eventMerch.length > 0 && !layoutOrder.includes('merch') ? ['merch'] : []),
     ]
+    /**
+     * The body sections, minus the headline every layout below already draws
+     * itself. mainContentOrder still contains 'title', so a layout that renders
+     * its own <h1> and then maps this list printed the event name twice — the
+     * second copy landing at the top of the copy panel, under the first.
+     * `minimal` is the one layout that draws no headline of its own, so it maps
+     * mainContentOrder directly and keeps the title section.
+     */
+    const bodyOrder = mainContentOrder.filter(id => id !== 'title')
     const showHero = !hiddenSections.has('hero')
     const showTickets = !hiddenSections.has('tickets')
 
@@ -1385,17 +1509,25 @@ export default async function PublicEventPage({
 [data-hh-event] .border-border\/50{border-color:rgba(255,255,255,0.12)}
 [data-hh-event] .divide-x>*,[data-hh-event] .divide-y>*{border-color:rgba(255,255,255,0.1)}
 [data-hh-event] [data-hh-card]{background:rgba(255,255,255,0.08);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.15)${textColor ? '' : ';color:#f1f5f9'}}
+/* The long-copy panel is a LIGHT surface sitting on a dark page. Every
+   rule above would repaint its text for the dark ground, i.e. white on
+   white, so it opts out as a block — including the glass treatment,
+   which is meaningless over an opaque light panel. */
+[data-hh-event] [data-hh-surface="light"],[data-hh-event] [data-hh-surface="light"] .text-foreground{color:hsl(var(--foreground))}
+[data-hh-event] [data-hh-surface="light"] .text-muted-foreground{color:hsl(var(--muted-foreground))}
+[data-hh-event] [data-hh-surface="light"] [class*=prose] p,[data-hh-event] [data-hh-surface="light"] [class*=prose] li,[data-hh-event] [data-hh-surface="light"] [class*=prose] h1,[data-hh-event] [data-hh-surface="light"] [class*=prose] h2,[data-hh-event] [data-hh-surface="light"] [class*=prose] h3,[data-hh-event] [data-hh-surface="light"] [class*=prose] h4,[data-hh-event] [data-hh-surface="light"] [class*=prose] strong{color:hsl(var(--foreground))}
+[data-hh-event] [data-hh-surface="light"] [data-hh-card]{background:hsl(var(--muted)/0.4);backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid hsl(var(--border));color:hsl(var(--foreground))}
+[data-hh-event] [data-hh-surface="light"] [data-hh-card] p,[data-hh-event] [data-hh-surface="light"] [data-hh-card] span{color:inherit}
 `}</style>
             )}
+            {panelCss && <style>{panelCss}</style>}
             {themeCss && <style>{themeCss}</style>}
             {layoutCss && <style>{layoutCss}</style>}
             {/* Organizer colour picks land AFTER the layout bones: cinematic (and the
                 dark-bg block) pin .text-foreground/.text-muted-foreground to fixed
                 slate values, which would otherwise outrank an explicit pick. Custom
                 CSS still ships last so it remains the final escape hatch. */}
-            {(textColor || headingColor) && (
-                <style>{`${textColor ? `[data-hh-event]{color:var(--hh-text)}[data-hh-event] .text-foreground{color:var(--hh-text)}[data-hh-event] .text-muted-foreground{color:color-mix(in srgb,var(--hh-text) 70%,transparent)}` : ''}${headingColor ? `[data-hh-event] h1,[data-hh-event] h2,[data-hh-event] h3,[data-hh-event] h4{color:var(--hh-heading)!important}` : ''}`}</style>
-            )}
+            {(textColor || headingColor) && <style>{organizerColorCss}</style>}
             {customCss && <style dangerouslySetInnerHTML={{ __html: customCss }} />}
             {isPreview && <StorefrontPreviewBridge />}
         </>
@@ -1487,7 +1619,7 @@ export default async function PublicEventPage({
                 </section>
 
                 <main className="container mx-auto px-4 max-w-3xl">
-                    {mainContentOrder.map(sectionId => (
+                    {bodyOrder.map(sectionId => (
                         <div key={sectionId}>{renderSection(sectionId)}</div>
                     ))}
                     {showTickets && <TicketsSection />}
@@ -1547,7 +1679,7 @@ export default async function PublicEventPage({
                 </section>
 
                 <main className="container mx-auto px-4 max-w-3xl mt-4">
-                    {mainContentOrder.map(sectionId => (
+                    {bodyOrder.map(sectionId => (
                         <div key={sectionId}>{renderSection(sectionId)}</div>
                     ))}
                     {showTickets && <TicketsSection />}
@@ -1602,7 +1734,7 @@ export default async function PublicEventPage({
 
                 {/* Content floats over the still-fixed poster */}
                 <div className="relative z-20 px-4 md:px-6 pb-24 max-w-3xl mx-auto">
-                    {mainContentOrder.map(sectionId => (
+                    {bodyOrder.map(sectionId => (
                         <div key={sectionId}>{renderSection(sectionId)}</div>
                     ))}
                     {showTickets && <TicketsSection />}
@@ -1650,7 +1782,7 @@ export default async function PublicEventPage({
                         </div>
                     )}
 
-                    {mainContentOrder.map(sectionId => (
+                    {bodyOrder.map(sectionId => (
                         <div key={sectionId}>{renderSection(sectionId)}</div>
                     ))}
                     {showTickets && <TicketsSection />}
@@ -1777,9 +1909,9 @@ export default async function PublicEventPage({
                     the organizer name, section headings — rendered white on white.
                     <Card> was immune (it carries text-card-foreground), which is why
                     the tickets box looked fine while the organizer block vanished. */}
-                <div className="relative z-20 bg-background text-foreground rounded-t-3xl shadow-2xl">
+                <div {...panelProps}>
                     <div className="container mx-auto px-4 py-16 max-w-3xl">
-                        {mainContentOrder.map(sectionId => (
+                        {bodyOrder.map(sectionId => (
                             <div key={sectionId}>{renderSection(sectionId)}</div>
                         ))}
                     </div>
@@ -2025,7 +2157,7 @@ export default async function PublicEventPage({
                             </div>
                         </section>
                         {/* Content drops onto a light panel so long copy stays readable */}
-                        <div className="relative z-20 bg-background text-foreground rounded-t-3xl shadow-2xl">
+                        <div {...panelProps}>
                             <div className="container mx-auto px-4 py-16 max-w-3xl">
                                 <Sections omit={['title']} />
                             </div>
@@ -2381,16 +2513,24 @@ export default async function PublicEventPage({
 [data-hh-event] .border-border\/50{border-color:rgba(255,255,255,0.12)}
 [data-hh-event] .divide-x>*,[data-hh-event] .divide-y>*{border-color:rgba(255,255,255,0.1)}
 [data-hh-event] [data-hh-card]{background:rgba(255,255,255,0.08);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.15)${textColor ? '' : ';color:#f1f5f9'}}
+/* The long-copy panel is a LIGHT surface sitting on a dark page. Every
+   rule above would repaint its text for the dark ground, i.e. white on
+   white, so it opts out as a block — including the glass treatment,
+   which is meaningless over an opaque light panel. */
+[data-hh-event] [data-hh-surface="light"],[data-hh-event] [data-hh-surface="light"] .text-foreground{color:hsl(var(--foreground))}
+[data-hh-event] [data-hh-surface="light"] .text-muted-foreground{color:hsl(var(--muted-foreground))}
+[data-hh-event] [data-hh-surface="light"] [class*=prose] p,[data-hh-event] [data-hh-surface="light"] [class*=prose] li,[data-hh-event] [data-hh-surface="light"] [class*=prose] h1,[data-hh-event] [data-hh-surface="light"] [class*=prose] h2,[data-hh-event] [data-hh-surface="light"] [class*=prose] h3,[data-hh-event] [data-hh-surface="light"] [class*=prose] h4,[data-hh-event] [data-hh-surface="light"] [class*=prose] strong{color:hsl(var(--foreground))}
+[data-hh-event] [data-hh-surface="light"] [data-hh-card]{background:hsl(var(--muted)/0.4);backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid hsl(var(--border));color:hsl(var(--foreground))}
+[data-hh-event] [data-hh-surface="light"] [data-hh-card] p,[data-hh-event] [data-hh-surface="light"] [data-hh-card] span{color:inherit}
 [data-hh-event] header{background:rgba(0,0,0,0.45)!important;border-color:rgba(255,255,255,0.1)!important;backdrop-filter:blur(20px)!important;color:#fff}
 [data-hh-event] header a,[data-hh-event] header span{color:#fff!important}
 ` : ''}`}</style>
+            {panelCss && <style>{panelCss}</style>}
             {/* Art-directed theme CSS — after the base styles so theme rules win ties */}
             {themeCss && <style>{themeCss}</style>}
             {/* Organizer colour picks last (before custom CSS) so they outrank the
                 theme + dark-bg rules that pin .text-foreground/.text-muted-foreground. */}
-            {(textColor || headingColor) && (
-                <style>{`${textColor ? `[data-hh-event]{color:var(--hh-text)}[data-hh-event] .text-foreground{color:var(--hh-text)}[data-hh-event] .text-muted-foreground{color:color-mix(in srgb,var(--hh-text) 70%,transparent)}` : ''}${headingColor ? `[data-hh-event] h1,[data-hh-event] h2,[data-hh-event] h3,[data-hh-event] h4{color:var(--hh-heading)!important}` : ''}`}</style>
-            )}
+            {(textColor || headingColor) && <style>{organizerColorCss}</style>}
             {customCss && <style dangerouslySetInnerHTML={{ __html: customCss }} />}
             {isPreview && <StorefrontPreviewBridge />}
 
@@ -2558,7 +2698,7 @@ export default async function PublicEventPage({
 
                 {/* Long copy drops onto its own panel so it stays readable over a
                     cover background, the way the marquee layout already does. */}
-                <div className="relative z-20 bg-background text-foreground rounded-t-3xl shadow-2xl">
+                <div {...panelProps}>
                     <div className="container mx-auto px-4 py-12 lg:py-16 max-w-5xl space-y-10">
                         {/* About and Details read as one band: copy on the left, the
                             when/where card on the right. Paired only when BOTH are
@@ -2570,7 +2710,7 @@ export default async function PublicEventPage({
                             const anchor = pair
                                 ? (mainContentOrder.indexOf('about') < mainContentOrder.indexOf('details') ? 'about' : 'details')
                                 : null
-                            return mainContentOrder.map(sectionId => {
+                            return bodyOrder.map(sectionId => {
                                 if (pair && (sectionId === 'about' || sectionId === 'details') && sectionId !== anchor) {
                                     return null
                                 }

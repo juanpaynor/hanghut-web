@@ -33,7 +33,7 @@ import { getAuthUser, getActingPartnerId } from '@/lib/auth/cached'
  *  const array here is a value, not a type. Anything outside this file needs
  *  the EventDesign type, which erases at compile time and so is fine. */
 const DESIGN_KEYS = [
-    'theme', 'bg_style', 'page_layout',
+    'theme', 'bg_style', 'page_layout', 'content_panel',
     'font_heading', 'font_body',
     'heading_color', 'text_color',
     'show_countdown', 'countdown_label', 'show_social_proof',
@@ -64,7 +64,7 @@ function pickDesign(layoutConfig: Record<string, unknown> | null, themeColor?: s
 function hasRealDesign(lc: Record<string, unknown> | null): boolean {
     if (!lc) return false
     return Boolean(
-        lc.page_layout || lc.bg_style || lc.theme ||
+        lc.page_layout || lc.bg_style || lc.theme || lc.content_panel ||
         lc.font_heading || lc.custom_css ||
         lc.show_countdown || lc.heading_color || lc.text_color,
     )
