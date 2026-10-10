@@ -1034,7 +1034,15 @@ serve(async (req) => {
                 },
             },
             description: `${quantity}x ${tierName} for ${intent.event.title}`,
-            success_return_url: success_url || undefined,
+            // Carry the intent id back. The checkout page cannot append it — the
+            // intent does not exist until this function creates it — so passing
+            // success_url through verbatim meant every PAID buyer returned to a
+            // bare "Payment Successful" with no event, no seats and, worst, no
+            // link to their ticket. Free orders already redirect with this param
+            // client-side, which is why only they showed the full page.
+            success_return_url: success_url
+                ? `${success_url}${success_url.includes('?') ? '&' : '?'}intent_id=${intentId}`
+                : undefined,
             cancel_return_url: failure_url || undefined,
             metadata: {
                 event_id: event_id,

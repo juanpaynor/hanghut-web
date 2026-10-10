@@ -94,6 +94,13 @@ interface EventFormProps {
     subscriptionsEnabled?: boolean
 }
 
+/** Poster upload ceiling. Mirrors the event-covers storage bucket, which is the
+ *  real gate — a bigger client cap just moves the failure to after the upload.
+ *  Headroom above this is the Next server-action body limit in next.config.ts
+ *  (12mb), and the cover rides that same request as the extra images. */
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+const MAX_IMAGE_LABEL = '10MB'
+
 export function EventForm({
     partnerId,
     commissionRate,
@@ -352,8 +359,11 @@ export function EventForm({
             setErrors(prev => ({ ...prev, cover_image: 'Please choose an image file (PNG, JPG or WebP)' }))
             return
         }
-        if (file.size > 5 * 1024 * 1024) {
-            setErrors(prev => ({ ...prev, cover_image: 'Image must be less than 5MB' }))
+        // Matches the event-covers bucket's own limit. Keep the two in step: a
+        // client cap below the bucket's is a needless rejection, above it is an
+        // upload that fails after the organizer has already waited for it.
+        if (file.size > MAX_IMAGE_BYTES) {
+            setErrors(prev => ({ ...prev, cover_image: `Image must be less than ${MAX_IMAGE_LABEL}` }))
             return
         }
         setErrors(prev => { const n = { ...prev }; delete n.cover_image; return n })
@@ -381,8 +391,8 @@ export function EventForm({
         }
 
         const validFiles = files.filter(file => {
-            if (file.size > 5 * 1024 * 1024) {
-                setErrors(prev => ({ ...prev, additional_images: 'Each image must be less than 5MB' }))
+            if (file.size > MAX_IMAGE_BYTES) {
+                setErrors(prev => ({ ...prev, additional_images: `Each image must be less than ${MAX_IMAGE_LABEL}` }))
                 return false
             }
             return true
@@ -1877,7 +1887,7 @@ export function EventForm({
                     <div className="space-y-6">
                         {/* Cover Image */}
                         <div>
-                            <Label>Cover Image * (Max 5MB)</Label>
+                            <Label>Cover Image * (Max {MAX_IMAGE_LABEL})</Label>
                             <div className="mt-2">
                                 {coverPreview ? (
                                     <div className="relative">

@@ -199,7 +199,15 @@ serve(async (req) => {
                 }
             },
             description: `${quantity}x ${intent.table.title}`,
-            success_return_url: success_url || 'https://hanghut.com/experiences/success',
+            // Carry the intent id back, exactly as create-purchase-intent does.
+            // The booking page cannot append it — the intent does not exist until
+            // reserve_experience runs here — so a verbatim success_url returned
+            // every paid guest to a success page whose whole body is wrapped in
+            // `if (intent_id)`: no experience name, no schedule, no total.
+            success_return_url: (() => {
+                const base = success_url || 'https://hanghut.com/experiences/success'
+                return `${base}${base.includes('?') ? '&' : '?'}intent_id=${intentId}`
+            })(),
             cancel_return_url: failure_url || 'https://hanghut.com/experiences',
             metadata: {
                 table_id,

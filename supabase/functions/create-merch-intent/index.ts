@@ -119,7 +119,14 @@ serve(async (req) => {
                 individual_detail: { given_names: givenNames, surname },
             },
             description: `Merch order (${order.quantity} item${order.quantity === 1 ? '' : 's'})`,
-            success_return_url: success_url || 'https://hanghut.com/merch/success',
+            // Same fix as tickets and experiences. Merch is the worst of the
+            // three: its success page took no params at all and its only button
+            // went to /account, which guests cannot open — so a guest who bought
+            // merch was told "keep the link we emailed you" and given no link.
+            success_return_url: (() => {
+                const base = success_url || 'https://hanghut.com/merch/success'
+                return `${base}${base.includes('?') ? '&' : '?'}order_id=${orderId}`
+            })(),
             cancel_return_url: failure_url || 'https://hanghut.com',
             metadata: { merch_order_id: orderId, user_id: user?.id ?? null },
         }

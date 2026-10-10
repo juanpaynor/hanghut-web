@@ -14,7 +14,8 @@ export async function getDashboardStats(partnerId: string) {
         { data: transactions },
         { data: rawEvents },
         { data: pastEvents },
-        { data: recentActivity }
+        { data: recentActivity },
+        { data: allEventDates }
     ] = await Promise.all([
         // 1. All completed transactions
         supabase
@@ -31,7 +32,7 @@ export async function getDashboardStats(partnerId: string) {
         //    each other. Draft never sold; cancelled was voided.
         supabase
             .from('events')
-            .select('id, title, capacity, tickets_sold, start_datetime, ticket_tiers(name, quantity_sold, quantity_total)')
+            .select('id, title, capacity, tickets_sold, start_datetime, is_external, ticket_tiers(id, name, quantity_sold, quantity_total)')
             .eq('organizer_id', partnerId)
             .in('status', ['active', 'hidden', 'paused'])
             .order('start_datetime', { ascending: true }),
@@ -64,7 +65,15 @@ export async function getDashboardStats(partnerId: string) {
             .eq('partner_id', partnerId)
             .eq('status', 'completed')
             .order('created_at', { ascending: false })
-            .limit(10)
+            .limit(10),
+
+        // 5. Every event's date — lead time measures a sale against the date of
+        //    the event it was for, and most sales belong to events that have
+        //    already happened, so the upcoming-only list above cannot answer it.
+        supabase
+            .from('events')
+            .select('id, start_datetime')
+            .eq('organizer_id', partnerId)
     ])
 
     // ─── BATCH TICKET COUNTS (single RPC instead of N+1) ─────────────
@@ -205,6 +214,99 @@ export async function getDashboardStats(partnerId: string) {
         })
     }
 
+    // ─── TREND (180 days, so the client can slice 7/30/90 AND the matching
+    //     previous window for a like-for-like comparison) ──────────────────
+
+    const dayKey = (d: Date | string) => format(new Date(d), 'yyyy-MM-dd')
+    const byDay = new Map<string, { revenue: number; tickets: number }>()
+    for (const t of transactions || []) {
+        const k = dayKey(t.created_at)
+        const cur = byDay.get(k) || { revenue: 0, tickets: 0 }
+        cur.revenue += t.gross_amount || 0
+        cur.tickets += 1
+        byDay.set(k, cur)
+    }
+    const trend = Array.from({ length: 180 }).map((_, i) => {
+        const date = subDays(new Date(), 179 - i)
+        const k = dayKey(date)
+        const hit = byDay.get(k)
+        return {
+            date: k,
+            label: format(date, 'MMM d'),
+            revenue: hit?.revenue || 0,
+            tickets: hit?.tickets || 0,
+        }
+    })
+
+    // ─── LEAD TIME ───────────────────────────────────────────────────────
+    //
+    // "How long before the show do people actually buy?" is the one chart here
+    // an organizer can act on: it says when to spend on promotion, and whether
+    // a quiet month out is normal or a problem. Buckets, not a curve — nobody
+    // needs day-level precision to decide when to post.
+
+    const eventDateMap = new Map<string, string>()
+    for (const e of allEventDates || []) eventDateMap.set(e.id, e.start_datetime)
+
+    const LEAD_BUCKETS = [
+        { key: '30+', label: '30+ days', min: 30, max: Infinity },
+        { key: '15-30', label: '15–30 days', min: 15, max: 30 },
+        { key: '8-14', label: '8–14 days', min: 8, max: 15 },
+        { key: '3-7', label: '3–7 days', min: 3, max: 8 },
+        { key: '1-2', label: '1–2 days', min: 1, max: 3 },
+        { key: 'same', label: 'Same day', min: -Infinity, max: 1 },
+    ]
+    const leadCounts = new Map<string, { tickets: number; revenue: number }>()
+    let leadTotal = 0
+    for (const t of transactions || []) {
+        const evDate = t.event_id ? eventDateMap.get(t.event_id) : undefined
+        if (!evDate) continue
+        const days = (new Date(evDate).getTime() - new Date(t.created_at).getTime()) / 86_400_000
+        // A sale recorded after the event (door sales reconciled late, corrections)
+        // is not a lead time; counting it as "same day" would overstate that bucket.
+        if (days < -1) continue
+        const bucket = LEAD_BUCKETS.find(b => days >= b.min && days < b.max)
+        if (!bucket) continue
+        const cur = leadCounts.get(bucket.key) || { tickets: 0, revenue: 0 }
+        cur.tickets += 1
+        cur.revenue += t.gross_amount || 0
+        leadCounts.set(bucket.key, cur)
+        leadTotal += 1
+    }
+    const leadTime = LEAD_BUCKETS.map(b => {
+        const hit = leadCounts.get(b.key) || { tickets: 0, revenue: 0 }
+        return {
+            label: b.label,
+            tickets: hit.tickets,
+            revenue: hit.revenue,
+            share: leadTotal > 0 ? hit.tickets / leadTotal : 0,
+        }
+    })
+
+    // ─── SELLING NOW ─────────────────────────────────────────────────────
+    //
+    // Soonest first, because that is the one with time running out. External
+    // listings are excluded: they sell on someone else's site, so their
+    // "sold / capacity" here is always 0 of something enormous — one partner's
+    // redirect listings alone add up to a forty-million-seat capacity.
+
+    const revenueByEvent = new Map<string, number>()
+    for (const t of transactions || []) {
+        if (!t.event_id) continue
+        revenueByEvent.set(t.event_id, (revenueByEvent.get(t.event_id) || 0) + (t.gross_amount || 0))
+    }
+    const sellingNow = events
+        .filter(e => !e.is_external && (e.capacity || 0) > 0)
+        .slice(0, 6)
+        .map(e => ({
+            id: e.id,
+            title: e.title,
+            startDatetime: e.start_datetime,
+            sold: e.tickets_sold || 0,
+            capacity: e.capacity || 0,
+            revenue: revenueByEvent.get(e.id) || 0,
+        }))
+
     return {
         metrics: {
             totalRevenue,
@@ -219,6 +321,10 @@ export async function getDashboardStats(partnerId: string) {
         },
         velocityData,
         paceData,
+        trend,
+        leadTime,
+        leadTotal,
+        sellingNow,
         currentEventName: currentEvent?.title || 'No upcoming events',
         benchmarkEventName: benchmarkEvent?.title || 'Historical Average',
         activeEvents: events,
