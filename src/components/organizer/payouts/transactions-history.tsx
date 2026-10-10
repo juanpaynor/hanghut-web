@@ -1,7 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { TransactionDetailDialog } from './transaction-detail-dialog'
+import { exportTransactionsCsv } from '@/lib/organizer/transaction-export-actions'
+import { useToast } from '@/hooks/use-toast'
 import {
     Table,
     TableBody,
@@ -13,7 +16,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import { Card, CardContent } from '@/components/ui/card'
-import { ArrowDownLeft, ArrowUpRight, Check, Clock, Download, X, Wallet, Plus } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Check, Clock, Download, Loader2, X, Wallet, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { getSettlementInfo, getPaymentChannel } from '@/lib/utils/settlement'
 
@@ -56,54 +59,67 @@ interface TransactionsHistoryProps {
 export function TransactionsHistory({ transactions, totalCount, totals }: TransactionsHistoryProps) {
     const [selectedId, setSelectedId] = useState<string | null>(null)
 
-    const handleExport = () => {
-        if (!transactions.length) return
+    const searchParams = useSearchParams()
+    const { toast } = useToast()
+    const [exporting, setExporting] = useState(false)
 
-        const headers = [
-            'Date',
-            'Event',
-            'Channel',
-            'Payment Method',
-            'Amount',
-            'Total Fees',
-            'Net Payout',
-            'Status',
-            'Settlement Status',
-            'Settlement ETA'
-        ]
-
-        const csvContent = [
-            headers.join(','),
-            ...transactions.map(t => {
-                const settlement = getSettlementInfo(t.created_at, t.purchase_intent?.payment_method, {
-                    status: t.purchase_intent?.settlement_status,
-                    etaTime: t.purchase_intent?.estimated_settlement_time,
-                    settledAt: t.purchase_intent?.settled_at,
-                })
-                return [
-                    `"${format(new Date(t.created_at), 'yyyy-MM-dd HH:mm:ss')}"`,
-                    `"${t.event?.title || 'Unknown'}"`,
-                    `"${getPaymentChannel(t.purchase_intent?.payment_method)}"`,
-                    `"${t.purchase_intent?.payment_method?.toUpperCase() || 'UNKNOWN'}"`,
-                    t.gross_amount,
-                    (Number(t.gross_amount) - Number(t.organizer_payout)),
-                    t.organizer_payout,
-                    t.status,
-                    settlement.status,
-                    `"${format(settlement.etaDate, 'MMM d, yyyy')}"`,
-                ].join(',')
+    /**
+     * Built on the SERVER over the whole filtered set.
+     *
+     * This used to map over `transactions`, which is one page of 10 rows, so a
+     * filtered export silently produced a 10-row file — 10 of 453 for Upper Room
+     * Worship. The filters are read from the URL so the file always matches the
+     * table the organizer is looking at.
+     */
+    const handleExport = async () => {
+        setExporting(true)
+        try {
+            const res = await exportTransactionsCsv({
+                from: searchParams.get('from') ?? undefined,
+                to: searchParams.get('to') ?? undefined,
+                search: searchParams.get('q') ?? undefined,
             })
-        ].join('\n')
 
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-        const link = document.createElement('a')
-        const url = URL.createObjectURL(blob)
-        link.setAttribute('href', url)
-        link.setAttribute('download', `transactions_${format(new Date(), 'yyyy-MM-dd')}.csv`)
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
+            if (res.error || !res.csv || !res.filename) {
+                toast({
+                    title: 'Export failed',
+                    description: res.error || 'Could not build the export.',
+                    variant: 'destructive',
+                })
+                return
+            }
+
+            const blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' })
+            const url = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = url
+            link.download = res.filename
+            link.style.visibility = 'hidden'
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            // Without this the blob is held for the life of the document.
+            URL.revokeObjectURL(url)
+
+            // Say so rather than hand over a short file quietly — the silent
+            // version of exactly this is the bug being fixed.
+            if (res.truncated) {
+                toast({
+                    title: 'Export truncated',
+                    description: `Only the first ${res.rows?.toLocaleString()} transactions were exported. Narrow the date range to get the rest.`,
+                    variant: 'destructive',
+                })
+            }
+        } catch (e) {
+            console.error('Transaction export failed:', e)
+            toast({
+                title: 'Export failed',
+                description: 'Something went wrong building the file.',
+                variant: 'destructive',
+            })
+        } finally {
+            setExporting(false)
+        }
     }
 
     // Exclude internal refund reversal rows (negative gross) from the sales view — the
@@ -218,12 +234,14 @@ export function TransactionsHistory({ transactions, totalCount, totals }: Transa
             <div className="flex justify-end">
                 <Button
                     onClick={handleExport}
-                    disabled={transactions.length === 0}
+                    disabled={exporting || totals.count === 0}
                     size="sm"
                     className="bg-emerald-600 hover:bg-emerald-700 text-white"
                 >
-                    <Download className="w-4 h-4 mr-2" />
-                    Export
+                    {exporting
+                        ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        : <Download className="w-4 h-4 mr-2" />}
+                    {exporting ? 'Preparing…' : 'Export'}
                 </Button>
             </div>
 
