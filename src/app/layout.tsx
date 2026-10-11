@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { SmoothScroll } from '@/components/landing/smooth-scroll';
 import { CookieConsent } from '@/components/ui/cookie-consent';
 import { LoadingProvider } from '@/providers/loading-provider';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 export const metadata: Metadata = {
   metadataBase: new URL('https://hanghut.com'),
   title: {
@@ -91,6 +92,7 @@ export default function RootLayout({
             <CookieConsent />
           </LoadingProvider>
           <ConsentedAnalytics />
+          <SpeedInsights />
         </SmoothScroll>
       </body>
     </html>
