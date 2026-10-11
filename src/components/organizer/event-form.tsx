@@ -16,7 +16,15 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair, Plus, Trash2, Check, Copy, ExternalLink, Code2, Send, Globe } from 'lucide-react'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog'
+import { Calendar, MapPin, Upload, X, Loader2, DollarSign, FileText, Armchair, Plus, Trash2, Check, Copy, ExternalLink, Code2, Send, Globe, EyeOff } from 'lucide-react'
 import { createEvent, updateEvent } from '@/lib/organizer/event-actions'
 import { RegistrationQuestionsManager, RegistrationQuestion } from '@/components/organizer/registration-questions-manager'
 import { TermsDocumentsManager } from '@/components/organizer/terms-documents-manager'
@@ -140,6 +148,10 @@ export function EventForm({
     // Post-publish success screen (create only).
     const [published, setPublished] = useState<{ id: string; status: string } | null>(null)
     const [linkCopied, setLinkCopied] = useState(false)
+    // "Publish event" is the loudest button on the last step, so first-time
+    // organizers hit it to see what happens — which is how test events end up
+    // on Discover. Make going public the deliberate choice, not the default one.
+    const [confirmPublic, setConfirmPublic] = useState(false)
 
     const [formData, setFormData] = useState<EventFormData>({
         title: initialData?.title || '',
@@ -2158,13 +2170,72 @@ export function EventForm({
                                 type="button"
                                 size="lg"
                                 className="flex-1 bg-primary"
-                                onClick={() => handleSubmit(isEditing ? formData.status : 'active')}
+                                onClick={() => isEditing ? handleSubmit(formData.status) : setConfirmPublic(true)}
                                 disabled={isLoading || formData.status === 'cancelled'}
                             >
                                 {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (isEditing ? 'Update Event' : 'Publish event')}
                             </Button>
                         </div>
                     )}
+                    {/* Public-publish confirmation (create only) */}
+                    <Dialog open={confirmPublic} onOpenChange={setConfirmPublic}>
+                        <DialogContent className="sm:max-w-lg">
+                            <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2">
+                                    <Globe className="h-5 w-5 text-primary" />
+                                    Publish to the public?
+                                </DialogTitle>
+                                <DialogDescription>
+                                    <span className="font-medium text-foreground">{formData.title || 'This event'}</span>{' '}
+                                    will appear on Discover, your storefront and search results, and
+                                    anyone will be able to buy tickets straight away.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-900 dark:bg-purple-950/40">
+                                <p className="flex items-center gap-2 text-sm font-semibold text-purple-900 dark:text-purple-200">
+                                    <EyeOff className="h-4 w-4 shrink-0" />
+                                    Just testing? Publish it unlisted instead
+                                </p>
+                                <p className="mt-1.5 text-sm text-purple-800/90 dark:text-purple-300/90">
+                                    An unlisted event works exactly the same — real checkout, real
+                                    tickets — but it stays off Discover and search. Only people you
+                                    send the link to can find it. You can make it public in one click
+                                    whenever you&apos;re ready.
+                                </p>
+                            </div>
+
+                            <DialogFooter className="gap-2 sm:justify-between">
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    onClick={() => setConfirmPublic(false)}
+                                    disabled={isLoading}
+                                >
+                                    Keep editing
+                                </Button>
+                                <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="border-purple-300 text-purple-700 hover:bg-purple-50 dark:text-purple-300"
+                                        onClick={() => { setConfirmPublic(false); handleSubmit('hidden') }}
+                                        disabled={isLoading}
+                                    >
+                                        Publish as unlisted
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        className="bg-primary"
+                                        onClick={() => { setConfirmPublic(false); handleSubmit('active') }}
+                                        disabled={isLoading}
+                                    >
+                                        Yes, publish publicly
+                                    </Button>
+                                </div>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>{/* /form column */}
 
                 {/* Live event-page preview */}

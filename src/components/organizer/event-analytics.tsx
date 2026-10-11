@@ -13,7 +13,7 @@ interface Analytics {
     totals: Record<string, number>
     unique_views: number
     daily: { date: string; views: number; get_tickets: number }[]
-    funnel: { views: number; get_tickets: number; checkout_started: number; purchased: number }
+    funnel: { views: number; get_tickets: number; checkout_started: number; purchased: number; abandoned?: number }
 }
 interface Customers {
     total_buyers: number
@@ -54,7 +54,12 @@ function StatCard({ icon: Icon, label, value, sub }: { icon: any; label: string;
 
 export function EventAnalytics({ analytics, customers, emailCampaigns }: Props) {
     const totals = analytics?.totals ?? {}
-    const funnel = analytics?.funnel ?? { views: 0, get_tickets: 0, checkout_started: 0, purchased: 0 }
+    const rawFunnel = analytics?.funnel ?? { views: 0, get_tickets: 0, checkout_started: 0, purchased: 0 }
+    // `abandoned` was added to the RPC after this component shipped, so it is
+    // optional: an organizer on a cached payload sees the rest, not a crash.
+    const funnel = { ...rawFunnel, abandoned: rawFunnel.abandoned ?? 0 }
+    /** Orders created, paid or not. The denominator for checkout completion. */
+    const orders = funnel.purchased + funnel.abandoned
     const uniqueViews = analytics?.unique_views ?? 0
     const daily = (analytics?.daily ?? []).map(d => ({ ...d, label: format(new Date(d.date), 'MMM d') }))
 
@@ -135,6 +140,29 @@ export function EventAnalytics({ analytics, customers, emailCampaigns }: Props) 
                             </div>
                         ))}
                     </div>
+
+                    {/* Abandoned orders are NOT a fifth bar: they are not a stage
+                        below Purchased, they are the leak out of it. Shown here
+                        instead, and compared only against Purchased — both come
+                        from the orders table, so the two can honestly be divided.
+                        The three steps above are browser events, which ad blockers
+                        and the consent gate drop; on this very event more people
+                        bought than were ever recorded reaching checkout, so
+                        `checkout_started − purchased` is not a drop-off. */}
+                    {orders > 0 && (
+                        <div className="mt-5 pt-4 border-t">
+                            <div className="flex items-baseline justify-between text-sm">
+                                <span className="text-muted-foreground">Checkout completion</span>
+                                <span className="font-semibold">{fmtPct(funnel.purchased, orders)}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                                {funnel.purchased.toLocaleString()} paid
+                                {funnel.abandoned > 0 && (
+                                    <> · {funnel.abandoned.toLocaleString()} started an order but never paid</>
+                                )}
+                            </p>
+                        </div>
+                    )}
                 </Card>
 
                 {/* ── New vs returning customers ───────────────────── */}
