@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { DollarSign, TrendingUp, Clock, Settings, Wallet, FileText, DoorOpen } from 'lucide-react'
+import { DollarSign, TrendingUp, Clock, Settings, Wallet, FileText, DoorOpen, ReceiptText } from 'lucide-react'
+import { StatementsPanel } from '@/components/organizer/payouts/statements-panel'
 import { format } from 'date-fns'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BankSettingsForm } from '@/components/organizer/payouts/bank-settings-form'
@@ -481,12 +482,15 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
             </div>
 
             <Tabs defaultValue="overview" className="w-full">
-                <TabsList className="grid w-full grid-cols-3 max-w-[600px] mb-8">
+                <TabsList className="grid w-full grid-cols-4 max-w-[760px] mb-8">
                     <TabsTrigger value="overview" className="flex items-center gap-2">
                         <Wallet className="w-4 h-4" /> Overview
                     </TabsTrigger>
                     <TabsTrigger value="transactions" className="flex items-center gap-2">
                         <FileText className="w-4 h-4" /> Transactions
+                    </TabsTrigger>
+                    <TabsTrigger value="statements" className="flex items-center gap-2">
+                        <ReceiptText className="w-4 h-4" /> Statements
                     </TabsTrigger>
                     <TabsTrigger value="settings" className="flex items-center gap-2">
                         <Settings className="w-4 h-4" /> Bank Settings
@@ -643,6 +647,12 @@ export default async function OrganizerPayoutsPage({ searchParams }: PageProps) 
                         </p>
                         <PaginationControls totalCount={transactionCount} pageSize={10} paramName="tx_page" />
                     </div>
+                </TabsContent>
+
+                {/* Its own period picker on purpose: a financial document must not
+                    depend on whatever filter happens to be set on the table next door. */}
+                <TabsContent value="statements" className="space-y-6">
+                    <StatementsPanel />
                 </TabsContent>
 
                 <TabsContent value="settings" className="space-y-6">

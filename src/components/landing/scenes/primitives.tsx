@@ -107,8 +107,12 @@ export function MaskedLines({
     );
 }
 
+/** How far the pull can displace the child, in px, on either axis. */
+const MAX_TRAVEL = 9;
+const clampTravel = (v: number) => Math.max(-MAX_TRAVEL, Math.min(MAX_TRAVEL, v));
+
 /**
- * Pulls its child a little toward the pointer while the pointer is near.
+ * Pulls its child a little toward the pointer while the pointer is over it.
  * Applied to the primary CTAs only — a page where everything is magnetic is a
  * page where nothing reads as the main action.
  */
@@ -135,18 +139,32 @@ export function Magnetic({
 
         const onMove = (e: PointerEvent) => {
             const r = el.getBoundingClientRect();
-            const cx = r.left + r.width / 2;
-            const cy = r.top + r.height / 2;
-            const dx = e.clientX - cx;
-            const dy = e.clientY - cy;
-            const radius = Math.max(r.width, r.height) * 0.9;
-            if (Math.hypot(dx, dy) > radius) {
+
+            // The field is the element's OWN box. It used to be a circle struck
+            // from the centre with a radius of the longest side × 0.9, which on
+            // a wide, short button reaches far past its left and right edges:
+            // the header's 125×38 "Download app" got a ~112px radius against a
+            // 62px half-width, so the field spilled ~50px outwards and swallowed
+            // the "Log in" button sitting gap-2 (8px) away. Hovering Log in
+            // dragged Download towards the cursor — the button appeared to creep
+            // closer whenever you reached for the one next to it.
+            //
+            // Distance to the rectangle, which is 0 while the pointer is inside.
+            const ox = Math.max(r.left - e.clientX, 0, e.clientX - r.right);
+            const oy = Math.max(r.top - e.clientY, 0, e.clientY - r.bottom);
+            if (ox > 0 || oy > 0) {
                 x.set(0);
                 y.set(0);
                 return;
             }
-            x.set(dx * strength);
-            y.set(dy * strength);
+
+            const cx = r.left + r.width / 2;
+            const cy = r.top + r.height / 2;
+            // Capped: an uncapped pull from the centre of a wide button is half
+            // its width × strength — 15px here, enough to cross an 8px gap and
+            // collide with its neighbour. The effect is meant to be a nudge.
+            x.set(clampTravel((e.clientX - cx) * strength));
+            y.set(clampTravel((e.clientY - cy) * strength));
         };
         const onLeave = () => {
             x.set(0);
