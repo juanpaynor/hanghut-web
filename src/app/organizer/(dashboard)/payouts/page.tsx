@@ -293,7 +293,7 @@ async function getExperienceTransactions(partnerId: string, from?: string, to?: 
 
     let query = supabase
         .from('experience_transactions')
-        .select('id, gross_amount, platform_fee, host_payout, status, created_at, payout_id, experience:tables!table_id(title)')
+        .select('id, gross_amount, discount_amount, platform_fee, host_payout, status, created_at, payout_id, experience:tables!table_id(title)')
         .eq('partner_id', partnerId)
         .order('created_at', { ascending: false })
         .limit(50)
@@ -306,6 +306,9 @@ async function getExperienceTransactions(partnerId: string, from?: string, to?: 
     let rows = (data || []).map((t: any) => ({
         id: t.id,
         gross_amount: t.gross_amount,
+        // Pre-discount gross with the discount beside it, same as a ticket row.
+        // Without it a discounted booking looks like the host was underpaid.
+        discount_amount: t.discount_amount ?? 0,
         organizer_payout: t.host_payout,
         platform_fee: t.platform_fee,
         payment_processing_fee: 0,

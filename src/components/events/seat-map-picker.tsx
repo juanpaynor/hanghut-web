@@ -124,6 +124,16 @@ interface SeatMapPickerProps {
     /** Event's max tickets per order (events.max_seats_per_order); defaults to 10. */
     maxPerOrder?: number
     /**
+     * Mixed events only: the tiers this map actually sells.
+     *
+     * get_event_seat_geometry returns EVERY active tier on the event, which is
+     * right for a single-mode event but wrong for a mixed one -- a standalone GA
+     * tier has no seats, so it would sit in the price legend with a colour that
+     * appears nowhere on the map. Left undefined (every existing caller) the
+     * legend lists everything exactly as it does today.
+     */
+    legendTierIds?: string[]
+    /**
      * Organizer preview: render THIS bundle (built from the draft) instead of
      * fetching the live map. No holds, no polling, no realtime, no checkout —
      * seat taps toggle locally so the organizer can feel the flow. Everything
@@ -155,7 +165,7 @@ const SELECTED_COLOR = '#0f172a'
 // initial payload stays tiny.
 const PREFETCH_SEAT_LIMIT = 6000
 
-export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: SeatMapPickerProps) {
+export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, preview = null }: SeatMapPickerProps) {
     const isPreview = !!preview
     const router = useRouter()
     const { toast } = useToast()
@@ -1312,7 +1322,10 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, preview = null }: Sea
 
             {/* Price legend */}
             <div className="flex flex-wrap gap-x-4 gap-y-1.5 shrink-0">
-                {mapData.tiers.map(tier => (
+                {(legendTierIds
+                    ? mapData.tiers.filter(t => legendTierIds.includes(t.id))
+                    : mapData.tiers
+                ).map(tier => (
                     <div key={tier.id} className="flex items-center gap-1.5 text-xs">
                         <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: tierColors.get(tier.id) }} />
                         <span className="font-medium">{tier.name}</span>

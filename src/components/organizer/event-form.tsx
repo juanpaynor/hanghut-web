@@ -73,7 +73,7 @@ interface EventFormData {
     additional_images: File[]
     custom_tos: string
     status: 'draft' | 'active' | 'paused' | 'cancelled' | 'hidden'
-    seating_type: 'general_admission' | 'assigned_seating'
+    seating_type: 'general_admission' | 'assigned_seating' | 'mixed'
     max_seats_per_order: string
     ticketing_type: 'internal' | 'external'
     external_ticket_url: string
@@ -281,10 +281,16 @@ export function EventForm({
     // Assigned seating turns tiers into pure price categories — their inventory
     // comes from the seat map, not a typed quantity. GA keeps the typed quantity.
     const isAssignedSeating = sellMode === 'tickets' && formData.seating_type === 'assigned_seating'
+    // Mixed sells GA by quantity AND seat-mapped tiers, so it uses the seat map
+    // without taking every tier's inventory from it. Kept separate from
+    // isAssignedSeating for exactly that reason: a mixed event's GA tiers still
+    // need their typed quantity field.
+    const usesSeatMap = sellMode === 'tickets'
+        && (formData.seating_type === 'assigned_seating' || formData.seating_type === 'mixed')
     const stepKeys: string[] = ['basics', 'when', 'sell']
-    // Only assigned-seating events need the seating-options step (max per order +
-    // seat-map note); GA has nothing extra to configure, so it skips it.
-    if (isAssignedSeating) stepKeys.push('seating')
+    // Only seat-mapped events need the seating-options step (max per order +
+    // seat-map note); plain GA has nothing extra to configure, so it skips it.
+    if (usesSeatMap) stepKeys.push('seating')
     if (sellMode !== 'external') stepKeys.push('settings')
     // Attendee questions apply to any internal (ticketed or RSVP) event, not external.
     if (sellMode !== 'external') stepKeys.push('questions')
@@ -1586,7 +1592,7 @@ export function EventForm({
                         {isEditing && (
                         <div>
                             <Label>Seating Type</Label>
-                            <div className="grid grid-cols-2 gap-3 mt-2">
+                            <div className="grid gap-3 mt-2 sm:grid-cols-3">
                                 <button
                                     type="button"
                                     onClick={() => handleInputChange('seating_type', 'general_admission')}
@@ -1615,11 +1621,35 @@ export function EventForm({
                                         Buyers pick specific seats from a seat map
                                     </p>
                                 </button>
+                                {/* Mixed. The festival shape: GA and Early Bird
+                                    sold by quantity, VIP zones sold off the map,
+                                    one event. Only offered while editing, because
+                                    it is only meaningful once a seat map exists. */}
+                                <button
+                                    type="button"
+                                    onClick={() => handleInputChange('seating_type', 'mixed')}
+                                    className={`p-4 rounded-lg border-2 text-left transition-all ${
+                                        formData.seating_type === 'mixed'
+                                            ? 'border-primary bg-primary/5'
+                                            : 'border-border hover:border-muted-foreground/30'
+                                    }`}
+                                >
+                                    <div className="font-semibold">Mixed</div>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                        Some ticket types by quantity, others from the seat map
+                                    </p>
+                                </button>
                             </div>
+                            {formData.seating_type === 'mixed' && (
+                                <p className="text-xs text-muted-foreground mt-2">
+                                    Ticket types with seats on the map are sold as reserved
+                                    seating. Any ticket type with no seats is sold by quantity.
+                                </p>
+                            )}
                         </div>
                         )}
 
-                        {formData.seating_type === 'assigned_seating' && (
+                        {(formData.seating_type === 'assigned_seating' || formData.seating_type === 'mixed') && (
                             <>
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
                                     <strong>Note:</strong> After saving, configure your seat map in the <strong>Seat Map</strong> tab on the event dashboard.

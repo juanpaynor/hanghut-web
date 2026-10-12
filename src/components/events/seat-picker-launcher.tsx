@@ -30,19 +30,40 @@ interface SeatPickerLauncherProps {
     fullWidth?: boolean
     /** Event's max tickets per order — forwarded to the picker's selection cap. */
     maxPerOrder?: number
+    /** Mixed events: restrict the map's price legend to the tiers it sells. */
+    legendTierIds?: string[]
 }
 
-export function SeatPickerLauncher({ eventId, fullWidth = false, maxPerOrder }: SeatPickerLauncherProps) {
+export function SeatPickerLauncher({ eventId, fullWidth = false, maxPerOrder, legendTierIds }: SeatPickerLauncherProps) {
     const [open, setOpen] = useState(false)
 
     // Open straight away when the URL asks for it: checkout bounces back here
     // with ?error=select_seats when the seats are missing/expired, and the
     // "Change seats" link lands here too — making the buyer find the button
     // again is one more place to lose them.
+    //
+    // The param is a ONE-SHOT instruction, so it is consumed on arrival. Left in
+    // place it becomes sticky: the URL sits in history, so pressing Back from
+    // checkout re-opens the picker over a page the buyer was trying to return to,
+    // and a refresh, a bookmark or a shared link does the same thing forever.
+    // replaceState rewrites the current history entry rather than adding one, so
+    // Back still goes where the buyer expects.
     useEffect(() => {
         try {
-            const q = new URLSearchParams(window.location.search)
-            if (q.get('seats') === '1' || q.get('error') === 'select_seats') setOpen(true)
+            const url = new URL(window.location.href)
+            const q = url.searchParams
+            if (q.get('seats') !== '1' && q.get('error') !== 'select_seats') return
+
+            setOpen(true)
+
+            q.delete('seats')
+            q.delete('error')
+            const rest = q.toString()
+            window.history.replaceState(
+                window.history.state,
+                '',
+                `${url.pathname}${rest ? `?${rest}` : ''}${url.hash}`,
+            )
         } catch { /* noop */ }
     }, [])
 
@@ -79,7 +100,7 @@ export function SeatPickerLauncher({ eventId, fullWidth = false, maxPerOrder }: 
                     </DialogHeader>
                     {open && (
                         <div className="flex-1 min-h-0 flex flex-col min-w-0">
-                            <SeatMapPicker eventId={eventId} maxPerOrder={maxPerOrder} />
+                            <SeatMapPicker eventId={eventId} maxPerOrder={maxPerOrder} legendTierIds={legendTierIds} />
                         </div>
                     )}
                 </DialogContent>

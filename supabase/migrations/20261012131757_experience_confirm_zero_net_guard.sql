@@ -1,0 +1,15 @@
+-- Companion to 20261012131702. The regression harness caught this one
+-- immediately: reserve_experience had the net > 0 guard but
+-- confirm_experience_booking did not, so a 100%-discounted booking charged the
+-- buyer ₱0 and then recorded a ₱15 absorbed fee against the host — the same
+-- two-functions-disagree failure the P0 itself was about, reintroduced one
+-- migration later.
+--
+-- Only the v_full_take line changes from 20261012131458:
+--
+--     v_full_take := CASE WHEN v_net > 0
+--                         THEN ROUND(v_net * (v_pct / 100.0)) + ROUND(v_fixed_fee * v_intent.quantity)
+--                         ELSE 0 END;
+--
+-- Applied to prod 2026-10-12 as version 20261012131757. See
+-- confirm_experience_booking in the database for the full text.

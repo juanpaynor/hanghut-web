@@ -85,9 +85,12 @@ export function EventDashboardTabs({
     // the review step), not only approval-gated ones. Gating the tab on
     // require_approval hid every auto-approved answer from the organizer.
     const showRegistrations = !!event.require_approval || initialQuestions.length > 0 || initialRegistrations.counts.total > 0
+    // A mixed event sells part of its inventory off the seat map, so it needs
+    // the Seat Map tab just as much as a fully assigned-seating one.
+    const usesSeatMap = event.seating_type === 'assigned_seating' || event.seating_type === 'mixed'
     const tabCount = 7
         + (showRegistrations ? 1 : 0)
-        + (event.seating_type === 'assigned_seating' ? 1 : 0)
+        + (usesSeatMap ? 1 : 0)
         + (event.invite_only ? 1 : 0)
     const gridColsClass = ({ 7: 'grid-cols-7', 8: 'grid-cols-8', 9: 'grid-cols-9', 10: 'grid-cols-10' } as Record<number, string>)[tabCount] || 'grid-cols-7'
 
@@ -139,7 +142,7 @@ export function EventDashboardTabs({
                         Invites
                     </TabsTrigger>
                 )}
-                {event.seating_type === 'assigned_seating' && (
+                {usesSeatMap && (
                     <TabsTrigger value="seatmap" className="flex items-center gap-2">
                         <Armchair className="h-4 w-4" />
                         Seat Map
@@ -266,7 +269,7 @@ export function EventDashboardTabs({
                 </TabsContent>
             )}
 
-            {event.seating_type === 'assigned_seating' && (
+            {usesSeatMap && (
                 <TabsContent value="seatmap" className="mt-6 animate-in fade-in-50 duration-300">
                     <SeatMapTab
                         eventId={eventId}

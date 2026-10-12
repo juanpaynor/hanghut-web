@@ -295,13 +295,46 @@ export async function syncLiveSeatMap(
     const activeSeats = canvasData.sections.reduce(
       (sum, s) => sum + s.seats.filter((seat) => seat.status !== 'disabled').length, 0
     )
+    // On a MIXED event, capacity must also cover STANDALONE GA tiers: ticket
+    // types with no seats and no GA zone on the map. They are real sellable
+    // inventory, and events.capacity sizes the blank ticket pool -- undercount
+    // it and a paid order lands on the "reservation lapsed, only N remain"
+    // path at issuance, which is a refund conversation, not a bug report.
+    //
+    // Scoped to seating_type 'mixed' on purpose. On an assigned-seating event a
+    // tier with no seats is normally a leftover or a category not yet mapped,
+    // and counting it would silently change a LIVE event's capacity (and mint
+    // pool rows) on the organizer's next publish. Existing events therefore
+    // compute exactly the capacity they compute today.
+    const { data: evRow } = await supabase
+      .from('events')
+      .select('seating_type')
+      .eq('id', eventId)
+      .maybeSingle()
+    const isMixed = evRow?.seating_type === 'mixed'
+
+    // A tier is GA when no SEAT resolves to it -- the same rule the money path
+    // and get_event_tier_modes use. tierCounts was built from exactly that
+    // resolution above, so its keys are the seated tiers.
+    const gaTierIds = new Set(gaZoneTierIds)
+    if (isMixed) {
+      const { data: allTiers } = await supabase
+        .from('ticket_tiers')
+        .select('id, is_active')
+        .eq('event_id', eventId)
+      for (const t of allTiers ?? []) {
+        if (t.is_active === false) continue
+        if (!tierCounts.has(t.id)) gaTierIds.add(t.id)
+      }
+    }
+
     let gaCapacity = 0
-    if (gaZoneTierIds.size > 0) {
+    if (gaTierIds.size > 0) {
       const { data: gaTiers } = await supabase
         .from('ticket_tiers')
         .select('quantity_total')
         .eq('event_id', eventId)
-        .in('id', Array.from(gaZoneTierIds))
+        .in('id', Array.from(gaTierIds))
       gaCapacity = (gaTiers ?? []).reduce((sum, t) => sum + (t.quantity_total ?? 0), 0)
     }
     const totalCapacity = activeSeats + gaCapacity

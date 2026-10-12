@@ -8,6 +8,8 @@ import { ExperienceDangerZone } from '@/components/organizer/experiences/experie
 import { getExperienceDeletability } from '@/lib/organizer/experience-actions'
 import { ExperienceQuestionsManager } from '@/components/organizer/experiences/experience-questions-manager'
 import { getExperienceQuestions } from '@/lib/organizer/experience-question-actions'
+import { SessionsPanel } from '@/components/organizer/experiences/sessions-panel'
+import { listAvailabilityRules, countUpcomingSlots } from '@/lib/organizer/experience-availability-actions'
 
 export default async function EditExperiencePage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params
@@ -30,10 +32,12 @@ export default async function EditExperiencePage({ params }: { params: Promise<{
 
     // Ownership is already proven by the host_id filter above, so this can be
     // fetched unguarded.
-    const [{ data: promoCodes }, deletability, questions] = await Promise.all([
+    const [{ data: promoCodes }, deletability, questions, rules, slotCount] = await Promise.all([
         getExperiencePromoCodes(id),
         getExperienceDeletability(id),
         getExperienceQuestions(id),
+        listAvailabilityRules(id),
+        countUpcomingSlots(id),
     ])
 
     return (
@@ -43,6 +47,17 @@ export default async function EditExperiencePage({ params }: { params: Promise<{
                 <p className="text-muted-foreground text-sm mt-0.5">{experience.title}</p>
             </div>
             <ExperienceForm partnerId={partner.id} experience={experience as any} />
+
+            {/* Directly under the form: a listing with no dates is invisible,
+                so this outranks promo codes and questions on the page. */}
+            <div className="border-t pt-6">
+                <SessionsPanel
+                    experienceId={id}
+                    initialRules={('rules' in rules ? rules.rules : undefined) ?? []}
+                    upcomingSlots={slotCount.count ?? 0}
+                    defaultMaxGuests={(experience as { max_guests?: number }).max_guests}
+                />
+            </div>
 
             <div className="border-t pt-6">
                 <h2 className="text-xl font-semibold mb-1">Promo codes</h2>

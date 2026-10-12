@@ -1,0 +1,29 @@
+-- Found by the pricing regression harness, case 11: a 100% promo on an
+-- experience produced a NEGATIVE host payout of -₱15.00.
+--
+-- WHY. reserve_experience computed the fixed fee unconditionally:
+--     v_fixed_take := ROUND(v_fixed_fee * p_quantity);
+-- so on a fully-discounted booking (net = 0) HangHut still took ₱15 per head.
+-- With the host absorbing fees that makes the payout -₱15 — the host owes money
+-- for giving a seat away. With fees passed instead, the BUYER is charged ₱15
+-- for an experience advertised as free.
+--
+-- EVENTS ALREADY GUARD THIS and always have — create-purchase-intent:835:
+--     const pctTake   = net > 0 ? Math.round(net * (pct / 100)) : 0
+--     const fixedTake = net > 0 ? Math.round(fixedFeePerTicket * quantity) : 0
+-- The product rule is "a 100% code charges zero fees". Experiences never got it.
+--
+-- The same gap reaches genuinely FREE experiences: a ₱0 listing under a partner
+-- with a ₱15 fixed fee charges the buyer ₱15 today. No live damage — both
+-- partners with free experiences happen to have fixed_fee_per_ticket = 0 — but
+-- it is the identical missing guard.
+--
+-- ONLY the two take lines change. Promo validation, the discount clamp, the
+-- pass-through rules, the capacity lock and the insert are all untouched.
+--
+-- Applied to prod 2026-10-12 as version 20261012131702. The body is identical
+-- to the live function; see reserve_experience in the database for the full
+-- text, of which the changed lines are:
+--
+--     v_pct_take   := CASE WHEN v_net > 0 THEN ROUND(v_net * (v_pct / 100.0)) ELSE 0 END;
+--     v_fixed_take := CASE WHEN v_net > 0 THEN ROUND(v_fixed_fee * p_quantity) ELSE 0 END;

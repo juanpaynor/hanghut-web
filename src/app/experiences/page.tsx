@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { ShieldCheck, MapPin, Search, Star } from 'lucide-react'
+import { formatInManila } from '@/lib/datetime'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -28,93 +29,54 @@ interface ExperiencesPageProps {
     searchParams: Promise<{ type?: string }>
 }
 
+interface ExperienceCard {
+    id: string
+    title: string
+    description: string | null
+    location_name: string
+    experience_type: string | null
+    images: string[] | null
+    price_per_person: number | null
+    currency: string | null
+    host_id: string
+    host_name: string
+    host_photo_url: string | null
+    verified_by_hanghut: boolean
+    next_start_time: string
+    upcoming_slots: number
+    rating_avg: number
+    rating_count: number
+    total_count: number
+}
+
 export default async function ExperiencesPage({ searchParams }: ExperiencesPageProps) {
     const { type } = await searchParams
     const supabase = await createClient()
+    const activeType = type || 'all'
 
-    let query = supabase
-        .from('tables')
-        .select(`
-            id,
-            title,
-            description,
-            location_name,
-            experience_type,
-            images,
-            price_per_person,
-            currency,
-            host_id,
-            host_avatar_url,
-            verified_by_hanghut,
-            created_at,
-            experience_schedules(id, start_time, max_guests, current_guests, status)
-        `)
-        .eq('is_experience', true)
-        // Was unfiltered, so cancelled/closed experiences listed as if on sale.
-        .eq('status', 'open')
-        .order('created_at', { ascending: false })
-
-    if (type && type !== 'all') {
-        query = query.eq('experience_type', type)
-    }
-
-    const { data: rawExperiences } = await query
-
-    // An experience with no upcoming date is not purchasable: the slot picker
-    // filters schedules to future + non-cancelled, so with none it renders an empty
-    // calendar and the buyer hits a dead end with no explanation. Listing those was
-    // costing real clicks — a ₱2,000 workshop went live with ZERO schedules.
+    // ONE round trip. get_experiences_index (migration 20261012130000) does the
+    // "has a bookable future date" test in SQL, resolves the host, and returns
+    // the rating already averaged.
     //
-    // 'full' slots deliberately still count: a sold-out date is genuine supply and
-    // should stay listed (the card shows it), unlike a listing with nothing at all.
-    const now = Date.now()
-    const hasUpcomingSlot = (exp: any) =>
-        ((exp.experience_schedules ?? []) as any[]).some(
-            s => s.status !== 'cancelled' && new Date(s.start_time).getTime() > now
-        )
+    // What this replaced: four queries finished off in JavaScript. The first
+    // embedded EVERY schedule of EVERY listing — never rendered, fetched only
+    // to answer "is there a future date?" — and the last pulled EVERY review
+    // row to average in JS. Both are "read the whole table for one number per
+    // listing", which is invisible at six schedule rows and fatal once
+    // availability is generated. The middle two built a hostMap the markup
+    // never used at all.
+    const { data, error } = await supabase.rpc('get_experiences_index', {
+        p_type: activeType === 'all' ? null : activeType,
+        p_limit: 48,
+        p_offset: 0,
+    })
 
-    const experiences = (rawExperiences ?? []).filter(hasUpcomingSlot)
-
-    // Fetch host names + profile photos
-    const hostIds = [...new Set((experiences || []).map(e => e.host_id).filter(Boolean))]
-    let hostMap: Record<string, { name: string; photo: string | null }> = {}
-    if (hostIds.length > 0) {
-        const [{ data: hosts }, { data: photos }] = await Promise.all([
-            supabase.from('users').select('id, display_name').in('id', hostIds),
-            supabase.from('user_photos').select('user_id, photo_url').in('user_id', hostIds).eq('is_primary', true)
-        ])
-
-        const photoMap: Record<string, string> = {}
-        photos?.forEach(p => { photoMap[p.user_id] = p.photo_url })
-        hosts?.forEach(h => {
-            hostMap[h.id] = { name: h.display_name || 'Host', photo: photoMap[h.id] || null }
-        })
-    }
-
-    // Fetch reviews for all experiences (avg rating + count)
-    const experienceIds = (experiences || []).map(e => e.id)
-    let reviewMap: Record<string, { avg: number; count: number }> = {}
-    if (experienceIds.length > 0) {
-        const { data: allReviews } = await supabase
-            .from('experience_reviews')
-            .select('experience_id, rating')
-            .in('experience_id', experienceIds)
-
-        if (allReviews) {
-            const grouped: Record<string, number[]> = {}
-            allReviews.forEach(r => {
-                if (!grouped[r.experience_id]) grouped[r.experience_id] = []
-                grouped[r.experience_id].push(r.rating)
-            })
-            Object.entries(grouped).forEach(([id, ratings]) => {
-                const avg = ratings.reduce((s, r) => s + r, 0) / ratings.length
-                reviewMap[id] = { avg: Math.round(avg * 10) / 10, count: ratings.length }
-            })
-        }
-    }
+    // A failed RPC must render the empty state, not crash the page — this is
+    // an anonymous, cacheable public route.
+    if (error) console.error('get_experiences_index failed:', error.message)
+    const experiences = (data ?? []) as ExperienceCard[]
 
     const types = ['all', 'nightlife', 'workshop', 'adventure', 'food_tour', 'culture']
-    const activeType = type || 'all'
 
     return (
         <div className="min-h-screen bg-background">
@@ -171,10 +133,9 @@ export default async function ExperiencesPage({ searchParams }: ExperiencesPageP
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-16">
                         {experiences.map((exp) => {
-                            const images = (exp.images as string[]) ?? []
+                            const images = exp.images ?? []
                             const heroImage = images[0]
                             const symbol = exp.currency === 'PHP' ? '₱' : (exp.currency ?? '₱')
-                            const review = reviewMap[exp.id]
 
                             return (
                                 <Link key={exp.id} href={`/experiences/${exp.id}`} className="group">
@@ -219,12 +180,14 @@ export default async function ExperiencesPage({ searchParams }: ExperiencesPageP
                                                 <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-primary transition-colors">
                                                     {exp.title}
                                                 </h3>
-                                                {/* Rating */}
-                                                {review && (
+                                                {/* Rating. Hidden until there is one — a "0.0 (0)" on
+                                                    every card reads as "nobody liked this" rather than
+                                                    "nobody has been yet". */}
+                                                {exp.rating_count > 0 && (
                                                     <div className="flex items-center gap-1 shrink-0 mt-0.5">
                                                         <Star className="h-3.5 w-3.5 fill-primary text-primary" />
-                                                        <span className="text-xs font-semibold">{review.avg}</span>
-                                                        <span className="text-xs text-muted-foreground">({review.count})</span>
+                                                        <span className="text-xs font-semibold">{exp.rating_avg}</span>
+                                                        <span className="text-xs text-muted-foreground">({exp.rating_count})</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -233,6 +196,18 @@ export default async function ExperiencesPage({ searchParams }: ExperiencesPageP
                                                     {exp.location_name}
                                                 </p>
                                             )}
+                                            {/* The next bookable date. The RPC already computes it,
+                                                and on a listing that recurs it is the single most
+                                                useful thing on the card — "is this on soon?" is the
+                                                question a browser is actually asking. */}
+                                            <p className="text-xs text-muted-foreground line-clamp-1">
+                                                Next {formatInManila(exp.next_start_time, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                                {exp.upcoming_slots > 1 && (
+                                                    <span className="text-muted-foreground/70">
+                                                        {' '}· {exp.upcoming_slots} dates
+                                                    </span>
+                                                )}
+                                            </p>
                                             <p className="text-sm pt-0.5">
                                                 <span className="font-bold">{symbol}{Number(exp.price_per_person).toLocaleString()}</span>
                                                 <span className="text-muted-foreground text-xs ml-1">/ person</span>

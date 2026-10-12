@@ -29,6 +29,8 @@ interface Schedule {
     max_guests: number
     current_guests: number
     price_per_person?: number | null
+    /** Minutes before start when booking closes. 0 = until it starts. */
+    booking_cutoff_minutes?: number | null
     status: 'open' | 'full' | 'cancelled' | 'completed'
 }
 
@@ -63,7 +65,8 @@ export function ExperienceSlotPicker({
     const [calendarMonth, setCalendarMonth] = useState(() => {
         // Initialize to the month of the first future open slot
         const futureSlots = schedules
-            .filter(s => s.status === 'open' && !isBefore(new Date(s.start_time), new Date()))
+            .filter(s => s.status === 'open'
+                && new Date(new Date(s.start_time).getTime() - (s.booking_cutoff_minutes ?? 0) * 60_000) > new Date())
             .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
         return futureSlots[0] ? new Date(futureSlots[0].start_time) : new Date()
     })
@@ -72,9 +75,19 @@ export function ExperienceSlotPicker({
 
     const now = new Date()
 
+    /**
+     * A session is bookable until `booking_cutoff_minutes` before it starts.
+     * Mirrors the guard inside reserve_experience — which is the authority; this
+     * only stops us OFFERING something the server will refuse. A cutoff of 0 is
+     * the old behaviour (bookable until it starts), so untouched listings are
+     * unaffected.
+     */
+    const isBookable = (s: Schedule) =>
+        new Date(new Date(s.start_time).getTime() - (s.booking_cutoff_minutes ?? 0) * 60_000) > now
+
     const openSlots = useMemo(() =>
         schedules
-            .filter((s) => (s.status === 'open' || s.status === 'full') && !isBefore(new Date(s.start_time), now))
+            .filter((s) => (s.status === 'open' || s.status === 'full') && isBookable(s))
             .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
     , [schedules])
 

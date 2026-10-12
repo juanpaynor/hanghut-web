@@ -208,7 +208,10 @@ export async function getPayoutStatement(
             supabase.from('partners').select('business_name').eq('id', partnerId).maybeSingle(),
             supabase
                 .from('experience_transactions')
-                .select('gross_amount, platform_fee, host_payout')
+                // discount_amount added 2026-10-12. Omitting it on a discounted
+                // sale is the single most common way to produce a statement
+                // that does not foot — the exact trap FeeRow documents.
+                .select('gross_amount, discount_amount, platform_fee, host_payout')
                 .eq('partner_id', partnerId)
                 .in('status', ['completed', 'refunded'])
                 .gte('created_at', dayStart(opts.from))
@@ -254,6 +257,7 @@ export async function getPayoutStatement(
         const experiences = sumFees(
             (expRes.data ?? []).map((r: Record<string, unknown>) => ({
                 gross_amount: money(r.gross_amount),
+                discount_amount: money(r.discount_amount),
                 platform_fee: money(r.platform_fee),
                 organizer_payout: money(r.host_payout),
             })),
@@ -272,6 +276,7 @@ export async function getPayoutStatement(
             ...ticketFeeRows,
             ...(expRes.data ?? []).map((r: Record<string, unknown>) => ({
                 gross_amount: money(r.gross_amount),
+                discount_amount: money(r.discount_amount),
                 platform_fee: money(r.platform_fee),
                 organizer_payout: money(r.host_payout),
             })),

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getEventTierModes } from '@/lib/tickets/tier-modes'
 import { redirect } from 'next/navigation'
 import { CheckoutClient } from '@/components/checkout/checkout-client'
 import { isTierOnSale, tierSaleState } from '@/lib/tickets/tier-availability'
@@ -95,18 +96,40 @@ export default async function CheckoutPage({
         redirect('/')
     }
 
-    // Reserved-seating guard: if this event has a seat map, seat selection is the
-    // ONLY valid checkout path. A quantity-based intent (no seatIds, or a count
-    // that doesn't match qty) would sell against tier capacity without claiming a
-    // seat — oversell + ghost tickets. Bounce back to the picker.
+    // Reserved-seating guard, scoped to the TIER rather than the event.
+    //
+    // The original rule was "this event has a seat map, therefore every purchase
+    // must claim seats". That was right while an event was all-or-nothing, and
+    // it protects a real property: a tier whose seats exist must never be sold by
+    // quantity alone, or it sells against tier capacity without claiming a seat
+    // (oversell) and issues tickets with no seat (ghost tickets).
+    //
+    // It is wrong for a mixed event, where a standalone GA tier legitimately
+    // arrives here with no seatIds — and it was already wrong for a GA ZONE (a
+    // seatless section the picker sells by quantity), which has always been
+    // bounced straight back to the picker it came from.
+    //
+    // So the question becomes per-tier, and it is the same question the money
+    // path asks: only a tier that SEATS resolve to needs seat ids. 'ga' and
+    // 'ga_zone' are both quantity-sold.
     const { data: seatMapRow } = await supabase
         .from('event_seat_maps')
         .select('id')
         .eq('event_id', eventId)
         .maybeSingle()
 
-    if (seatMapRow && selectedSeatIds.length !== qty) {
-        redirect(`/events/${eventId}?error=select_seats`)
+    if (seatMapRow) {
+        // Fail CLOSED. No tier, or modes we could not resolve, keeps the old
+        // behaviour of demanding seats. Guessing "general admission" here is the
+        // one guess that sells a seated tier without a seat.
+        const tierModes = tierId ? await getEventTierModes(eventId) : null
+        const needsSeats = !tierId || !tierModes
+            ? true
+            : tierModes.get(tierId) === 'seated'
+
+        if (needsSeats && selectedSeatIds.length !== qty) {
+            redirect(`/events/${eventId}?error=select_seats`)
+        }
     }
 
     // Labels for the "Your seats" card. Display-only: the RPC re-verifies the

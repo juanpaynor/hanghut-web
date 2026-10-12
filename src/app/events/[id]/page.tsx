@@ -6,9 +6,11 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
-import { Calendar, MapPin, Share2, ShieldCheck, Ticket, Phone, ExternalLink, AlertCircle, Globe } from 'lucide-react'
+import { Calendar, MapPin, Share2, ShieldCheck, Ticket, Phone, ExternalLink, AlertCircle, Globe, Armchair } from 'lucide-react'
 import type { Metadata } from 'next'
 import { SeatPickerLauncher } from '@/components/events/seat-picker-launcher'
+import { MixedTicketPanel } from '@/components/events/mixed-ticket-panel'
+import { getEventTierModes, isMapOwned, isMixedSeating } from '@/lib/tickets/tier-modes'
 import { EventGallery } from '@/components/events/event-gallery'
 import { RegistrationGate } from '@/components/events/registration-gate'
 import { Reveal } from '@/components/events/reveal'
@@ -426,6 +428,31 @@ export default async function PublicEventPage({
     // and the clock simply ran out.
     const eventSalesClosed = isEventSalesClosed(event)
     if (eventSalesClosed) isSoldOut = true
+
+    // ── Mixed ticketing (GA by quantity + seat-mapped tiers), opt-in ──────
+    // Gated on seating_type === 'mixed' so every event that exists today takes
+    // the exact branches it takes now. A null tierModes (no service-role key,
+    // RPC missing, query failed) also falls back to today's rendering: the one
+    // thing we must never do is guess a tier is GA and put a seated tier behind
+    // a quantity picker.
+    const isMixed = hasSeatMap && isMixedSeating(event as { seating_type?: string | null })
+    const tierModes = isMixed ? await getEventTierModes(event.id) : null
+    const mixedRemaining = (t: any) =>
+        Math.max(Number(t.quantity_total ?? 0) - Number(t.quantity_sold ?? 0), 0)
+    const gaTiersOnSale = tierModes
+        ? activeTiers.filter((t: any) => tierModes.get(t.id) === 'ga')
+        : []
+    // Everything the picker sells: seat-mapped tiers AND any GA zone (a
+    // seatless section with a tier), which the picker already handles by
+    // quantity. Both stay out of the page's quantity list.
+    const seatedTiersOnSale = tierModes
+        ? activeTiers.filter((t: any) => isMapOwned(tierModes.get(t.id)))
+        : []
+    // Each half opens on its OWN inventory: GA selling out must not close the
+    // seat map, and a full house must not hide remaining GA.
+    const gaGroupOpen = gaTiersOnSale.some((t: any) => mixedRemaining(t) > 0)
+    const seatedGroupOpen = seatedTiersOnSale.some((t: any) => mixedRemaining(t) > 0)
+    const renderMixed = !!tierModes && !eventSalesClosed && (gaGroupOpen || seatedGroupOpen)
 
     // RSVP mode — free events where the organizer opted into a one-tap RSVP instead
     // of the ticket/quantity/checkout flow. Only valid when the event is actually free.
@@ -1158,6 +1185,70 @@ export default async function PublicEventPage({
                             </>
                         ) : null}
                     </div>
+                ) : renderMixed ? (
+                    /* Mixed event. GA tiers go through the existing registration
+                       gate (questions, approval, invite-only and subscriber
+                       pricing all intact); seat-mapped tiers go through the
+                       existing picker. One order per tier -- unified mixed-cart
+                       checkout is a separate project.
+
+                       Only tiers get_event_tier_modes calls 'ga' are handed to
+                       the quantity gate. That is the whole safety property here:
+                       a seated tier in a quantity surface is the oversell and
+                       ghost-ticket case the single-mode branch below exists to
+                       prevent, and it stays prevented. */
+                    <>
+                        <MixedTicketPanel
+                            seatedTiers={seatedTiersOnSale.map((t: any) => ({
+                                id: t.id, name: t.name, price: t.price,
+                            }))}
+                            gaSlot={gaGroupOpen ? (
+                                <RegistrationGate
+                                    eventId={event.id}
+                                    eventTitle={event.title}
+                                    ticketPrice={event.ticket_price}
+                                    minTickets={event.min_tickets_per_purchase}
+                                    maxTickets={event.max_tickets_per_purchase}
+                                    isSoldOut={false}
+                                    tiers={gaTiersOnSale}
+                                    fullWidth
+                                    subscriberDiscount={subscriberDiscount}
+                                    questions={(event.registration_questions || []) as QuestionForForm[]}
+                                    requireApproval={event.require_approval}
+                                    inviteOnly={event.invite_only}
+                                    themeColor={event.theme_color}
+                                    dark={isDarkBg}
+                                    pageTheme={pageTheme}
+                                    initialApprovedRegistrationId={approvedRegistrationId}
+                                    hasTicket={viewerHasTicket}
+                                    ticketToken={viewerTicketToken}
+                                    /* A mixed event sells paid reserved seats, so
+                                       the one-tap RSVP path never applies. */
+                                    rsvpMode={false}
+                                    ctaLabel={customCtaLabel || undefined}
+                                    tierDisplay={event.layout_config?.tiers}
+                                    formLayout={event.layout_config?.registration?.layout}
+                                />
+                            ) : undefined}
+                            seatSlot={seatedGroupOpen ? (
+                                <SeatPickerLauncher
+                                    eventId={event.id}
+                                    fullWidth
+                                    maxPerOrder={event.max_seats_per_order ?? undefined}
+                                    legendTierIds={seatedTiersOnSale.map((t: any) => t.id)}
+                                />
+                            ) : undefined}
+                        />
+                        {!isLoggedIn && (
+                            <LoginNudge
+                                label="Have a HangHut account? Sign in for faster checkout"
+                                className="mt-4"
+                            />
+                        )}
+                        <p className="text-center text-xs text-muted-foreground mt-4 flex items-center justify-center gap-1">
+                            <ShieldCheck className="h-3 w-3" /> Secure checkout powered by Xendit
+                        </p>
+                    </>
                 ) : hasSeatMap ? (
                     /* Reserved-seating event: seat selection is the ONLY checkout path.
                        Quantity-based "Get Tickets" is intentionally disabled here — it would
@@ -1362,6 +1453,14 @@ export default async function PublicEventPage({
                                     <div className="flex items-center gap-2 flex-wrap">
                                         {accent && <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />}
                                         <span className="font-bold text-lg">{tier.name}</span>
+                                        {/* Mixed events only: say which ticket types
+                                            come with an assigned seat, so this table
+                                            never reads as "all general admission". */}
+                                        {tierModes && isMapOwned(tierModes.get(tier.id)) && (
+                                            <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                                                <Armchair className="h-2.5 w-2.5" /> Assigned seat
+                                            </span>
+                                        )}
                                         {tier.highlight && (
                                             <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: accent || 'var(--primary, #6366f1)' }}>
                                                 {tier.badge_label || 'Featured'}

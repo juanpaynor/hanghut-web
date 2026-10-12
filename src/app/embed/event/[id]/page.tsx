@@ -5,6 +5,7 @@ import { EmbedThemeWrapper, type EmbedTheme } from '@/components/embed/embed-the
 import { EmbedTicketButton } from '@/components/embed/embed-ticket-button'
 import { EmbedTierSelector } from '@/components/embed/embed-tier-selector'
 import { isTierOnSale, isTierVisible } from '@/lib/tickets/tier-availability'
+import { getEventTierModes } from '@/lib/tickets/tier-modes'
 
 // Always render fresh so ticket availability / sold-out / price changes show
 // immediately in the embed instead of a cached snapshot.
@@ -38,6 +39,7 @@ export default async function EmbedEventPage({
             capacity,
             tickets_sold,
             max_seats_per_order,
+            seating_type,
             organizer:partners!events_organizer_id_fkey(
                 business_name,
                 profile_photo_url,
@@ -68,6 +70,27 @@ export default async function EmbedEventPage({
     const eventDate = new Date(event.start_datetime)
     const organizer = Array.isArray(event.organizer) ? event.organizer[0] : event.organizer
     const activeTiers = (event.ticket_tiers || []).filter((t: any) => isTierOnSale(t))
+
+    // Mixed events: the embed sells GENERAL ADMISSION ONLY.
+    //
+    // A seated tier bought by quantity does not oversell -- the money path
+    // auto-assigns best-available -- but it hands the buyer seats they never
+    // saw, and seat selection needs the map, which does not belong in a
+    // publisher's iframe tile. So seated tiers are withheld here and pointed at
+    // the full event page instead.
+    //
+    // If the modes can't be resolved we withhold EVERY tier rather than guess.
+    // An embed that shows nothing but a working link is a worse ad; an embed
+    // that silently sells reserved seats by quantity is a worse bug.
+    let embedTiers = activeTiers
+    let seatedCount = 0
+    if (event.seating_type === 'mixed') {
+        const modes = await getEventTierModes(event.id)
+        embedTiers = modes
+            ? activeTiers.filter((t: any) => modes.get(t.id) === 'ga')
+            : []
+        seatedCount = activeTiers.length - embedTiers.length
+    }
     const lowestPrice = activeTiers.length > 0
         ? Math.min(...activeTiers.map((t: any) => Number(t.price)))
         : event.ticket_price
@@ -201,17 +224,41 @@ export default async function EmbedEventPage({
                     )}
 
                     {/* Tier selector (multi-tier) or simple buy button (single price) */}
-                    {activeTiers.length > 0 ? (
+                    {embedTiers.length > 0 ? (
                         <EmbedTierSelector
                             eventId={event.id}
-                            tiers={activeTiers}
+                            tiers={embedTiers}
                             maxPerOrder={event.max_seats_per_order || 10}
                         />
-                    ) : (
+                    ) : activeTiers.length === 0 ? (
                         <EmbedTicketButton
                             eventId={event.id}
                             isSoldOut={isSoldOut}
                         />
+                    ) : null}
+
+                    {/* Reserved seating lives on the event page, where the map
+                        has room to work. */}
+                    {seatedCount > 0 && (
+                        <a
+                            href={`https://hanghut.com/events/${event.id}`}
+                            target="_blank"
+                            rel="noopener"
+                            style={{
+                                display: 'block',
+                                marginTop: embedTiers.length > 0 ? '10px' : '0',
+                                padding: '10px',
+                                textAlign: 'center',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                borderRadius: '8px',
+                                border: '1px solid rgba(128,128,128,0.25)',
+                                textDecoration: 'none',
+                                color: 'inherit',
+                            }}
+                        >
+                            {seatedCount === 1 ? 'Reserved seating' : 'Reserved seating options'} — pick a seat
+                        </a>
                     )}
                 </div>
 
