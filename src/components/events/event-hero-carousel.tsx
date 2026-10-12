@@ -3,11 +3,33 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Calendar, MapPin, ArrowRight, ChevronLeft, ChevronRight, Ticket } from 'lucide-react'
+import { Calendar, MapPin, ArrowRight, ChevronLeft, ChevronRight, Ticket, BadgeCheck } from 'lucide-react'
 import { formatEventDate, formatEventTime, formatEventDateWithEnd, isMultiDayEvent } from '@/lib/datetime'
 import { isSoldOut, itemHref, type DiscoveryEvent } from '@/lib/events/discovery'
 
 const AUTOPLAY_MS = 7000
+
+/** Organizer records arrive as an object or a one-element array depending on the join. */
+function organizerOf(event: DiscoveryEvent) {
+    const o = (event as any).organizer
+    return (Array.isArray(o) ? o[0] : o) ?? null
+}
+
+function whenLabel(event: DiscoveryEvent) {
+    return isMultiDayEvent(event.start_datetime, event.end_datetime)
+        ? formatEventDateWithEnd(event.start_datetime, event.end_datetime)
+        : `${formatEventDate(event.start_datetime)} · ${formatEventTime(event.start_datetime)}`
+}
+
+function whereLabel(event: DiscoveryEvent) {
+    // A real event has no venue sometimes (NEVER ON SUNDAY ships with both null),
+    // so fall back rather than rendering a bare comma.
+    return [event.venue_name, event.city].filter(Boolean).join(', ') || 'Venue to be announced'
+}
+
+function priceLabel(event: DiscoveryEvent) {
+    return Number(event.ticket_price) === 0 ? 'Free' : `₱${Number(event.ticket_price).toLocaleString()}`
+}
 
 /**
  * Full-bleed hero carousel for /events.
@@ -21,6 +43,15 @@ const AUTOPLAY_MS = 7000
  * reach. Autoplay is slow, pauses on hover/focus, and is disabled outright under
  * prefers-reduced-motion — a hero that moves while someone is reading it is the
  * main way carousels annoy people.
+ *
+ * LAYOUT NOTE — height comes from the poster's aspect ratio, never from `vh`.
+ * The previous version was `h-[68vh]`, which ignores width: on a wide monitor
+ * that renders a ~3:1 letterbox strip that reads as "thin", and `object-cover`
+ * then crops organizer artwork to a band. Here the art sits in its own framed
+ * panel at a fixed ratio, so the hero grows with the viewport instead of
+ * flattening, and nothing is cropped to a sliver. Copy never overlaps the art
+ * either — covers are organizer-supplied and routinely have their own baked-in
+ * title and date, which used to collide with ours.
  */
 export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
     const [index, setIndex] = useState(0)
@@ -47,11 +78,16 @@ export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
 
     if (count === 0) return null
 
+    const active = events[index]
+    const activeOrganizer = organizerOf(active)
+    const activeSoldOut = isSoldOut(active)
+    const activeHref = itemHref(active)
+
     return (
         <section
             aria-roledescription="carousel"
             aria-label="Featured events"
-            className="relative w-full h-[68vh] min-h-[460px] max-h-[720px] overflow-hidden bg-muted"
+            className="relative isolate w-full overflow-hidden bg-[#4f46e5]"
             onMouseEnter={() => setPaused(true)}
             onMouseLeave={() => setPaused(false)}
             onFocusCapture={() => setPaused(true)}
@@ -69,138 +105,254 @@ export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
                 if (Math.abs(dx) > 48) (dx < 0 ? next : prev)()
             }}
         >
-            {events.map((event, i) => {
-                const active = i === index
-                const soldOut = isSoldOut(event)
-                const organizer = Array.isArray(event.organizer)
-                    ? (event.organizer[0] as any)
-                    : (event.organizer as any)
+            {/* ── Brand bed ────────────────────────────────────────────────
+                HangHut indigo, flat out. --lp-brand (#4f46e5) is the app's
+                --primary held exactly — the same indigo as the Download app
+                button in the header and every CTA below the fold — so the hero
+                reads as ours on sight.
+                No per-slide artwork bleeds out here on purpose. Tinting the bed
+                with each cover dragged the hue toward whatever the organizer
+                uploaded (and toward near-black on a dark poster), which is how
+                the brand colour got lost. The event's own atmosphere lives
+                inside the poster frame instead, where it belongs. */}
+            <div className="absolute inset-0 -z-10 bg-[#4f46e5]">
+                <div className="absolute inset-0 bg-gradient-to-br from-[#3a30ad] via-[#4f46e5] to-[#6d5efc]" />
+                {/* Light source behind the poster, so the frame sits in a glow
+                    rather than on a flat field. */}
+                <div
+                    className="absolute inset-0"
+                    style={{
+                        background:
+                            'radial-gradient(105% 85% at 78% 12%, rgba(167,158,255,0.55) 0%, rgba(109,94,252,0.30) 40%, rgba(58,48,173,0) 72%)',
+                    }}
+                />
+                {/* Deepens the copy side. White on bare #6d5efc is about 4.3:1 —
+                    fine for the headline, thin for the 13px meta lines. Under
+                    this the copy column sits around #2f268f, which puts white
+                    body text near 12:1. */}
+                <div className="absolute inset-0 bg-gradient-to-r from-[#241d78]/85 via-[#241d78]/35 to-transparent" />
+                {/* A wide flat gradient bands badly on cheap panels. */}
+                <div className="noise-texture absolute inset-0 opacity-[0.06] mix-blend-overlay" />
+            </div>
 
-                return (
+            <div className="container relative mx-auto px-4 pb-8 pt-10 md:pb-10 md:pt-14">
+                <div className="grid items-center gap-8 lg:grid-cols-12 lg:gap-12">
+
+                    {/* ── Copy ─────────────────────────────────────────── */}
                     <div
-                        key={event.id}
-                        aria-hidden={!active}
-                        className={`absolute inset-0 transition-opacity duration-700 motion-reduce:transition-none ${
-                            active ? 'opacity-100' : 'opacity-0 pointer-events-none'
-                        }`}
+                        key={active.id}
+                        className="hh-hero-rise order-2 text-white lg:order-1 lg:col-span-5"
                     >
-                        {event.cover_image_url ? (
-                            <Image
-                                src={event.cover_image_url}
-                                alt=""
-                                fill
-                                // Only the first slide is above the fold on load;
-                                // eagerly fetching all five would fight the LCP.
-                                priority={i === 0}
-                                loading={i === 0 ? undefined : 'lazy'}
-                                sizes="100vw"
-                                className="object-cover"
-                            />
-                        ) : (
-                            <div className="absolute inset-0 bg-gradient-to-br from-primary/80 via-primary to-primary/60" />
+                        {/* On an indigo bed the chip and the active thumbnail are
+                            white-tinted, not brand-tinted — indigo on indigo
+                            reads as nothing. */}
+                        <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/35 bg-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white backdrop-blur-md">
+                            {active.kind === 'experience' ? 'Experience' : active.is_featured ? 'Featured' : 'Spotlight'}
+                        </span>
+
+                        <h2 className="font-headline mt-5 text-4xl font-extrabold leading-[1.03] tracking-tight drop-shadow-sm md:text-5xl xl:text-6xl">
+                            <Link href={activeHref} className="rounded-sm outline-none transition-colors hover:text-white/85 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-4 focus-visible:ring-offset-transparent">
+                                {active.title.trim()}
+                            </Link>
+                        </h2>
+
+                        <dl className="mt-6 space-y-2.5 text-sm text-white/80">
+                            <div className="flex items-start gap-2.5">
+                                <dt className="sr-only">Date</dt>
+                                <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-white/55" />
+                                <dd className="font-medium">{whenLabel(active)}</dd>
+                            </div>
+                            <div className="flex items-start gap-2.5">
+                                <dt className="sr-only">Venue</dt>
+                                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-white/55" />
+                                <dd>{whereLabel(active)}</dd>
+                            </div>
+                        </dl>
+
+                        {activeOrganizer?.business_name && (
+                            <div className="mt-5 flex items-center gap-2.5 border-t border-white/15 pt-5">
+                                {activeOrganizer.profile_photo_url ? (
+                                    <Image
+                                        src={activeOrganizer.profile_photo_url}
+                                        alt=""
+                                        width={28}
+                                        height={28}
+                                        className="h-7 w-7 rounded-full object-cover ring-1 ring-white/25"
+                                    />
+                                ) : (
+                                    <span className="grid h-7 w-7 place-items-center rounded-full bg-white/15 text-[11px] font-bold text-white">
+                                        {activeOrganizer.business_name.charAt(0)}
+                                    </span>
+                                )}
+                                <span className="inline-flex items-center gap-1 text-sm text-white/70">
+                                    {activeOrganizer.business_name}
+                                    {activeOrganizer.verified && <BadgeCheck className="h-3.5 w-3.5 text-white/60" />}
+                                </span>
+                            </div>
                         )}
 
-                        {/* Heavy at the foot because cover art is organizer-supplied —
-                            we can't assume a dark or quiet bottom edge behind the copy. */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-black/10" />
-
-                        <div className="relative h-full container mx-auto px-4 flex flex-col justify-end pb-16 md:pb-20 text-white">
-                            <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] backdrop-blur-md">
-                                {event.kind === 'experience' ? 'Experience' : event.is_featured ? 'Featured' : 'Spotlight'}
-                            </span>
-
-                            <h2 className="font-headline mt-4 max-w-[18ch] text-4xl md:text-6xl font-extrabold leading-[1.02] tracking-tight drop-shadow-lg">
-                                {event.title}
-                            </h2>
-
-                            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-white/85">
-                                <span className="inline-flex items-center gap-1.5">
-                                    <Calendar className="h-4 w-4" />
-                                    {isMultiDayEvent(event.start_datetime, event.end_datetime)
-                                        ? formatEventDateWithEnd(event.start_datetime, event.end_datetime)
-                                        : `${formatEventDate(event.start_datetime)} · ${formatEventTime(event.start_datetime)}`}
-                                </span>
-                                <span className="inline-flex items-center gap-1.5">
-                                    <MapPin className="h-4 w-4" />
-                                    {event.venue_name}{event.city ? `, ${event.city}` : ''}
-                                </span>
-                                {organizer?.business_name && (
-                                    <span className="hidden sm:inline text-white/70">
-                                        {organizer.business_name}
-                                    </span>
+                        <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3">
+                            <Link
+                                href={activeHref}
+                                className="font-headline inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-bold text-neutral-900 shadow-xl transition-transform hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#4f46e5] motion-reduce:transition-none motion-reduce:hover:scale-100"
+                            >
+                                {activeSoldOut ? 'Join waitlist' : active.kind === 'experience' ? 'Book now' : 'Get tickets'}
+                                {!activeSoldOut && (
+                                    <>
+                                        <span className="opacity-30">·</span>
+                                        <span>{priceLabel(active)}</span>
+                                    </>
                                 )}
-                            </div>
-
-                            <div className="mt-6 flex flex-wrap items-center gap-5">
-                                <span className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 font-headline text-sm font-bold text-neutral-900 shadow-lg">
-                                    {soldOut ? 'Join waitlist' : event.kind === 'experience' ? 'Book now' : 'Get tickets'}
-                                    {!soldOut && (
-                                        <>
-                                            <span className="opacity-40">·</span>
-                                            <span>
-                                                {event.ticket_price === 0
-                                                    ? 'Free'
-                                                    : `₱${Number(event.ticket_price).toLocaleString()}`}
-                                            </span>
-                                        </>
-                                    )}
-                                    <ArrowRight className="h-4 w-4" />
+                                <ArrowRight className="h-4 w-4" />
+                            </Link>
+                            {!activeSoldOut && (
+                                <span className="inline-flex items-center gap-1.5 text-xs text-white/60">
+                                    <Ticket className="h-3.5 w-3.5" />
+                                    Tickets available now
                                 </span>
-                                {!soldOut && (
-                                    <span className="inline-flex items-center gap-1.5 text-xs text-white/70">
-                                        <Ticket className="h-3.5 w-3.5" />
-                                        Tickets available now
-                                    </span>
-                                )}
-                            </div>
+                            )}
                         </div>
+                    </div>
 
-                        {/* Whole-slide click target. Sits above the copy (which has no
-                            interactive children) but BELOW the controls, so the arrows
-                            and dots stay clickable without nesting buttons in a link.
-                            tabIndex -1 when inactive keeps hidden slides out of the tab order. */}
+                    {/* ── Artwork ──────────────────────────────────────────
+                        Its own framed panel at a fixed ratio. This is what sets
+                        the hero's height, so the section scales with the window
+                        rather than flattening on a wide one. */}
+                    <div className="order-1 lg:order-2 lg:col-span-7">
                         <Link
-                            href={itemHref(event)}
-                            aria-label={event.title}
-                            tabIndex={active ? 0 : -1}
-                            className="absolute inset-0 z-10 focus:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-white/70"
-                        />
+                            href={activeHref}
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            className="group relative block aspect-[16/10] w-full overflow-hidden rounded-2xl bg-[#3a30ad] shadow-2xl shadow-black/50 ring-1 ring-white/15 md:rounded-3xl lg:aspect-[3/2]"
+                        >
+                            {events.map((event, i) => (
+                                <div
+                                    key={event.id}
+                                    className={`absolute inset-0 transition-opacity duration-700 motion-reduce:transition-none ${
+                                        i === index ? 'opacity-100' : 'opacity-0'
+                                    }`}
+                                >
+                                    {event.cover_image_url ? (
+                                        <>
+                                            {/* Posters arrive at every ratio — square gig
+                                                art, 4:5 flyers, 16:9 photos. object-cover
+                                                in a fixed frame guillotines the tall ones
+                                                (GB Labrador lost the right third of his
+                                                own name). So the poster is CONTAINED and
+                                                never cropped, and the frame is filled by
+                                                a blurred copy of that same poster rather
+                                                than by empty bars. */}
+                                            <Image
+                                                src={event.cover_image_url}
+                                                alt=""
+                                                aria-hidden
+                                                fill
+                                                loading={i === 0 ? 'eager' : 'lazy'}
+                                                sizes="640px"
+                                                className="scale-125 object-cover opacity-70 blur-2xl"
+                                            />
+                                            <Image
+                                                src={event.cover_image_url}
+                                                alt={event.title}
+                                                fill
+                                                priority={i === 0}
+                                                loading={i === 0 ? undefined : 'lazy'}
+                                                sizes="(min-width: 1024px) 58vw, 100vw"
+                                                className="object-contain drop-shadow-2xl"
+                                            />
+                                        </>
+                                    ) : (
+                                        <div className="absolute inset-0 bg-gradient-to-br from-[#6d5efc] via-[#4f46e5] to-[#2e2a8f]" />
+                                    )}
+                                </div>
+                            ))}
+                            {activeSoldOut && (
+                                <span className="absolute left-4 top-4 rounded-full bg-black/70 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white backdrop-blur-md">
+                                    Sold out
+                                </span>
+                            )}
+                        </Link>
                     </div>
-                )
-            })}
+                </div>
 
-            {count > 1 && (
-                <>
-                    <button
-                        onClick={prev}
-                        aria-label="Previous event"
-                        className="absolute left-3 md:left-5 top-1/2 -translate-y-1/2 z-20 grid h-10 w-10 place-items-center rounded-full border border-white/25 bg-black/35 text-white backdrop-blur-md transition-colors hover:bg-black/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                    >
-                        <ChevronLeft className="h-5 w-5" />
-                    </button>
-                    <button
-                        onClick={next}
-                        aria-label="Next event"
-                        className="absolute right-3 md:right-5 top-1/2 -translate-y-1/2 z-20 grid h-10 w-10 place-items-center rounded-full border border-white/25 bg-black/35 text-white backdrop-blur-md transition-colors hover:bg-black/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                    >
-                        <ChevronRight className="h-5 w-5" />
-                    </button>
+                {/* ── Slide rail ───────────────────────────────────────────
+                    Replaces the dot row. Dots say "there are six of these";
+                    thumbnails say what the other five actually are, which is the
+                    only thing that makes a visitor press one. The bar under the
+                    active thumb is the autoplay timer, so the movement is
+                    explained before it happens rather than surprising a reader. */}
+                {count > 1 && (
+                    <div className="mt-8 flex items-end gap-4 border-t border-white/10 pt-5 md:mt-10">
+                        <ul className="-mb-2 flex flex-1 snap-x gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                            {events.map((event, i) => (
+                                <li key={event.id} className="snap-start">
+                                    <button
+                                        onClick={() => go(i)}
+                                        aria-label={`Show ${event.title.trim()}`}
+                                        aria-current={i === index}
+                                        className={`group flex w-[172px] shrink-0 flex-col gap-2 rounded-lg p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:w-[196px] ${
+                                            i === index ? 'bg-white/20 ring-1 ring-white/30' : 'hover:bg-white/10'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2.5">
+                                            <span className="relative h-10 w-14 shrink-0 overflow-hidden rounded-md bg-white/10 ring-1 ring-white/15">
+                                                {event.cover_image_url && (
+                                                    <Image
+                                                        src={event.cover_image_url}
+                                                        alt=""
+                                                        fill
+                                                        sizes="56px"
+                                                        className={`object-cover transition-opacity ${i === index ? 'opacity-100' : 'opacity-65 group-hover:opacity-100'}`}
+                                                    />
+                                                )}
+                                            </span>
+                                            <span className="min-w-0">
+                                                <span className={`block truncate text-xs font-semibold ${i === index ? 'text-white' : 'text-white/70 group-hover:text-white'}`}>
+                                                    {event.title.trim()}
+                                                </span>
+                                                <span className="mt-0.5 block truncate text-[11px] text-white/45">
+                                                    {formatEventDate(event.start_datetime)}
+                                                </span>
+                                            </span>
+                                        </div>
+                                        <span className="block h-0.5 w-full overflow-hidden rounded-full bg-white/15">
+                                            {i === index && (
+                                                <span
+                                                    key={`${event.id}-${paused}`}
+                                                    className={paused ? 'block h-full w-full bg-white/50' : 'hh-hero-progress block h-full w-full bg-white'}
+                                                    style={{ ['--hh-hero-ms' as any]: `${AUTOPLAY_MS}ms` }}
+                                                />
+                                            )}
+                                        </span>
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
 
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
-                        {events.map((e, i) => (
+                        <div className="hidden shrink-0 items-center gap-2 pb-2 md:flex">
+                            <span className="font-headline mr-1 text-xs tabular-nums text-white/50">
+                                {String(index + 1).padStart(2, '0')}
+                                <span className="mx-1 text-white/25">/</span>
+                                {String(count).padStart(2, '0')}
+                            </span>
                             <button
-                                key={e.id}
-                                onClick={() => go(i)}
-                                aria-label={`Go to slide ${i + 1}: ${e.title}`}
-                                aria-current={i === index}
-                                className={`h-1.5 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white ${
-                                    i === index ? 'w-7 bg-white' : 'w-1.5 bg-white/45 hover:bg-white/70'
-                                }`}
-                            />
-                        ))}
+                                onClick={prev}
+                                aria-label="Previous event"
+                                className="grid h-9 w-9 place-items-center rounded-full border border-white/20 text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={next}
+                                aria-label="Next event"
+                                className="grid h-9 w-9 place-items-center rounded-full border border-white/20 text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </button>
+                        </div>
                     </div>
-                </>
-            )}
+                )}
+            </div>
         </section>
     )
 }
