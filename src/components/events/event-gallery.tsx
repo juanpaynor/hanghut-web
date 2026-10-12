@@ -49,11 +49,27 @@ export function EventGallery({ images, title, aspectRatio = 3 / 4 }: EventGaller
                                 >
                                     <CardContent className="p-0">
                                         <AspectRatio ratio={aspectRatio}>
-                                            <div className="relative w-full h-full">
+                                            <div className="relative w-full h-full overflow-hidden">
+                                                {/* Blurred echo behind the contained
+                                                    image, the same treatment the hero
+                                                    poster uses. object-contain in a 3:4
+                                                    frame letterboxes any landscape shot,
+                                                    and those bars were painting the
+                                                    Card's own background — which reads as
+                                                    bright white slabs on a dark themed
+                                                    page. Filling them with the image
+                                                    itself makes the gap intentional on
+                                                    every theme, without cropping. */}
+                                                <img
+                                                    src={image}
+                                                    alt=""
+                                                    aria-hidden
+                                                    className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl brightness-[0.55] saturate-150"
+                                                />
                                                 <img
                                                     src={image}
                                                     alt={`${title} - Image ${index + 1}`}
-                                                    className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
+                                                    className="relative w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                                                 />
                                                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                                             </div>

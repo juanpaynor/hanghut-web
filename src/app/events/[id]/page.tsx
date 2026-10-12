@@ -921,9 +921,18 @@ export default async function PublicEventPage({
     // Rows stack rather than sitting side by side: this card now shares a row
     // with the About copy, and two columns inside a half-width column is too
     // cramped for a venue address.
-    const DetailsSection = () => (
-        <Card data-hh-card className="p-0 overflow-hidden border border-border/70 bg-muted/40 shadow-none my-8">
-            <div className="grid grid-cols-1 divide-y">
+    /** `wide` runs when/where as a two-up strip instead of a stacked column —
+     *  used when the card sits at full page width rather than beside the copy. */
+    const DetailsSection = ({ wide = false }: { wide?: boolean }) => (
+        <Card
+            data-hh-card
+            className={`p-0 overflow-hidden border border-border/70 bg-muted/40 shadow-none ${
+                wide ? 'mt-2 mb-0' : 'my-8'
+            }`}
+        >
+            <div className={`grid grid-cols-1 divide-y ${
+                wide ? 'sm:grid-cols-2 sm:divide-y-0 sm:divide-x' : ''
+            }`}>
                 <div className="p-6 flex items-start gap-4 hover:bg-muted/30 transition-colors">
                     <div className="p-3 bg-primary/10 rounded-2xl text-primary">
                         <Calendar className="h-6 w-6" />
@@ -1002,9 +1011,11 @@ export default async function PublicEventPage({
         </Card>
     )
 
-    const AboutSection = () => (
-        <div className="prose dark:prose-invert max-w-none py-8">
-            <h2 data-hh-section-title className="text-2xl font-bold mb-4">About this Event</h2>
+    /** `tight` trims the section's own padding for a short description, which
+     *  otherwise sits in a box several times its own height. */
+    const AboutSection = ({ tight = false }: { tight?: boolean }) => (
+        <div className={`prose dark:prose-invert max-w-none ${tight ? 'pt-2 pb-1' : 'py-8'}`}>
+            <h2 data-hh-section-title className={`text-2xl font-bold ${tight ? 'mb-2' : 'mb-4'}`}>About this Event</h2>
             {event.description_html ? (
                 <div
                     dangerouslySetInnerHTML={{ __html: sanitize(event.description_html) }}
@@ -1509,15 +1520,15 @@ export default async function PublicEventPage({
     // or the primary CTA, where an entrance animation would just add latency.
     const REVEAL_SECTIONS = new Set(['about', 'lineup', 'schedule', 'faq', 'sponsors', 'pricing', 'gallery', 'organizer'])
 
-    const renderSection = (sectionId: string) => {
+    const renderSection = (sectionId: string, opts?: { wide?: boolean; tight?: boolean }) => {
         if (hiddenSections.has(sectionId)) return null
 
         const el = (() => {
             switch (sectionId) {
                 case 'hero': return <HeroSection key="hero" />
                 case 'title': return <TitleSection key="title" />
-                case 'details': return <DetailsSection key="details" />
-                case 'about': return <AboutSection key="about" />
+                case 'details': return <DetailsSection key="details" wide={opts?.wide} />
+                case 'about': return <AboutSection key="about" tight={opts?.tight} />
                 case 'lineup': return <LineupSection key="lineup" />
                 case 'schedule': return <ScheduleSection key="schedule" />
                 case 'faq': return <FaqSection key="faq" />
@@ -1563,6 +1574,27 @@ export default async function PublicEventPage({
      * mainContentOrder directly and keeps the title section.
      */
     const bodyOrder = mainContentOrder.filter(id => id !== 'title')
+
+    /**
+     * How much copy the About section actually has, in plain text.
+     *
+     * Drives whether About and Details are worth pairing into a two-column
+     * band. The threshold is deliberately generous: roughly three lines at the
+     * column width this layout uses. Short of that the heading plus its
+     * sentence sit in a half-empty column beside a far taller card, and the
+     * page reads as broken rather than as briefly described.
+     *
+     * HTML is stripped rather than measured, so markup weight never counts as
+     * content -- a single `<p>` wrapper should not promote a six-word
+     * description into a two-column layout.
+     */
+    const aboutPlainText = (
+        event.description_html
+            ? String(event.description_html).replace(/<[^>]*>/g, ' ')
+            : (event.description || '')
+    ).replace(/\s+/g, ' ').trim()
+    const aboutIsShort = aboutPlainText.length < 280
+
     const showHero = !hiddenSections.has('hero')
     const showTickets = !hiddenSections.has('tickets')
 
@@ -2693,10 +2725,31 @@ export default async function PublicEventPage({
                     posters nearly fill the frame; square and landscape covers letterbox
                     into their own colours instead of being cropped. Nothing is cut. */}
                 <section className="container mx-auto px-4 pt-6 lg:pt-10 pb-12 max-w-7xl">
-                    <div className="grid gap-8 lg:gap-14 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] items-start">
+                    {/* items-stretch on lg, not items-start.
+                        The right column's height is driven by the ticket panel, which
+                        on a mixed GA + reserved-seating event is tall. With items-start
+                        the poster kept its own 3:4 height and left several hundred
+                        pixels of bare background beneath it — the single biggest piece
+                        of dead space on the page.
+
+                        Stretching the poster to the row height hands that area to the
+                        blurred echo below, which already exists for exactly this job:
+                        filling whatever the poster's own ratio does not cover. The gap
+                        becomes part of the artwork instead of a hole, and nothing is
+                        cropped. */}
+                    <div className="grid gap-8 lg:gap-14 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] items-start lg:items-stretch">
 
                         {showHero && event.cover_image_url && (
-                            <div className="relative w-full mx-auto max-w-md lg:max-w-none aspect-[3/4] max-h-[78vh] overflow-hidden rounded-2xl shadow-2xl ring-1 ring-black/10 dark:ring-white/10">
+                            <div className="relative w-full mx-auto max-w-md lg:max-w-none overflow-hidden rounded-2xl shadow-2xl ring-1 ring-black/10 dark:ring-white/10">
+                                {/* Spacer, not a box: it carries the 3:4 ratio so the
+                                    poster keeps its natural height as a FLOOR. Putting
+                                    the ratio on the container instead would let a short
+                                    right column squash the poster on simple events —
+                                    stretch sets height, and an explicit height beats an
+                                    aspect ratio. This way the column can only ever grow
+                                    to meet a tall ticket panel, never shrink below the
+                                    poster's own proportions. */}
+                                <div className="aspect-[3/4] max-h-[78vh] lg:max-h-none" aria-hidden />
                                 {/* Blurred, darkened echo of the poster — only ever
                                     visible where the poster's own ratio leaves a gap. */}
                                 <Image
@@ -2814,6 +2867,33 @@ export default async function PublicEventPage({
                                     return null
                                 }
                                 if (pair && sectionId === anchor) {
+                                    // A two-column band balances only when the copy is
+                                    // long enough to stand beside the card. With a
+                                    // one-line description the heading and its sentence
+                                    // float in a half-empty column next to a much taller
+                                    // card, which reads as a layout fault rather than a
+                                    // short description. Below the threshold we stack
+                                    // instead and run when/where as a full-width strip.
+                                    if (aboutIsShort) {
+                                        // Stacked, but still in the organizer's own
+                                        // order — the band above is a presentation
+                                        // choice, not a licence to reorder their page.
+                                        return (
+                                            <div key="about-details">
+                                                {anchor === 'about' ? (
+                                                    <>
+                                                        {renderSection('about', { tight: true })}
+                                                        {renderSection('details', { wide: true })}
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {renderSection('details', { wide: true })}
+                                                        {renderSection('about', { tight: true })}
+                                                    </>
+                                                )}
+                                            </div>
+                                        )
+                                    }
                                     return (
                                         <div key="about-details" className="grid gap-8 lg:grid-cols-[1.15fr_1fr] items-start">
                                             <div>{renderSection('about')}</div>
