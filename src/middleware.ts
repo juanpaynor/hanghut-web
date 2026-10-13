@@ -141,7 +141,17 @@ export const config = {
          * - api routes
          * - _next (Next.js internals)
          * - static files (images, fonts, etc.)
+         * - Next's generated metadata routes
+         *
+         * The metadata routes matter on PARTNER HOSTS. Anything middleware sees
+         * on a subdomain or custom domain that is not an app route gets
+         * rewritten to /<slug><path> for the storefront, and src/app/[slug]
+         * defines only page.tsx and membership/ -- so /manifest.webmanifest
+         * became /hexfest/manifest.webmanifest and 404'd on every storefront.
+         * Same for robots.txt and sitemap.xml. These are host-independent and
+         * should always serve from the app root, so exclude them here rather
+         * than threading them through appRoutePrefixes.
          */
-        '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+        '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest|txt|xml)$).*)',
     ],
 }

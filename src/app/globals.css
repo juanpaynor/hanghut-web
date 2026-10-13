@@ -86,6 +86,30 @@
     @apply bg-background text-foreground;
   }
 
+  /* Horizontal-overflow backstop.
+   *
+   * There was none, site-wide, so ONE element wider than the viewport anywhere
+   * on a page let the whole document swipe sideways on a phone — the classic
+   * rubber-band drift. Long venue addresses, user-supplied description HTML
+   * (wide tables, long URLs) and absolutely-positioned decoration can all do
+   * it, and without a guard each one is a separate bug report.
+   *
+   * `clip`, NOT `hidden`. `overflow-x: hidden` on html/body makes it a scroll
+   * container, which silently breaks every `position: sticky` descendant — and
+   * this app has sticky headers on the event page, checkout, the organizer
+   * forms and the storefront tier page. `clip` cuts the overflow without
+   * creating a scroll container, so sticky keeps working.
+   *
+   * Safari < 16 ignores `clip` and falls back to `visible`, i.e. exactly
+   * today's behaviour — it degrades to the status quo rather than breaking.
+   *
+   * This is a backstop, not a licence to overflow: it hides the symptom, so an
+   * element that genuinely needs to scroll sideways must still carry its own
+   * `overflow-x: auto` container. */
+  html {
+    overflow-x: clip;
+  }
+
   /* Inline noise texture to avoid external asset fetching */
   .noise-texture {
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");

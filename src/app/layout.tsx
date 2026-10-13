@@ -49,7 +49,10 @@ export const metadata: Metadata = {
   //   shortcut: '/favicon.ico',
   //   apple: '/apple-touch-icon.png',
   // },
-  manifest: '/manifest.json',
+  // src/app/manifest.ts makes Next serve this at /manifest.webmanifest.
+  // '/manifest.json' was never a route on any host, so this link 404'd
+  // everywhere, not only on partner subdomains.
+  manifest: '/manifest.webmanifest',
 };
 
 // JSON-LD Structured Data for Organization
