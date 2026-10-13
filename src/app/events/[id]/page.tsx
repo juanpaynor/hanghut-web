@@ -29,7 +29,7 @@ import { sanitize } from '@/lib/sanitize'
 import { EventPageBackground, type BgStyle } from '@/components/events/event-bg'
 import { getEventThemeCss } from '@/lib/event-themes'
 import { getEventLayoutCss } from '@/lib/event-layouts'
-import { sanitizeCustomCss } from '@/lib/storefront-custom-css'
+import { sanitizeCustomCss, extractCustomCssFontUrls } from '@/lib/storefront-custom-css'
 import { StorefrontPreviewBridge } from '@/components/organizer/storefront-preview-bridge'
 import { EventCountdown } from '@/components/events/event-countdown'
 import { SocialProofTicker } from '@/components/events/social-proof-ticker'
@@ -462,6 +462,21 @@ export default async function PublicEventPage({
     const isFreeEvent = activeTiers.length > 0
         ? activeTiers.every((t: any) => Number(t.price) === 0)
         : !hasAnyTier && Number(event.ticket_price) === 0
+    /** The lowest price a buyer can actually pay.
+     *
+     *  When an event has tiers, the tiers ARE the price list and
+     *  `events.ticket_price` is a legacy scalar organizers set once and rarely
+     *  revisit. Reading it directly advertises a price nobody can buy: Hex Fest
+     *  showed "Starting at P150" while its cheapest tier was P699.
+     *
+     *  The JSON-LD block further down already computed this correctly, so
+     *  search engines had the right number while the page on screen did not.
+     *  Same shape as isFreeEvent above: tiers win, scalar is the fallback for a
+     *  genuinely tier-less event. */
+    const startingPrice = activeTiers.length > 0
+        ? Math.min(...activeTiers.map((t: any) => Number(t.price) || 0))
+        : Number(event.ticket_price) || 0
+
     const rsvpMode = !!event.rsvp_enabled && isFreeEvent
     // rsvp_button_label started life as an RSVP-only field. It is now the
     // organizer's CTA label for ANY internally-ticketed event -- a running
@@ -559,7 +574,12 @@ export default async function PublicEventPage({
     }
     const headingFont = FONT_MAP[fontHeading] || FONT_MAP.inter
     const bodyFont    = FONT_MAP[fontBody]    || FONT_MAP.inter
-    const googleFontUrls = [...new Set([headingFont.url, bodyFont.url].filter(Boolean))]
+    // Font sheets the ORGANIZER's custom CSS asks for, on top of the ones their
+    // font picker chose. sanitizeCustomCss strips @import outright, so without
+    // this an imported font loaded in the design PREVIEW (which does not
+    // sanitize) and silently vanished on the live page.
+    const customCssFontUrls = extractCustomCssFontUrls(event.layout_config?.custom_css)
+    const googleFontUrls = [...new Set([headingFont.url, bodyFont.url, ...customCssFontUrls].filter(Boolean))]
 
     // A multi-day run has to say so on every layout — an "Aug 29 – 30" market that
     // renders as "Aug 29" sends people home a day early. Computed once here; each
@@ -1129,7 +1149,7 @@ export default async function PublicEventPage({
                             {event.is_external ? 'From' : 'Starting at'}
                         </span>
                         <span className="text-3xl font-extrabold text-primary">
-                            {event.ticket_price === 0 ? 'Free' : `₱${event.ticket_price.toLocaleString()}`}
+                            {startingPrice === 0 ? 'Free' : `₱${startingPrice.toLocaleString()}`}
                         </span>
                     </div>
                 )}
@@ -1738,7 +1758,7 @@ export default async function PublicEventPage({
                         </div>
                         <div className="p-3 border-t-2 md:border-t-0 border-foreground">
                             <div className="opacity-50">From</div>
-                            <div className="font-bold normal-case tracking-normal font-sans">{event.ticket_price === 0 ? 'Free' : `₱${event.ticket_price.toLocaleString()}`}</div>
+                            <div className="font-bold normal-case tracking-normal font-sans">{startingPrice === 0 ? 'Free' : `₱${startingPrice.toLocaleString()}`}</div>
                         </div>
                     </div>
                     {showCountdown && (

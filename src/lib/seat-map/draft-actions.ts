@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { nearDuplicateSectionLabels } from './label-similarity'
 import { getAuthUser, getActingPartnerId } from '@/lib/auth/cached'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { CanvasData, SectionData, SeatData } from '@/components/seat-map/types'
@@ -245,6 +246,12 @@ async function computePreview(c: Ctx, eventId: string): Promise<PublishPreview |
   }
   const unpriced = diff.unpricedSeats
   if (unpriced > 0) warnings.push(`${unpriced} seat${unpriced > 1 ? 's have' : ' has'} no price category and won't be sellable.`)
+
+  // Near-duplicate section names inside one price category — almost always a
+  // typo, and invisible to the organizer because both render identically on the
+  // canvas. Advisory only: exact duplicates are legitimate (one tier drawn as
+  // several tables) and are deliberately NOT flagged.
+  warnings.push(...nearDuplicateSectionLabels(draftCanvas))
 
   const limits = (ent as any)?.limits ?? {}
   const canPublish = limits.seat_map_publish === true

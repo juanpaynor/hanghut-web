@@ -52,6 +52,56 @@ function scopeSelector(selector: string): string {
 }
 
 /**
+ * The ONE host a skin may pull a stylesheet from.
+ *
+ * sanitizeCustomCss drops every @import, for a good reason: a remote stylesheet
+ * can be swapped for different rules after anyone reviews the skin. But that
+ * also silently killed the common legitimate case — an organizer importing a
+ * Google font — and because the DESIGN PREVIEW does not sanitize, the font
+ * rendered while they were designing and vanished once live. Axiom's
+ * "BLOOD & GLAM" was built on Cinzel Decorative and shipped in a fallback serif.
+ *
+ * Google Fonts can only ever answer with @font-face rules pointing at
+ * fonts.gstatic.com. It cannot deliver a selector that touches our page, so the
+ * swap risk that justified dropping @import does not apply to this host.
+ *
+ * These URLs are emitted by the page as <link rel="stylesheet">, which is also
+ * strictly better than an @import: it loads in parallel instead of blocking on
+ * the parent sheet, and @import only works as the first rule in a stylesheet —
+ * a position nothing can guarantee once the CSS is scoped and concatenated.
+ */
+const FONT_HOST = 'fonts.googleapis.com'
+
+/** `@import url('x')`, `@import url(x)`, `@import "x"` — all three spellings. */
+const IMPORT_URL = /url\(\s*['"]?([^'")]+)['"]?\s*\)|^\s*['"]([^'"]+)['"]/
+
+/**
+ * Font stylesheet URLs an organizer's custom CSS asks for, filtered to the one
+ * allowed host. Returned so the caller can emit them as <link> tags; the
+ * @import rules themselves are still stripped from the CSS by sanitizeCustomCss.
+ */
+export function extractCustomCssFontUrls(css: string | null | undefined): string[] {
+    if (!css) return []
+    const out: string[] = []
+    try {
+        const root = postcss.parse(css.slice(0, MAX_CSS_LENGTH))
+        root.walkAtRules('import', rule => {
+            const m = IMPORT_URL.exec(rule.params.trim())
+            const raw = (m?.[1] ?? m?.[2] ?? '').trim()
+            if (!raw) return
+            let u: URL
+            try { u = new URL(raw) } catch { return }   // relative/malformed: ignore
+            if (u.protocol !== 'https:') return
+            if (u.hostname !== FONT_HOST) return
+            out.push(u.toString())
+        })
+    } catch {
+        return []
+    }
+    return [...new Set(out)]
+}
+
+/**
  * Enforce the scope, drop @import, and cap the size. Returns '' for CSS that
  * can't be parsed — injecting a stylesheet we don't understand is exactly the
  * thing this function exists to prevent.
