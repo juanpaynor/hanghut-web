@@ -134,7 +134,7 @@ const THEME_CSS: Record<EventThemeId, string> = {
 [data-hh-theme="velvet-gala"][data-hh-modal] button{border-radius:0;letter-spacing:.08em}
 `,
 
-    /* ── SUNSET FESTIVAL ─ chunky rounded, sticker badges, wavy underlines ─── */
+    /* ── SUNSET FESTIVAL ─ chunky rounded, sticker badges, bold headings ───── */
     'sunset-festival': `
 [data-hh-theme="sunset-festival"] [data-hh-badge]{
   background:var(--hh-accent);color:#fff;border:none;border-radius:999px;
@@ -147,8 +147,6 @@ const THEME_CSS: Record<EventThemeId, string> = {
 }
 [data-hh-theme="sunset-festival"] [data-hh-section-title]{
   font-weight:800;
-  text-decoration:underline wavy var(--hh-accent);
-  text-decoration-thickness:2px;text-underline-offset:7px;
 }
 [data-hh-theme="sunset-festival"] #tickets{
   border-radius:28px;

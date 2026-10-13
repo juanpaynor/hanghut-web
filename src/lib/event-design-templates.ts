@@ -104,7 +104,7 @@ export const EVENT_DESIGN_TEMPLATES: EventDesignTemplate[] = [
     {
         id: 'sunset-festival',
         name: 'Sunset Festival',
-        tagline: 'Sticker badges, chunky rounds, wavy underlines',
+        tagline: 'Sticker badges, chunky rounds, bold headings',
         vibe: 'Festivals & outdoor',
         theme: 'sunset-festival',
         theme_color: '#F97316',

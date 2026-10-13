@@ -1742,10 +1742,10 @@ export default async function PublicEventPage({
                         </div>
                     </div>
                     {showCountdown && (
-                        <div className="mt-6"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} /></div>
+                        <div className="mt-6"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} tone="light" /></div>
                     )}
                     {showSocialProof && recentNames.length > 0 && (
-                        <div className="mt-4"><SocialProofTicker names={recentNames} /></div>
+                        <div className="mt-4"><SocialProofTicker names={recentNames} tone="light" /></div>
                     )}
                 </section>
 
@@ -1794,7 +1794,7 @@ export default async function PublicEventPage({
                                     <><span className="w-1 h-1 rounded-full bg-muted-foreground/40" /><span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{event.venue_name}</span></>
                                 )}
                             </div>
-                            {showCountdown && <div className="mt-6"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} /></div>}
+                            {showCountdown && <div className="mt-6"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} tone="light" /></div>}
                         </div>
                         {showHero && (
                             <div className="relative w-full aspect-[3/4] overflow-hidden bg-muted md:sticky md:top-6">
@@ -1806,7 +1806,7 @@ export default async function PublicEventPage({
                             </div>
                         )}
                     </div>
-                    {showSocialProof && recentNames.length > 0 && <div className="mt-8"><SocialProofTicker names={recentNames} /></div>}
+                    {showSocialProof && recentNames.length > 0 && <div className="mt-8"><SocialProofTicker names={recentNames} tone="light" /></div>}
                 </section>
 
                 <main className="container mx-auto px-4 max-w-3xl mt-4">
@@ -1908,8 +1908,8 @@ export default async function PublicEventPage({
                                     ? <p>Online event</p>
                                     : venueVisible && event.venue_name && <p>{event.venue_name}{event.city ? ` · ${event.city}` : ''}</p>}
                             </div>
-                            {showCountdown && <div className="mt-8 flex justify-center"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} /></div>}
-                            {showSocialProof && recentNames.length > 0 && <div className="mt-6 flex justify-center"><SocialProofTicker names={recentNames} /></div>}
+                            {showCountdown && <div className="mt-8 flex justify-center"><EventCountdown targetDate={event.start_datetime} label={countdownLabel} tone="light" /></div>}
+                            {showSocialProof && recentNames.length > 0 && <div className="mt-6 flex justify-center"><SocialProofTicker names={recentNames} tone="light" /></div>}
                         </div>
                     )}
 
@@ -1927,8 +1927,27 @@ export default async function PublicEventPage({
     // ─── POSTER LAYOUT ───────────────────────────────────────────────────────
     if (pageLayout === 'poster') {
         const formattedPosterDate = whenFull
+        // The poster hero paints its own ground, so it cannot assume white chrome.
+        // 'default' means a cover photo under a black/65 scrim (or a dark gradient
+        // when there is no cover) — always dark. Every other style defers to
+        // DARK_BG_STYLES, which deliberately excludes 'paper' and the other light
+        // grounds. Getting this wrong is what put white text on cream.
+        const posterOnDark = bgStyle === 'default' || isDarkBg
+        const pc = posterOnDark
+            ? {
+                soft: 'text-white/70', dot: 'bg-white/35', cue: 'text-white/40',
+                hdr: 'text-white/80 hover:text-white', ring: 'border-white/30',
+                avatar: 'bg-white/20', wordmark: 'bg-white/15 text-white',
+                chip: 'bg-white/15 border-white/25 text-white', title: 'text-white',
+            }
+            : {
+                soft: 'text-muted-foreground', dot: 'bg-foreground/30', cue: 'text-muted-foreground',
+                hdr: 'text-foreground/75 hover:text-foreground', ring: 'border-foreground/20',
+                avatar: 'bg-foreground/10', wordmark: 'bg-foreground/10 text-foreground',
+                chip: 'bg-foreground/[0.07] border-foreground/20 text-foreground', title: 'text-foreground',
+            }
         return (
-            <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="poster" className={cn("min-h-screen bg-black", !textColor && "text-white")} style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
+            <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="poster" className={cn("min-h-screen", posterOnDark ? "bg-black" : "bg-background", !textColor && (posterOnDark ? "text-white" : "text-foreground"))} style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
                 <PageHead />
                 {/* Fixed background effect */}
                 {bgStyle !== 'default' ? (
@@ -1954,32 +1973,32 @@ export default async function PublicEventPage({
                     {event.organizer ? (
                         <a
                             href={`https://${event.organizer.slug}.hanghut.com`}
-                            className="flex items-center gap-3 font-bold text-white/80 hover:text-white transition-colors"
+                            className={cn("flex items-center gap-3 font-bold transition-colors", pc.hdr)}
                         >
                             {event.organizer.profile_photo_url ? (
-                                <div className="relative w-9 h-9 rounded-full overflow-hidden border border-white/30">
+                                <div className={cn("relative w-9 h-9 rounded-full overflow-hidden border", pc.ring)}>
                                     <Image src={event.organizer.profile_photo_url} alt={event.organizer.business_name} fill className="object-cover" />
                                 </div>
                             ) : (
-                                <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center font-bold text-sm">
+                                <div className={cn("w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm", pc.avatar)}>
                                     {event.organizer.business_name.charAt(0)}
                                 </div>
                             )}
                             <span className="text-sm">{event.organizer.business_name}</span>
                         </a>
                     ) : (
-                        <Link href="/" className="bg-white/15 backdrop-blur px-3 py-1 rounded-md text-white font-black text-sm">
+                        <Link href="/" className={cn("backdrop-blur px-3 py-1 rounded-md font-black text-sm", pc.wordmark)}>
                             HANGHUT
                         </Link>
                     )}
-                    <ShareButton title={event.title} description={event.description} eventId={event.id} dark />
+                    <ShareButton title={event.title} description={event.description} eventId={event.id} dark={posterOnDark} />
                 </header>
 
                 {/* Full-viewport poster hero */}
                 <section className="relative z-10 min-h-screen flex flex-col items-center justify-center text-center px-4 pt-24 pb-16 gap-6">
                     {/* Badges */}
                     <div className="flex gap-2 justify-center">
-                        <span data-hh-badge className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-[0.15em] px-4 py-1.5 rounded-full">
+                        <span data-hh-badge className={cn("backdrop-blur border text-xs font-bold uppercase tracking-[0.15em] px-4 py-1.5 rounded-full", pc.chip)}>
                             {event.event_type || 'Event'}
                         </span>
                         {event.is_featured && (
@@ -1992,18 +2011,18 @@ export default async function PublicEventPage({
                     {/* Giant title */}
                     <h1
                         data-hh-title
-                        className="font-black text-white drop-shadow-2xl leading-[0.95] tracking-[-0.03em]"
+                        className={cn("font-black drop-shadow-2xl leading-[0.95] tracking-[-0.03em]", pc.title)}
                         style={{ fontSize: 'clamp(2.8rem, 9vw, 8.5rem)', fontFamily: 'var(--font-heading)' }}
                     >
                         {event.title}
                     </h1>
 
                     {/* Date + venue */}
-                    <div className="flex items-center gap-3 text-white/70 text-sm font-medium flex-wrap justify-center">
+                    <div className={cn("flex items-center gap-3 text-sm font-medium flex-wrap justify-center", pc.soft)}>
                         <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4" />{formattedPosterDate}</span>
                         {event.venue_name && (
                             <>
-                                <span className="w-1 h-1 rounded-full bg-white/35" />
+                                <span className={cn("w-1 h-1 rounded-full", pc.dot)} />
                                 <span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{event.venue_name}</span>
                             </>
                         )}
@@ -2011,12 +2030,12 @@ export default async function PublicEventPage({
 
                     {/* Countdown */}
                     {showCountdown && (
-                        <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />
+                        <EventCountdown targetDate={event.start_datetime} label={countdownLabel} tone={posterOnDark ? 'dark' : 'light'} />
                     )}
 
                     {/* Social proof */}
                     {showSocialProof && recentNames.length > 0 && (
-                        <SocialProofTicker names={recentNames} />
+                        <SocialProofTicker names={recentNames} tone={posterOnDark ? 'dark' : 'light'} />
                     )}
 
                     {/* Ticket CTA */}
@@ -2027,7 +2046,7 @@ export default async function PublicEventPage({
                     )}
 
                     {/* Scroll cue */}
-                    <div className="absolute bottom-8 flex flex-col items-center gap-1 text-white/40 text-xs animate-bounce">
+                    <div className={cn("absolute bottom-8 flex flex-col items-center gap-1 text-xs animate-bounce", pc.cue)}>
                         <span>Scroll</span>
                         <span>↓</span>
                     </div>
@@ -2138,8 +2157,8 @@ export default async function PublicEventPage({
 
         const Extras = () => (
             <>
-                {showCountdown && <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />}
-                {showSocialProof && recentNames.length > 0 && <SocialProofTicker names={recentNames} />}
+                {showCountdown && <EventCountdown targetDate={event.start_datetime} label={countdownLabel} tone={onDark ? "dark" : "light"} />}
+                {showSocialProof && recentNames.length > 0 && <SocialProofTicker names={recentNames} tone={onDark ? "dark" : "light"} />}
             </>
         )
 
@@ -2499,7 +2518,7 @@ export default async function PublicEventPage({
                     {/* Countdown if enabled */}
                     {showCountdown && (
                         <div className="mb-10 p-6 bg-muted rounded-2xl flex flex-col items-center">
-                            <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />
+                            <EventCountdown targetDate={event.start_datetime} label={countdownLabel} tone="light" />
                         </div>
                     )}
 
@@ -2831,10 +2850,10 @@ export default async function PublicEventPage({
                             </div>
 
                             {showCountdown && (
-                                <EventCountdown targetDate={event.start_datetime} label={countdownLabel} />
+                                <EventCountdown targetDate={event.start_datetime} label={countdownLabel} tone="light" />
                             )}
                             {showSocialProof && recentNames.length > 0 && (
-                                <SocialProofTicker names={recentNames} />
+                                <SocialProofTicker names={recentNames} tone="light" />
                             )}
 
                             {/* Tickets sit WITH the poster rather than in a sidebar
