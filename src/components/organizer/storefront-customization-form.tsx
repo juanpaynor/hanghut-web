@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { updateEventStorefront, uploadEventBgImage } from "@/lib/organizer/event-actions"
+import { downscaleImage } from "@/lib/images/downscale"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, ArrowUp, ArrowDown, LayoutDashboard, Palette, FileCode, Sparkles, Timer, Upload, Type, X, Plus, ListMusic, RefreshCw, Monitor, Smartphone } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -752,7 +753,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                     if (!file || !sectionImageCbRef.current) return
                                     setSectionImageUploading(true)
                                     const fd = new FormData()
-                                    fd.append('file', file)
+                                    fd.append('file', await downscaleImage(file))
                                     const result = await uploadEventBgImage(eventId, fd)
                                     setSectionImageUploading(false)
                                     if (result.error) {
@@ -993,7 +994,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                                 if (!file) return
                                                 setBgImageUploading(true)
                                                 const fd = new FormData()
-                                                fd.append('file', file)
+                                                fd.append('file', await downscaleImage(file))
                                                 const result = await uploadEventBgImage(eventId, fd)
                                                 setBgImageUploading(false)
                                                 if (result.error) {
