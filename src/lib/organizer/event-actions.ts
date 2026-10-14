@@ -14,8 +14,8 @@ function isoOrNull(v: unknown): string | null {
 
 /**
  * Resolve the partner whose events the current user may manage. Real owners
- * (partners.user_id) AND team members with role owner/manager qualify — team
- * members used to be bounced because resolution only checked partners.user_id.
+ * (partners.user_id), team owners/managers, and active platform support members
+ * qualify. Support access does not depend on the member's underlying team role.
  * Returns { id } so existing `partner.id` usages keep working, or null.
  */
 async function resolveManagerPartner(
@@ -28,8 +28,13 @@ async function resolveManagerPartner(
     if (owned) return { id: owned.id }
     const { data: tm } = await supabase
         .from('partner_team_members')
-        .select('partner_id, role').eq('user_id', user.id).maybeSingle()
-    if (tm && (tm.role === 'owner' || tm.role === 'manager')) return { id: tm.partner_id }
+        .select('partner_id, role, is_platform_support, is_active')
+        .eq('user_id', user.id).maybeSingle()
+    if (tm && (
+        tm.role === 'owner' ||
+        tm.role === 'manager' ||
+        (tm.is_platform_support === true && tm.is_active === true)
+    )) return { id: tm.partner_id }
     return null
 }
 

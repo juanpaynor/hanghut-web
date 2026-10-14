@@ -1445,7 +1445,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                                     soldOut={soldOut}
                                     availableCount={availableCount}
                                     center={center}
-                                    showLabel={!activeSection || isActive}
+                                    labelScale={1 / Math.max(1, view.scale)}
                                     pill={pill ? `₱${pill.price.toLocaleString()}${pill.split ? ' · split' : ''}` : (cantSeatParty ? `Not for ${partySize}` : null)}
                                     dimmed={cantSeatParty || (!!pill && pill.split)}
                                     focused={focusSectionId === section.id && (sheetOpen || isActive)}
@@ -1889,7 +1889,7 @@ function SectionShape({
     soldOut,
     availableCount,
     center,
-    showLabel,
+    labelScale,
     pill = null,
     dimmed = false,
     focused = false,
@@ -1903,7 +1903,8 @@ function SectionShape({
     /** available_count with the buyer's OWN holds credited back — not section.available_count. */
     availableCount: number
     center: { x: number; y: number }
-    showLabel: boolean
+    /** Counter-zoom factor for the label, so deep zoom doesn't render it huge. 1 at scale <= 1. */
+    labelScale: number
     /** Price pill for the current party size ("₱1,800", "₱1,800 · split") or a reason. */
     pill?: string | null
     /** Can't seat the party together — draw faded but keep it tappable. */
@@ -1931,39 +1932,55 @@ function SectionShape({
                 hitStrokeWidth={8}
                 perfectDrawEnabled={false}
             />
-            {showLabel && !isActive && (
+            {/* Every section keeps its name while one is open.
+                Only the OPEN section drops its label, because its name is
+                already in the header above the map and the text would sit on
+                top of the seat dots.
+
+                This used to also take `showLabel={!activeSection || isActive}`
+                from the call site. ANDed with the `!isActive` here that
+                collapses to `!activeSection && !isActive` -- the isActive half
+                could never fire -- so opening any section blanked the names of
+                ALL the others and the buyer lost their bearings exactly when
+                they needed them.
+
+                Tapping a section zooms to fit it, so the label is counter
+                scaled above 1x to hold a steady on screen size. Below 1x it is
+                left alone, which keeps the all sections view identical to
+                before. */}
+            {!isActive && (
                 <>
                     <Text
-                        x={center.x - 70}
-                        y={center.y - 14}
-                        width={140}
+                        x={center.x - 70 * labelScale}
+                        y={center.y - 14 * labelScale}
+                        width={140 * labelScale}
                         align="center"
                         text={section.label}
-                        fontSize={15}
+                        fontSize={15 * labelScale}
                         fontStyle="bold"
                         fill={soldOut ? '#6b7280' : '#1e293b'}
                         listening={false}
                         perfectDrawEnabled={false}
                     />
                     <Text
-                        x={center.x - 70}
-                        y={center.y + 4}
-                        width={140}
+                        x={center.x - 70 * labelScale}
+                        y={center.y + 4 * labelScale}
+                        width={140 * labelScale}
                         align="center"
                         text={soldOut ? (section.on_sale === false ? 'Not on sale' : 'Sold out') : `${availableCount} left`}
-                        fontSize={11}
+                        fontSize={11 * labelScale}
                         fill="#64748b"
                         listening={false}
                         perfectDrawEnabled={false}
                     />
                     {!soldOut && pill && (
                         <Text
-                            x={center.x - 70}
-                            y={center.y + 18}
-                            width={140}
+                            x={center.x - 70 * labelScale}
+                            y={center.y + 18 * labelScale}
+                            width={140 * labelScale}
                             align="center"
                             text={pill}
-                            fontSize={12}
+                            fontSize={12 * labelScale}
                             fontStyle="bold"
                             fill={dimmed ? '#94a3b8' : '#0f172a'}
                             listening={false}
