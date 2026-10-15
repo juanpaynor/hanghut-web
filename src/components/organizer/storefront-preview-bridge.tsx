@@ -35,6 +35,26 @@ type PreviewPayload = {
     heading_color?: string
 }
 
+/**
+ * The sanitizer pulls in postcss. This bridge lives in the PUBLIC event page's
+ * module graph, so a static import risks shipping a CSS parser to every ticket
+ * buyer in order to serve a tab only the organizer ever opens. Loaded on demand
+ * instead, and warmed on mount so the first keystroke isn't waiting on it.
+ */
+let cssLib: Promise<typeof import("@/lib/storefront-custom-css")> | null = null
+function loadCssLib() {
+    cssLib ??= import("@/lib/storefront-custom-css")
+    return cssLib
+}
+
+/**
+ * Keystrokes arrive faster than a dynamic import resolves, and the editor
+ * pushes one payload per edit. Without this, a slow first load lands AFTER a
+ * later edit and the preview settles on stale CSS. Only the newest payload is
+ * allowed to touch the DOM.
+ */
+let cssSeq = 0
+
 function styleTag(id: string): HTMLStyleElement {
     let el = document.getElementById(id) as HTMLStyleElement | null
     if (!el) {
@@ -63,10 +83,37 @@ function applyPreview(p: PreviewPayload) {
         if (p.text_color !== undefined) root.style.setProperty("--hh-text", p.text_color || "")
         if (p.heading_color !== undefined) root.style.setProperty("--hh-heading", p.heading_color || "")
     })
-    if (p.theme !== undefined) styleTag("hh-preview-theme").textContent = getEventThemeCss(p.theme || "classic")
+    if (p.theme !== undefined) styleTag("hh-event-theme").textContent = getEventThemeCss(p.theme || "classic")
     if (p.custom_css !== undefined) {
-        styleTag("hh-preview-custom").textContent = (p.custom_css || "").replace(/<\/?(style|script)\b[^>]*>/gi, "")
+        const seq = ++cssSeq
+        const css = p.custom_css
+        void loadCssLib().then(({ sanitizeCustomCss, extractCustomCssFontUrls }) => {
+            if (seq !== cssSeq) return   // a newer edit already landed
+            applyCustomCss(sanitizeCustomCss(css), extractCustomCssFontUrls(css))
+        })
     }
+}
+
+function applyCustomCss(sanitized: string, fontUrls: string[]) {
+    // Replace the server-rendered stylesheet in place, including when the
+    // editor clears it. Keep its position after theme/layout/colour styles.
+    styleTag("hh-event-custom-css").textContent = sanitized
+
+    // Prune fonts no longer asked for. The server tags the links it rendered
+    // FROM custom CSS with the same attribute, so a font the organizer deletes
+    // stops loading immediately instead of lingering until a reload. Links from
+    // the font PICKER are deliberately untagged: they are not ours to remove.
+    document.querySelectorAll<HTMLLinkElement>('link[data-hh-preview-font]').forEach(link => {
+        if (!fontUrls.includes(link.href)) link.remove()
+    })
+    fontUrls.forEach(url => {
+        if (Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')).some(link => link.href === url)) return
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        link.dataset.hhPreviewFont = 'true'
+        document.head.appendChild(link)
+    })
 }
 
 export function StorefrontPreviewBridge() {
@@ -79,6 +126,10 @@ export function StorefrontPreviewBridge() {
             applyPreview(d.payload || {})
         }
         window.addEventListener("message", onMessage)
+
+        // Warm the sanitizer while the organizer is still reading the page, so
+        // the first custom-CSS edit applies without a visible delay.
+        void loadCssLib()
 
         // Announce we're ready so the editor pushes the current state.
         window.parent.postMessage({ source: "hh-preview", type: "ready" }, "*")

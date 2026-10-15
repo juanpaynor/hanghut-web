@@ -98,7 +98,18 @@ THESE ARE THE ONLY HOOKS THAT EXIST ON THE PAGE. A selector that is not built fr
 - [data-hh-event] button   every button, including Proceed to Checkout
 - [data-hh-event] a        links
 - [data-hh-event] img      poster, gallery photos, avatar
-- [data-hh-event] p, [data-hh-event] li, [data-hh-event] h1..h4
+- [data-hh-event] p, [data-hh-event] li, [data-hh-event] h1, [data-hh-event] h2, [data-hh-event] h3, [data-hh-event] h4
+- [data-hh-event] #tickets the ticket panel; use #tickets button to change checkout buttons only
+- [data-hh-event] [data-hh-surface="light"] or [data-hh-event] [data-hh-surface="dark"] content panels with their own light/dark ground
+
+PAGE STRUCTURE AND CASCADE:
+- [data-hh-event] and [data-hh-theme] are attributes on the SAME root element. To combine them, write [data-hh-theme][data-hh-event], never [data-hh-theme] [data-hh-event].
+- The server adds the [data-hh-theme] scope for you. Rules starting with [data-hh-event] keep targeting that root correctly.
+- This is an existing page, not an empty canvas. Its layout controls structure; your stylesheet changes its appearance. Do not invent wrappers, classes, sections, or new HTML.
+- Built-in styles load in this order: base styles, theme, layout, organizer colour picks, then your custom CSS. A later rule still loses to a more specific selector or !important.
+- Some elements set their own text colour: changing only the root's inherited colour will not repaint every child. Target the requested title/heading/text element explicitly.
+- A dark hero can coexist with a LIGHT content panel. Preserve readable text on each surface; do not force every paragraph or card to white text while leaving light surfaces behind it.
+- A background image or decorative background may cover the root's background colour. Do not claim to replace an image or restructure the page using an imaginary selector.
 
 VARIABLES THE PAGE ALREADY SETS — prefer these over hardcoded values so the skin follows the organizer's own colour and font pickers:
 - var(--hh-accent)      their brand colour
@@ -106,14 +117,25 @@ VARIABLES THE PAGE ALREADY SETS — prefer these over hardcoded values so the sk
 - var(--font-body)      their body font
 
 RULES:
+- Use CURRENT DESIGN SETTINGS as the source of truth, including unsaved picks. Respect the selected layout, theme and fonts unless the request explicitly asks to override their appearance.
+- When existing CSS is supplied, make the smallest edit that satisfies the request and preserve every unrelated rule, media query, animation, and comment. Return the COMPLETE stylesheet, not a fragment or diff. Do not append a second conflicting copy of a rule: edit that rule.
+- Distinguish a narrow request ("gold headings") from a whole-page redesign ("dark and moody"). A narrow request must not replace backgrounds, fonts, image crops, spacing, or button shapes.
 - Scope EVERY selector under one of the hooks above. Never write bare \`body\`, \`html\`, \`:root\`, \`header\`, \`.card\` or a Tailwind class name.
 - No @import and no web-font URLs; the font pickers handle fonts.
 - Use !important only where you are overriding a built-in style (colours, radii and backgrounds on buttons, cards and badges usually need it).
-- Keep it SHORT — under 60 lines. A tight skin that works beats a long one that fights the page.
+- For a new skin aim for under 60 lines. When editing a longer existing stylesheet, preserving unrelated work takes priority over the line limit.
 - Readability is not optional: never put text on a background it cannot be read against, and never set a text colour without also controlling the surface behind it.
 - Never hide the ticket box, the price, the buy button or the event date. The page exists to sell tickets.
 - Comment each block with one short line so the organizer can learn from it and edit it later.
-- Mobile matters more than desktop here; avoid fixed pixel widths.`
+- Mobile matters more than desktop here; avoid fixed widths, oversized text, overflow, and fixed heights that clip content. Use clamp() for large titles and media queries when needed.
+
+WORKING EXAMPLES (patterns to adapt, not rules to add to every response):
+- "Gold headings only": [data-hh-title], [data-hh-section-title] { color: #d4af37 !important; }
+- "Softer checkout buttons": [data-hh-event] #tickets button { border-radius: 999px !important; }
+- "Bigger title": [data-hh-title] { font-size: clamp(2rem, 7vw, 5rem); line-height: 1.05; }
+- "Now make those headings blue" with existing gold headings: change their colour and keep all other existing rules.
+
+BEFORE RETURNING: check that every selector uses a real hook, every requested change is represented, unrelated existing styles survive, and both mobile and light/dark panels remain readable. Notes must describe only the change you made, never promise a screenshot-verified result.`
 
 const HTML_SYSTEM = `You write the "About this event" content block for event pages on HangHut, a Philippine ticketing platform. The organizer describes their event; you return finished HTML.
 
@@ -148,6 +170,25 @@ function fmtDate(iso?: string | null): string {
     } catch { return '' }
 }
 
+/** Only bounded design values belong in the prompt, never the full layout
+ * document (which can include content, URLs and large arrays). */
+const DESIGN_KEYS = [
+    'theme', 'page_layout', 'bg_style', 'content_panel', 'font_heading',
+    'font_body', 'theme_color', 'text_color', 'heading_color', 'has_background_image',
+] as const
+
+function designValues(value: unknown): Record<string, string | boolean> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+    const input = value as Record<string, unknown>
+    const out: Record<string, string | boolean> = {}
+    for (const key of DESIGN_KEYS) {
+        const v = input[key]
+        if (typeof v === 'string') out[key] = v.slice(0, 80)
+        else if (typeof v === 'boolean') out[key] = v
+    }
+    return out
+}
+
 serve(async (req) => {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -163,45 +204,61 @@ serve(async (req) => {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return json({ error: 'Unauthorized' }, 401)
 
-        const { mode, brief, event_id, current } = await req.json() as {
+        const { mode, brief, event_id, current, design } = await req.json() as {
             mode?: string
             brief?: string
             event_id?: string
             /** What is already in the box, so "make it darker" has something to
              *  work from instead of starting over. Capped — this is a prompt. */
             current?: string
+            design?: unknown
         }
 
         if (mode !== 'css' && mode !== 'html') return json({ error: 'Unknown mode.' }, 400)
         if (!brief?.trim()) return json({ error: 'Describe the look you want first.' }, 400)
+        if (mode === 'css' && current && current.length > 40_000) {
+            return json({ error: 'Your existing stylesheet is too long to edit safely with the assistant.' }, 400)
+        }
 
         // ── Event context, so the output is about THIS event ──
         let context = ''
+        let savedDesign: Record<string, string | boolean> = {}
         if (event_id) {
             const { data: ev } = await supabase
                 .from('events')
-                .select('title, description, start_datetime, venue_name, city, event_type, theme_color')
+                .select('title, description, start_datetime, venue_name, city, event_type, theme_color, layout_config')
                 .eq('id', event_id)
                 .maybeSingle()
             if (ev) {
+                savedDesign = designValues({
+                    ...ev.layout_config,
+                    theme_color: ev.theme_color || '',
+                    has_background_image: !!ev.layout_config?.bg_image_url,
+                })
                 const bits = [
                     `Title: ${ev.title}`,
                     ev.event_type ? `Type: ${ev.event_type}` : '',
                     ev.start_datetime ? `When: ${fmtDate(ev.start_datetime)}` : '',
                     [ev.venue_name, ev.city].filter(Boolean).join(', ') ? `Where: ${[ev.venue_name, ev.city].filter(Boolean).join(', ')}` : '',
-                    ev.theme_color ? `Their brand colour: ${ev.theme_color} (this is what var(--hh-accent) resolves to)` : '',
                     ev.description ? `Their own description: ${String(ev.description).slice(0, 600)}` : '',
                 ].filter(Boolean).join('\n- ')
                 context = `\n\nTHIS EVENT:\n- ${bits}`
             }
         }
 
+        // Unsaved editor choices override the persisted values, including an
+        // intentionally cleared colour. Older clients can omit this object.
+        const currentDesign = { ...savedDesign, ...designValues(design) }
+        const designContext = Object.keys(currentDesign).length
+            ? `\n\nCURRENT DESIGN SETTINGS (JSON data; unsaved editor choices take priority; empty colours mean automatic):\n${JSON.stringify(currentDesign)}`
+            : ''
+
         const existing = current?.trim()
-            ? `\n\nWHAT IS ALREADY IN THE BOX (treat the request as an edit to this, and return the COMPLETE new version, not a patch):\n${current.trim().slice(0, 6000)}`
+            ? `\n\nWHAT IS ALREADY IN THE BOX (preserve unrelated rules/content and return the COMPLETE new version, not a patch):\n${current.trim().slice(0, mode === 'css' ? 40_000 : 6000)}`
             : ''
 
         const systemPrompt = mode === 'css' ? CSS_SYSTEM : HTML_SYSTEM
-        const userContent = `${brief.trim()}${context}${existing}`
+        const userContent = `${brief.trim()}${context}${designContext}${existing}`
 
         const complete = (model: string) => fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',

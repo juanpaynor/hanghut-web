@@ -299,6 +299,18 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
     const previewRef = useRef<HTMLIFrameElement>(null)
     const [previewNonce, setPreviewNonce] = useState(0)
     const watchedThemeColor = form.watch('theme_color')
+    const aiDesignContext = {
+        theme: pageThemeId,
+        page_layout: pageLayout,
+        bg_style: bgStyle,
+        content_panel: contentPanel,
+        font_heading: fontHeading,
+        font_body: fontBody,
+        theme_color: watchedThemeColor || '',
+        text_color: textColor,
+        heading_color: headingColor,
+        has_background_image: !!bgImageUrl,
+    }
     const previewPayloadRef = useRef<Record<string, unknown>>({})
     previewPayloadRef.current = {
         theme_color: watchedThemeColor || null,
@@ -713,6 +725,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                                 value={field.value || ''}
                                                 onChange={field.onChange}
                                                 eventId={eventId}
+                                                designContext={aiDesignContext}
                                                 placeholder="<p>Detailed event info...</p>"
                                                 minHeight="min-h-[200px]"
                                             />
@@ -1172,6 +1185,8 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                 value={customCss}
                                 onChange={setCustomCss}
                                 eventId={eventId}
+                                designContext={aiDesignContext}
+                                getPreviewDocument={() => previewRef.current?.contentDocument ?? null}
                                 placeholder={"[data-hh-title] {\n  color: #ff5e8a;\n}"}
                             />
                             <p className="text-xs text-muted-foreground">

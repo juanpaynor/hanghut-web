@@ -1006,9 +1006,28 @@ serve(async (req) => {
             amount: Math.round(intent.total_amount),
             currency: 'PHP',
             country: 'PH',
-            // QRPH routes through main wallet for all accounts
+            // QRPH TEMPORARILY REMOVED -- 2026-10-15 incident.
+            //
+            // From 03:47 UTC Xendit began rejecting every paid session with
+            //   400 INVALID_PAYMENT_CHANNEL
+            //   "Channel(s) QRPH are not available. Please ensure that you have
+            //    activated the necessary channels"
+            // Because QRPH was listed unconditionally, ONE dead channel failed
+            // the whole allowed_payment_channels array and no payment link was
+            // created at all -- 62 checkouts and PHP 63,730 blocked across two
+            // partners in 77 minutes. Free orders were unaffected: they never
+            // call Xendit.
+            //
+            // Nothing was charged; these die before payment. This removal is a
+            // revert-me, not a decision: QRPH is ~60% of paid orders (669 of
+            // 1,122 in the last 30 days, PHP 608k). Put the line back the moment
+            // Xendit confirms the channel is active again.
+            //
+            // NOTE for whoever restores it: listing a channel the account has
+            // not activated is fatal to the entire session, so the real fix is
+            // to source this list from the account's live channels rather than
+            // hard-coding it.
             allowed_payment_channels: [
-                'QRPH',
                 ...(useMainWallet || organizerCardsGcashLive ? ['CARDS', 'GCASH'] : []),
                 'PAYMAYA',
                 'GRABPAY',

@@ -576,10 +576,18 @@ export default async function PublicEventPage({
     const bodyFont    = FONT_MAP[fontBody]    || FONT_MAP.inter
     // Font sheets the ORGANIZER's custom CSS asks for, on top of the ones their
     // font picker chose. sanitizeCustomCss strips @import outright, so without
-    // this an imported font loaded in the design PREVIEW (which does not
-    // sanitize) and silently vanished on the live page.
+    // this an imported font would load while they designed and then silently
+    // vanish on the live page -- which is how Axiom's "BLOOD & GLAM" shipped in
+    // a fallback serif instead of Cinzel Decorative.
     const customCssFontUrls = extractCustomCssFontUrls(event.layout_config?.custom_css)
     const googleFontUrls = [...new Set([headingFont.url, bodyFont.url, ...customCssFontUrls].filter(Boolean))]
+
+    // In the design preview, the bridge removes font links whose @import the
+    // organizer has just deleted. Tag ONLY the ones custom CSS introduced: a URL
+    // the font picker also uses has to survive, or dropping an @import would
+    // strip the picked font along with it.
+    const pickerFontUrls = new Set([headingFont.url, bodyFont.url].filter(Boolean))
+    const customOnlyFontUrls = new Set(customCssFontUrls.filter(u => !pickerFontUrls.has(u)))
 
     // A multi-day run has to say so on every layout — an "Aug 29 – 30" market that
     // renders as "Aug 29" sends people home a day early. Computed once here; each
@@ -1625,7 +1633,7 @@ export default async function PublicEventPage({
     const PageHead = () => (
         <>
             {googleFontUrls.map(url => (
-                <link key={url} rel="stylesheet" href={url} />
+                <link key={url} rel="stylesheet" href={url} data-hh-preview-font={isPreview && customOnlyFontUrls.has(url) ? 'true' : undefined} />
             ))}
             {/* Heading font on every heading in the new layouts — the theme BASE only
                 applies it for non-classic themes, so classic would otherwise fall back.
@@ -1672,14 +1680,14 @@ export default async function PublicEventPage({
 `}</style>
             )}
             {panelCss && <style>{panelCss}</style>}
-            {themeCss && <style>{themeCss}</style>}
+            {(themeCss || isPreview) && <style id="hh-event-theme">{themeCss}</style>}
             {layoutCss && <style>{layoutCss}</style>}
             {/* Organizer colour picks land AFTER the layout bones: cinematic (and the
                 dark-bg block) pin .text-foreground/.text-muted-foreground to fixed
                 slate values, which would otherwise outrank an explicit pick. Custom
                 CSS still ships last so it remains the final escape hatch. */}
             {(textColor || headingColor) && <style>{organizerColorCss}</style>}
-            {customCss && <style dangerouslySetInnerHTML={{ __html: customCss }} />}
+            {(customCss || isPreview) && <style id="hh-event-custom-css" dangerouslySetInnerHTML={{ __html: customCss }} />}
             {isPreview && <StorefrontPreviewBridge />}
         </>
     )
@@ -2662,7 +2670,7 @@ export default async function PublicEventPage({
             )}
             {/* Google Fonts */}
             {googleFontUrls.map(url => (
-                <link key={url} rel="stylesheet" href={url} />
+                <link key={url} rel="stylesheet" href={url} data-hh-preview-font={isPreview && customOnlyFontUrls.has(url) ? 'true' : undefined} />
             ))}
             {/* Apply heading font to all headings within this page. The dark-bg block
                 is split in two: the TEXT rules stand down when the organizer picked a
@@ -2697,11 +2705,11 @@ export default async function PublicEventPage({
 ` : ''}`}</style>
             {panelCss && <style>{panelCss}</style>}
             {/* Art-directed theme CSS — after the base styles so theme rules win ties */}
-            {themeCss && <style>{themeCss}</style>}
+            {(themeCss || isPreview) && <style id="hh-event-theme">{themeCss}</style>}
             {/* Organizer colour picks last (before custom CSS) so they outrank the
                 theme + dark-bg rules that pin .text-foreground/.text-muted-foreground. */}
             {(textColor || headingColor) && <style>{organizerColorCss}</style>}
-            {customCss && <style dangerouslySetInnerHTML={{ __html: customCss }} />}
+            {(customCss || isPreview) && <style id="hh-event-custom-css" dangerouslySetInnerHTML={{ __html: customCss }} />}
             {isPreview && <StorefrontPreviewBridge />}
 
             {/* Full-page background — fixed so it covers the entire scroll */}

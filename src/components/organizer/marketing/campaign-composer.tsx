@@ -106,6 +106,16 @@ export function CampaignComposer() {
     const [skipRecentDays, setSkipRecentDays] = useState(7)
     const [skipCount, setSkipCount] = useState<number | null>(null)
 
+    /**
+     * What this send will ACTUALLY reach: the audience minus anyone the
+     * frequency cap skips. The chip and the Send button have to quote the same
+     * figure — the button is the one being clicked, so it must never advertise
+     * a bigger number than the send will use.
+     */
+    const effectiveCount = audienceCount === null
+        ? null
+        : (skipRecent && skipCount ? Math.max(audienceCount - skipCount, 0) : audienceCount)
+
     // Drafts (Phase 6)
     const [draftId, setDraftId] = useState<string | null>(null)
     const [drafts, setDrafts] = useState<{ id: string; subject: string; segment: string | null; updated_at: string }[]>([])
@@ -420,7 +430,9 @@ export function CampaignComposer() {
             return
         }
         loadAudienceCount()
-    }, [audienceType, selectedEventId, selectedSegment, selectedTierIds])
+        // specificRecipients matters: the hand-picked count comes from its length,
+        // so dropping someone from the list has to move the number.
+    }, [audienceType, selectedEventId, selectedSegment, selectedTierIds, specificRecipients])
 
     // Preview of the recently-emailed exclusion. Separate from the audience
     // count so toggling it doesn't refetch the audience.
@@ -526,8 +538,15 @@ export function CampaignComposer() {
     }, [eventQuery, insertEventOpen])
 
     async function loadAudienceCount() {
-        // Hand-picked lists carry their own exact count — no server lookup needed.
-        if (audienceType === 'specific_customers') return
+        // Hand-picked lists carry their own exact count — no server lookup needed,
+        // but it still has to REACH the counter. Returning early here left
+        // audienceCount holding whatever the previous audience had loaded, which
+        // on mount is all_subscribers: the chip and the Send button both offered
+        // to email 153 people while the panel above said 50 were picked.
+        if (audienceType === 'specific_customers') {
+            setAudienceCount(specificRecipients.length)
+            return
+        }
         setLoadingCount(true)
         try {
             const partnerId = await getPartnerId()
@@ -743,7 +762,10 @@ export function CampaignComposer() {
                 throw new Error(data?.error || "Email sending reported failure")
             }
 
-            const queued = data.queued ?? data.sent_count ?? audienceCount ?? 'all'
+            // Fall back to the POST-skip figure: the line below reports `skipped`
+            // separately, so quoting the raw audience here would count the
+            // skipped people twice.
+            const queued = data.queued ?? data.sent_count ?? effectiveCount ?? 'all'
             const skipped = Number(data.skipped_recent || 0)
             toast({
                 title: "Campaign Sent!",
@@ -1031,7 +1053,7 @@ export function CampaignComposer() {
                                     ) : (
                                         <Users className="h-3 w-3 mr-1" />
                                     )}
-                                    {skipRecent && skipCount ? Math.max(audienceCount - skipCount, 0) : audienceCount} recipient{(skipRecent && skipCount ? Math.max(audienceCount - skipCount, 0) : audienceCount) !== 1 ? 's' : ''}
+                                    {effectiveCount} recipient{effectiveCount !== 1 ? 's' : ''}
                                 </Badge>
                                 {skipRecent && skipCount ? (
                                     <span className="text-xs text-muted-foreground">of {audienceCount}</span>
@@ -1245,9 +1267,9 @@ export function CampaignComposer() {
                                 <>
                                     <Send className="mr-2 h-4 w-4" />
                                     Send Campaign
-                                    {audienceCount !== null && (
+                                    {effectiveCount !== null && (
                                         <Badge variant="secondary" className="ml-2 text-xs">
-                                            {audienceCount}
+                                            {effectiveCount}
                                         </Badge>
                                     )}
                                 </>

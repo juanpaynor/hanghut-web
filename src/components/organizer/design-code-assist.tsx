@@ -36,6 +36,19 @@ import {
 
 type Mode = 'css' | 'html'
 
+export type DesignContext = {
+    theme: string
+    page_layout: string
+    bg_style: string
+    content_panel: string
+    font_heading: string
+    font_body: string
+    theme_color: string
+    text_color: string
+    heading_color: string
+    has_background_image: boolean
+}
+
 const COPY: Record<Mode, {
     aiPlaceholder: string
     aiExamples: string[]
@@ -79,6 +92,8 @@ export function DesignCodeAssist({
     value,
     onChange,
     eventId,
+    designContext,
+    getPreviewDocument,
     placeholder,
     minHeight = 'min-h-[260px]',
 }: {
@@ -86,6 +101,8 @@ export function DesignCodeAssist({
     value: string
     onChange: (next: string) => void
     eventId?: string
+    designContext?: DesignContext
+    getPreviewDocument?: () => Document | null
     placeholder?: string
     minHeight?: string
 }) {
@@ -96,7 +113,7 @@ export function DesignCodeAssist({
 
     const [brief, setBrief] = useState('')
     const [generating, setGenerating] = useState(false)
-    const [result, setResult] = useState<{ code: string; notes: string } | null>(null)
+    const [result, setResult] = useState<{ code: string; notes: string; warning?: string } | null>(null)
     // Kept so "Undo" after applying AI output is one click, not a re-type.
     const [undoTo, setUndoTo] = useState<string | null>(null)
     const [refOpen, setRefOpen] = useState(false)
@@ -126,12 +143,21 @@ export function DesignCodeAssist({
             const { data, error } = await supabase.functions.invoke('ai-page-design', {
                 // `current` lets a follow-up like "now make it darker" edit what
                 // is there instead of starting from nothing.
-                body: { mode, brief: brief.trim(), event_id: eventId, current: value || undefined },
+                body: { mode, brief: brief.trim(), event_id: eventId, current: value || undefined, design: designContext },
             })
             if (error) throw new Error(error.message || 'Could not reach the AI assistant.')
             if (data?.error) throw new Error(data.error)
             if (!data?.code) throw new Error('The AI returned nothing usable.')
-            setResult({ code: data.code as string, notes: (data.notes as string) || '' })
+            const code = data.code as string
+            // Loaded here rather than imported at the top: the reviewer pulls in
+            // postcss, which is dead weight in this form's bundle until someone
+            // actually generates something. `value` is what they already have,
+            // so the review can tell an edit from a rewrite.
+            const review = mode === 'css'
+                ? (await import('@/lib/storefront-custom-css')).reviewCustomCss(code, getPreviewDocument?.(), value)
+                : {}
+            if (review.error) throw new Error(review.error)
+            setResult({ code, notes: (data.notes as string) || '', warning: review.warning })
         } catch (err) {
             toast({
                 title: 'Could not generate',
@@ -193,6 +219,7 @@ export function DesignCodeAssist({
                 {result && (
                     <div className="rounded-md border bg-background p-3 space-y-2">
                         {result.notes && <p className="text-sm">{result.notes}</p>}
+                        {result.warning && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">{result.warning}</p>}
                         <pre className="max-h-48 overflow-auto rounded bg-muted p-2 text-[11px] leading-relaxed font-mono whitespace-pre-wrap">
                             {result.code}
                         </pre>
@@ -201,7 +228,7 @@ export function DesignCodeAssist({
                                 <Check className="mr-2 h-4 w-4" />
                                 {value.trim() ? 'Replace what I have' : 'Use this'}
                             </Button>
-                            {value.trim() && (
+                            {mode === 'html' && value.trim() && (
                                 <Button type="button" size="sm" variant="outline" onClick={() => applyResult('append')}>
                                     <Plus className="mr-2 h-4 w-4" />
                                     Add to the end

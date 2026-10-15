@@ -256,6 +256,93 @@ function getProcessingFee(method: string | null | undefined, amount: number): nu
     return Math.round(base * (1 + PROCESSING_FEE_VAT) * 100) / 100
 }
 
+/**
+ * Make sure a claimed order actually HOLDS the tickets it paid for.
+ *
+ * Payment success and ticket fulfillment are two different facts, and this
+ * webhook used to conflate them in three places:
+ *
+ *   1. The atomic claim marked the intent 'completed' BEFORE issuance ran, so
+ *      every later Xendit retry hit the "already claimed" branch and returned
+ *      200 without ever attempting issuance again. An order that failed to
+ *      issue on the first delivery could therefore never recover from a retry:
+ *      the one mechanism designed to fix it was the mechanism that skipped it.
+ *   2. `issue_tickets` returning an empty array fell into the success branch
+ *      and logged "Successfully issued 0 tickets".
+ *   3. The handler returned `tickets_issued: intent.quantity` -- the quantity
+ *      ASKED FOR, never the quantity actually minted.
+ *
+ * Buyers were charged and got nothing. Frank and Olive Ceralde, 15 Oct, PHP 365
+ * each, on an email that had already bought four other tickets.
+ *
+ * This counts first, issues only if short, then counts AGAIN and reports the
+ * real number. Callers decide what to do about a shortfall; nothing in here
+ * claims success it has not verified.
+ *
+ * Safe to call on every delivery, including concurrent ones:
+ *   - issue_tickets has its own re-entrancy guard keyed on purchase_intent_id
+ *     and returns the existing rows rather than minting a second set.
+ *   - the reserved -> valid flip is a single UPDATE, so two executions racing
+ *     it serialise on the row locks and the loser updates 0 rows, then reads
+ *     the winner's tickets back out.
+ */
+async function ensureFulfilled(
+    supabaseClient: any,
+    intentId: string,
+    quantity: number,
+    registrationId: string | null,
+): Promise<{ fulfilled: boolean; count: number; tickets: any[]; error: string | null; issuedNow: boolean }> {
+    const countValid = async (): Promise<number> => {
+        const { count } = await supabaseClient
+            .from('tickets')
+            .select('id', { count: 'exact', head: true })
+            .eq('purchase_intent_id', intentId)
+            .in('status', ['valid', 'used'])
+        return count ?? 0
+    }
+
+    const want = Math.max(Number(quantity) || 1, 1)
+    let have = await countValid()
+    let issuedNow = false
+    let errMsg: string | null = null
+
+    if (have < want) {
+        const { data, error } = await supabaseClient.rpc('issue_tickets', {
+            p_intent_id: intentId,
+            p_registration_id: registrationId,
+        })
+        issuedNow = true
+        if (error) {
+            // issue_tickets now RAISES rather than returning empty for a paid
+            // order that produced nothing, so this is the loud path, not a
+            // silent one. Keep the message: it names the exact shortfall.
+            errMsg = error.message || String(error)
+            console.error(`❌ issue_tickets failed for intent ${intentId}:`, error)
+        } else if (!Array.isArray(data) || data.length === 0) {
+            errMsg = 'issue_tickets returned no tickets'
+            console.error(`❌ issue_tickets returned empty for intent ${intentId}`)
+        }
+        // Re-count regardless of what the RPC said. The ledger, not the return
+        // value, decides whether this buyer has tickets.
+        have = await countValid()
+    }
+
+    const { data: rows } = await supabaseClient
+        .from('tickets')
+        .select('ticket_number, qr_code, seat_info')
+        .eq('purchase_intent_id', intentId)
+        .in('status', ['valid', 'used'])
+
+    const fulfilled = have >= want
+    if (!fulfilled) {
+        console.error(
+            `❌ FULFILLMENT SHORTFALL intent=${intentId} want=${want} have=${have}` +
+            (errMsg ? ` cause="${errMsg}"` : ''),
+        )
+    }
+    return { fulfilled, count: have, tickets: rows ?? [], error: errMsg, issuedNow }
+}
+
 serve(async (req) => {
     console.log('🚨 WEBHOOK RECEIVED - VERSION 33 (xenPlatform KYC RESULT) 🚨')
 
@@ -628,10 +715,67 @@ serve(async (req) => {
                         }
                     }
                 }
-                console.log(`⚡ Intent ${intent.id} already claimed by another execution — skipping`)
+                // REPAIR, don't just skip.
+                //
+                // "Already claimed" used to return 200 unconditionally. But the
+                // claim is set BEFORE issuance, so an order whose first delivery
+                // failed to issue was marked completed and then every retry took
+                // this branch and returned success without looking at whether a
+                // single ticket existed. Xendit's retries are the one chance to
+                // fix a transient failure and this threw them all away.
+                //
+                // Re-entrant and safe: ensureFulfilled counts before it issues,
+                // and issue_tickets returns existing rows instead of minting a
+                // second set.
+                const repair = await ensureFulfilled(
+                    supabaseClient,
+                    intent.id,
+                    intent.quantity,
+                    intent.metadata?.registration_id ?? null,
+                )
+
+                if (repair.fulfilled) {
+                    if (repair.issuedNow) {
+                        // This delivery is the one that actually minted the
+                        // tickets, so it owes the buyer their email.
+                        //
+                        // Gated on issuedNow, NOT on reaching this branch:
+                        // enqueue_order_ticket_email is not idempotent, it sends
+                        // every time it is called. A later retry finds the
+                        // tickets already present, never calls issue_tickets,
+                        // and so never re-sends. Two retries racing each other
+                        // into issuance could still double-send; a duplicate
+                        // ticket email is a far better failure than no ticket.
+                        const { error: mailErr } = await supabaseClient
+                            .rpc('enqueue_order_ticket_email', { p_intent_id: intent.id })
+                        if (mailErr) console.error('⚠️ Ticket email not queued:', mailErr)
+                        else console.log(`📧 Queued ticket email for repaired order ${intent.id}`)
+                        console.log(`🩹 Repaired ${repair.count} ticket(s) for previously claimed intent ${intent.id}`)
+                    } else {
+                        console.log(`⚡ Intent ${intent.id} already claimed and fulfilled — skipping`)
+                    }
+                    return new Response(
+                        JSON.stringify({ success: true, message: 'Already processed', tickets_issued: repair.count }),
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                    )
+                }
+
+                // Still short. Do NOT report success: a 5xx keeps Xendit
+                // retrying, and the every-2-minute reconciler is the backstop
+                // underneath that. Accounting is already safe to re-enter --
+                // uniq_sale_txn_per_intent permits exactly one sale row per
+                // intent, so a retry cannot double-book the ledger.
+                console.error(`❌ Intent ${intent.id} claimed but UNFULFILLED (${repair.count}/${intent.quantity})`)
                 return new Response(
-                    JSON.stringify({ success: true, message: 'Already processed' }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                    JSON.stringify({
+                        success: false,
+                        error: 'PAID_BUT_UNFULFILLED',
+                        intent_id: intent.id,
+                        tickets_issued: repair.count,
+                        tickets_expected: intent.quantity,
+                        detail: repair.error,
+                    }),
+                    { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
                 )
             }
 
@@ -708,17 +852,29 @@ serve(async (req) => {
                 console.log(`✅ Recorded transaction for intent ${intent.id}`)
             }
 
-            // Issue tickets using the RPC function (Single Source of Truth)
+            // Issue tickets, then VERIFY. The old code called the RPC and took
+            // the absence of an error as proof of fulfillment, which let an
+            // empty result print "Successfully issued 0 tickets" and carry on
+            // into the success path.
             console.log(`🎟️ Issuing tickets for intent ${intent.id} via RPC...`)
-            const { data: generatedTickets, error: issueError } = await supabaseClient.rpc('issue_tickets', {
-                p_intent_id: intent.id,
-                p_registration_id: intent.metadata?.registration_id ?? null,
-            })
+            const fulfillment = await ensureFulfilled(
+                supabaseClient,
+                intent.id,
+                intent.quantity,
+                intent.metadata?.registration_id ?? null,
+            )
+            const generatedTickets = fulfillment.tickets
 
-            if (issueError) {
-                console.error('❌ Failed to issue tickets:', issueError)
+            if (!fulfillment.fulfilled) {
+                // Deliberately fall through to the 5xx at the end of this
+                // branch. Side-effects are skipped: no push telling the
+                // organizer about a sale that produced nothing, no partner
+                // webhook announcing tickets that do not exist, no email.
+                console.error(
+                    `❌ Failed to fulfil intent ${intent.id}: ${fulfillment.count}/${intent.quantity}`,
+                )
             } else {
-                console.log(`✅ Successfully issued ${generatedTickets?.length ?? 0} tickets`)
+                console.log(`✅ Successfully issued ${fulfillment.count} tickets`)
 
                 // ==========================================
                 // 💺 BOOK ASSIGNED SEATS (v32)
@@ -823,8 +979,25 @@ serve(async (req) => {
                 console.log(`📬 Enqueued ${sideEffects.length} side-effects for async processing`)
             }
 
+            // Report what actually happened, not what was ordered. This used to
+            // return `tickets_issued: intent.quantity` -- the number REQUESTED --
+            // so the response said "issued 1" on an order that issued none.
+            if (!fulfillment.fulfilled) {
+                return new Response(
+                    JSON.stringify({
+                        success: false,
+                        error: 'PAID_BUT_UNFULFILLED',
+                        intent_id: intent.id,
+                        tickets_issued: fulfillment.count,
+                        tickets_expected: intent.quantity,
+                        detail: fulfillment.error,
+                    }),
+                    { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+
             return new Response(
-                JSON.stringify({ success: true, tickets_issued: intent.quantity }),
+                JSON.stringify({ success: true, tickets_issued: fulfillment.count }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
         }
