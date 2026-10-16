@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { AlertTriangle, Download, FileText, Loader2, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Download, FileText, Loader2, Receipt } from 'lucide-react'
 import { getPayoutStatement, getPayoutAdvice, type StatementBundle } from '@/lib/organizer/payout-statement-actions'
 
 /**
@@ -50,6 +50,13 @@ export function StatementsPanel() {
     const [saving, setSaving] = useState(false)
     const [adviceFor, setAdviceFor] = useState<string | null>(null)
     const [error, setError] = useState<string | null>(null)
+    /**
+     * The event this statement is narrowed to, or null for the whole account.
+     * Driven from the By event table rather than a separate picker: that list
+     * already holds exactly the events with money in this period, so it cannot
+     * offer one that would come back empty.
+     */
+    const [scopedEventId, setScopedEventId] = useState<string | null>(null)
     /** The period already fetched, so re-picking the same dates is not a refetch. */
     const loadedKey = useRef<string | null>(null)
 
@@ -65,13 +72,16 @@ export function StatementsPanel() {
     const periodFrom = range?.from ? ymd(range.from) : null
     const periodTo = range?.to ? ymd(range.to) : periodFrom
 
-    const load = useCallback(async (from: string, to: string) => {
-        const key = `${from}:${to}`
+    const load = useCallback(async (from: string, to: string, eventId: string | null = null) => {
+        // The event is part of the key: without it, switching scope inside one
+        // period would be treated as the same request and the guard below
+        // would discard the new figures.
+        const key = `${from}:${to}:${eventId ?? 'all'}`
         loadedKey.current = key
         setLoading(true)
         setError(null)
         try {
-            const res = await getPayoutStatement({ from, to })
+            const res = await getPayoutStatement({ from, to, eventId })
 
             // Drop a response that is no longer the period on screen. Switching
             // months quickly starts two fetches, and the slower one landing last
@@ -103,9 +113,9 @@ export function StatementsPanel() {
      */
     useEffect(() => {
         if (!periodFrom || !periodTo || !range?.to) return
-        if (loadedKey.current === `${periodFrom}:${periodTo}`) return
-        void load(periodFrom, periodTo)
-    }, [periodFrom, periodTo, range?.to, load])
+        if (loadedKey.current === `${periodFrom}:${periodTo}:${scopedEventId ?? 'all'}`) return
+        void load(periodFrom, periodTo, scopedEventId)
+    }, [periodFrom, periodTo, range?.to, scopedEventId, load])
 
     const pickMonth = (from: Date, to: Date) => setRange({ from, to })
 
@@ -146,6 +156,24 @@ export function StatementsPanel() {
 
     return (
         <div className="space-y-6">
+            {/* ── Scope. First thing read, because every figure below it means
+                something different once the statement is narrowed to one
+                event — including the absence of a payouts section. */}
+            {bundle?.scope && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate">{bundle.scope.eventTitle}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                            Earnings for this event only. Payouts are account-level, so they are not shown.
+                        </p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setScopedEventId(null)}>
+                        <ArrowLeft className="w-3.5 h-3.5 mr-2" />
+                        All events
+                    </Button>
+                </div>
+            )}
+
             {/* ── Period ─────────────────────────────────────────────── */}
             <Card className="border-border/50">
                 <CardContent className="p-5 space-y-4">
@@ -175,7 +203,7 @@ export function StatementsPanel() {
                         <Button
                             variant="secondary"
                             disabled={!periodFrom || loading}
-                            onClick={() => periodFrom && periodTo && load(periodFrom, periodTo)}
+                            onClick={() => periodFrom && periodTo && load(periodFrom, periodTo, scopedEventId)}
                         >
                             {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                             {loading ? 'Loading…' : 'Show period'}
@@ -278,8 +306,85 @@ export function StatementsPanel() {
                 </Card>
             )}
 
+            {/* ── Where the money came from, event by event ───────────────
+                The PDF has printed this table all along; the page only ever
+                said "across N events" and made you download a file to find
+                out WHICH. Same bundle, same figures, same order as the
+                document — the panel's whole premise is that the two cannot
+                disagree. */}
+            {bundle && !bundle.scope && bundle.byEvent.length > 0 && !loading && (
+                <Card className="border-border/50">
+                    <CardContent className="p-5 space-y-3">
+                        <div>
+                            <h3 className="text-sm font-semibold">By event</h3>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                                Ticket sales only, biggest earner first.
+                                {(bundle.experiences.netPayout !== 0 || bundle.merch.netPayout !== 0)
+                                    && ' Experiences and merch are inside the totals above, but are not split out here.'}
+                            </p>
+                        </div>
+
+                        {/* Five money columns do not fit a phone. Let the table
+                            scroll inside its own box rather than the whole page. */}
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[540px] text-sm">
+                                <thead>
+                                    <tr className="border-b border-border/60 text-xs text-muted-foreground">
+                                        <th className="py-2 text-left font-medium">Event</th>
+                                        <th className="py-2 text-right font-medium">Sales</th>
+                                        <th className="py-2 text-right font-medium">Net sales</th>
+                                        <th className="py-2 text-right font-medium">Fees</th>
+                                        <th className="py-2 text-right font-medium">Net earned</th>
+                                        <th className="py-2 w-px" aria-label="Statement" />
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border/60">
+                                    {bundle.byEvent.map(e => (
+                                        <tr key={e.eventId}>
+                                            <td className="py-2.5 pr-3">
+                                                <div className="max-w-[240px] truncate" title={e.title}>{e.title}</div>
+                                            </td>
+                                            <td className="py-2.5 text-right tabular-nums">{e.count.toLocaleString()}</td>
+                                            <td className="py-2.5 text-right tabular-nums">{peso(e.revenue)}</td>
+                                            <td className="py-2.5 text-right tabular-nums text-muted-foreground">({peso(e.fees)})</td>
+                                            <td className="py-2.5 text-right font-semibold tabular-nums">{peso(e.net)}</td>
+                                            <td className="py-2.5 pl-3 text-right">
+                                                {/* 'unknown' is the bucket for rows whose event was
+                                                    deleted — there is no event to scope to. */}
+                                                {e.eventId !== 'unknown' && (
+                                                    <Button
+                                                        variant="ghost" size="sm" className="h-7 px-2 text-xs"
+                                                        onClick={() => setScopedEventId(e.eventId)}
+                                                    >
+                                                        Statement
+                                                    </Button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                {/* Ties to bundle.tickets, NOT the combined waterfall above:
+                                    byEvent is built from ticket rows only, so totalling it
+                                    against a figure that includes experiences and merch
+                                    would show a gap that isn't a gap. */}
+                                <tfoot>
+                                    <tr className="border-t border-border">
+                                        <td className="py-2.5 font-semibold">All ticket sales</td>
+                                        <td className="py-2.5 text-right font-semibold tabular-nums">{bundle.tickets.count.toLocaleString()}</td>
+                                        <td className="py-2.5 text-right font-semibold tabular-nums">{peso(bundle.tickets.revenue)}</td>
+                                        <td className="py-2.5 text-right font-semibold tabular-nums">({peso(bundle.tickets.totalFees)})</td>
+                                        <td className="py-2.5 text-right font-bold tabular-nums">{peso(bundle.tickets.netPayout)}</td>
+                                        <td />
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
             {/* ── Payouts in the period, each with its own advice ─────── */}
-            {bundle && bundle.payouts.length > 0 && !loading && (
+            {bundle && !bundle.scope && bundle.payouts.length > 0 && !loading && (
                 <Card className="border-border/50">
                     <CardContent className="p-5 space-y-3">
                         <div>
@@ -326,10 +431,23 @@ export function StatementsPanel() {
                 </Card>
             )}
 
-            {bundle && bundle.payouts.length === 0 && c && c.count > 0 && !loading && (
+            {bundle && !bundle.scope && bundle.payouts.length === 0 && c && c.count > 0 && !loading && (
                 <p className="text-xs text-muted-foreground flex items-center gap-2">
                     <FileText className="w-3.5 h-3.5" />
                     No payouts were requested in this period.
+                </p>
+            )}
+
+            {/* An absent section invites the reading "this event was never paid".
+                Say why it is absent instead of leaving the reader to guess. */}
+            {bundle?.scope && c && c.count > 0 && !loading && (
+                <p className="text-xs text-muted-foreground flex items-start gap-2">
+                    <FileText className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>
+                        Payouts aren&apos;t listed on an event statement. A payout is a withdrawal against your
+                        whole account balance rather than against one event, so none can be attributed here.
+                        Switch back to all events to see what was withdrawn in this period.
+                    </span>
                 </p>
             )}
         </div>

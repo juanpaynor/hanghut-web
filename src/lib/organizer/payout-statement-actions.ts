@@ -99,8 +99,21 @@ export type StatementPayoutLine = {
     reference: string | null
 }
 
+/**
+ * Set when the statement covers ONE event instead of the whole account.
+ *
+ * Earnings are event-scoped -- every transactions row carries an event_id --
+ * so an event statement is a sound document. Payouts are not: a payout is a
+ * withdrawal against a running balance, and on prod only 1 of 20 has an
+ * event_id at all. So a scoped bundle reports earnings and reports NO payouts,
+ * rather than inventing an attribution the ledger does not have.
+ */
+export type StatementScope = { eventId: string; eventTitle: string }
+
 export type StatementBundle = {
     partnerName: string
+    /** null for the whole account; an event when the statement is scoped. */
+    scope: StatementScope | null
     period: { from: string; to: string }
     generatedAt: string
     tickets: FeeTotals
@@ -157,10 +170,11 @@ async function pagedTickets(
     partnerId: string,
     from: string,
     to: string,
+    eventId: string | null = null,
 ): Promise<{ rows: TicketRow[]; truncated: boolean }> {
     const rows: TicketRow[] = []
     for (let offset = 0; offset < CAP; offset += PAGE) {
-        const { data, error } = await supabase
+        let q = supabase
             .from('transactions')
             .select(`
                 id, status,
@@ -173,6 +187,9 @@ async function pagedTickets(
             .in('status', ['completed', 'refunded'])
             .gte('created_at', dayStart(from))
             .lte('created_at', dayEnd(to))
+        if (eventId) q = q.eq('event_id', eventId)
+
+        const { data, error } = await q
             .order('created_at', { ascending: true })
             .range(offset, offset + PAGE - 1)
 
@@ -185,7 +202,7 @@ async function pagedTickets(
 }
 
 export async function getPayoutStatement(
-    opts: { from: string; to: string },
+    opts: { from: string; to: string; eventId?: string | null },
 ): Promise<{ bundle?: StatementBundle; error?: string }> {
     const { user } = await getAuthUser()
     if (!user) return { error: 'Not signed in' }
@@ -202,11 +219,30 @@ export async function getPayoutStatement(
 
     const supabase = await createClient()
 
+    // Scope resolution happens BEFORE the fetches, both because they need the
+    // id and because an unowned event must fail here rather than return an
+    // empty statement that looks like a quiet month.
+    const eventId = opts.eventId || null
+    let scope: StatementScope | null = null
+    if (eventId) {
+        const { data: ev } = await supabase
+            .from('events')
+            .select('id, title, organizer_id')
+            .eq('id', eventId)
+            .maybeSingle()
+        // Events are publicly readable, so ownership is checked explicitly —
+        // RLS will not stop one organizer asking for another's event.
+        if (!ev || ev.organizer_id !== partnerId) return { error: 'Event not found' }
+        scope = { eventId: ev.id, eventTitle: ev.title }
+    }
+
     try {
-        const [ticketRes, partnerRes, expRes, merchRes, payoutRes, doorRes] = await Promise.all([
-            pagedTickets(supabase, partnerId, opts.from, opts.to),
-            supabase.from('partners').select('business_name').eq('id', partnerId).maybeSingle(),
-            supabase
+        const expQuery = eventId
+            // Experiences are a separate ledger with no event to belong to, so
+            // a scoped statement excludes them rather than reporting an
+            // account-wide figure under one event's name.
+            ? Promise.resolve({ data: [] as Record<string, unknown>[] })
+            : supabase
                 .from('experience_transactions')
                 // discount_amount added 2026-10-12. Omitting it on a discounted
                 // sale is the single most common way to produce a statement
@@ -215,29 +251,46 @@ export async function getPayoutStatement(
                 .eq('partner_id', partnerId)
                 .in('status', ['completed', 'refunded'])
                 .gte('created_at', dayStart(opts.from))
-                .lte('created_at', dayEnd(opts.to)),
-            supabase
-                .from('merch_transactions')
-                .select('gross_amount, platform_fee, payment_processing_fee, organizer_payout')
-                .eq('organizer_id', partnerId)
-                .in('status', ['completed', 'refunded'])
-                .gte('created_at', dayStart(opts.from))
-                .lte('created_at', dayEnd(opts.to)),
-            supabase
+                .lte('created_at', dayEnd(opts.to))
+
+        let merchQuery = supabase
+            .from('merch_transactions')
+            .select('gross_amount, platform_fee, payment_processing_fee, organizer_payout')
+            .eq('organizer_id', partnerId)
+            .in('status', ['completed', 'refunded'])
+            .gte('created_at', dayStart(opts.from))
+            .lte('created_at', dayEnd(opts.to))
+        if (eventId) merchQuery = merchQuery.eq('event_id', eventId)
+
+        // Deliberately empty when scoped. See StatementScope: a payout is an
+        // account-level withdrawal and cannot be attributed to an event.
+        const payoutQuery = eventId
+            ? Promise.resolve({ data: [] as Record<string, unknown>[] })
+            : supabase
                 .from('payouts')
                 .select('id, amount, status, requested_at, completed_at, bank_name, bank_account_number, xendit_disbursement_id')
                 .eq('partner_id', partnerId)
                 .gte('requested_at', dayStart(opts.from))
                 .lte('requested_at', dayEnd(opts.to))
-                .order('requested_at', { ascending: true }),
-            supabase
-                .from('purchase_intents')
-                .select('total_amount, event:events!inner(organizer_id)')
-                .eq('source', 'box_office')
-                .eq('status', 'completed')
-                .eq('event.organizer_id', partnerId)
-                .gte('created_at', dayStart(opts.from))
-                .lte('created_at', dayEnd(opts.to)),
+                .order('requested_at', { ascending: true })
+
+        let doorQuery = supabase
+            .from('purchase_intents')
+            .select('total_amount, event:events!inner(organizer_id)')
+            .eq('source', 'box_office')
+            .eq('status', 'completed')
+            .eq('event.organizer_id', partnerId)
+            .gte('created_at', dayStart(opts.from))
+            .lte('created_at', dayEnd(opts.to))
+        if (eventId) doorQuery = doorQuery.eq('event_id', eventId)
+
+        const [ticketRes, partnerRes, expRes, merchRes, payoutRes, doorRes] = await Promise.all([
+            pagedTickets(supabase, partnerId, opts.from, opts.to, eventId),
+            supabase.from('partners').select('business_name').eq('id', partnerId).maybeSingle(),
+            expQuery,
+            merchQuery,
+            payoutQuery,
+            doorQuery,
         ])
 
         const ticketRows = ticketRes.rows
@@ -352,6 +405,7 @@ export async function getPayoutStatement(
         return {
             bundle: {
                 partnerName: partnerRes.data?.business_name || 'Your account',
+                scope,
                 period: { from: opts.from, to: opts.to },
                 generatedAt: new Date().toISOString(),
                 tickets,

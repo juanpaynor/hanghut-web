@@ -112,9 +112,14 @@ export function buildStatementPdf(b: StatementBundle): Doc {
     const doc = new jsPDF({ unit: 'mm', format: 'a4' }) as Doc
     const c = b.combined
 
+    const period = `${plainDate(b.period.from)} to ${plainDate(b.period.to)}`
     heading(
-        doc, b, 'Payout statement',
-        `${plainDate(b.period.from)} to ${plainDate(b.period.to)}`,
+        doc, b,
+        // Named for what it can prove. A scoped document reports earnings and
+        // no payouts, so calling it a "payout statement" would promise a
+        // settlement it does not contain.
+        b.scope ? 'Event earnings statement' : 'Payout statement',
+        b.scope ? `${b.scope.eventTitle}  ·  ${period}` : period,
     )
 
     // ── The waterfall. Indented sub-lines are components of the line above,
@@ -209,8 +214,9 @@ export function buildStatementPdf(b: StatementBundle): Doc {
         y = afterTable(doc, y)
     }
 
-    // ── By event.
-    if (b.byEvent.length > 0) {
+    // ── By event. Skipped when the whole document IS one event: the table
+    //    would restate the waterfall above it, row for row.
+    if (!b.scope && b.byEvent.length > 0) {
         autoTable(doc, {
             startY: y,
             theme: 'striped',
@@ -253,6 +259,20 @@ export function buildStatementPdf(b: StatementBundle): Doc {
         doc.setTextColor(MUTED)
         const lines = doc.splitTextToSize(
             `Paid out in this period: ${withCode(b.paidOutInPeriod)}. A payout is a withdrawal against your running balance, so it will not equal the net earned above — it may release earnings from an earlier period, or leave some of this period's earnings to withdraw later.`,
+            PAGE_W - MARGIN * 2,
+        ) as string[]
+        doc.text(lines, MARGIN, y)
+        y += lines.length * 3.9 + 4
+    }
+
+    // ── A scoped statement has no payouts section at all. Saying so is the
+    //    point: a reader who expects one must learn that none exists, rather
+    //    than assume the event was never paid.
+    if (b.scope) {
+        doc.setFontSize(8.5)
+        doc.setTextColor(MUTED)
+        const lines = doc.splitTextToSize(
+            'Payouts are not listed here. A payout is a withdrawal against your whole account balance rather than against one event, so no payout can be attributed to this event. See the account statement for the same period for what was withdrawn.',
             PAGE_W - MARGIN * 2,
         ) as string[]
         doc.text(lines, MARGIN, y)
@@ -362,6 +382,14 @@ export function buildStatementPdf(b: StatementBundle): Doc {
 }
 
 export function statementFilename(b: StatementBundle): string {
+    if (b.scope) {
+        // Filed alongside other events' statements for the same month, so the
+        // event has to be in the name, not just the dates.
+        const slug = b.scope.eventTitle
+            .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
+            || 'event'
+        return `hanghut-${slug}-${b.period.from}_${b.period.to}.pdf`
+    }
     return `hanghut-statement-${b.period.from}_${b.period.to}.pdf`
 }
 
