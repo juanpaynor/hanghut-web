@@ -89,6 +89,17 @@ interface EventFormData {
     rejection_email_body: string
 }
 
+/**
+ * Statuses that are not reachable by the public, so editing one should offer to
+ * PUBLISH rather than just save.
+ *
+ * `events/[id]` serves only 'active' and 'hidden'; a draft or paused event 404s.
+ * The edit screen used to show "Update Event", which resubmitted the existing
+ * status -- so the only way out of draft was to delete the event and rebuild it.
+ */
+const NEEDS_PUBLISH: EventFormData['status'][] = ['draft', 'paused']
+
+
 interface EventFormProps {
     partnerId: string
     commissionRate: number
@@ -2184,7 +2195,14 @@ export function EventForm({
                             >
                                 {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Save as Draft'}
                             </Button>
-                            {!isEditing && (
+                            {/* Also shown when EDITING a draft. It used to be create-only,
+                                which made a draft a one-way trap: the edit screen had no
+                                unlisted button, no publish dialog, and an Update Event that
+                                resubmitted the status it already had -- so an organizer who
+                                saved a draft could never publish it from any screen. A real
+                                client sat on a configured event for three days because of
+                                this. A paused event gets it too, for the same reason. */}
+                            {(!isEditing || formData.status === 'draft' || formData.status === 'paused') && (
                                 <Button
                                     type="button"
                                     variant="outline"
@@ -2196,18 +2214,30 @@ export function EventForm({
                                     {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Publish as Unlisted'}
                                 </Button>
                             )}
+                            {/* On an event that is already public, this saves edits in place.
+                                On one that is NOT public it opens the same confirmation the
+                                create flow uses -- otherwise the only primary action on a
+                                draft was "Update Event", which resubmitted 'draft' and
+                                reported success without publishing anything. */}
                             <Button
                                 type="button"
                                 size="lg"
                                 className="flex-1 bg-primary"
-                                onClick={() => isEditing ? handleSubmit(formData.status) : setConfirmPublic(true)}
+                                onClick={() => (isEditing && !NEEDS_PUBLISH.includes(formData.status))
+                                    ? handleSubmit(formData.status)
+                                    : setConfirmPublic(true)}
                                 disabled={isLoading || formData.status === 'cancelled'}
                             >
-                                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (isEditing ? 'Update Event' : 'Publish event')}
+                                {isLoading
+                                    ? <Loader2 className="h-5 w-5 animate-spin" />
+                                    : (isEditing && !NEEDS_PUBLISH.includes(formData.status))
+                                        ? 'Update Event'
+                                        : 'Publish event'}
                             </Button>
                         </div>
                     )}
-                    {/* Public-publish confirmation (create only) */}
+                    {/* Public-publish confirmation. Reached from the create flow and
+                        from editing an event that is not public yet. */}
                     <Dialog open={confirmPublic} onOpenChange={setConfirmPublic}>
                         <DialogContent className="sm:max-w-lg">
                             <DialogHeader>

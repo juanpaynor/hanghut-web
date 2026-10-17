@@ -1,0 +1,8 @@
+buyer_email,ticket_number,attendee_name,ordered_pht,answers_on_file,status,action
+iammadcollado@yahoo.com,TK-7AFF8E7E,Matt Collado,2026-10-10 23:20,"yes - but MISFILED (set describes a 19F 21KM X-Small registered by Matt)",misattributed,re-collect
+iammadcollado@yahoo.com,TK-B9EC6937,Erica Delos Santos,2026-10-15 22:51,no,missing,re-collect
+iammadcollado@yahoo.com,TK-88BD2AF3,Rizel Zonio,2026-10-15 22:58,no (her set is likely the one filed under Matt),missing,re-collect
+nyqeilboluso05@gmail.com,TK-BFF7401A,Nyqeil Dan Rey Boluso,2026-10-17 11:04,"yes - but MISFILED (set describes a 50F 5KM Small, emergency contact Rey Boluso)",overwritten 2026-10-17 11:20 PHT,re-collect
+nyqeilboluso05@gmail.com,TK-FCD6569F,Nyqeil Dan Rey Boluso (2nd entry - name copied from buyer),2026-10-17 11:22,no (this entry's set is the one filed under the 1st ticket),missing,re-collect + confirm real name
+rbalgos19@gmail.com,TK-65FA6EC4,Ruth balgos,2026-10-11 20:40,"yes - but AMBIGUOUS (set says Myself / Male / 37 / emergency contact Ruth balgos)",needs confirmation,confirm whose
+rbalgos19@gmail.com,TK-6AD3B678,John karlo balgos,2026-10-13 10:58,no,missing,re-collect

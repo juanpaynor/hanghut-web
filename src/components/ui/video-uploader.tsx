@@ -29,11 +29,38 @@ export function VideoUploader({ value, onChange, className, disabled }: VideoUpl
         const file = e.target.files?.[0]
         if (!file) return
 
-        // Validate file type
+        // Validate file type.
+        //
+        // `video/*` was too loose and the toast lied: it said "(MP4, WebM)" while
+        // accepting anything. An iPhone .mov sails through as video/quicktime,
+        // uploads fine, and then <video> REFUSES it in Chrome and Firefox while
+        // Safari plays it happily -- so it looks right to whoever uploaded it from
+        // a phone and is a dead black rectangle for most visitors. Axiom's hero
+        // video sat broken like that for two days.
+        //
+        // The codecs inside such a file are usually already H.264/AAC, i.e.
+        // web-standard; only the container is wrong. But we cannot remux in the
+        // browser, so the honest move is to refuse it and say what to do.
+        const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase()
+        const PLAYABLE_TYPES = ['video/mp4', 'video/webm']
+        const PLAYABLE_EXTS = ['mp4', 'm4v', 'webm']
+
         if (!file.type.startsWith('video/')) {
             toast({
-                title: "Invalid file type",
-                description: "Please upload a video file (MP4, WebM)",
+                title: "Not a video",
+                description: "Pick a video file — MP4 works everywhere.",
+                variant: "destructive"
+            })
+            return
+        }
+
+        // Check both: some browsers mislabel the type, others report none at all.
+        if (!PLAYABLE_TYPES.includes(file.type) || !PLAYABLE_EXTS.includes(ext)) {
+            toast({
+                title: `Browsers can't play ${ext ? `.${ext}` : 'that'} files`,
+                description: ext === 'mov'
+                    ? "A .mov plays on iPhone but not in Chrome or Firefox, so most visitors would see nothing. Export it as MP4 and upload that — in QuickTime it's File › Export As › 1080p."
+                    : "Use MP4 (or WebM). Most video apps can export MP4 directly.",
                 variant: "destructive"
             })
             return
@@ -47,6 +74,16 @@ export function VideoUploader({ value, onChange, className, disabled }: VideoUpl
                 variant: "destructive"
             })
             return
+        }
+
+        // Not a hard stop -- their video, their call -- but a hero video autoplays
+        // for every visitor, and most of this audience is on mobile data. The MP4s
+        // already on the platform run 3-13MB; the file that prompted this was 61MB.
+        if (file.size > 20 * 1024 * 1024) {
+            toast({
+                title: "That's a big file",
+                description: `${Math.round(file.size / 1048576)}MB will autoplay for every visitor, which is slow on mobile data. Under 20MB is a better experience if you can export smaller.`,
+            })
         }
 
         setIsUploading(true)
@@ -248,10 +285,16 @@ export function VideoUploader({ value, onChange, className, disabled }: VideoUpl
                 </Tabs>
             )}
 
+            {/* NOT video/quicktime. Offering it in the picker is how a .mov got
+                onto a live event hero: the dialog presented it as a valid choice,
+                the upload succeeded, and then Chrome and Firefox refused to play
+                it while Safari did -- invisible to anyone uploading from a phone.
+                handleFileSelect rejects it too, because `accept` is only a hint
+                and drag-and-drop ignores it entirely. */}
             <input
                 ref={fileInputRef}
                 type="file"
-                accept="video/mp4,video/webm,video/quicktime"
+                accept="video/mp4,video/webm"
                 className="hidden"
                 onChange={handleFileSelect}
                 disabled={disabled || isUploading}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { parseVideoFraming } from '@/lib/events/video-framing'
 import { cn } from '@/lib/utils'
 
 export type BgStyle = 'default' | 'particles' | 'noise' | 'gradient-mesh' | 'parallax' | 'custom-image' | 'cover-blur'
@@ -404,6 +405,7 @@ export function EventPageBackground({
   coverImageUrl,
   bgImageUrl,
   videoUrl,
+  videoPosition,
   className,
 }: {
   bgStyle: BgStyle
@@ -411,6 +413,13 @@ export function EventPageBackground({
   coverImageUrl?: string
   bgImageUrl?: string
   videoUrl?: string
+  /**
+   * The organizer's pan/zoom from the Design tab, e.g. `scale:1.20|x:77|y:32`.
+   * This component used to ignore it entirely, so on the `poster` page layout —
+   * which renders the video HERE rather than in the 50vh hero — framing looked
+   * right in the preview and was discarded on the live page.
+   */
+  videoPosition?: string
   /** Override the wrapper class — default is `absolute inset-0 overflow-hidden` */
   className?: string
 }) {
@@ -426,6 +435,7 @@ export function EventPageBackground({
           src={videoUrl}
           autoPlay loop muted playsInline
           className="absolute inset-0 w-full h-full object-cover"
+          style={parseVideoFraming(videoPosition)}
         />
       ) : bgStyle === 'custom-image' ? (
         <CustomImageBg bgImageUrl={bgImageUrl} />

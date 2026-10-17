@@ -32,6 +32,16 @@ interface Props {
     /** True when the buyer already registered and these are only the questions
      *  that depend on the ticket they just picked. */
     tierOnly?: boolean
+    /**
+     * Render only the fields, with no Card around them.
+     *
+     * The attendee detail link shows one of these per ticket inside its own
+     * per-attendee card; nesting this component's Card in that one gives a
+     * double border and a redundant "Registration Questions" heading above
+     * every slot. The field rendering is the part worth sharing, so that is
+     * what `bare` leaves behind.
+     */
+    bare?: boolean
 }
 
 /**
@@ -40,23 +50,9 @@ interface Props {
  * approval / custom questions don't ship this code. The parent still owns
  * `regAnswers` and feeds it to the payment flow — behavior is unchanged.
  */
-export function RegistrationQuestionsCard({ eventId, registrationQuestions, regAnswers, setRegAnswers, requireApproval, tierOnly }: Props) {
-    return (
-        <Card className="border-border/50 shadow-sm">
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-primary">
-                    <ClipboardList className="w-5 h-5" />
-                    {tierOnly ? 'A few more details' : 'Registration Questions'}
-                </CardTitle>
-                <CardDescription>
-                    {tierOnly
-                        ? 'These apply to the ticket you picked.'
-                        : requireApproval
-                            ? 'The organizer requires approval for this event. Please answer the questions below.'
-                            : 'Please answer the following questions to complete your registration.'}
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
+export function RegistrationQuestionsCard({ eventId, registrationQuestions, regAnswers, setRegAnswers, requireApproval, tierOnly, bare }: Props) {
+    const fields = (
+            <div className="space-y-5">
                 {registrationQuestions.map((q) => (
                     <div key={q.id} className="space-y-2">
                         {isSectionBlock(q) ? (
@@ -194,7 +190,27 @@ export function RegistrationQuestionsCard({ eventId, registrationQuestions, regA
                         <p>This event requires organizer approval. After submitting, you&apos;ll be notified by email when your registration is reviewed.</p>
                     </div>
                 )}
-            </CardContent>
+            </div>
+    )
+
+    if (bare) return fields
+
+    return (
+        <Card className="border-border/50 shadow-sm">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-primary">
+                    <ClipboardList className="w-5 h-5" />
+                    {tierOnly ? 'A few more details' : 'Registration Questions'}
+                </CardTitle>
+                <CardDescription>
+                    {tierOnly
+                        ? 'These apply to the ticket you picked.'
+                        : requireApproval
+                            ? 'The organizer requires approval for this event. Please answer the questions below.'
+                            : 'Please answer the following questions to complete your registration.'}
+                </CardDescription>
+            </CardHeader>
+            <CardContent>{fields}</CardContent>
         </Card>
     )
 }

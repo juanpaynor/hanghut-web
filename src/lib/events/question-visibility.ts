@@ -28,11 +28,18 @@ export function isSectionBlock(q: { question_type?: string }): boolean {
     return q.question_type === 'section'
 }
 
-/** Answers keyed by question id. Multi-choice arrives as an array or as JSON text. */
-export type AnswerMap = Record<string, string | string[] | undefined | null>
+/**
+ * Answers keyed by question id.
+ *
+ * Multi-choice arrives as an array or as JSON text; a checkbox arrives as a
+ * boolean. `asValues` has always coped with both — it stringifies anything it
+ * is not given an array for, so a question branching on "true" works — but the
+ * type said otherwise, which forced callers holding real form state to cast.
+ */
+export type AnswerMap = Record<string, string | string[] | boolean | number | undefined | null>
 
 /** A multi_choice answer is a JSON array living in a text column. */
-function asValues(v: string | string[] | undefined | null): string[] {
+function asValues(v: string | string[] | boolean | number | undefined | null): string[] {
     if (v == null) return []
     if (Array.isArray(v)) return v.map(String)
     const s = String(v)

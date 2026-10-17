@@ -72,6 +72,33 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_registration_answer_per_attendee
     ON public.registration_answers(registration_id, question_id, ticket_id)
     NULLS NOT DISTINCT;
 
+-- THE SCHEMA-LEVEL CAUSE. Two partial unique indexes enforced ONE REGISTRATION
+-- PER PERSON PER EVENT:
+--
+--   event_registrations_unique_guest  (event_id, lower(guest_email))
+--                                     WHERE user_id IS NULL AND status <> 'cancelled'
+--   event_registrations_unique_user   (event_id, user_id)
+--                                     WHERE user_id IS NOT NULL AND status <> 'cancelled'
+--
+-- The DELETE in submit_event_request was never a careless choice. It was the
+-- only move available: the function COULD NOT insert a second row for the same
+-- email, so overwriting the first attendee's answers was its sole way to record
+-- the second. Fixing the function without fixing these indexes just converts
+-- silent data loss into a 23505 at checkout -- which is exactly what the
+-- regression harness caught before this ever reached production.
+--
+-- They are dropped, not relaxed, because the invariant they encode is the one
+-- that is wrong. Verified before dropping: 0 rows currently violate either.
+DROP INDEX IF EXISTS public.event_registrations_unique_guest;
+DROP INDEX IF EXISTS public.event_registrations_unique_user;
+
+-- What replaces them is the NEW model's real invariant: one submission per
+-- ORDER. A person may hold many submissions on an event; an order may carry
+-- exactly one. Verified: 0 orders currently map to more than one registration.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_registration_per_order
+    ON public.event_registrations(purchase_intent_id)
+    WHERE purchase_intent_id IS NOT NULL;
+
 COMMENT ON COLUMN public.event_registrations.purchase_intent_id IS
     'The order this submission accompanied. NULL for legacy rows and for a submission that has not reached checkout yet.';
 COMMENT ON COLUMN public.registration_answers.ticket_id IS
@@ -223,6 +250,22 @@ BEGIN
         RAISE EXCEPTION 'Event is not accepting registrations (status: %)', v_event.status
             USING ERRCODE = 'P0003';
     END IF;
+
+    -- Serialise this person's submissions on this event.
+    --
+    -- The dropped unique indexes were doing double duty: they encoded the wrong
+    -- business rule (one registration per person) but they also made the
+    -- reuse-or-create decision below race-safe for free. Two concurrent submits
+    -- would now both see no consummated row and both INSERT.
+    --
+    -- A transaction-scoped advisory lock restores that safety without
+    -- reinstating the wrong rule: concurrent submissions for the same person
+    -- and event queue up, so the second one sees the first one's row and reuses
+    -- it. Released automatically on commit or rollback.
+    PERFORM pg_advisory_xact_lock(
+        hashtext(p_event_id::text),
+        hashtext(COALESCE(v_user_id::text, lower(p_guest_email)))
+    );
 
     -- The person's standing, asked once, about the person.
     v_eligibility := event_registration_eligibility(p_event_id, v_user_id, p_guest_email);

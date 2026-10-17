@@ -1,5 +1,6 @@
 'use client'
 
+import { parseVideoFraming } from '@/lib/events/video-framing'
 import { useState, useRef, useEffect } from 'react'
 import { Volume2, VolumeX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -45,28 +46,7 @@ export function StorefrontHeroVideo({ videoUrl, videoPosition = 'center' }: Stor
         }
     }
 
-    // Parse the new scale/x/y format
-    let objectPosition = 'center 50%'
-    let transform = 'none'
-
-    if (videoPosition.includes('scale:')) {
-        const parts = videoPosition.split('|')
-        let s = 1.0, x = 50, y = 50
-        parts.forEach((p: string) => {
-            const [k, v] = p.split(':')
-            if (k === 'scale') s = parseFloat(v)
-            if (k === 'x') x = parseFloat(v)
-            if (k === 'y') y = parseFloat(v)
-        })
-        objectPosition = `${x}% ${y}%`
-        transform = `scale(${s})`
-    } else if (videoPosition.includes('%')) {
-        objectPosition = videoPosition // legacy
-    } else if (videoPosition === 'top') {
-        objectPosition = 'center 0%'
-    } else if (videoPosition === 'bottom') {
-        objectPosition = 'center 100%'
-    }
+    const { objectPosition, transform } = parseVideoFraming(videoPosition)
 
     return (
         <div className="absolute inset-0 w-full h-full group/video overflow-hidden">
@@ -88,7 +68,10 @@ export function StorefrontHeroVideo({ videoUrl, videoPosition = 'center' }: Stor
                     loop
                     playsInline
                     className="absolute inset-0 w-full h-full object-cover"
-                    style={{ objectPosition: videoPosition }}
+                    /* Was `objectPosition: videoPosition` — the raw
+                       `scale:1.20|x:77|y:32` string, which is not valid CSS, so
+                       the pan was dropped and the zoom never applied at all. */
+                    style={{ objectPosition, transform }}
                 />
             )}
 

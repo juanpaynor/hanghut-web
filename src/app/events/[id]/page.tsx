@@ -27,6 +27,7 @@ import { MerchSection } from '@/components/merch/merch-section'
 import { getPublicMerch } from '@/lib/merch/public-actions'
 import { sanitize } from '@/lib/sanitize'
 import { EventPageBackground, type BgStyle } from '@/components/events/event-bg'
+import { parseVideoFraming } from '@/lib/events/video-framing'
 import { getEventThemeCss } from '@/lib/event-themes'
 import { getEventLayoutCss } from '@/lib/event-layouts'
 import { sanitizeCustomCss, extractCustomCssFontUrls } from '@/lib/storefront-custom-css'
@@ -788,28 +789,7 @@ export default async function PublicEventPage({
         }
     }
 
-    // Parse the new scale/x/y format
-    let objectPosition = 'center 50%'
-    let transform = 'none'
-
-    if (rawVideoPosition.includes('scale:')) {
-        const parts = rawVideoPosition.split('|')
-        let s = 1.0, x = 50, y = 50
-        parts.forEach((p: string) => {
-            const [k, v] = p.split(':')
-            if (k === 'scale') s = parseFloat(v)
-            if (k === 'x') x = parseFloat(v)
-            if (k === 'y') y = parseFloat(v)
-        })
-        objectPosition = `${x}% ${y}%`
-        transform = `scale(${s})`
-    } else if (rawVideoPosition.includes('%')) {
-        objectPosition = rawVideoPosition // legacy
-    } else if (rawVideoPosition === 'top') {
-        objectPosition = 'center 0%'
-    } else if (rawVideoPosition === 'bottom') {
-        objectPosition = 'center 100%'
-    }
+    const { objectPosition, transform } = parseVideoFraming(rawVideoPosition)
 
     // --- Section Components ---
 
@@ -827,6 +807,7 @@ export default async function PublicEventPage({
                         coverImageUrl={event.cover_image_url || undefined}
                         bgImageUrl={bgImageUrl}
                         videoUrl={!youtubeEmbed ? (event.video_url || undefined) : undefined}
+                        videoPosition={rawVideoPosition}
                     />
                     {/* Dark vignette at bottom so content reads cleanly below */}
                     <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background/80 pointer-events-none z-10" />
@@ -1856,7 +1837,7 @@ export default async function PublicEventPage({
                 <PageHead />
                 {/* Fixed full-bleed poster background */}
                 {bgStyle !== 'default' ? (
-                    <EventPageBackground bgStyle={bgStyle} themeColor={event.theme_color || '#6366f1'} coverImageUrl={event.cover_image_url || undefined} bgImageUrl={bgImageUrl} videoUrl={event.video_url ? (getYouTubeEmbedUrl(event.video_url) ? undefined : event.video_url) : undefined} className="fixed inset-0 z-0" />
+                    <EventPageBackground bgStyle={bgStyle} themeColor={event.theme_color || '#6366f1'} coverImageUrl={event.cover_image_url || undefined} bgImageUrl={bgImageUrl} videoUrl={event.video_url ? (getYouTubeEmbedUrl(event.video_url) ? undefined : event.video_url) : undefined} videoPosition={rawVideoPosition} className="fixed inset-0 z-0" />
                 ) : event.cover_image_url ? (
                     <div className="fixed inset-0 z-0">
                         <Image src={event.cover_image_url} alt="" fill priority sizes="100vw" className="object-cover" />
@@ -1985,6 +1966,7 @@ export default async function PublicEventPage({
                         coverImageUrl={event.cover_image_url || undefined}
                         bgImageUrl={bgImageUrl}
                         videoUrl={event.video_url ? (getYouTubeEmbedUrl(event.video_url) ? undefined : event.video_url) : undefined}
+                        videoPosition={rawVideoPosition}
                         className="fixed inset-0 z-0"
                     />
                 ) : event.cover_image_url ? (
@@ -2121,6 +2103,7 @@ export default async function PublicEventPage({
                     coverImageUrl={event.cover_image_url || undefined}
                     bgImageUrl={bgImageUrl}
                     videoUrl={event.video_url ? (getYouTubeEmbedUrl(event.video_url) ? undefined : event.video_url) : undefined}
+                        videoPosition={rawVideoPosition}
                     className="fixed inset-0 z-0"
                 />
             ) : null
@@ -2720,6 +2703,7 @@ export default async function PublicEventPage({
                     coverImageUrl={event.cover_image_url || undefined}
                     bgImageUrl={bgImageUrl}
                     videoUrl={event.video_url ? (getYouTubeEmbedUrl(event.video_url) ? undefined : event.video_url) : undefined}
+                        videoPosition={rawVideoPosition}
                     className="fixed inset-0 z-0"
                 />
             )}
