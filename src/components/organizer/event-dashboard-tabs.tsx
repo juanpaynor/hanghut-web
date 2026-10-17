@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EventForm } from '@/components/organizer/event-form'
 import { TicketTiersManager } from '@/components/organizer/ticket-tiers-manager'
 import { AttendeeManager } from '@/components/organizer/attendee-manager'
+import { MissingDetailsPanel } from '@/components/organizer/missing-details-panel'
 import { PromoCodeManager } from '@/components/organizer/promo-code-manager'
 import { CheckInStats } from '@/components/organizer/check-in-stats'
 import { EventDashboardOverview } from '@/components/organizer/event-dashboard-overview'
@@ -164,6 +165,10 @@ export function EventDashboardTabs({
             </TabsContent>
 
             <TabsContent value="attendees" className="mt-6 animate-in fade-in-50 duration-300 space-y-8">
+                {/* Above the list on purpose: an attendee with no details of their
+                    own is indistinguishable from any other row in the table, and
+                    on one event 55% of tickets were in that state. */}
+                <MissingDetailsPanel eventId={eventId} />
                 <CheckInStats eventId={eventId} />
                 <div className="border-t pt-8">
                     <h3 className="text-xl font-semibold mb-4">Attendee List</h3>

@@ -4138,9 +4138,10 @@ CREATE FUNCTION public.handle_new_payout() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 declare
-  -- TODO: Replace with your actual Anon Key or Service Role Key
-  -- It is recommended to use Supabase Dashboard > Database > Webhooks for secure secret management
-  service_key text := 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhaGhlenF0a3B2a2lhbG5kdWZ0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDMzOTY0MCwiZXhwIjoyMDc5OTE1NjQwfQ.NoVlj898H0ffUHIYJVYsTfHKNq1cjEyUKvTTnn4ThEE'; 
+  -- Read from Vault, never inlined. This declaration used to carry the
+  -- service_role key as a literal -- see handle_new_payout on the database,
+  -- which now reads vault.decrypted_secrets instead.
+  service_key text;
   func_url text := 'https://api.hanghut.com/functions/v1/send-payout-confirmation';
 begin
   perform
