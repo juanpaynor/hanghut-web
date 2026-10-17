@@ -3,7 +3,8 @@ import { unstable_noStore as noStore } from 'next/cache'
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import { CalendarDays, MapPin, ClipboardList } from 'lucide-react'
-import { getAttendeeDetails, classifyToken } from '@/lib/events/attendee-detail-actions'
+import { getAttendeeDetails } from '@/lib/events/attendee-detail-actions'
+import { classifyToken } from '@/lib/events/attendee-detail-token'
 import { AttendeeDetailsClient } from '@/components/attendee/attendee-details-client'
 
 /**

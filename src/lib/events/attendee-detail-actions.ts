@@ -2,6 +2,9 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { answerText } from './answer-format'
+// Sync, so it cannot live in this file: a 'use server' module may only export
+// async functions. See attendee-detail-token.ts.
+import { classifyToken } from './attendee-detail-token'
 
 /**
  * Server actions behind the attendee detail link (/d/<token>).
@@ -29,22 +32,6 @@ function publicClient() {
     )
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const SUBLINK_RE = /^[0-9a-f]{64}$/i
-
-/**
- * Which kind of token is in the URL.
- *
- * One route serves both, so the shape decides: an order token is the
- * purchase_intents.access_token UUID the buyer already has from their ticket
- * email, a sublink is 64 hex characters. Anything else is not a token and the
- * page 404s without a round trip.
- */
-export function classifyToken(token: string): 'order' | 'sublink' | null {
-    if (UUID_RE.test(token)) return 'order'
-    if (SUBLINK_RE.test(token)) return 'sublink'
-    return null
-}
 
 export interface DetailQuestion {
     id: string
