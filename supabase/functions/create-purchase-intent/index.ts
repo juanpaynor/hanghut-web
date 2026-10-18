@@ -210,7 +210,7 @@ serve(async (req) => {
         // --- APPROVAL GATE (server-side enforcement) ---
         const { data: gateEvent, error: gateError } = await supabaseClient
             .from('events')
-            .select('require_approval, invite_only, custom_tos, status, sales_end_datetime')
+            .select('require_approval, invite_only, custom_tos, status, sales_end_datetime, one_ticket_per_email')
             .eq('id', event_id)
             .single()
 
@@ -271,6 +271,65 @@ serve(async (req) => {
                         error: { code: 'EVENT_SALES_CLOSED', message: 'Online sales for this event have closed.' },
                     }),
                     { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+        }
+
+        // --- ONE TICKET PER EMAIL (opt-in, per event) ---
+        // Anti Club Running Club asked for this on Sinadya Run: one runner, one
+        // email, one set of answers.
+        //
+        // OFF for every event unless the organizer switched it on, and it has to
+        // stay that way -- across all selling events on prod this rule would
+        // have refused 1,230 of 3,529 tickets. check_one_ticket_per_email
+        // returns {enforced:false} for an event without the flag, so this is a
+        // no-op for everyone else.
+        //
+        // Placed BELOW the sales window and ABOVE the approval gate, for the
+        // same reason the window sits where it does: "sales have closed" beats
+        // "you already have a ticket", and both beat "go and register" -- being
+        // told to register for something you already hold is the worse answer.
+        //
+        // The rule lives in SQL, like check_email_address, so this function,
+        // the web client and the app cannot disagree about who may buy. It runs
+        // on the ADMIN client because counting another buyer's tickets needs to
+        // be invisible to anon -- "is this person registered?" is an
+        // enumeration oracle, so check_one_ticket_per_email is granted to
+        // service_role alone.
+        if (gateEvent.one_ticket_per_email) {
+            const buyerEmail = (guest_details?.email ?? user?.email ?? '').trim()
+            const { data: oneCheck, error: oneCheckError } = await supabaseAdmin
+                .rpc('check_one_ticket_per_email', {
+                    p_event_id: event_id,
+                    p_email: buyerEmail || null,
+                    p_quantity: quantity,
+                })
+
+            // Unlike the typo checker, a failure here is NOT waved through. That
+            // one is advisory; this one is the organizer's capacity rule, and
+            // silently selling a second ticket to the same runner is the exact
+            // outcome they turned it on to prevent.
+            if (oneCheckError) {
+                console.error('check_one_ticket_per_email failed:', oneCheckError)
+                return new Response(
+                    JSON.stringify({
+                        success: false,
+                        error: { code: 'ONE_PER_EMAIL_UNAVAILABLE', message: 'We could not verify this email right now. Please try again in a moment.' }
+                    }),
+                    { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+
+            if (oneCheck?.blocked) {
+                return new Response(
+                    JSON.stringify({
+                        success: false,
+                        error: {
+                            code: oneCheck.code ?? 'ONE_TICKET_PER_EMAIL',
+                            message: oneCheck.message ?? 'This event allows one ticket per email address.',
+                        }
+                    }),
+                    { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
                 )
             }
         }

@@ -79,6 +79,7 @@ interface EventFormData {
     external_ticket_url: string
     external_provider_name: string
     require_approval: boolean
+    one_ticket_per_email: boolean
     invite_only: boolean
     rsvp_enabled: boolean
     rsvp_button_label: string
@@ -198,6 +199,7 @@ export function EventForm({
         external_ticket_url: initialData?.external_ticket_url || '',
         external_provider_name: initialData?.external_provider_name || '',
         require_approval: initialData?.require_approval || false,
+        one_ticket_per_email: initialData?.one_ticket_per_email || false,
         invite_only: initialData?.invite_only || false,
         rsvp_enabled: initialData?.rsvp_enabled || false,
         rsvp_button_label: initialData?.rsvp_button_label || '',
@@ -653,6 +655,7 @@ export function EventForm({
             formDataToSend.append('external_ticket_url', formData.external_ticket_url || '')
             formDataToSend.append('external_provider_name', formData.external_provider_name || '')
             formDataToSend.append('require_approval', formData.require_approval ? 'true' : 'false')
+            formDataToSend.append('one_ticket_per_email', formData.one_ticket_per_email ? 'true' : 'false')
             formDataToSend.append('invite_only', formData.invite_only ? 'true' : 'false')
             formDataToSend.append('rsvp_enabled', formData.rsvp_enabled ? 'true' : 'false')
             formDataToSend.append('rsvp_button_label', formData.rsvp_button_label || '')
@@ -1731,6 +1734,28 @@ export function EventForm({
                                 onCheckedChange={(v) => handleInputChange('require_approval', v)}
                             />
                         </div>
+                        <div className="flex items-center justify-between gap-4 p-4 border rounded-lg">
+                            <div className="min-w-0">
+                                <h3 className="font-semibold">One ticket per email</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Each person must book with their own email address, so every
+                                    attendee has their own details and answers.
+                                </p>
+                                {formData.one_ticket_per_email && (
+                                    <p className="mt-2 text-sm text-orange-600 dark:text-orange-400">
+                                        Group bookings will be turned away. A buyer paying for friends
+                                        or family, or a parent registering children on one email, will
+                                        not be able to check out.
+                                    </p>
+                                )}
+                            </div>
+                            <Switch
+                                className="shrink-0"
+                                checked={formData.one_ticket_per_email}
+                                onCheckedChange={(v) => handleInputChange('one_ticket_per_email', v)}
+                            />
+                        </div>
+
                         {/* Approval email templates — shown when require_approval is on */}
                         {formData.require_approval && (
                             <div className="border rounded-lg p-4 space-y-6">
