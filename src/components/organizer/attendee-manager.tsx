@@ -27,7 +27,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users, SlidersHorizontal, X, MailWarning, Trash2, Mail, Send } from 'lucide-react'
+import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users, SlidersHorizontal, X, MailWarning, Trash2, Mail, Send, Link as LinkIcon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
@@ -1117,6 +1117,43 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                                                     >
                                                         Copy Ticket ID
                                                     </DropdownMenuItem>
+                                                    {/* The hosted ticket page the buyer already got by
+                                                        email. Useful when they deleted it, or it went
+                                                        to a dead address and the organizer needs to
+                                                        hand the ticket over another way.
+
+                                                        ORDER-scoped: /t/<token> renders every ticket in
+                                                        the order, so copying from two rows of the same
+                                                        booking gives the same link and shows the whole
+                                                        booking. The toast says so, because handing a
+                                                        group's link to one attendee is otherwise a
+                                                        surprise.
+
+                                                        Hidden with no token: box office, offline and
+                                                        kiosk sales have no purchase intent, so there is
+                                                        no hosted page to point at. A menu item that
+                                                        copies "undefined" is worse than no menu item. */}
+                                                    {attendee.order_token && (
+                                                        <DropdownMenuItem
+                                                            onClick={() => {
+                                                                const url = `${window.location.origin}/t/${attendee.order_token}`
+                                                                navigator.clipboard.writeText(url).then(
+                                                                    () => toast({
+                                                                        title: 'Ticket link copied',
+                                                                        description: attendee.order_quantity > 1
+                                                                            ? `Opens all ${attendee.order_quantity} tickets in this booking.`
+                                                                            : url,
+                                                                    }),
+                                                                    // Clipboard is blocked outside a secure
+                                                                    // context and in some in-app browsers.
+                                                                    () => toast({ title: 'Copy this ticket link', description: url }),
+                                                                )
+                                                            }}
+                                                        >
+                                                            <LinkIcon className="w-4 h-4 mr-2" />
+                                                            Copy ticket link
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     {attendee.registration_id && (
                                                         <DropdownMenuItem onClick={() => openAnswers(attendee, name)}>
                                                             <ClipboardList className="w-4 h-4 mr-2" />

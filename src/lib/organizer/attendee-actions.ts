@@ -38,6 +38,15 @@ export interface Attendee {
     order_quantity: number
     payment_id: string | null
     purchase_intent_id: string | null
+    /**
+     * purchase_intents.access_token — the hosted ticket page at /t/<token>.
+     *
+     * ORDER-scoped, not ticket-scoped: get_ticket_order resolves the whole
+     * order, so this link shows every ticket the buyer bought together. Two
+     * rows from the same order therefore copy the SAME link. Null for box
+     * office, offline and kiosk sales, which have no purchase intent at all.
+     */
+    order_token: string | null
     payment_status: string | null
     payment_method: string | null
     refunded_amount: number | null
@@ -101,6 +110,7 @@ export async function getEventAttendees(eventId: string, filters: AttendeeFilter
             purchase_intent_id,
             legacy_tier_name:tier,
             purchase_intent:purchase_intents${intentInner} (
+                access_token,
                 xendit_invoice_id,
                 unit_price,
                 total_amount,
@@ -230,6 +240,7 @@ export async function getEventAttendees(eventId: string, filters: AttendeeFilter
         registration_id: t.registration_id || null,
         payment_id: pi.xendit_invoice_id || null,
         purchase_intent_id: t.purchase_intent_id,
+        order_token: pi.access_token || null,
         payment_status: pi.status || null,
         payment_method: pi.payment_method || null,
         refunded_amount: pi.refunded_amount || 0,

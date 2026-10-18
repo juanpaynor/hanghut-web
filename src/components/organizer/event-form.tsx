@@ -225,6 +225,13 @@ export function EventForm({
     type TierDraft = { id: string; name: string; price: string; quantity: string; sales_start?: string; sales_end?: string }
     const newTierId = () => Math.random().toString(36).slice(2)
     const [tiers, setTiers] = useState<TierDraft[]>([{ id: newTierId(), name: 'General Admission', price: '0', quantity: '' }])
+
+    // Paid means paid by ANY route. The guard this replaced looked only at
+    // formData.ticket_price, so an event whose money lives entirely in tiers
+    // read as free -- which is how a paid event ended up with approval switched
+    // on despite the control being "disabled".
+    const isPaidEvent = parseFloat(formData.ticket_price || '0') > 0
+        || tiers.some(t => t.name.trim() && parseFloat(t.price || '0') > 0)
     const addTier = () => setTiers(t => [...t, { id: newTierId(), name: '', price: '0', quantity: '' }])
     const updateTier = (id: string, field: keyof TierDraft, value: string) =>
         setTiers(t => t.map(x => (x.id === id ? { ...x, [field]: value } : x)))
@@ -1722,15 +1729,30 @@ export function EventForm({
                                 <h3 className="font-semibold">Require Approval</h3>
                                 <p className="text-sm text-muted-foreground">
                                     Attendees must be approved before their spot is confirmed.
-                                    {formData.ticket_price !== '0' && parseFloat(formData.ticket_price) > 0 && (
-                                        <span className="text-orange-500 block mt-1">Available for free events only in this version.</span>
-                                    )}
                                 </p>
+                                {/* Paid approval has worked end to end for a long time -- the
+                                    checkout gate refuses payment until the registration is
+                                    approved, the approval email carries a "Get your tickets"
+                                    link back, and the event page skips an approved buyer
+                                    straight to checkout. The same gate already sells paid
+                                    invite-only events on prod. What the old copy called
+                                    "free events only" was a stale UI guard, and a leaky one:
+                                    it tested events.ticket_price, so an event priced purely
+                                    through tiers slipped past it anyway.
+
+                                    What IS different on a paid event is below, and organizers
+                                    will assume the opposite unless it is said plainly. */}
+                                {isPaidEvent && formData.require_approval && (
+                                    <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">
+                                        On a paid event, approving someone lets them buy — it
+                                        does not hold a ticket for them. Approve more people
+                                        than you have tickets and the first to pay get in.
+                                    </p>
+                                )}
                             </div>
                             <Switch
                                 className="shrink-0"
                                 checked={formData.require_approval}
-                                disabled={formData.ticket_price !== '0' && parseFloat(formData.ticket_price) > 0}
                                 onCheckedChange={(v) => handleInputChange('require_approval', v)}
                             />
                         </div>
