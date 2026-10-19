@@ -8,8 +8,14 @@ const nextConfig: NextConfig = {
   /* config options here */
   experimental: {
     serverActions: {
-      // Headroom for settings saves that carry logo + cover + ticket banner at once.
-      bodySizeLimit: '12mb',
+      // MUST stay under Vercel's hard 4.5MB function-body ceiling. A limit
+      // above it is fiction: Vercel rejects the request at the edge first, and
+      // the organizer gets Next's unparseable-response error with nothing
+      // logged anywhere. Images no longer travel in these bodies at all (they
+      // go browser-direct to storage), so 4mb is pure headroom for text —
+      // description HTML, tiers, questions, terms documents — and it fails
+      // with our message instead of the platform's silence.
+      bodySizeLimit: '4mb',
     },
   },
   typescript: {
@@ -197,5 +203,6 @@ export default withSentryConfig(withBundleFlags, {
   // Routes Sentry's own requests through our domain so ad blockers do not eat
   // the reports -- which would quietly recreate the problem this solves.
   tunnelRoute: '/monitoring',
-  disableLogger: true,
+  // (disableLogger removed: not an option in @sentry/nextjs v11, and the
+  //  __SENTRY_DEBUG__ define above already strips the logger from the bundle.)
 });

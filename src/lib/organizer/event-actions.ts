@@ -5,6 +5,46 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import { manilaLocalToISO } from '@/lib/datetime'
 
+/**
+ * Images are uploaded by the BROWSER straight to Supabase Storage and only
+ * their URLs reach these actions. Sending the files themselves pushed the
+ * request past Vercel's 4.5MB function-body limit, where it was rejected at the
+ * edge — before this module ran, so there was no log and no returned error,
+ * only "An unexpected response was received from the server." in the organizer's
+ * face. See src/lib/organizer/event-image-upload.ts.
+ *
+ * Because the client now chooses the URL, the URL has to be checked. Anything
+ * not served from our own storage bucket is refused: without this, a crafted
+ * form post could set an event's cover to any address on the internet and we
+ * would render it to every visitor.
+ *
+ * Note this applies to the FORM only. Partner-hosted covers arriving through
+ * the public API are a separate, deliberate path and keep their own rules.
+ */
+function isOwnStorageUrl(url: string): boolean {
+    const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+    if (!base) return false
+    try {
+        const u = new URL(url)
+        return u.origin === new URL(base).origin
+            && u.pathname.startsWith('/storage/v1/object/public/')
+    } catch {
+        return false
+    }
+}
+
+/** Parse the JSON array of newly uploaded image URLs, keeping only our own. */
+function parseStorageUrlList(raw: FormDataEntryValue | null): string[] {
+    if (typeof raw !== 'string' || !raw.trim()) return []
+    try {
+        const parsed = JSON.parse(raw)
+        if (!Array.isArray(parsed)) return []
+        return parsed.filter((u): u is string => typeof u === 'string' && isOwnStorageUrl(u))
+    } catch {
+        return []
+    }
+}
+
 /** A valid ISO timestamp, or null. Used for optional date columns on insert. */
 function isoOrNull(v: unknown): string | null {
     if (typeof v !== 'string' || !v) return null
@@ -101,72 +141,20 @@ export async function createEvent(formData: FormData) {
     })
 
     try {
-        // 1. Upload cover image
-        const coverImage = formData.get('cover_image') as File
-        if (!coverImage) {
+        // 1. Cover image — already in storage, uploaded by the browser.
+        const coverUrl = ((formData.get('cover_image_url') as string | null) ?? '').trim()
+        if (!coverUrl) {
             return { error: 'Cover image is required' }
         }
-
-        // Sanitize filename: remove spaces and special characters
-        const sanitizedCoverName = coverImage.name.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '')
-        const coverFileName = `${partner.id}/${Date.now()}-${sanitizedCoverName}`
-        const { data: coverData, error: coverError } = await supabase.storage
-            .from('event-covers')
-            .upload(coverFileName, coverImage, {
-                contentType: coverImage.type,
-                upsert: false,
-            })
-
-        if (coverError) {
-            // Carry the reason. The two that actually happen are a file over
-            // the bucket's 10MB cap and a format it refuses — HEIC from an
-            // iPhone being the common one — and neither is guessable from
-            // "Failed to upload cover image".
-            console.error('createEvent: cover upload failed', {
-                partnerId: partner.id,
-                name: coverImage.name, type: coverImage.type, size: coverImage.size,
-                error: coverError,
-            })
-            return { error: `Failed to upload cover image: ${coverError.message}` }
+        if (!isOwnStorageUrl(coverUrl)) {
+            console.error('createEvent: rejected foreign cover url', { partnerId: partner.id, coverUrl })
+            return { error: 'That cover image could not be verified. Please re-select it and try again.' }
         }
 
-        const { data: { publicUrl: coverUrl } } = supabase.storage
-            .from('event-covers')
-            .getPublicUrl(coverData.path)
-
-        // 2. Upload additional images
-        const additionalImageUrls: string[] = []
-        let imageIndex = 0
-        while (formData.has(`additional_image_${imageIndex}`)) {
-            const image = formData.get(`additional_image_${imageIndex}`) as File
-            if (image) {
-                const sanitizedImageName = image.name.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '')
-                const fileName = `${partner.id}/${Date.now()}-${imageIndex}-${sanitizedImageName}`
-                const { data: imageData, error: imageError } = await supabase.storage
-                    .from('event-images')
-                    .upload(fileName, image, {
-                        contentType: image.type,
-                        upsert: false,
-                    })
-
-                if (imageError || !imageData) {
-                    // Silently skipping a failed upload meant the event was
-                    // created "successfully" without the images the organizer
-                    // chose, and nothing anywhere said why.
-                    console.error('createEvent: additional image upload failed', {
-                        partnerId: partner.id,
-                        name: image.name, type: image.type, size: image.size,
-                        error: imageError,
-                    })
-                    return { error: `Could not upload "${image.name}": ${imageError?.message ?? 'unknown storage error'}` }
-                }
-                const { data: { publicUrl } } = supabase.storage
-                    .from('event-images')
-                    .getPublicUrl(imageData.path)
-                additionalImageUrls.push(publicUrl)
-            }
-            imageIndex++
-        }
+        // 2. Additional images, same deal. Anything that failed to upload never
+        //    made it into this list, and the browser stopped the save then —
+        //    so an event that reaches here has every image the organizer chose.
+        const additionalImageUrls = parseStorageUrlList(formData.get('additional_image_urls'))
 
         // 3. Prepare event data.
         // The form sends naive wall-clock strings ("2026-08-28T19:00") meaning
@@ -529,72 +517,26 @@ export async function updateEvent(eventId: string, formData: FormData) {
     if (existingEvent.organizer_id !== partner.id) return { error: 'You do not have access to this event' }
 
     try {
-        // 1. Handle Cover Image
+        // 1. Cover image. A new one arrives as a storage URL the browser
+        //    already uploaded; absent that, the event keeps the cover it has.
+        //    The existing value is NOT re-validated — legacy and partner-hosted
+        //    covers live on other origins legitimately, and editing a venue
+        //    name must not quietly blank one.
         let coverUrl = existingEvent.cover_image_url
-        const coverImage = formData.get('cover_image') as File
-
-        if (coverImage && coverImage.size > 0) {
-            const sanitizedCoverName = coverImage.name.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '')
-            const coverFileName = `${partner.id}/${Date.now()}-${sanitizedCoverName}`
-            const { data: coverData, error: coverError } = await supabase.storage
-                .from('event-covers')
-                .upload(coverFileName, coverImage, { contentType: coverImage.type, upsert: false })
-
-            if (coverError) {
-                // Carry the storage error through. "Cover upload failed" alone
-                // hides the two causes that actually happen: a file over the
-                // bucket's 10MB limit, and a format the bucket refuses (HEIC
-                // from an iPhone is the common one).
-                console.error('updateEvent: cover upload failed', {
-                    eventId, partnerId: partner.id,
-                    name: coverImage.name, type: coverImage.type, size: coverImage.size,
-                    error: coverError,
-                })
-                throw new Error(`Cover image upload failed: ${coverError.message}`)
+        const newCoverUrl = ((formData.get('cover_image_url') as string | null) ?? '').trim()
+        if (newCoverUrl) {
+            if (!isOwnStorageUrl(newCoverUrl)) {
+                console.error('updateEvent: rejected foreign cover url', { eventId, partnerId: partner.id, newCoverUrl })
+                throw new Error('That cover image could not be verified. Please re-select it and try again.')
             }
-
-            const { data: { publicUrl } } = supabase.storage
-                .from('event-covers')
-                .getPublicUrl(coverData.path)
-            coverUrl = publicUrl
+            coverUrl = newCoverUrl
         }
 
-        // 2. Handle Additional Images
-        // existing_images are passed as JSON string of URLs
+        // 2. Additional images: the ones the organizer kept, plus the ones the
+        //    browser just uploaded.
         const existingImagesStr = formData.get('existing_images') as string
         let finalImages: string[] = existingImagesStr ? JSON.parse(existingImagesStr) : []
-
-        // Upload new images
-        let imageIndex = 0
-        while (formData.has(`additional_image_${imageIndex}`)) {
-            const image = formData.get(`additional_image_${imageIndex}`) as File
-            if (image) {
-                const sanitizedImageName = image.name.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '')
-                const fileName = `${partner.id}/${Date.now()}-${imageIndex}-${sanitizedImageName}`
-                const { data: imageData, error: imageError } = await supabase.storage
-                    .from('event-images')
-                    .upload(fileName, image, { contentType: image.type, upsert: false })
-
-                if (imageError || !imageData) {
-                    // This used to be `if (!imageError && imageData)` with no
-                    // else: a failed upload was skipped silently, the save
-                    // reported SUCCESS, and the organizer found the image
-                    // missing later with nothing to explain it. A save that
-                    // drops what you gave it is not a success.
-                    console.error('updateEvent: additional image upload failed', {
-                        eventId, partnerId: partner.id,
-                        name: image.name, type: image.type, size: image.size,
-                        error: imageError,
-                    })
-                    throw new Error(`Could not upload "${image.name}": ${imageError?.message ?? 'unknown storage error'}`)
-                }
-                const { data: { publicUrl } } = supabase.storage
-                    .from('event-images')
-                    .getPublicUrl(imageData.path)
-                finalImages.push(publicUrl)
-            }
-            imageIndex++
-        }
+        finalImages = finalImages.concat(parseStorageUrlList(formData.get('additional_image_urls')))
 
         // 3. Prepare Update Data — same Manila-local → instant conversion as create.
         const startDatetime = manilaLocalToISO(formData.get('start_datetime') as string)

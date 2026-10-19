@@ -36,6 +36,14 @@ import { TicketTiersManager } from '@/components/organizer/ticket-tiers-manager'
 import { SubscriberDiscountsSection, type SubscriptionTierBasic, type ExistingDiscount } from '@/components/organizer/subscriber-discounts-section'
 import { createClient } from '@/lib/supabase/client'
 import { plainTextToHtml } from '@/lib/plain-text-to-html'
+import * as Sentry from '@sentry/nextjs'
+import {
+    uploadEventImages,
+    MAX_IMAGE_BYTES,
+    MAX_IMAGE_LABEL,
+    COVER_MIME,
+    type UploadProgress,
+} from '@/lib/organizer/event-image-upload'
 
 // New events pick a Category from the server lookup (event_categories). We still derive
 // and write the legacy event_type enum during the transition so the old app's map +
@@ -116,38 +124,11 @@ interface EventFormProps {
 
 /** Poster upload ceiling. Mirrors the event-covers storage bucket, which is the
  *  real gate — a bigger client cap just moves the failure to after the upload.
- *  Headroom above this is the Next server-action body limit in next.config.ts
- *  (12mb), and the cover rides that same request as the extra images. */
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024
-const MAX_IMAGE_LABEL = '10MB'
-
-/**
- * The event-covers bucket accepts these three and nothing else.
  *
- * The check used to be `file.type.startsWith('image/')`, which happily accepted
- * an iPhone HEIC — the browser hands over the raw file, no conversion — and the
- * bucket then refused it. The organizer got "Cover upload failed" with no hint
- * that the format was the problem.
- */
-const COVER_MIME = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
-
-/**
- * Everything in this form is sent through a server action, images included, and
- * next.config caps a server action body at 12MB.
- *
- * Nothing checked the TOTAL. Per-file was capped at 10MB and up to 6 files
- * could be attached (1 cover + 5 additional), so 60MB could pass every check
- * here and then be refused by the framework BEFORE the action ran — which is
- * why the failure produced no server log, no returned error, and the bare
- * "Failed to save event. Please try again." Two ordinary phone photos are
- * enough to do it.
- *
- * Budget is set below the server's so the form fails with a useful message
- * instead of letting the framework fail with none. The margin covers the rest
- * of the payload: description HTML, tiers, questions, terms documents.
- */
-const MAX_TOTAL_UPLOAD_BYTES = 11 * 1024 * 1024
-const prettyBytes = (n: number) => `${(n / 1024 / 1024).toFixed(1)}MB`
+ *  MAX_IMAGE_BYTES, MAX_IMAGE_LABEL and COVER_MIME now live beside the uploader
+ *  in event-image-upload.ts, next to the bucket they describe. There is no
+ *  longer a TOTAL cap: images no longer ride the server action, so the only
+ *  ceiling is the bucket's per-file 10MB and each file is checked on pick. */
 
 export function EventForm({
     partnerId,
@@ -164,6 +145,8 @@ export function EventForm({
     const router = useRouter()
     const { toast } = useToast()
     const [isLoading, setIsLoading] = useState(false)
+    // Non-null only while images are going up, so the button can say which one.
+    const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null)
     const [coverPreview, setCoverPreview] = useState<string | null>(initialData?.cover_image_url || null)
 
     // For existing events, we might have existing images URLs
@@ -760,42 +743,54 @@ export function EventForm({
                 formDataToSend.append('organizer_id', partnerId)
             }
 
-            // Add images
-            if (formData.cover_image) {
-                formDataToSend.append('cover_image', formData.cover_image)
-            }
-
-            // Handle additional images
-            // 1. Existing images (send list of URLs to keep)
+            // Existing images the organizer chose to keep (edit only).
             if (isEditing) {
                 formDataToSend.append('existing_images', JSON.stringify(existingImages))
             }
 
-            // 2. New images
-            formData.additional_images.forEach((image, index) => {
-                formDataToSend.append(`additional_image_${index}`, image)
-            })
-
-            // Refuse oversize payloads HERE, where we can say what is wrong and
-            // which file is at fault. Past this line the framework rejects the
-            // request before the action runs, and all anyone gets is "try again".
-            const uploads = [
-                ...(formData.cover_image ? [{ name: formData.cover_image.name, size: formData.cover_image.size }] : []),
-                ...formData.additional_images.map(f => ({ name: f.name, size: f.size })),
-            ]
-            const totalBytes = uploads.reduce((sum, f) => sum + f.size, 0)
-            if (totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
-                const biggest = [...uploads].sort((a, b) => b.size - a.size)[0]
-                const msg = `Your images come to ${prettyBytes(totalBytes)}, which is over the `
-                    + `${prettyBytes(MAX_TOTAL_UPLOAD_BYTES)} limit for one save. `
-                    + `The largest is ${biggest.name} at ${prettyBytes(biggest.size)}. `
-                    + `Remove an image or save smaller versions, then try again.`
+            // Images go straight from the browser to Supabase Storage; only
+            // their URLs ride the server action. They used to be appended to
+            // this FormData, which pushed the request past Vercel's 4.5MB
+            // function-body ceiling and got it rejected at the edge — no
+            // server log, no returned error, just "An unexpected response was
+            // received from the server." Sending URLs keeps the body in the
+            // kilobytes no matter how large the photos are.
+            let coverUrl: string | null = null
+            let extraUrls: string[] = []
+            try {
+                const res = await uploadEventImages({
+                    partnerId,
+                    cover: formData.cover_image,
+                    extras: formData.additional_images,
+                    onProgress: p => setUploadProgress(p),
+                })
+                coverUrl = res.coverUrl
+                extraUrls = res.extraUrls
+            } catch (err) {
+                // Named per-file by describeStorageError, so this is already
+                // the sentence the organizer needs. Report it anyway: an
+                // upload that fails here never reaches the server action, so
+                // this catch is the only place it is visible to us.
+                const msg = err instanceof Error ? err.message : 'Could not upload your images. Please try again.'
+                Sentry.captureException(err, {
+                    tags: { area: 'event-form', phase: 'image-upload' },
+                    extra: {
+                        partnerId,
+                        isEditing,
+                        coverBytes: formData.cover_image?.size ?? null,
+                        extraCount: formData.additional_images.length,
+                    },
+                })
                 setErrors({ form: msg })
                 window.scrollTo({ top: 0, behavior: 'smooth' })
-                toast({ title: 'Images are too large', description: msg, variant: 'destructive' })
-                setIsLoading(false)
+                toast({ title: 'Could not upload images', description: msg, variant: 'destructive' })
                 return
+            } finally {
+                setUploadProgress(null)
             }
+
+            if (coverUrl) formDataToSend.append('cover_image_url', coverUrl)
+            if (extraUrls.length) formDataToSend.append('additional_image_urls', JSON.stringify(extraUrls))
 
             let result
             if (isEditing && eventId) {
@@ -833,13 +828,31 @@ export function EventForm({
             // with no idea what went wrong. Say as much as we actually know.
             console.error('Error saving event:', error)
             const raw = error instanceof Error ? error.message : String(error ?? '')
-            const tooBig = /body.*(exceed|too large|limit)|payload too large|413/i.test(raw)
+            // Next throws this exact sentence when it gets a response it cannot
+            // parse as an action result, which in practice is a Vercel 413 —
+            // returned at the edge, before any of our code runs, which is why
+            // it produced no server log at all. Images no longer travel in this
+            // request, so reaching it now means the TEXT is oversized.
+            const rejected = /unexpected response was received/i.test(raw)
+                || /body.*(exceed|too large|limit)|payload too large|413/i.test(raw)
             const offline = typeof navigator !== 'undefined' && navigator.onLine === false
-            const msg = tooBig
-                ? 'The images are too large to upload in one save. Remove one, or save smaller versions, and try again.'
+            const msg = rejected
+                ? 'This event is too large to save in one request. Shorten the description, or remove a few questions or ticket tiers, and try again.'
                 : offline
                     ? 'You appear to be offline. Check your connection and try again — nothing was saved.'
                     : `Could not save the event: ${raw || 'the request did not complete'}. Nothing was saved, so it is safe to try again.`
+            // Nothing else reports this. The throw is caught right here, so the
+            // browser's global handler never sees it and onRequestError never
+            // fires — which is precisely how the last failed save stayed
+            // unexplained. Without this line the next one would too.
+            Sentry.captureException(error, {
+                tags: {
+                    area: 'event-form',
+                    phase: 'save',
+                    outcome: rejected ? 'payload-rejected' : offline ? 'offline' : 'threw',
+                },
+                extra: { partnerId, isEditing, eventId: eventId ?? null },
+            })
             setErrors({ form: msg })
             window.scrollTo({ top: 0, behavior: 'smooth' })
             toast({ title: 'Could not save', description: msg, variant: 'destructive' })
@@ -2296,6 +2309,24 @@ export function EventForm({
                 )}
 
                     </div>{/* /step 4 */}
+
+                    {/* Images upload one at a time, straight to storage, before the
+                        event itself is saved. On a phone connection that is the
+                        slowest part of the save by far, so say what is happening
+                        rather than leaving three identical spinners to imply the
+                        form has hung. */}
+                    {uploadProgress && (
+                        <p
+                            className="pt-4 text-sm text-muted-foreground flex items-center gap-2"
+                            role="status"
+                            aria-live="polite"
+                        >
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            {uploadProgress.total > 1
+                                ? `Uploading image ${uploadProgress.index} of ${uploadProgress.total}…`
+                                : 'Uploading image…'}
+                        </p>
+                    )}
 
                     {/* Publish actions — always for edit; only on the last step for create */}
                     {(isEditing || curStepIdx === stepKeys.length - 1) && (
