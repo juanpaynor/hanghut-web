@@ -118,8 +118,16 @@ export async function createEvent(formData: FormData) {
             })
 
         if (coverError) {
-            console.error('Cover upload error:', coverError)
-            return { error: 'Failed to upload cover image' }
+            // Carry the reason. The two that actually happen are a file over
+            // the bucket's 10MB cap and a format it refuses — HEIC from an
+            // iPhone being the common one — and neither is guessable from
+            // "Failed to upload cover image".
+            console.error('createEvent: cover upload failed', {
+                partnerId: partner.id,
+                name: coverImage.name, type: coverImage.type, size: coverImage.size,
+                error: coverError,
+            })
+            return { error: `Failed to upload cover image: ${coverError.message}` }
         }
 
         const { data: { publicUrl: coverUrl } } = supabase.storage
@@ -141,12 +149,21 @@ export async function createEvent(formData: FormData) {
                         upsert: false,
                     })
 
-                if (!imageError && imageData) {
-                    const { data: { publicUrl } } = supabase.storage
-                        .from('event-images')
-                        .getPublicUrl(imageData.path)
-                    additionalImageUrls.push(publicUrl)
+                if (imageError || !imageData) {
+                    // Silently skipping a failed upload meant the event was
+                    // created "successfully" without the images the organizer
+                    // chose, and nothing anywhere said why.
+                    console.error('createEvent: additional image upload failed', {
+                        partnerId: partner.id,
+                        name: image.name, type: image.type, size: image.size,
+                        error: imageError,
+                    })
+                    return { error: `Could not upload "${image.name}": ${imageError?.message ?? 'unknown storage error'}` }
                 }
+                const { data: { publicUrl } } = supabase.storage
+                    .from('event-images')
+                    .getPublicUrl(imageData.path)
+                additionalImageUrls.push(publicUrl)
             }
             imageIndex++
         }
@@ -387,9 +404,18 @@ export async function createEvent(formData: FormData) {
         revalidatePath('/organizer/events')
         return { success: true, eventId: event.id }
 
-    } catch (error) {
-        console.error('Unexpected error:', error)
-        return { error: 'An unexpected error occurred' }
+    } catch (error: any) {
+        // "An unexpected error occurred" told the organizer nothing and told us
+        // nothing: no message, no code, no identifiers. The web app has no
+        // error reporting, so this log is the only record that will ever exist.
+        console.error('createEvent failed', {
+            partnerId: partner?.id,
+            message: error?.message,
+            code: error?.code,
+            details: error?.details,
+            hint: error?.hint,
+        })
+        return { error: `Could not create the event: ${error?.message ?? 'unknown error'}` }
     }
 }
 
@@ -482,16 +508,25 @@ export async function updateEvent(eventId: string, formData: FormData) {
         }
     })
 
-    // Verify ownership
-    const { data: existingEvent } = await adminSupabase
+    // Verify ownership.
+    //
+    // The error was previously not destructured, so ANY failure of this read —
+    // a dropped connection, a column added to the select that does not exist
+    // yet — surfaced as "Event not found or unauthorized". That accuses the
+    // organizer of something instead of reporting a fault, and it is the kind
+    // of message that sends someone hunting through permissions for an hour.
+    const { data: existingEvent, error: existingError } = await adminSupabase
         .from('events')
         .select('organizer_id, cover_image_url, images, max_tickets_per_purchase')
         .eq('id', eventId)
         .single()
 
-    if (!existingEvent || existingEvent.organizer_id !== partner.id) {
-        return { error: 'Event not found or unauthorized' }
+    if (existingError) {
+        console.error('updateEvent: could not load event', { eventId, partnerId: partner.id, error: existingError })
+        return { error: `Could not load this event to save it: ${existingError.message}` }
     }
+    if (!existingEvent) return { error: 'Event not found' }
+    if (existingEvent.organizer_id !== partner.id) return { error: 'You do not have access to this event' }
 
     try {
         // 1. Handle Cover Image
@@ -505,7 +540,18 @@ export async function updateEvent(eventId: string, formData: FormData) {
                 .from('event-covers')
                 .upload(coverFileName, coverImage, { contentType: coverImage.type, upsert: false })
 
-            if (coverError) throw new Error('Cover upload failed')
+            if (coverError) {
+                // Carry the storage error through. "Cover upload failed" alone
+                // hides the two causes that actually happen: a file over the
+                // bucket's 10MB limit, and a format the bucket refuses (HEIC
+                // from an iPhone is the common one).
+                console.error('updateEvent: cover upload failed', {
+                    eventId, partnerId: partner.id,
+                    name: coverImage.name, type: coverImage.type, size: coverImage.size,
+                    error: coverError,
+                })
+                throw new Error(`Cover image upload failed: ${coverError.message}`)
+            }
 
             const { data: { publicUrl } } = supabase.storage
                 .from('event-covers')
@@ -529,12 +575,23 @@ export async function updateEvent(eventId: string, formData: FormData) {
                     .from('event-images')
                     .upload(fileName, image, { contentType: image.type, upsert: false })
 
-                if (!imageError && imageData) {
-                    const { data: { publicUrl } } = supabase.storage
-                        .from('event-images')
-                        .getPublicUrl(imageData.path)
-                    finalImages.push(publicUrl)
+                if (imageError || !imageData) {
+                    // This used to be `if (!imageError && imageData)` with no
+                    // else: a failed upload was skipped silently, the save
+                    // reported SUCCESS, and the organizer found the image
+                    // missing later with nothing to explain it. A save that
+                    // drops what you gave it is not a success.
+                    console.error('updateEvent: additional image upload failed', {
+                        eventId, partnerId: partner.id,
+                        name: image.name, type: image.type, size: image.size,
+                        error: imageError,
+                    })
+                    throw new Error(`Could not upload "${image.name}": ${imageError?.message ?? 'unknown storage error'}`)
                 }
+                const { data: { publicUrl } } = supabase.storage
+                    .from('event-images')
+                    .getPublicUrl(imageData.path)
+                finalImages.push(publicUrl)
             }
             imageIndex++
         }
@@ -607,8 +664,18 @@ export async function updateEvent(eventId: string, formData: FormData) {
         return { success: true }
 
     } catch (error: any) {
-        console.error('Update error:', error)
-        return { error: 'Failed to update event: ' + error.message }
+        // Logged with enough context to find the event and the partner. This is
+        // the only record that exists — the web app has no error reporting, so
+        // a bare console.error with no identifiers is close to no record at all.
+        console.error('updateEvent failed', {
+            eventId,
+            partnerId: partner.id,
+            message: error?.message,
+            code: error?.code,
+            details: error?.details,
+            hint: error?.hint,
+        })
+        return { error: `Failed to update event: ${error?.message ?? 'unknown error'}` }
     }
 }
 

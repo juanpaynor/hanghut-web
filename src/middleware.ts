@@ -74,12 +74,17 @@ export async function middleware(request: NextRequest) {
     // since src/app/[slug] only defines /membership, an unlisted app path 404s on
     // a partner subdomain or custom domain while working fine on the apex.
     //
+    // '/monitoring' is Sentry's tunnel. Without it here, an error on a partner
+    // subdomain or custom domain would be rewritten to /<slug>/monitoring and
+    // 404 — so the reports that matter most, from a partner's own storefront,
+    // would be the ones silently lost.
+    //
     // The consumer auth routes belong here: a buyer on a storefront who hits
     // "Sign in" from an event page goes to /account/login?next=..., which without
     // this list became /<slug>/account/login and 404'd. Auth cookies are already
     // scoped to `.{ROOT_DOMAIN}` (see src/lib/supabase/*.ts), so a session created
     // on a subdomain is valid on the apex too — only the routing was missing.
-    const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan', '/box-office', '/checkin', '/embed', '/t', '/account', '/login', '/reset-password']
+    const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan', '/box-office', '/checkin', '/embed', '/t', '/account', '/login', '/reset-password', '/monitoring']
 
     // 1a. Custom domain → look up partner slug and rewrite to storefront
     const isHanghutDomain = hostname === ROOT_DOMAIN || hostname.endsWith(`.${ROOT_DOMAIN}`) || hostname.endsWith('.localhost') || hostname === 'localhost'

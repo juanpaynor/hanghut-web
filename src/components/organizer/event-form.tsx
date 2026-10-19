@@ -121,6 +121,34 @@ interface EventFormProps {
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_IMAGE_LABEL = '10MB'
 
+/**
+ * The event-covers bucket accepts these three and nothing else.
+ *
+ * The check used to be `file.type.startsWith('image/')`, which happily accepted
+ * an iPhone HEIC — the browser hands over the raw file, no conversion — and the
+ * bucket then refused it. The organizer got "Cover upload failed" with no hint
+ * that the format was the problem.
+ */
+const COVER_MIME = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+
+/**
+ * Everything in this form is sent through a server action, images included, and
+ * next.config caps a server action body at 12MB.
+ *
+ * Nothing checked the TOTAL. Per-file was capped at 10MB and up to 6 files
+ * could be attached (1 cover + 5 additional), so 60MB could pass every check
+ * here and then be refused by the framework BEFORE the action ran — which is
+ * why the failure produced no server log, no returned error, and the bare
+ * "Failed to save event. Please try again." Two ordinary phone photos are
+ * enough to do it.
+ *
+ * Budget is set below the server's so the form fails with a useful message
+ * instead of letting the framework fail with none. The margin covers the rest
+ * of the payload: description HTML, tiers, questions, terms documents.
+ */
+const MAX_TOTAL_UPLOAD_BYTES = 11 * 1024 * 1024
+const prettyBytes = (n: number) => `${(n / 1024 / 1024).toFixed(1)}MB`
+
 export function EventForm({
     partnerId,
     commissionRate,
@@ -393,8 +421,17 @@ export function EventForm({
 
     const setCoverFile = (file: File | undefined | null) => {
         if (!file) return
-        if (!file.type.startsWith('image/')) {
-            setErrors(prev => ({ ...prev, cover_image: 'Please choose an image file (PNG, JPG or WebP)' }))
+        if (!COVER_MIME.includes(file.type.toLowerCase())) {
+            // HEIC is the common case and deserves to be named: it is what an
+            // iPhone produces by default, and "please choose an image" is
+            // baffling advice when you just did.
+            const isHeic = /heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name)
+            setErrors(prev => ({
+                ...prev,
+                cover_image: isHeic
+                    ? 'iPhone HEIC photos are not supported. In Settings → Camera → Formats choose "Most Compatible", or export the photo as JPEG.'
+                    : 'Cover image must be a PNG, JPG or WebP file.',
+            }))
             return
         }
         // Matches the event-covers bucket's own limit. Keep the two in step: a
@@ -739,6 +776,27 @@ export function EventForm({
                 formDataToSend.append(`additional_image_${index}`, image)
             })
 
+            // Refuse oversize payloads HERE, where we can say what is wrong and
+            // which file is at fault. Past this line the framework rejects the
+            // request before the action runs, and all anyone gets is "try again".
+            const uploads = [
+                ...(formData.cover_image ? [{ name: formData.cover_image.name, size: formData.cover_image.size }] : []),
+                ...formData.additional_images.map(f => ({ name: f.name, size: f.size })),
+            ]
+            const totalBytes = uploads.reduce((sum, f) => sum + f.size, 0)
+            if (totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
+                const biggest = [...uploads].sort((a, b) => b.size - a.size)[0]
+                const msg = `Your images come to ${prettyBytes(totalBytes)}, which is over the `
+                    + `${prettyBytes(MAX_TOTAL_UPLOAD_BYTES)} limit for one save. `
+                    + `The largest is ${biggest.name} at ${prettyBytes(biggest.size)}. `
+                    + `Remove an image or save smaller versions, then try again.`
+                setErrors({ form: msg })
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+                toast({ title: 'Images are too large', description: msg, variant: 'destructive' })
+                setIsLoading(false)
+                return
+            }
+
             let result
             if (isEditing && eventId) {
                 result = await updateEvent(eventId, formDataToSend)
@@ -769,9 +827,22 @@ export function EventForm({
                 }
             }
         } catch (error) {
+            // This branch means the action THREW rather than returning an error
+            // — the request never completed, so nothing was logged server-side
+            // either. A bare "try again" here is what left a partner, and us,
+            // with no idea what went wrong. Say as much as we actually know.
             console.error('Error saving event:', error)
-            setErrors({ form: 'Failed to save event. Please try again.' })
+            const raw = error instanceof Error ? error.message : String(error ?? '')
+            const tooBig = /body.*(exceed|too large|limit)|payload too large|413/i.test(raw)
+            const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+            const msg = tooBig
+                ? 'The images are too large to upload in one save. Remove one, or save smaller versions, and try again.'
+                : offline
+                    ? 'You appear to be offline. Check your connection and try again — nothing was saved.'
+                    : `Could not save the event: ${raw || 'the request did not complete'}. Nothing was saved, so it is safe to try again.`
+            setErrors({ form: msg })
             window.scrollTo({ top: 0, behavior: 'smooth' })
+            toast({ title: 'Could not save', description: msg, variant: 'destructive' })
         } finally {
             setIsLoading(false)
         }

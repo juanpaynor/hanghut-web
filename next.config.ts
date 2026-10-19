@@ -1,3 +1,7 @@
+// '@sentry/nextjs/config', not the package root. v11 moved the build-time
+// helper out of the main entry point, which resolves to the runtime SDK here
+// and gives "withSentryConfig is not a function" at build.
+import { withSentryConfig } from '@sentry/nextjs/config';
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
@@ -145,4 +149,53 @@ const nextConfig: NextConfig = {
   }
 };
 
-export default nextConfig;
+/**
+ * Sentry wrapper.
+ *
+ * Only changes the BUILD (source maps, the instrumentation hooks). Whether
+ * anything is actually reported is decided at runtime by the DSN env var, so
+ * this is inert until SENTRY_DSN / NEXT_PUBLIC_SENTRY_DSN are set.
+ *
+ * Source maps upload only when SENTRY_AUTH_TOKEN is present; without it the
+ * build logs a notice and carries on rather than failing. That ordering is
+ * deliberate for a money-path app -- a missing observability token must never
+ * be the thing that stops a deploy.
+ */
+/**
+ * Tree-shake the Sentry features we do not use.
+ *
+ * Adding the SDK took shared First Load JS from 102 kB to 171 kB, which is a
+ * lot to put on every page of a consumer ticketing site whose buyers are mostly
+ * on phones. Tracing and Replay are both switched off at runtime
+ * (tracesSampleRate 0, replay rates 0) but their code still ships unless these
+ * flags let the bundler drop it. Flip the flag if you ever turn the feature on,
+ * or it will be silently inert.
+ */
+const withBundleFlags: NextConfig = {
+  ...nextConfig,
+  webpack: (config, options) => {
+    config.plugins.push(
+      new options.webpack.DefinePlugin({
+        __SENTRY_DEBUG__: false,
+        __SENTRY_TRACING__: false,
+        __RRWEB_EXCLUDE_IFRAME__: true,
+        __RRWEB_EXCLUDE_SHADOW_DOM__: true,
+        __SENTRY_EXCLUDE_REPLAY_WORKER__: true,
+      }),
+    )
+    return config
+  },
+}
+
+export default withSentryConfig(withBundleFlags, {
+  org: 'hanghut-inc',
+  project: 'web',
+  silent: !process.env.CI,
+  // Readable stack traces in Sentry without serving .map files publicly.
+  widenClientFileUpload: true,
+  sourcemaps: { deleteSourcemapsAfterUpload: true },
+  // Routes Sentry's own requests through our domain so ad blockers do not eat
+  // the reports -- which would quietly recreate the problem this solves.
+  tunnelRoute: '/monitoring',
+  disableLogger: true,
+});
