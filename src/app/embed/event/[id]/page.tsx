@@ -66,10 +66,19 @@ export default async function EmbedEventPage({
 
     if (error || !event) notFound()
 
-    const isSoldOut = event.tickets_sold >= event.capacity
     const eventDate = new Date(event.start_datetime)
     const organizer = Array.isArray(event.organizer) ? event.organizer[0] : event.organizer
     const activeTiers = (event.ticket_tiers || []).filter((t: any) => isTierOnSale(t))
+
+    // Tiers are the authority, matching the full event page. events.capacity
+    // and ticket_tiers.quantity_total are edited in different tabs and never
+    // sync -- they disagree for 20% of live events -- and checkout gates only
+    // on the tier, so capacity here was a second ceiling that could mark an
+    // embed Sold Out while the event was still selling perfectly well on
+    // hanghut.com. Capacity is still the answer for tierless legacy events.
+    const isSoldOut = activeTiers.length > 0
+        ? !activeTiers.some((t: any) => Number(t.quantity_total ?? 0) - Number(t.quantity_sold ?? 0) > 0)
+        : event.tickets_sold >= event.capacity
 
     // Mixed events: the embed sells GENERAL ADMISSION ONLY.
     //

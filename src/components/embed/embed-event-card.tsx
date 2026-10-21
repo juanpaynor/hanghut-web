@@ -2,6 +2,7 @@
 
 import { format } from 'date-fns'
 import { formatInManila, formatEventTime, formatEventDayRange, isMultiDayEvent } from '@/lib/datetime'
+import { isTierOnSale } from '@/lib/tickets/tier-availability'
 
 interface EmbedEventCardProps {
     event: {
@@ -15,14 +16,27 @@ interface EmbedEventCardProps {
         event_type?: string
         capacity?: number
         tickets_sold?: number
+        ticket_tiers?: {
+            quantity_total?: number | null
+            quantity_sold?: number | null
+            is_active?: boolean | null
+            sales_start?: string | null
+            sales_end?: string | null
+        }[] | null
     }
     variant?: 'grid' | 'list'
 }
 
 export function EmbedEventCard({ event, variant = 'grid' }: EmbedEventCardProps) {
-    const isSoldOut = typeof event.capacity === 'number' && typeof event.tickets_sold === 'number'
-        ? event.tickets_sold >= event.capacity
-        : false
+    // Tiers decide when there are any on sale; capacity is the fallback for
+    // tierless legacy events. The two numbers are edited in different tabs and
+    // never sync, and only the tier governs what checkout will actually sell.
+    const onSale = (event.ticket_tiers || []).filter(t => isTierOnSale(t))
+    const isSoldOut = onSale.length > 0
+        ? !onSale.some(t => Number(t.quantity_total ?? 0) - Number(t.quantity_sold ?? 0) > 0)
+        : (typeof event.capacity === 'number' && typeof event.tickets_sold === 'number'
+            ? event.tickets_sold >= event.capacity
+            : false)
 
     const multiDay = isMultiDayEvent(event.start_datetime, event.end_datetime)
 

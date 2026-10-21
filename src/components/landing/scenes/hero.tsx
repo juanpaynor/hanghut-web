@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } from "motion/react";
 import { ArrowRight } from "lucide-react";
 import { Magnetic, MaskedLines } from "./primitives";
+import { StoreButtons } from "@/components/landing/store-buttons";
 
 // Both layers touch window/canvas, so neither can render on the server.
 const LightField = dynamic(() => import("./light-field"), { ssr: false });
@@ -127,6 +128,31 @@ export default function Hero() {
                             Start selling
                         </Link>
                     </Magnetic>
+                </motion.div>
+
+                {/* The app, as a third tier rather than a fourth peer.
+                    Deliberately quieter than the two pills: four calls to
+                    action of equal weight is no call to action, and the pills
+                    are what the page is actually selling.
+
+                    It earns a place in the hero anyway because the other three
+                    sets of badges (discover, cta, footer) all sit below the
+                    fold -- a phone visitor who bounces from the first screen
+                    has never been offered the app at all.
+
+                    `pointer-events-auto` is required: the wrapper above turns
+                    pointer events off so the physics cards stay draggable
+                    through the copy, and anything clickable has to opt back in. */}
+                <motion.div
+                    initial={reduce ? false : { opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.7, delay: 0.82 }}
+                    className="pointer-events-auto mt-9 flex flex-col items-center gap-3.5"
+                >
+                    <span className="lp-mono text-[10px] uppercase tracking-[0.3em] text-[var(--lp-dim)]">
+                        Or get the app
+                    </span>
+                    <StoreButtons variant="solid" />
                 </motion.div>
             </motion.div>
 

@@ -35,7 +35,11 @@ export default async function EmbedStorefrontPage({
     const now = new Date().toISOString()
     const { data: events } = await supabase
         .from('events')
-        .select('id, title, description, start_datetime, end_datetime, venue_name, cover_image_url, ticket_price, event_type, capacity, tickets_sold')
+        // ticket_tiers rides along so the card can judge sold-out from real
+        // inventory. events.capacity disagrees with the tiers on 20% of live
+        // events and checkout ignores it, so a capacity-only badge can mark a
+        // still-selling event Sold Out in a publisher's embed.
+        .select('id, title, description, start_datetime, end_datetime, venue_name, cover_image_url, ticket_price, event_type, capacity, tickets_sold, ticket_tiers(quantity_total, quantity_sold, is_active, sales_start, sales_end)')
         .eq('organizer_id', partner.id)
         .eq('status', 'active')
         .neq('invite_only', true)

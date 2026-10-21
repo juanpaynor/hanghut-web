@@ -1,10 +1,20 @@
 "use client";
 
+import { useId } from "react";
 import { getStoredAttribution } from "@/lib/tracking";
 
 interface StoreButtonsProps {
-  /** "dark" = black buttons (on light bg), "light" = white buttons (on dark bg) */
-  variant?: "dark" | "light";
+  /**
+   * Visual treatment.
+   *
+   * "dark" and "light" both render a WHITE button; they differ only in border,
+   * which is why nine call sites pass "dark" and get white. The names are wrong
+   * but they are load-bearing, so they are left exactly as they are.
+   *
+   * "solid" is the real black badge, for a light ground like the hero's white
+   * legibility plate, where a white button on white is invisible.
+   */
+  variant?: "dark" | "light" | "solid";
   className?: string;
   /**
    * Fired in addition to the referral beacon when either store button is
@@ -41,8 +51,22 @@ export function StoreButtons({ variant = "dark", className = "", onTap }: StoreB
     try { onTap?.(); } catch { /* a broken metric must never eat the tap */ }
   };
 
-  const bg = variant === "dark" ? "bg-white text-black hover:bg-neutral-100 border border-neutral-200" : "bg-white text-black hover:bg-neutral-100";
-  const border = variant === "dark" ? "" : "border border-white/30";
+  const bg =
+    variant === "solid"
+      ? "bg-[#111111] text-white hover:bg-black border border-white/10 shadow-[0_10px_28px_-12px_rgba(0,0,0,0.5)]"
+      : variant === "dark"
+        ? "bg-white text-black hover:bg-neutral-100 border border-neutral-200"
+        : "bg-white text-black hover:bg-neutral-100";
+  const border = variant === "dark" || variant === "solid" ? "" : "border border-white/30";
+
+  // The Play logo is drawn with four gradients referenced by id. Those ids used
+  // to be hard-coded, so every extra StoreButtons on a page repeated them --
+  // and the landing now renders four sets (hero, discover, cta, footer). The
+  // values are identical today so nothing looks wrong, but duplicate ids are
+  // invalid and a browser resolves url(#ps-a) to whichever came first, so
+  // restyling one placement would silently restyle them all.
+  const uid = useId().replace(/:/g, "");
+  const g = (k: string) => `ps-${k}-${uid}`;
 
   return (
     <div className={`flex flex-col sm:flex-row items-center gap-3 ${className}`}>
@@ -74,7 +98,7 @@ export function StoreButtons({ variant = "dark", className = "", onTap }: StoreB
       >
         {/* Play Store icon */}
         <svg viewBox="0 0 512 512" className="h-6 w-auto shrink-0" aria-hidden="true">
-          <linearGradient id="ps-a" x1="91.84" y1="6.65" x2="245.97" y2="259.42" gradientUnits="userSpaceOnUse">
+          <linearGradient id={g("a")} x1="91.84" y1="6.65" x2="245.97" y2="259.42" gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#00a0ff"/>
             <stop offset=".007" stopColor="#00a1ff"/>
             <stop offset=".26" stopColor="#00beff"/>
@@ -82,27 +106,27 @@ export function StoreButtons({ variant = "dark", className = "", onTap }: StoreB
             <stop offset=".76" stopColor="#00dfff"/>
             <stop offset="1" stopColor="#00e3ff"/>
           </linearGradient>
-          <linearGradient id="ps-b" x1="283.44" y1="256" x2="-15.32" y2="256" gradientUnits="userSpaceOnUse">
+          <linearGradient id={g("b")} x1="283.44" y1="256" x2="-15.32" y2="256" gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#ffe000"/>
             <stop offset=".409" stopColor="#ffbd00"/>
             <stop offset=".775" stopColor="orange"/>
             <stop offset="1" stopColor="#ff9c00"/>
           </linearGradient>
-          <linearGradient id="ps-c" x1="204.65" y1="284.35" x2="56.39" y2="479.52" gradientUnits="userSpaceOnUse">
+          <linearGradient id={g("c")} x1="204.65" y1="284.35" x2="56.39" y2="479.52" gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#ff3a44"/>
             <stop offset="1" stopColor="#c31162"/>
           </linearGradient>
-          <linearGradient id="ps-d" x1="-31.44" y1="36.4" x2="101.34" y2="212.48" gradientUnits="userSpaceOnUse">
+          <linearGradient id={g("d")} x1="-31.44" y1="36.4" x2="101.34" y2="212.48" gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#32a071"/>
             <stop offset=".069" stopColor="#2da771"/>
             <stop offset=".476" stopColor="#15cf74"/>
             <stop offset=".801" stopColor="#06e775"/>
             <stop offset="1" stopColor="#00f076"/>
           </linearGradient>
-          <path d="M27.47 8.2C16.45 19.84 10 37.9 10 61.33v389.33c0 23.44 6.45 41.5 17.47 53.14l2.8 2.67 218.13-218.13v-5.14L30.27 65.2z" fill="url(#ps-a)"/>
-          <path d="M321.07 348.8l-72.67-72.8v-5.14l72.67-72.67 1.6 1.07 86.13 48.93c24.6 13.97 24.6 36.83 0 50.8L322.67 347.73z" fill="url(#ps-b)"/>
-          <path d="M322.67 347.6L248.4 273.33 27.47 494.27c8.14 8.67 21.57 9.6 36.67.93l258.53-147.6" fill="url(#ps-c)"/>
-          <path d="M322.67 164.4L64.13 16.93C49.04 8.13 35.6 9.2 27.47 17.87L248.4 238.67z" fill="url(#ps-d)"/>
+          <path d="M27.47 8.2C16.45 19.84 10 37.9 10 61.33v389.33c0 23.44 6.45 41.5 17.47 53.14l2.8 2.67 218.13-218.13v-5.14L30.27 65.2z" fill={`url(#${g("a")})`}/>
+          <path d="M321.07 348.8l-72.67-72.8v-5.14l72.67-72.67 1.6 1.07 86.13 48.93c24.6 13.97 24.6 36.83 0 50.8L322.67 347.73z" fill={`url(#${g("b")})`}/>
+          <path d="M322.67 347.6L248.4 273.33 27.47 494.27c8.14 8.67 21.57 9.6 36.67.93l258.53-147.6" fill={`url(#${g("c")})`}/>
+          <path d="M322.67 164.4L64.13 16.93C49.04 8.13 35.6 9.2 27.47 17.87L248.4 238.67z" fill={`url(#${g("d")})`}/>
         </svg>
         <div className="leading-tight text-left">
           <div className="text-[10px] font-normal opacity-80">Get it on</div>

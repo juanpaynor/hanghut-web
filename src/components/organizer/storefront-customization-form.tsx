@@ -15,7 +15,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { updateEventStorefront, uploadEventBgImage } from "@/lib/organizer/event-actions"
 import { downscaleImage } from "@/lib/images/downscale"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, ArrowUp, ArrowDown, LayoutDashboard, Palette, FileCode, Sparkles, Timer, Upload, Type, X, Plus, ListMusic, RefreshCw, Monitor, Smartphone } from "lucide-react"
+import { Loader2, ArrowUp, ArrowDown, LayoutDashboard, Palette, FileCode, Sparkles, Timer, Upload, Type, X, Plus, ListMusic, RefreshCw, Monitor, Smartphone, ExternalLink, AlertTriangle } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { VideoUploader } from "@/components/ui/video-uploader"
 import { DraggableVideoCropper } from "@/components/ui/draggable-video-cropper"
@@ -350,6 +350,34 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
     // NOTE: theme / accent / custom CSS are deliberately NOT here — they're the
     // live-patched set (re-applied via the 'ready' handshake), and putting them in
     // the src would force a reload on every colour tweak. Only reload-only props.
+    /**
+     * The edits the preview CANNOT show until a Save.
+     *
+     * The iframe gets styling by two routes -- postMessage for paint
+     * (colours, theme, custom CSS, fonts) and URL params for structure
+     * (layout, background, panel, countdown toggle, social proof). CONTENT is
+     * server-rendered from the database and rides neither: a long description
+     * and arrays of artists, schedule rows, FAQs and sponsors do not fit in a
+     * query string, and the 154-line bridge patches CSS variables, not
+     * components.
+     *
+     * So these ten silently do nothing until saved. Partners typed into the
+     * description, watched nothing happen, and reasonably concluded the whole
+     * preview was broken. Tracking them lets the UI admit it instead.
+     */
+    const unpreviewableKey = JSON.stringify({
+        description_html: form.watch('description_html') || '',
+        video_url: form.watch('video_url') || '',
+        video_position: videoPosition,
+        countdown_label: countdownLabel,
+        order: layoutOrder,
+        hidden: Array.from(hiddenSections),
+        lineup, schedule, faq, sponsors,
+    })
+    // Baseline is whatever was on screen at mount, i.e. the saved state.
+    const savedUnpreviewableKey = useRef(unpreviewableKey)
+    const previewStale = unpreviewableKey !== savedUnpreviewableKey.current
+
     const structuralPreviewQuery = useMemo(() => {
         const p = new URLSearchParams()
         p.set('hh_layout', pageLayout)
@@ -360,8 +388,13 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
         p.set('hh_sp', showSocialProof ? '1' : '0')
         p.set('hh_bgimg', bgImageUrl || '')
         p.set('hh_panel', contentPanel)
+        // The event page has always read hh_theme and the form never sent it.
+        // Harmless while the postMessage handshake re-applied it after each
+        // reload, but it meant the "open in new tab" link below could not
+        // carry an unsaved theme at all.
+        p.set('hh_theme', pageThemeId)
         return p.toString()
-    }, [pageLayout, bgStyle, fontHeading, fontBody, showCountdown, showSocialProof, bgImageUrl, contentPanel])
+    }, [pageLayout, bgStyle, fontHeading, fontBody, showCountdown, showSocialProof, bgImageUrl, contentPanel, pageThemeId])
     // Reload the frame when a structural pick changes (debounced; skip first run
     // so we don't double-load on mount).
     const structuralFirstRun = useRef(true)
@@ -375,7 +408,11 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
     // scales it down to fit the narrow pane (so you see the desktop layout, not
     // the mobile one); "mobile" lets the page fill the pane at phone width.
     const previewWrapRef = useRef<HTMLDivElement>(null)
-    const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop')
+    // Mobile by default. Desktop renders a 1280px page into a 380px rail --
+    // a scale of ~0.30, which puts body text at about 5 physical pixels. It is
+    // not wrong, it is unreadable, and that is what partners were reporting as
+    // a broken preview. Mobile renders 1:1 at roughly a real phone width.
+    const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('mobile')
     const [previewWrap, setPreviewWrap] = useState({ w: 400, h: 720 })
     useEffect(() => {
         const el = previewWrapRef.current
@@ -476,6 +513,22 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
         setHiddenSections(newHidden)
     }
 
+    /**
+     * Marks a control the live preview cannot reflect until a Save.
+     *
+     * The strip over the iframe says this too, but only once and only for the
+     * whole panel. The partner is looking at the field they just typed into,
+     * so the answer belongs there as well.
+     */
+    const SaveToPreview = () => (
+        <span
+            title="The live preview shows this after you save"
+            className="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-300"
+        >
+            Save to preview
+        </span>
+    )
+
     async function onSubmit(values: z.infer<typeof formSchema>) {
         setIsLoading(true)
         try {
@@ -527,6 +580,9 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                 router.refresh()
                 // Reload the preview so structural/bg/font edits show too.
                 setPreviewNonce(Date.now())
+                // Everything unpreviewable is now on the server, so the
+                // "showing saved content" strip can stand down.
+                savedUnpreviewableKey.current = unpreviewableKey
             }
         } catch (error) {
             toast({
@@ -672,7 +728,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                 name="video_url"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Hero Video (Optional)</FormLabel>
+                                        <FormLabel className="flex items-center gap-2">Hero Video (Optional) <SaveToPreview /></FormLabel>
                                         <FormControl>
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                                 <div className="md:col-span-3">
@@ -780,7 +836,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
 
                             {/* Lineup */}
                             <div className="space-y-3">
-                                <Label className="text-sm font-semibold">Lineup — artists, DJs, speakers</Label>
+                                <Label className="text-sm font-semibold flex items-center gap-2">Lineup — artists, DJs, speakers <SaveToPreview /></Label>
                                 {lineup.map((artist, i) => (
                                     <div key={i} className="flex items-center gap-2">
                                         <button
@@ -807,7 +863,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
 
                             {/* Schedule */}
                             <div className="space-y-3">
-                                <Label className="text-sm font-semibold">Schedule / rundown</Label>
+                                <Label className="text-sm font-semibold flex items-center gap-2">Schedule / rundown <SaveToPreview /></Label>
                                 {schedule.map((item, i) => (
                                     <div key={i} className="flex items-center gap-2">
                                         <Input placeholder="7:00 PM" className="w-28 shrink-0" value={item.time} onChange={e => setSchedule(s => s.map((x, j) => j === i ? { ...x, time: e.target.value } : x))} />
@@ -823,7 +879,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
 
                             {/* FAQ */}
                             <div className="space-y-3">
-                                <Label className="text-sm font-semibold">FAQ</Label>
+                                <Label className="text-sm font-semibold flex items-center gap-2">FAQ <SaveToPreview /></Label>
                                 {faq.map((item, i) => (
                                     <div key={i} className="flex items-start gap-2">
                                         <div className="flex-1 space-y-2">
@@ -840,7 +896,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
 
                             {/* Sponsors */}
                             <div className="space-y-3">
-                                <Label className="text-sm font-semibold">Sponsors & partners</Label>
+                                <Label className="text-sm font-semibold flex items-center gap-2">Sponsors & partners <SaveToPreview /></Label>
                                 {sponsors.map((s, i) => (
                                     <div key={i} className="flex items-center gap-2">
                                         <button
@@ -1238,9 +1294,44 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                     >
                                         <RefreshCw className="h-3.5 w-3.5" />
                                     </button>
+                                    {/* Full-width check, which a 380px rail can
+                                        never do honestly. Carries the unsaved
+                                        structural picks and theme; accent,
+                                        custom CSS and the colour pickers are
+                                        live-patched into the iframe and show
+                                        here as last saved. */}
+                                    <a
+                                        href={`/events/${eventId}?hh_preview=1&${structuralPreviewQuery}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title="Open full preview in a new tab (colours and custom CSS show as last saved)"
+                                        className="text-muted-foreground hover:text-foreground inline-flex items-center rounded-md p-1.5"
+                                    >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                    </a>
                                 </div>
                             </div>
                             <div ref={previewWrapRef} className="relative flex-1 overflow-hidden rounded-xl border bg-black">
+                                {/* Says the quiet part out loud. Without this
+                                    the partner edits the description, sees an
+                                    unchanged page, and concludes the tool is
+                                    broken rather than that it is waiting. */}
+                                {previewStale && (
+                                    <div className="absolute inset-x-0 top-0 z-10 flex items-start gap-2 bg-amber-400 px-3 py-2 text-[11px] font-medium text-amber-950 shadow-md">
+                                        <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+                                        <span className="flex-1 leading-snug">
+                                            Showing saved content. Your description, sections and video edits appear here after you save.
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={form.handleSubmit(onSubmit)}
+                                            disabled={isLoading}
+                                            className="shrink-0 rounded-md bg-amber-950 px-2 py-1 text-[11px] font-semibold text-amber-50 hover:bg-amber-900 disabled:opacity-60"
+                                        >
+                                            {isLoading ? 'Saving…' : 'Save'}
+                                        </button>
+                                    </div>
+                                )}
                                 <iframe
                                     ref={previewRef}
                                     key={previewNonce}
@@ -1259,8 +1350,15 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                     }
                                 />
                             </div>
+                            {/* The old caption was wrong in both directions: it
+                                told partners background and layout needed a
+                                Save (they do not -- they ride the URL params
+                                above) and never mentioned the description,
+                                which is the field people actually edit and the
+                                one that really does need saving. */}
                             <p className="text-[11px] leading-relaxed text-muted-foreground px-1">
-                                Colors, fonts, theme &amp; custom CSS update as you edit. Sections, background &amp; layout apply after you <b>Save</b>.
+                                Colours, fonts, theme, custom CSS, layout &amp; background update as you edit.
+                                Description, lineup, schedule, FAQ, sponsors, video and section order appear after you <b>Save</b>.
                             </p>
                         </aside>
                     </div>

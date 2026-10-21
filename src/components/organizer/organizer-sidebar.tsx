@@ -1,21 +1,27 @@
 'use client'
 
 import Link from 'next/link'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
     LayoutDashboard, CalendarDays, Wallet, Mail, Users, ScanLine,
     Settings, Code2, ShieldCheck, ExternalLink, LogOut, Megaphone,
     MousePointerClick, Crown, Compass, BookOpen, CalendarClock, UserSearch,
-    Puzzle, Link2, Shirt, Store, UserCheck, Award, CreditCard,
+    Puzzle, Link2, Shirt, Store, UserCheck, Award, CreditCard, ChevronDown,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/auth/cached'
 
 interface NavItem {
     label: string
     href: string
-    icon: React.ElementType
+    // LucideIcon, not React.ElementType. ElementType is the union of every
+    // intrinsic and component type, so `className` narrows to the intersection
+    // of all their props and collapses to `never` -- which is exactly the two
+    // long-standing type errors this file carried.
+    icon: LucideIcon
     section: string
     external?: boolean
     capability?: 'organizer' | 'experience_host' // undefined = shown to all
@@ -121,6 +127,58 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, 
     const router = useRouter()
     const supabase = createClient()
 
+    /**
+     * The nav scrolls, and nothing said so.
+     *
+     * A fully enabled owner has 22 nav items plus a storefront link. On a
+     * laptop viewport that runs several hundred pixels past the fold, and
+     * macOS draws overlay scrollbars -- invisible until you are already
+     * scrolling. So the entire Account group (Settings, Billing, Developers,
+     * Embed Widget, Verification) was off-screen with no indication it
+     * existed, and partners reported exactly that.
+     *
+     * Both ends are tracked so the affordances only show when there is really
+     * something hidden; on a short list, or a role that sees four items, none
+     * of this appears at all.
+     */
+    const navRef = useRef<HTMLElement>(null)
+    const [overflow, setOverflow] = useState({ up: false, down: false })
+
+    const measure = useCallback(() => {
+        const el = navRef.current
+        if (!el) return
+        const { scrollTop, scrollHeight, clientHeight } = el
+        const up = scrollTop > 4
+        // 4px of slack: sub-pixel layout can leave scrollHeight a hair above
+        // clientHeight permanently, which would pin the cue on screen forever
+        // on a list that does not actually scroll.
+        const down = scrollTop + clientHeight < scrollHeight - 4
+        // Scroll fires continuously; only re-render when the answer changes.
+        setOverflow(prev => (prev.up === up && prev.down === down) ? prev : { up, down })
+    }, [])
+
+    useEffect(() => {
+        const el = navRef.current
+        if (!el) return
+        measure()
+        // Observe the children too: groups appear and disappear with role and
+        // capability, so the scrollable height changes without a window resize.
+        const ro = new ResizeObserver(measure)
+        ro.observe(el)
+        for (const child of Array.from(el.children)) ro.observe(child)
+        window.addEventListener('resize', measure)
+        return () => {
+            ro.disconnect()
+            window.removeEventListener('resize', measure)
+        }
+    }, [measure])
+
+    const scrollDown = useCallback(() => {
+        const el = navRef.current
+        if (!el) return
+        el.scrollBy({ top: el.clientHeight * 0.8, behavior: 'smooth' })
+    }, [])
+
     function canSee(section: string) {
         return NAV_PERMISSIONS[section]?.includes(role) ?? false
     }
@@ -143,8 +201,14 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, 
                 <p className="text-xs text-muted-foreground mt-2 truncate font-medium">{businessName}</p>
             </div>
 
-            {/* Nav groups */}
-            <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
+            {/* Nav groups, in a relative shell so the scroll affordances can
+                sit over the list rather than take space from it. */}
+            <div className="relative flex-1 min-h-0">
+            <nav
+                ref={navRef}
+                onScroll={measure}
+                className="always-scrollbar h-full overflow-y-auto py-3 px-2 space-y-3"
+            >
                 {NAV_GROUPS.map((group, gi) => {
                     const visibleItems = group.items.filter(item =>
                         canSee(item.section) &&
@@ -232,6 +296,42 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, 
                     </div>
                 )}
             </nav>
+
+            {/* Top edge, once you have scrolled: tells you the list began
+                above, instead of looking like it starts here. */}
+            <div
+                aria-hidden
+                className={cn(
+                    'pointer-events-none absolute inset-x-0 top-0 h-5 bg-gradient-to-b from-card to-transparent transition-opacity duration-200',
+                    overflow.up ? 'opacity-100' : 'opacity-0'
+                )}
+            />
+
+            {/* Bottom edge plus an actual button. A fade on its own is too
+                polite for the problem we have -- partners were not failing to
+                notice a subtle gradient, they did not know the region scrolled
+                at all. This says there is more AND takes you there. */}
+            <div
+                aria-hidden
+                className={cn(
+                    'pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card via-card/85 to-transparent transition-opacity duration-200',
+                    overflow.down ? 'opacity-100' : 'opacity-0'
+                )}
+            />
+            <button
+                type="button"
+                onClick={scrollDown}
+                tabIndex={overflow.down ? 0 : -1}
+                aria-hidden={!overflow.down}
+                className={cn(
+                    'absolute bottom-1.5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-muted-foreground shadow-sm transition-all duration-200 hover:border-primary/40 hover:text-foreground',
+                    overflow.down ? 'opacity-100' : 'pointer-events-none translate-y-1 opacity-0'
+                )}
+            >
+                More
+                <ChevronDown className="h-3 w-3" />
+            </button>
+            </div>
 
             {/* Footer */}
             <div className="px-2 py-3 border-t border-border shrink-0">

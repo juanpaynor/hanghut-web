@@ -410,16 +410,37 @@ export default async function PublicEventPage({
     // overlaps the auth work instead of running after it.
     const hasSeatMap = await seatMapPromise
 
-    const ticketsRemaining = event.capacity - event.tickets_sold
-    let isSoldOut = ticketsRemaining <= 0
-
-    // If event has active ticket tiers, also check if all tiers are sold out individually
+    // ── What "sold out" means ────────────────────────────────────────────
+    //
+    // Inventory lives in TWO places and they do not sync. The Tickets tab
+    // writes ticket_tiers.quantity_total; the Edit Details tab writes
+    // events.capacity; neither action touches the other table. On prod they
+    // disagree for 20% of live events, in both directions.
+    //
+    // create-purchase-intent does not read events.capacity at all -- it gates
+    // on the tier. So capacity was acting as a silent second ceiling on the
+    // BUY BUTTON while the tier governed the actual sale, and whichever
+    // happened to be lower won.
+    //
+    // Back to the Garden was the live example: capacity 1,500, tiers 3,000,
+    // 1,244 sold. At ~94 tickets a day it was about three days from showing
+    // "Sold Out" with 1,758 tickets still sellable, and nothing in the
+    // organizer's Tickets tab would have explained why.
+    //
+    // So when an event has tiers on sale, the TIERS are the authority and
+    // capacity is not consulted. Events with no tiers on sale keep the old
+    // capacity behaviour exactly -- that is the legacy/simple path, and
+    // changing it here would alter pre-sale and RSVP events that have nothing
+    // to do with this bug.
     const activeTiers = event.ticket_tiers?.filter((t: any) => isTierOnSale(t)) || []
+
+    let isSoldOut: boolean
     if (activeTiers.length > 0) {
-        const hasAvailableTier = activeTiers.some((t: any) => t.quantity_total - t.quantity_sold > 0)
-        if (!hasAvailableTier) {
-            isSoldOut = true
-        }
+        isSoldOut = !activeTiers.some(
+            (t: any) => Number(t.quantity_total ?? 0) - Number(t.quantity_sold ?? 0) > 0
+        )
+    } else {
+        isSoldOut = (event.capacity - event.tickets_sold) <= 0
     }
 
     // The event-level cutoff closes the buy path the same way a sold-out event

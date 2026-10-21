@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
-import { Headset, X, ArrowLeft, Send, Paperclip, Loader2, Trash2 } from 'lucide-react'
+import { Headset, X, ArrowLeft, Send, Paperclip, Loader2, Trash2, Volume2, VolumeX } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -19,6 +20,7 @@ import {
     type SupportThread,
     type SupportMessage,
 } from '@/lib/support/actions'
+import { playSupportChime, isSoundEnabled, setSoundEnabled } from '@/lib/support/notification-sound'
 
 /**
  * The organizer's support bubble.
@@ -67,6 +69,27 @@ export function SupportWidget({ currentPath }: { currentPath?: string }) {
     const [threads, setThreads] = useState<SupportThread[]>([])
     const [unread, setUnread] = useState(0)
     const [loading, setLoading] = useState(false)
+    const reduce = useReducedMotion()
+
+    // Sound preference lives in localStorage, so it is read after mount --
+    // reading it during render would differ between server and client markup.
+    const [soundOn, setSoundOn] = useState(true)
+    useEffect(() => { setSoundOn(isSoundEnabled()) }, [])
+
+    /**
+     * Chime only when the count GOES UP, and never on the first reading.
+     *
+     * The mount effect below sets unread from 0 to whatever is waiting, so
+     * without a baseline every dashboard load would play a notification for
+     * mail that arrived yesterday. null means "not measured yet".
+     */
+    const prevUnread = useRef<number | null>(null)
+    useEffect(() => {
+        const prev = prevUnread.current
+        prevUnread.current = unread
+        if (prev === null) return
+        if (unread > prev) playSupportChime()
+    }, [unread])
 
     const refreshThreads = useCallback(async () => {
         setLoading(true)
@@ -110,24 +133,73 @@ export function SupportWidget({ currentPath }: { currentPath?: string }) {
 
     return (
         <>
-            {!open && (
-                <button
-                    type="button"
-                    onClick={() => setOpen(true)}
-                    aria-label={unread > 0 ? `Support — ${unread} unread` : 'Support'}
-                    className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                >
-                    <Headset className="h-6 w-6" />
-                    {unread > 0 && (
-                        <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-semibold text-destructive-foreground">
-                            {unread > 9 ? '9+' : unread}
-                        </span>
-                    )}
-                </button>
-            )}
+            <AnimatePresence initial={false}>
+                {!open && (
+                    <motion.button
+                        key="support-launcher"
+                        type="button"
+                        onClick={() => setOpen(true)}
+                        aria-label={unread > 0 ? `Support — ${unread} unread` : 'Support'}
+                        initial={reduce ? false : { scale: 0.6, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        // Leaves quickly and shrinks toward the panel that is
+                        // growing out of the same corner, so the two read as
+                        // one object rather than a swap.
+                        exit={reduce ? { opacity: 0 } : { scale: 0.5, opacity: 0 }}
+                        transition={{ type: 'spring', stiffness: 460, damping: 26, mass: 0.7 }}
+                        whileHover={reduce ? undefined : { scale: 1.06 }}
+                        whileTap={reduce ? undefined : { scale: 0.94 }}
+                        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                    >
+                        {/* Attention halo, only while something is waiting. It
+                            sits behind the button face and never intercepts
+                            clicks. */}
+                        {unread > 0 && !reduce && (
+                            <motion.span
+                                aria-hidden
+                                className="pointer-events-none absolute inset-0 rounded-full bg-primary"
+                                initial={{ opacity: 0.45, scale: 1 }}
+                                animate={{ opacity: 0, scale: 1.7 }}
+                                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut' }}
+                            />
+                        )}
 
-            {open && (
-                <div className="fixed bottom-6 right-6 z-40 flex h-[min(34rem,calc(100vh-6rem))] w-[min(24rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl">
+                        <Headset className="relative h-6 w-6" />
+
+                        <AnimatePresence>
+                            {unread > 0 && (
+                                <motion.span
+                                    // Keyed on the count so a new arrival
+                                    // remounts and pops, instead of the number
+                                    // silently ticking over.
+                                    key={unread}
+                                    initial={reduce ? false : { scale: 0.3, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    exit={{ scale: 0.3, opacity: 0 }}
+                                    transition={{ type: 'spring', stiffness: 600, damping: 18 }}
+                                    className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-semibold text-destructive-foreground shadow"
+                                >
+                                    {unread > 9 ? '9+' : unread}
+                                </motion.span>
+                            )}
+                        </AnimatePresence>
+                    </motion.button>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {open && (
+                <motion.div
+                    key="support-panel"
+                    initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.88, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.92, y: 12 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
+                    // Grows out of the corner the bubble occupies, which is
+                    // what makes it feel like the bubble opened rather than a
+                    // dialog appearing over it.
+                    style={{ transformOrigin: 'bottom right' }}
+                    className="fixed bottom-6 right-6 z-40 flex h-[min(34rem,calc(100vh-6rem))] w-[min(24rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl">
                     <header className="flex items-center gap-2 border-b px-4 py-3">
                         {view.name !== 'list' && (
                             <button
@@ -149,6 +221,23 @@ export function SupportWidget({ currentPath }: { currentPath?: string }) {
                                     : 'We usually reply within a day'}
                             </p>
                         </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const next = !soundOn
+                                setSoundOn(next)
+                                setSoundEnabled(next)
+                                // Play on the way ON so the organizer hears
+                                // what they just chose -- and so the click
+                                // itself unblocks the audio context.
+                                if (next) playSupportChime()
+                            }}
+                            aria-label={soundOn ? 'Mute notification sound' : 'Unmute notification sound'}
+                            title={soundOn ? 'Sound on' : 'Sound off'}
+                            className="rounded p-1 text-muted-foreground hover:text-foreground"
+                        >
+                            {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                        </button>
                         <button
                             type="button"
                             onClick={() => setOpen(false)}
@@ -183,8 +272,9 @@ export function SupportWidget({ currentPath }: { currentPath?: string }) {
                             onStartNew={() => setView({ name: 'new' })}
                         />
                     )}
-                </div>
-            )}
+                </motion.div>
+                )}
+            </AnimatePresence>
         </>
     )
 }

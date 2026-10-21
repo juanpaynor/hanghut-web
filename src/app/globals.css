@@ -219,6 +219,36 @@
   }
 }
 
+/* The opposite problem, in the organizer sidebar: it scrolls, and on macOS
+   (and iPadOS) overlay scrollbars hide that fact until you already know. The
+   nav runs to ~22 items for a full owner account, so Settings, Billing and
+   Verification sat below the fold on a laptop with nothing on screen saying
+   so, and partners reported they simply could not find them. Force a thin
+   track that is always drawn. */
+@layer utilities {
+  .always-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .always-scrollbar::-webkit-scrollbar {
+    width: 10px;
+  }
+  .always-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .always-scrollbar::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
+    /* Padding via a transparent border so the thumb reads as a slim pill
+       rather than filling the full gutter width. */
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .always-scrollbar:hover::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.45);
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────────────
    LANDING THEME
 
