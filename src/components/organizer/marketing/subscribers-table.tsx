@@ -1,4 +1,5 @@
 'use client'
+import { downloadBlob } from '@/lib/utils/download'
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -251,13 +252,10 @@ export function SubscribersTable() {
     // Download CSV Template
     const handleDownloadTemplate = () => {
         const csvContent = "email,full_name\njohn@example.com,John Doe\njane@example.com,Jane Smith"
-        const blob = new Blob([csvContent], { type: 'text/csv' })
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = 'subscriber_template.csv'
-        a.click()
-        window.URL.revokeObjectURL(url)
+        downloadBlob(
+            new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }),
+            'subscriber_template.csv',
+        )
     }
 
     // Handle CSV Upload

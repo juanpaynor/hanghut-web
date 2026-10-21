@@ -1,4 +1,5 @@
 'use client'
+import { downloadBlob } from '@/lib/utils/download'
 
 import { useState, useEffect, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
@@ -217,30 +218,6 @@ function RegistrationCard({
 
 const exportSlug = (title?: string | null) =>
     (title || 'event').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()
-
-/**
- * One download path for every export.
- *
- * SheetJS's own `writeFile` sniffs the environment first — it probes for
- * `fs.writeFileSync` before falling back to a Blob, and under a bundler that
- * probe is neither a working Node path nor a clean failure. The CSV export has
- * always downloaded correctly by building the anchor itself, so everything uses
- * that instead. The object URL is revoked on the next tick, not immediately:
- * revoking in the same frame as `click()` cancels the download in Safari.
- */
-function downloadBlob(blob: Blob, filename: string) {
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
-    setTimeout(() => {
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-    }, 0)
-}
 
 export function RegistrationsManager({ eventId, eventTitle, initialPage, initialStats = null, approvalMode = true }: Props) {
     const { toast } = useToast()

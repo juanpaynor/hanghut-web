@@ -1,4 +1,5 @@
 'use client'
+import { downloadBlob } from '@/lib/utils/download'
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
@@ -154,13 +155,10 @@ export function CustomerBehaviour({ partnerId }: { partnerId: string }) {
                 c.no_shows, Number(c.total_spent || 0), Number(c.aov || 0), fmt(c.first_seen), fmt(c.last_activity),
             ].map(esc).join(','))
             const csv = [head.map(esc).join(','), ...body].join('\n')
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `customers-${segment || 'all'}-${format(new Date(), 'yyyy-MM-dd')}.csv`
-            a.click()
-            URL.revokeObjectURL(url)
+            downloadBlob(
+                new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }),
+                `customers-${segment || 'all'}-${format(new Date(), 'yyyy-MM-dd')}.csv`,
+            )
             toast({ title: 'Exported', description: `${rows.length} customers downloaded as CSV.` })
         } catch {
             toast({ title: 'Export failed', description: 'Please try again.', variant: 'destructive' })

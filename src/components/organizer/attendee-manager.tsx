@@ -1,4 +1,5 @@
 'use client'
+import { downloadBlob } from '@/lib/utils/download'
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Attendee, getDeliveryFailures, type DeliveryFailure, getOrderEmailLog, getSentEmail, resendOrderEmail, type OrderEmail, type SentEmail, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, deleteFreeOrders, type SkippedOrder, getAttendeeStats, getEventPaymentMethods, getEventTiers, getEventTierSales, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters, type TierSales } from '@/lib/organizer/attendee-actions'
@@ -569,19 +570,10 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
             ].join('\n')
 
             // BOM so Excel reads it as UTF-8 (accented names arrive intact).
-            const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
-            const url = URL.createObjectURL(blob)
-            const link = document.createElement('a')
-            link.href = url
-            link.download = `${eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_attendees.csv`
-            // Appended before clicking, and the URL revoked a tick later rather than
-            // on the same one. Chrome resolves the blob during click(), but Safari
-            // and Firefox can abort the download if the URL is revoked synchronously
-            // The failure mode is a silently missing file, not an error.
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
-            setTimeout(() => URL.revokeObjectURL(url), 0)
+            downloadBlob(
+                new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' }),
+                `${eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_attendees.csv`,
+            )
 
             toast({ title: 'Export ready', description: `${rows.length} attendee${rows.length === 1 ? '' : 's'} exported.` })
         } catch {

@@ -1,4 +1,5 @@
 'use client'
+import { downloadBlob } from '@/lib/utils/download'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -205,12 +206,10 @@ export function MissingDetailsPanel({ eventId }: { eventId: string }) {
                 esc(linkFor(b) ?? 'no link — box office or offline sale'),
             ].join(','))
         }
-        const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' })
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = `missing-attendee-details-${eventId.slice(0, 8)}.csv`
-        a.click()
-        URL.revokeObjectURL(a.href)
+        downloadBlob(
+            new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8' }),
+            `missing-attendee-details-${eventId.slice(0, 8)}.csv`,
+        )
     }
 
     if (loading) {

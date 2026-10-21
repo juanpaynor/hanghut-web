@@ -1,4 +1,5 @@
 'use client'
+import { downloadBlob } from '@/lib/utils/download'
 
 import { useRef, useState } from 'react'
 import { Award, Loader2, Share2 } from 'lucide-react'
@@ -201,12 +202,7 @@ export function TicketBadges({
             if (nav.share && nav.canShare?.({ files: [file] })) {
                 await nav.share({ files: [file], title: badge.name })
             } else {
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = file.name
-                a.click()
-                URL.revokeObjectURL(url)
+                downloadBlob(blob, file.name)
                 setNote('Saved to your downloads — post it anywhere.')
             }
         } catch (e) {

@@ -1,4 +1,5 @@
 'use client'
+import { downloadBlob } from '@/lib/utils/download'
 
 import React, { useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -45,12 +46,7 @@ export function TicketPrintModal({ attendees, eventTitle, eventDate, eventVenue,
             const blob = await pdf(doc).toBlob()
 
             // Download
-            const url = URL.createObjectURL(blob)
-            const link = document.createElement('a')
-            link.href = url
-            link.download = `tickets_${size}_${new Date().getTime()}.pdf`
-            link.click()
-            URL.revokeObjectURL(url)
+            downloadBlob(blob, `tickets_${size}_${new Date().getTime()}.pdf`)
 
             setOpen(false)
         } catch (error) {

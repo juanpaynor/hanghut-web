@@ -3,8 +3,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { TransactionDetailDialog } from './transaction-detail-dialog'
-import { exportTransactionsCsv } from '@/lib/organizer/transaction-export-actions'
-import { useToast } from '@/hooks/use-toast'
+import { TransactionsExport } from './transactions-export'
 import {
     Table,
     TableBody,
@@ -16,8 +15,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import { Card, CardContent } from '@/components/ui/card'
-import { ArrowDownLeft, ArrowUpRight, Check, Clock, Download, Loader2, X, Wallet, Plus } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { ArrowDownLeft, ArrowUpRight, Check, Clock, X, Wallet, Plus } from 'lucide-react'
 import { getSettlementInfo, getPaymentChannel } from '@/lib/utils/settlement'
 
 interface Transaction {
@@ -59,68 +57,16 @@ interface TransactionsHistoryProps {
 export function TransactionsHistory({ transactions, totalCount, totals }: TransactionsHistoryProps) {
     const [selectedId, setSelectedId] = useState<string | null>(null)
 
-    const searchParams = useSearchParams()
-    const { toast } = useToast()
-    const [exporting, setExporting] = useState(false)
-
     /**
-     * Built on the SERVER over the whole filtered set.
-     *
-     * This used to map over `transactions`, which is one page of 10 rows, so a
-     * filtered export silently produced a 10-row file — 10 of 453 for Upper Room
-     * Worship. The filters are read from the URL so the file always matches the
-     * table the organizer is looking at.
+     * The table's filter, read from the URL so the export can offer to match
+     * it. The export itself lives in TransactionsExport, which owns its own
+     * period choice — the file no longer has to inherit whatever the table
+     * happens to be showing.
      */
-    const handleExport = async () => {
-        setExporting(true)
-        try {
-            const res = await exportTransactionsCsv({
-                from: searchParams.get('from') ?? undefined,
-                to: searchParams.get('to') ?? undefined,
-                search: searchParams.get('q') ?? undefined,
-            })
-
-            if (res.error || !res.csv || !res.filename) {
-                toast({
-                    title: 'Export failed',
-                    description: res.error || 'Could not build the export.',
-                    variant: 'destructive',
-                })
-                return
-            }
-
-            const blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' })
-            const url = URL.createObjectURL(blob)
-            const link = document.createElement('a')
-            link.href = url
-            link.download = res.filename
-            link.style.visibility = 'hidden'
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
-            // Without this the blob is held for the life of the document.
-            URL.revokeObjectURL(url)
-
-            // Say so rather than hand over a short file quietly — the silent
-            // version of exactly this is the bug being fixed.
-            if (res.truncated) {
-                toast({
-                    title: 'Export truncated',
-                    description: `Only the first ${res.rows?.toLocaleString()} transactions were exported. Narrow the date range to get the rest.`,
-                    variant: 'destructive',
-                })
-            }
-        } catch (e) {
-            console.error('Transaction export failed:', e)
-            toast({
-                title: 'Export failed',
-                description: 'Something went wrong building the file.',
-                variant: 'destructive',
-            })
-        } finally {
-            setExporting(false)
-        }
-    }
+    const searchParams = useSearchParams()
+    const tableFrom = searchParams.get('from') ?? undefined
+    const tableTo = searchParams.get('to') ?? undefined
+    const tableSearch = searchParams.get('q') ?? undefined
 
     // Exclude internal refund reversal rows (negative gross) from the sales view — the
     // refund is surfaced from the intent's refunded_amount instead, so nothing double-counts.
@@ -230,19 +176,15 @@ export function TransactionsHistory({ transactions, totalCount, totals }: Transa
                 </Card>
             </div>
 
-            {/* Export Button */}
+            {/* Export — period and format are chosen here, not inherited from
+                the page filter. */}
             <div className="flex justify-end">
-                <Button
-                    onClick={handleExport}
-                    disabled={exporting || totals.count === 0}
-                    size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                >
-                    {exporting
-                        ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        : <Download className="w-4 h-4 mr-2" />}
-                    {exporting ? 'Preparing…' : 'Export'}
-                </Button>
+                <TransactionsExport
+                    tableFrom={tableFrom}
+                    tableTo={tableTo}
+                    search={tableSearch}
+                    count={totals.count}
+                />
             </div>
 
             {/* Transaction Table */}

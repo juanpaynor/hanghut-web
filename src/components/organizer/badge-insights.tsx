@@ -1,4 +1,5 @@
 'use client'
+import { downloadBlob } from '@/lib/utils/download'
 
 import { useCallback, useEffect, useState } from 'react'
 import { format } from 'date-fns'
@@ -66,13 +67,7 @@ const csvEscape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
 const day = (d: string | null) => (d ? format(new Date(d), 'yyyy-MM-dd') : '')
 
 function download(csv: string, filename: string) {
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadBlob(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }), filename)
 }
 
 /** Twelve-week award curve. Inline bars rather than a chart library — it is a

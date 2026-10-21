@@ -94,12 +94,40 @@ serve(async (req: Request) => {
                 .from('partners').select('id, user_id').eq('id', requestedPartnerId).single()
             if (!partner) return json({ error: 'Partner not found' }, 404)
 
-            let isAdmin = user.app_metadata?.role === 'admin' || user.user_metadata?.is_admin === true
+            let isAdmin = user.app_metadata?.role === 'admin' ||
+                          user.app_metadata?.role === 'service_role' ||
+                          user.user_metadata?.is_admin === true
             if (!isAdmin) {
                 const { data: dbUser } = await admin.from('users').select('is_admin').eq('id', user.id).maybeSingle()
                 if (dbUser?.is_admin === true) isAdmin = true
             }
-            if (!isAdmin && partner.user_id !== user.id) return json({ error: 'Unauthorized' }, 403)
+
+            const isOwner = partner.user_id === user.id
+
+            // Gating on partners.user_id alone is the ghost-seat gap that
+            // get-subaccount-balance v25 was fixed for, repeated here.
+            //
+            // A platform-support seat is owner-equivalent in the web app —
+            // getUserRole() returns 'owner' for it — so staff helping a partner
+            // load /organizer/payouts passed the page's own gate and then got a
+            // 403 from this function on every render. It is also how a finance
+            // seat reaches the page, and the two must agree: the page lets in
+            // 'owner' and 'finance', so this does too.
+            //
+            // Deliberately NOT can_manage_partner(): that returns true for ANY
+            // team member, including scanners, who cannot reach this page.
+            let isFinanceSeat = false
+            if (!isAdmin && !isOwner) {
+                const { data: seat } = await admin
+                    .from('partner_team_members')
+                    .select('role, is_platform_support')
+                    .eq('partner_id', requestedPartnerId)
+                    .eq('user_id', user.id)
+                    .maybeSingle()
+                isFinanceSeat = seat?.is_platform_support === true || seat?.role === 'finance'
+            }
+
+            if (!isAdmin && !isOwner && !isFinanceSeat) return json({ error: 'Unauthorized' }, 403)
             partnerIds = [requestedPartnerId]
         }
 

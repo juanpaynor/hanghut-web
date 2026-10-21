@@ -1,4 +1,5 @@
 'use client'
+import { downloadBlob } from '@/lib/utils/download'
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -50,13 +51,10 @@ export function AddToCalendarButton({ title, startDatetime, endDatetime, locatio
             'END:VCALENDAR',
         ].filter(Boolean).join('\r\n')
 
-        const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${title.replace(/[^a-z0-9]/gi, '_')}.ics`
-        a.click()
-        URL.revokeObjectURL(url)
+        downloadBlob(
+            new Blob([ics], { type: 'text/calendar;charset=utf-8' }),
+            `${title.replace(/[^a-z0-9]/gi, '_')}.ics`,
+        )
     }
 
     return (

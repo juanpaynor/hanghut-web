@@ -112,7 +112,7 @@ function PerkRow({
             case 'digital_download':
                 return (
                     <Button size="sm" variant="outline" asChild>
-                        <a href={`/api/perks/download?tierId=${tierId}`}>
+                        <a href={`/api/perks/download?tierId=${tierId}`} download>
                             <Download className="h-3.5 w-3.5 mr-1.5" />
                             Download
                         </a>

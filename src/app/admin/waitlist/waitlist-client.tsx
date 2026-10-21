@@ -1,4 +1,5 @@
 'use client'
+import { downloadBlob } from '@/lib/utils/download'
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -57,13 +58,10 @@ export function WaitlistClient({ initialEntries, initialTotal }: WaitlistClientP
             )
         ].join('\n')
 
-        const blob = new Blob([csv], { type: 'text/csv' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `hanghut-waitlist-${new Date().toISOString().split('T')[0]}.csv`
-        a.click()
-        URL.revokeObjectURL(url)
+        downloadBlob(
+            new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }),
+            `hanghut-waitlist-${new Date().toISOString().split('T')[0]}.csv`,
+        )
     }
 
     return (

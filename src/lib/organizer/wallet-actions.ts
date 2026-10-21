@@ -4,6 +4,25 @@ import { createClient } from '@/lib/supabase/server'
 import { getAuthUser, getPartnerId } from '@/lib/auth/cached'
 
 /**
+ * A deadline for an edge-function call that the page BLOCKS on.
+ *
+ * getWalletInfo sits inside the payouts page's Promise.all, so a Xendit call
+ * that never answers holds the whole route open — and because the dashboard
+ * has a loading.tsx, what the organizer sees is the skeleton, forever, with
+ * nothing to retry and nothing saying what is wrong. These calls already treat
+ * failure as "we could not find out", so a timeout is just one more way to not
+ * find out; it must never be the thing that keeps the page from rendering.
+ *
+ * Aborting also frees the socket rather than leaving it pending for the life
+ * of the request, which matters once a hundred partners load this page.
+ */
+function deadline(ms: number) {
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), ms)
+    return { signal: ctl.signal, done: () => clearTimeout(timer) }
+}
+
+/**
  * Get wallet info for the current organizer, including:
  * - Xendit sub-account balance (available + pending settlement)
  * - Platform fee receivable (owed to HangHut)
@@ -44,10 +63,11 @@ export async function getWalletInfo(partnerId: string) {
     let balanceUnavailable = false
 
     if (partner.xendit_account_id && !partner.use_main_wallet) {
+        const d = deadline(8000)
         try {
             const { data, error: fnError } = await supabase.functions.invoke(
                 'get-subaccount-balance',
-                { body: { partner_id: partnerId } }
+                { body: { partner_id: partnerId }, signal: d.signal }
             )
 
             if (!fnError && data && !data.error) {
@@ -62,6 +82,8 @@ export async function getWalletInfo(partnerId: string) {
         } catch (err) {
             console.error('[Wallet] Failed to fetch Xendit balance:', err)
             balanceUnavailable = true
+        } finally {
+            d.done()
         }
     }
 
@@ -83,9 +105,15 @@ export async function getWalletInfo(partnerId: string) {
  */
 export async function syncSettlements(partnerId: string): Promise<{ updated: number }> {
     const supabase = await createClient()
+    // Longer than the balance call: this one walks a partner's recent intents
+    // and talks to Xendit per settlement, so it is legitimately slower. It is
+    // fired from a client effect rather than awaited by the page, so the cost
+    // of the wait is a late refresh, not a blank screen.
+    const d = deadline(20000)
     try {
         const { data, error } = await supabase.functions.invoke('sync-settlements', {
             body: { partner_id: partnerId },
+            signal: d.signal,
         })
         if (error) {
             console.error('[Settlement] sync failed:', error)
@@ -95,6 +123,8 @@ export async function syncSettlements(partnerId: string): Promise<{ updated: num
     } catch (err) {
         console.error('[Settlement] sync error:', err)
         return { updated: 0 }
+    } finally {
+        d.done()
     }
 }
 
