@@ -84,40 +84,86 @@ serve(async (req) => {
         const qty = Number(requestData.ticket_quantity) || 1
         const ticketWord = qty === 1 ? 'ticket' : 'tickets'
 
-        // Outlook renders CSS buttons as bare text links, which loses the single
-        // strongest piece of brand colour in the message. VML gives it the fill
-        // back; every other client ignores the conditional block.
-        const ctaButton = requestData.ticket_url
+        // ── Payment method ───────────────────────────────────────────────
+        //
+        // This line used to print whatever string the intent happened to hold,
+        // which is an internal token, not English: a buyer saw "UNKNOWN" under
+        // ₱699.00 on the one email they keep. The raw values in circulation are
+        // `multiple` (the placeholder written before the buyer picks a method
+        // at Xendit — still set on 1,174 of the last 60 days' intents),
+        // `UNKNOWN` from the webhook's own mapper, `FREE`, and channel codes
+        // like `BPI_DIRECT_DEBIT`.
+        //
+        // Mapping mirrors getPaymentChannel() in the web app so the receipt and
+        // the dashboard call the same payment the same thing. Anything that is
+        // not a real channel returns null and the line is dropped — a receipt
+        // that stays quiet about how you paid is fine; one that says UNKNOWN
+        // reads like we lost the payment.
+        function paymentLabel(raw?: string): string | null {
+            if (!raw) return null
+            const m = raw.toLowerCase().trim()
+            if (['unknown', 'multiple', 'none', 'null', ''].includes(m)) return null
+            if (m === 'free' || m === 'comp') return null
+            if (['gcash'].includes(m)) return 'GCash'
+            if (['maya', 'paymaya'].includes(m)) return 'Maya'
+            if (['grabpay'].includes(m)) return 'GrabPay'
+            if (['shopeepay'].includes(m)) return 'ShopeePay'
+            if (['qrph', 'qr_code'].includes(m)) return 'QR Ph'
+            if (['cards', 'card', 'credit_card', 'debit_card'].includes(m)) return 'Card'
+            if (['cash'].includes(m)) return 'Cash'
+            if (['bank', 'bank_transfer', 'virtual_account'].includes(m)) return 'Bank transfer'
+            if (m.endsWith('_direct_debit')) {
+                const bank = m.replace('_direct_debit', '').toUpperCase()
+                return `${bank} direct debit`
+            }
+            if (['otc', 'over_the_counter', '7eleven', 'cebuana'].includes(m)) return 'Over the counter'
+            // A real but unmapped channel: title-case it rather than shouting.
+            return m.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+        }
+        const methodLabel = paymentLabel(requestData.payment_method)
+
+        // ── The call to action ───────────────────────────────────────────
+        //
+        // Buyers were not finding this. It used to sit BELOW the cover image,
+        // and a cover has no height we control: email clients do not support
+        // object-fit, so a portrait poster — the usual shape for a PH event —
+        // renders 430–600px tall on a phone and pushes the button a full screen
+        // past the fold. Nothing that matters can live under that image.
+        //
+        // So the order is now identity, action, then everything else. It also
+        // fills the column instead of sitting 260px wide in the middle, which
+        // on a phone is the difference between a link and a button.
+        const cta = (label: string, primary: boolean) => requestData.ticket_url
             ? `
-            <tr><td align="center" style="padding:32px 0 10px">
-              <!--[if mso]>
-              <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
-                href="${esc(requestData.ticket_url)}" style="height:50px;v-text-anchor:middle;width:260px"
-                arcsize="16%" stroke="f" fillcolor="${C.brand}">
-                <w:anchorlock/>
-                <center style="color:#ffffff;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:bold">View your ${ticketWord}</center>
-              </v:roundrect>
-              <![endif]-->
-              <!--[if !mso]><!-- -->
-              <a href="${esc(requestData.ticket_url)}"
-                 style="display:inline-block;background:${C.brand};color:#ffffff;text-decoration:none;font-family:${DISPLAY};font-weight:700;letter-spacing:-0.01em;padding:15px 34px;border-radius:8px;font-size:16px">View your ${ticketWord}</a>
-              <!--<![endif]-->
-            </td></tr>
-            <tr><td align="center" style="padding:0 0 4px;font-family:${BODY};color:${C.dim};font-size:12px">
-              Open this on your phone at the entrance — a screenshot works too.
-            </td></tr>`
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%">
+              <tr><td align="center" style="border-radius:10px;background:${primary ? C.brand : C.panel};border:1px solid ${primary ? C.brand : C.line}">
+                <!--[if mso]>
+                <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                  href="${esc(requestData.ticket_url)}" style="height:54px;v-text-anchor:middle;width:300px"
+                  arcsize="18%" stroke="f" fillcolor="${primary ? C.brand : C.panel}">
+                  <w:anchorlock/>
+                  <center style="color:${primary ? '#ffffff' : C.ink};font-family:Helvetica,Arial,sans-serif;font-size:17px;font-weight:bold">${label}</center>
+                </v:roundrect>
+                <![endif]-->
+                <!--[if !mso]><!-- -->
+                <a href="${esc(requestData.ticket_url)}"
+                   style="display:block;color:${primary ? '#ffffff' : C.ink};text-decoration:none;font-family:${DISPLAY};font-weight:700;letter-spacing:-0.01em;padding:17px 20px;font-size:17px;text-align:center;border-radius:10px">${label}</a>
+                <!--<![endif]-->
+              </td></tr>
+            </table>`
             : ''
 
-        const detailCopy = requestData.ticket_url
-            ? `Your <strong style="color:${C.ink}">${qty} ${ticketWord}</strong> with QR codes are on the page above. You can also download a PDF copy from there.`
-            : `Your <strong style="color:${C.ink}">${qty} ${ticketWord}</strong> are confirmed. Log in to your account to view your QR codes.`
+        const noLinkFallback = `
+            <tr><td align="center" style="padding:2px 0 0;font-family:${BODY};font-size:15px;color:${C.muted};line-height:1.55">
+              Your <strong style="color:${C.ink}">${qty} ${ticketWord}</strong> ${qty === 1 ? 'is' : 'are'} confirmed. Log in to your account to view your QR ${qty === 1 ? 'code' : 'codes'}.
+            </td></tr>`
 
         const row = (label: string, value: string) => `
             <tr>
-              <td style="padding:0 0 4px;font-family:${BODY};font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:${C.dim}">${label}</td>
+              <td style="padding:0 0 3px;font-family:${BODY};font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:${C.dim}">${label}</td>
             </tr>
             <tr>
-              <td style="padding:0 0 18px;font-family:${BODY};font-size:15px;color:${C.ink};line-height:1.45">${value}</td>
+              <td style="padding:0 0 14px;font-family:${BODY};font-size:15px;color:${C.ink};line-height:1.4">${value}</td>
             </tr>`
 
         const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -136,66 +182,93 @@ serve(async (req) => {
   img{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic}
   table{border-collapse:collapse}
   @media (max-width:620px){
-    .hh-pad{padding-left:22px!important;padding-right:22px!important}
-    .hh-h1{font-size:26px!important}
+    .hh-pad{padding-left:20px!important;padding-right:20px!important}
+    .hh-h1{font-size:24px!important}
+    .hh-title{font-size:21px!important}
+    /* The outer gutter costs 24px of width on a 390px phone for nothing. */
+    .hh-shell{padding:0!important}
+    .hh-card{border-radius:0!important;border-left:0!important;border-right:0!important}
   }
 </style>
 </head>
 <body style="margin:0;padding:0;background:${C.ground}">
-<!-- Preheader: the inbox preview line. Left out, clients scrape whatever text
-     comes first, which was the word "HANGHUT". -->
+<!-- Preheader: the inbox preview line, and on a phone it is read before the
+     message is even opened. It used to restate the subject; it now says what
+     to do, because that is the one thing buyers were missing. -->
 <div style="display:none;max-height:0;overflow:hidden;opacity:0">
-  You're going to ${esc(requestData.event_title)} — ${qty} ${ticketWord} confirmed.
+  Tap “View your ${ticketWord}” to open your QR code — show it at the entrance.
 </div>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.ground}">
-<tr><td align="center" style="padding:36px 12px">
+<tr><td align="center" style="padding:24px 12px" class="hh-shell">
 
   <!-- Outlook ignores max-width on a div, so the whole card is a table. -->
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0"
-         style="width:600px;max-width:600px;background:${C.card};border-radius:14px;overflow:hidden;border:1px solid ${C.line}">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" class="hh-card"
+         style="width:100%;max-width:600px;background:${C.card};border-radius:14px;overflow:hidden;border:1px solid ${C.line}">
 
-    <!-- Header ───────────────────────────────────────────────────── -->
-    <tr><td style="background:${C.brand};background-image:linear-gradient(135deg,${C.brand} 0%,${C.brandSoft} 100%);padding:38px 32px 34px" class="hh-pad">
+    <!-- Header ───────────────────────────────────────────────────────
+         Trimmed from 38px/34px padding and a 30px headline. The old block
+         spent ~170px of a ~700px phone viewport before saying anything, and
+         every pixel here is a pixel the button is pushed down by. -->
+    <tr><td style="background:${C.brand};background-image:linear-gradient(135deg,${C.brand} 0%,${C.brandSoft} 100%);padding:24px 32px 22px" class="hh-pad">
       <!-- The wordmark is text, not an image: it survives image blocking, which
            is the one moment the brand most needs to be present. -->
-      <div style="font-family:${DISPLAY};font-weight:800;font-size:15px;letter-spacing:0.22em;color:#ffffff;opacity:.85">HANGHUT</div>
-      <div class="hh-h1" style="font-family:${DISPLAY};font-weight:800;font-size:30px;letter-spacing:-0.035em;color:#ffffff;line-height:1.15;padding-top:14px">You&rsquo;re going.</div>
-      <div style="font-family:${BODY};font-size:15px;color:#ffffff;opacity:.82;padding-top:8px">${qty} ${ticketWord} confirmed — see you there.</div>
+      <div style="font-family:${DISPLAY};font-weight:800;font-size:13px;letter-spacing:0.22em;color:#ffffff;opacity:.8">HANGHUT</div>
+      <div class="hh-h1" style="font-family:${DISPLAY};font-weight:800;font-size:27px;letter-spacing:-0.035em;color:#ffffff;line-height:1.12;padding-top:10px">You&rsquo;re going.</div>
+      <div style="font-family:${BODY};font-size:14px;color:#ffffff;opacity:.82;padding-top:5px">${qty} ${ticketWord} confirmed — see you there.</div>
     </td></tr>
 
-    <!-- Body ─────────────────────────────────────────────────────── -->
-    <tr><td style="padding:32px" class="hh-pad">
+    <!-- Identity, then action ───────────────────────────────────────
+         Which event this is has to come first — a buyer will not tap a button
+         before they know what it opens — but it is kept to three tight lines
+         so the button still lands well above the fold. -->
+    <tr><td style="padding:24px 32px 0" class="hh-pad">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr><td class="hh-title" style="padding:0 0 16px;font-family:${DISPLAY};font-weight:700;font-size:23px;letter-spacing:-0.03em;color:${C.ink};line-height:1.22">${esc(requestData.event_title)}</td></tr>
+        ${row('When', esc(formattedDate))}
+        ${row('Where', esc(requestData.event_venue))}
+      </table>
+    </td></tr>
+
+    <!-- THE BUTTON. Everything above it is kept short for this one reason. -->
+    ${requestData.ticket_url ? `
+    <tr><td align="center" style="padding:10px 32px 0" class="hh-pad">${cta(`View your ${ticketWord}`, true)}</td></tr>
+    <tr><td align="center" style="padding:12px 32px 0;font-family:${BODY};color:${C.muted};font-size:13px;line-height:1.5" class="hh-pad">
+      Show the QR at the entrance — a screenshot works too.<br/>
+      <span style="color:${C.dim}">You can download a PDF copy from the same page.</span>
+    </td></tr>` : noLinkFallback}
+
+    <!-- Everything below here is confirmation, not instruction ────── -->
+    <tr><td style="padding:24px 32px 28px" class="hh-pad">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         ${requestData.event_cover_image ? `
-        <tr><td style="padding:0 0 24px">
-          <!-- No object-fit: no email client supports it, so the old fixed
-               200px height squashed every wide cover. Natural ratio instead. -->
+        <tr><td style="padding:0 0 22px">
+          <!-- Moved below the button on purpose. No email client supports
+               object-fit, so this image's height is whatever the organizer
+               uploaded — it cannot be allowed to sit above anything that
+               matters. -->
           <img src="${esc(requestData.event_cover_image)}" width="536" alt="${esc(requestData.event_title)}"
                style="width:100%;max-width:536px;height:auto;display:block;border-radius:10px"/>
         </td></tr>` : ''}
 
-        <tr><td style="padding:0 0 22px;font-family:${DISPLAY};font-weight:700;font-size:23px;letter-spacing:-0.03em;color:${C.ink};line-height:1.25">${esc(requestData.event_title)}</td></tr>
-
-        ${row('When', esc(formattedDate))}
-        ${row('Where', esc(requestData.event_venue))}
-
         <!-- Payment. A neutral panel with one green line, rather than the old
              wall of stock green. -->
-        <tr><td style="padding:4px 0 0">
+        <tr><td>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
                  style="background:${C.panel};border:1px solid ${C.line};border-radius:10px">
             <tr><td style="padding:16px 18px">
               <div style="font-family:${BODY};font-size:12px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:${C.paid}">Payment received</div>
               <div style="font-family:${DISPLAY};font-weight:700;font-size:22px;letter-spacing:-0.02em;color:${C.ink};padding-top:6px">${formattedAmount}</div>
-              ${requestData.payment_method ? `<div style="font-family:${BODY};font-size:13px;color:${C.muted};padding-top:3px">${esc(requestData.payment_method)}</div>` : ''}
+              ${methodLabel ? `<div style="font-family:${BODY};font-size:13px;color:${C.muted};padding-top:3px">Paid with ${esc(methodLabel)}</div>` : ''}
             </td></tr>
           </table>
         </td></tr>
 
-        ${ctaButton}
-
-        <tr><td align="center" style="padding:16px 0 0;font-family:${BODY};font-size:14px;color:${C.muted};line-height:1.55">${detailCopy}</td></tr>
+        <!-- Second chance at the link, for anyone who scrolled past the first
+             one. Costs nothing and catches the reader who came back to the
+             email at the gate and started from the bottom. -->
+        ${requestData.ticket_url ? `
+        <tr><td align="center" style="padding:22px 0 0">${cta(`View your ${ticketWord}`, false)}</td></tr>` : ''}
       </table>
     </td></tr>
 
@@ -213,21 +286,24 @@ serve(async (req) => {
 </td></tr>
 </table>
 </body></html>`
-
         // Plain-text alternative. HTML-only is a spam signal, and it is the
         // version a screen reader and a smartwatch actually get.
+        // Mirrors the HTML's order, link included, for the same reason: this
+        // is what a screen reader and a smartwatch get, and burying the link
+        // under the receipt there would reproduce the bug in another medium.
         const text = [
             `You're going — ${qty} ${ticketWord} confirmed.`,
             ``,
             requestData.event_title,
             `When:  ${formattedDate}`,
             `Where: ${requestData.event_venue}`,
-            ``,
-            `Payment received: ${formattedAmount}${requestData.payment_method ? ` (${requestData.payment_method})` : ''}`,
             ...(requestData.ticket_url
                 ? ['', `View your ${ticketWord}: ${requestData.ticket_url}`,
-                   'Open this on your phone at the entrance — a screenshot works too.']
-                : ['', `Log in to your account to view your QR codes.`]),
+                   'Show the QR at the entrance — a screenshot works too.',
+                   'You can download a PDF copy from the same page.']
+                : ['', `Log in to your account to view your QR ${qty === 1 ? 'code' : 'codes'}.`]),
+            ``,
+            `Payment received: ${formattedAmount}${methodLabel ? ` (paid with ${methodLabel})` : ''}`,
             ``,
             `Ref: ${requestData.transaction_ref}`,
             `Questions? contact@hanghut.com`,

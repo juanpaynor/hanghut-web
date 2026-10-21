@@ -68,7 +68,7 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
     }
 
     return (
-        <div className="min-h-screen bg-muted/30 flex items-center justify-center p-4">
+        <div className="min-h-screen bg-muted/30 flex items-start justify-center p-4 sm:py-10">
             <Card className="max-w-md w-full p-8 text-center space-y-6">
                 <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto animate-in zoom-in duration-500">
                     <CheckCircle2 className="h-10 w-10 text-green-600 dark:text-green-400" />
@@ -82,6 +82,27 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
                             : 'Your booking is confirmed.'}
                     </p>
                 </div>
+
+                {/* THE ACTION, first.
+                    This used to sit at the very bottom, under the booking
+                    summary, the seat list and a "What happens next?" panel —
+                    about 900px down on a phone, so buyers finished checkout
+                    and never saw it. Same fix as the ticket email: the event
+                    name is already in the line above, so identity is covered
+                    and nothing has to come between the news and the button. */}
+                {ticketToken && (
+                    <div className="space-y-2">
+                        <Button className="w-full h-12 text-base shadow-sm" asChild>
+                            <Link href={`/t/${ticketToken}`} className="flex items-center gap-2">
+                                <Ticket className="h-4 w-4" />
+                                View my {quantity > 1 ? 'tickets' : 'ticket'}
+                            </Link>
+                        </Button>
+                        <p className="text-xs text-muted-foreground">
+                            Show the QR at the entrance — a screenshot works too.
+                        </p>
+                    </div>
+                )}
 
                 {/* Booking summary */}
                 {(startTime || venueName) && (
@@ -140,21 +161,13 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
                     <h4 className="text-sm font-semibold mt-4 mb-2">What happens next?</h4>
                     <ul className="space-y-2 text-sm text-muted-foreground list-disc list-inside">
                         {ticketToken
-                            ? <li>Open your tickets below, or from the email from HangHut.</li>
+                            ? <li>Open your tickets above, or from the email from HangHut.</li>
                             : <li>Open the email from HangHut.</li>}
                         <li>Show the QR code at the venue entrance.</li>
                     </ul>
                 </div>
 
                 <div className="space-y-3 pt-2">
-                    {ticketToken && (
-                        <Button className="w-full h-11 text-base shadow-sm" asChild>
-                            <Link href={`/t/${ticketToken}`} className="flex items-center gap-2">
-                                <Ticket className="h-4 w-4" />
-                                View my {quantity > 1 ? 'tickets' : 'ticket'}
-                            </Link>
-                        </Button>
-                    )}
                     <Button variant={ticketToken ? 'outline' : 'default'} className="w-full h-11 text-base shadow-sm" asChild>
                         <Link href="/" className="flex items-center gap-2">
                             <Home className="h-4 w-4" />
