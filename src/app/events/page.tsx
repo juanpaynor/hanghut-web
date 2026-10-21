@@ -28,6 +28,7 @@ async function EventsList() {
             .from('events')
             .select(`
                 id,
+                slug,
                 title,
                 start_datetime,
                 end_datetime,

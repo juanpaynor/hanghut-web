@@ -12,6 +12,9 @@ interface RequestData {
     to_email: string
     to_name?: string
     event_id: string
+    /** Optional: callers that have it send the slug so the invite link is
+     *  readable. Absent, the id still resolves — /events/<uuid> 301s. */
+    event_slug?: string | null
     event_title: string
     event_date?: string
     organizer_name: string
@@ -24,14 +27,14 @@ serve(async (req) => {
     }
 
     try {
-        const { to_email, to_name, event_id, event_title, event_date, organizer_name, invite_token } =
+        const { to_email, to_name, event_id, event_slug, event_title, event_date, organizer_name, invite_token } =
             await req.json() as RequestData
 
         if (!to_email || !event_id || !event_title || !invite_token) {
             throw new Error("Missing required fields: to_email, event_id, event_title, invite_token")
         }
 
-        const inviteUrl = `${SITE_URL}/events/${event_id}?invite=${invite_token}`
+        const inviteUrl = `${SITE_URL}/events/${event_slug || event_id}?invite=${invite_token}`
         const dateLine = event_date
             ? new Date(event_date).toLocaleString('en-PH', {
                 weekday: 'long', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',

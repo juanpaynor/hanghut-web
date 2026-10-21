@@ -72,7 +72,7 @@ export function EmbedEventCard({ event, variant = 'grid' }: EmbedEventCardProps)
                     display: 'flex',
                     alignItems: 'stretch',
                     gap: '12px',
-                    borderRadius: '12px',
+                    borderRadius: 'var(--embed-radius, 12px)',
                     overflow: 'hidden',
                     border: '1px solid rgba(128,128,128,0.15)',
                     transition: 'transform 0.2s, box-shadow 0.2s',
@@ -131,7 +131,7 @@ export function EmbedEventCard({ event, variant = 'grid' }: EmbedEventCardProps)
             {...hover}
             style={{
                 cursor: 'pointer',
-                borderRadius: '12px',
+                borderRadius: 'var(--embed-radius, 12px)',
                 overflow: 'hidden',
                 border: '1px solid rgba(128,128,128,0.15)',
                 transition: 'transform 0.2s, box-shadow 0.2s',

@@ -390,7 +390,7 @@ export async function createEvent(formData: FormData) {
         await saveTermsDocuments(adminSupabase, event.id, formData.get('terms_documents') as string | null)
 
         revalidatePath('/organizer/events')
-        return { success: true, eventId: event.id }
+        return { success: true, eventId: event.id, eventSlug: event.slug as string | null }
 
     } catch (error: any) {
         // "An unexpected error occurred" told the organizer nothing and told us

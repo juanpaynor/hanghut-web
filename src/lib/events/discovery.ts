@@ -1,3 +1,4 @@
+import { eventHref, experienceHref } from '@/lib/events/urls'
 /**
  * Shared rules for the /events discovery page.
  *
@@ -37,11 +38,14 @@ export interface DiscoveryEvent {
     organizer?: unknown
     /** Experiences live in `tables`, not `events`, and route differently. */
     kind?: 'event' | 'experience'
+    slug?: string | null
 }
 
 /** Where a hero slide or card links to. Experiences are not under /events. */
 export function itemHref(e: DiscoveryEvent): string {
-    return e.kind === 'experience' ? `/experiences/${e.id}` : `/events/${e.id}`
+    // Routed through the shared helper so the hero and the cards below it
+    // cannot disagree about where the same event lives.
+    return e.kind === 'experience' ? experienceHref(e) : eventHref(e)
 }
 
 /**

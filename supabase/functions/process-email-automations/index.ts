@@ -82,13 +82,15 @@ async function eventTokens(supabase: any, eventId?: string | null): Promise<Reco
 
     const { data: ev } = await supabase
         .from("events")
-        .select("id, title, cover_image_url, start_datetime, venue_name, city, ticket_price, is_online, ticket_tiers(price, is_active)")
+        .select("id, slug, title, cover_image_url, start_datetime, venue_name, city, ticket_price, is_online, ticket_tiers(price, is_active)")
         .eq("id", eventId)
         .maybeSingle()
 
     if (!ev) return {}
 
-    const url = `https://hanghut.com/events/${ev.id}`
+    // Slug first: /events/<uuid> only 301s to it, so the UUID puts a
+    // redirect and an unreadable link in every subscriber email.
+    const url = `https://hanghut.com/events/${ev.slug || ev.id}`
     const image = ev.cover_image_url || ""
     // Online events have no venue at all -- printing "null, null" in an email
     // is worse than printing nothing.

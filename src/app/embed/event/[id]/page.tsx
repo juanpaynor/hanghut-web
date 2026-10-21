@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { format } from 'date-fns'
 import { EmbedThemeWrapper, type EmbedTheme } from '@/components/embed/embed-theme-wrapper'
+import { resolveFont } from '@/lib/event-fonts'
+import { eventHref } from '@/lib/events/urls'
 import { EmbedTicketButton } from '@/components/embed/embed-ticket-button'
 import { EmbedTierSelector } from '@/components/embed/embed-tier-selector'
 import { isTierOnSale, isTierVisible } from '@/lib/tickets/tier-availability'
@@ -16,7 +18,7 @@ export default async function EmbedEventPage({
     searchParams,
 }: {
     params: Promise<{ id: string }>
-    searchParams: Promise<{ primary?: string; bg?: string; text?: string; radius?: string; theme?: string }>
+    searchParams: Promise<{ primary?: string; bg?: string; text?: string; radius?: string; theme?: string; design?: string }>
 }) {
     const { id } = await params
     const search = await searchParams
@@ -38,8 +40,11 @@ export default async function EmbedEventPage({
             event_type,
             capacity,
             tickets_sold,
+            slug,
             max_seats_per_order,
             seating_type,
+            theme_color,
+            layout_config,
             organizer:partners!events_organizer_id_fkey(
                 business_name,
                 profile_photo_url,
@@ -104,14 +109,33 @@ export default async function EmbedEventPage({
         ? Math.min(...activeTiers.map((t: any) => Number(t.price)))
         : event.ticket_price
 
+    /**
+     * design=event — wear the event page's own design.
+     *
+     * The widget used to have a design system entirely separate from the page
+     * it advertises: three hex inputs and a light/dark switch, against the
+     * event page's art-directed themes, accent and eight-font picker. An
+     * organizer who styled their page got a generic box on their own website.
+     *
+     * Opt-in, not default: turning this on for every existing embed would
+     * silently restyle live publisher sites. Explicit data-* attributes still
+     * win, so a publisher who set their own colours keeps them.
+     */
+    const inherit = search.design === 'event'
+    const lc: any = event.layout_config || {}
+    const inheritedFont = inherit ? resolveFont(lc.font_body || lc.font_heading) : null
+
     return (
         <EmbedThemeWrapper
-            primaryColor={search.primary}
+            primaryColor={search.primary ?? (inherit ? (event.theme_color || undefined) : undefined)}
             bgColor={search.bg}
-            textColor={search.text}
+            textColor={search.text ?? (inherit ? (lc.text_color || undefined) : undefined)}
             theme={search.theme === 'dark' || search.theme === 'auto' ? (search.theme as EmbedTheme) : 'light'}
+            radius={search.radius}
+            fontCss={inheritedFont?.css}
+            fontUrl={inheritedFont?.url || undefined}
         >
-            <div style={{ overflow: 'hidden', borderRadius: '12px', border: '1px solid rgba(128,128,128,0.15)' }}>
+            <div style={{ overflow: 'hidden', borderRadius: 'var(--embed-radius, 12px)', border: '1px solid rgba(128,128,128,0.15)' }}>
                 {/* Cover image */}
                 {event.cover_image_url && (
                     <div style={{ position: 'relative', width: '100%', paddingTop: '50%', overflow: 'hidden' }}>
@@ -250,7 +274,7 @@ export default async function EmbedEventPage({
                         has room to work. */}
                     {seatedCount > 0 && (
                         <a
-                            href={`https://hanghut.com/events/${event.id}`}
+                            href={`https://hanghut.com${eventHref(event as any)}`}
                             target="_blank"
                             rel="noopener"
                             style={{
@@ -260,7 +284,7 @@ export default async function EmbedEventPage({
                                 textAlign: 'center',
                                 fontSize: '13px',
                                 fontWeight: 600,
-                                borderRadius: '8px',
+                                borderRadius: 'var(--embed-radius, 8px)',
                                 border: '1px solid rgba(128,128,128,0.25)',
                                 textDecoration: 'none',
                                 color: 'inherit',

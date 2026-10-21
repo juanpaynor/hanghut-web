@@ -130,6 +130,11 @@ export default function EmbedPage() {
                 <p className="text-muted-foreground mt-1">
                     Add HangHut events directly to your website. No coding required — just copy and paste.
                 </p>
+                <p className="text-sm text-muted-foreground mt-2">
+                    Just need the code for one event? It&apos;s on that event&apos;s{' '}
+                    <span className="font-medium text-foreground">Share</span> tab. Use this page to
+                    match the widget to your site&apos;s colours, or to embed all your events at once.
+                </p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

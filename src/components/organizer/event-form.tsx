@@ -1,4 +1,5 @@
 'use client'
+import { eventHref, absoluteUrl } from '@/lib/events/urls'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -169,7 +170,7 @@ export function EventForm({
     const [step, setStep] = useState<1 | 2>(1)
     const [createdEventId, setCreatedEventId] = useState<string | null>(null)
     // Post-publish success screen (create only).
-    const [published, setPublished] = useState<{ id: string; status: string } | null>(null)
+    const [published, setPublished] = useState<{ id: string; slug?: string | null; status: string } | null>(null)
     const [linkCopied, setLinkCopied] = useState(false)
     // "Publish event" is the loudest button on the last step, so first-time
     // organizers hit it to see what happens — which is how test events end up
@@ -793,10 +794,13 @@ export function EventForm({
             if (extraUrls.length) formDataToSend.append('additional_image_urls', JSON.stringify(extraUrls))
 
             let result
+            let created: { id: string; slug: string | null } | null = null
             if (isEditing && eventId) {
                 result = await updateEvent(eventId, formDataToSend)
             } else {
-                result = await createEvent(formDataToSend)
+                const res = await createEvent(formDataToSend)
+                result = res
+                if ('eventId' in res) created = { id: res.eventId, slug: res.eventSlug ?? null }
             }
 
             if (result.error) {
@@ -817,7 +821,7 @@ export function EventForm({
                     router.push('/organizer/events')
                 } else {
                     // Land on the success screen (share / embed / promote).
-                    setPublished({ id: result.eventId as string, status })
+                    setPublished({ id: created?.id ?? '', slug: created?.slug ?? null, status })
                     window.scrollTo({ top: 0, behavior: 'smooth' })
                 }
             }
@@ -862,7 +866,7 @@ export function EventForm({
     }
 
     if (published) {
-        const publicUrl = `https://hanghut.com/events/${published.id}`
+        const publicUrl = absoluteUrl(eventHref(published))
         const heading = published.status === 'active'
             ? 'Your event is live!'
             : published.status === 'hidden'
@@ -914,8 +918,8 @@ export function EventForm({
                         <Button type="button" variant="outline" className="justify-start gap-2" onClick={() => router.push(`/organizer/events/${published.id}`)}>
                             <ExternalLink className="h-4 w-4" /> Manage event
                         </Button>
-                        <Button type="button" variant="outline" className="justify-start gap-2" onClick={() => router.push('/organizer/developers/embed')}>
-                            <Code2 className="h-4 w-4" /> Embed widget
+                        <Button type="button" variant="outline" className="justify-start gap-2" onClick={() => router.push(`/organizer/events/${published.id}?tab=share`)}>
+                            <Code2 className="h-4 w-4" /> Share &amp; embed
                         </Button>
                         <Button type="button" className="justify-start gap-2 bg-primary" onClick={() => router.push('/organizer/marketing')}>
                             <Send className="h-4 w-4" /> Email subscribers

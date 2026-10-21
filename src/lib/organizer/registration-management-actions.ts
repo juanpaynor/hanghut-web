@@ -1,4 +1,5 @@
 'use server'
+import { eventHref } from '@/lib/events/urls'
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -442,7 +443,7 @@ async function loadExportBundle(
     const [{ data: event }, { data: questions }] = await Promise.all([
         adminClient
             .from('events')
-            .select('title, start_datetime, venue_name')
+            .select('id, slug, title, start_datetime, venue_name')
             .eq('id', eventId)
             .maybeSingle(),
         adminClient
@@ -883,7 +884,7 @@ export async function approveRegistration(
                 : `<div style="font-family:sans-serif;line-height:1.6;white-space:pre-wrap">${rawBody}</div>`
 
             // Append the all-important return link so the approved user can check out.
-            const eventUrl = `https://${process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'}/events/${event.id}`
+            const eventUrl = `https://${process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'}${eventHref(event as any)}`
             const htmlBody = `${bodyHtml}<div style="text-align:center;margin:28px 0"><a href="${eventUrl}" style="display:inline-block;background:#6366f1;color:#fff;text-decoration:none;font-weight:600;padding:14px 32px;border-radius:8px;font-family:sans-serif">Get your tickets</a></div>`
 
             await fetch(`${SUPABASE_FUNCTIONS_URL}/send-registration-email`, {

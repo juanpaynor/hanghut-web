@@ -37,7 +37,7 @@ async function assertEventOwner(eventId: string) {
 
     const { data: event } = await supabase
         .from('events')
-        .select('id, title, start_datetime, organizer_id, partners!events_organizer_id_fkey(user_id, business_name)')
+        .select('id, slug, title, start_datetime, organizer_id, partners!events_organizer_id_fkey(user_id, business_name)')
         .eq('id', eventId)
         .single()
 
@@ -50,7 +50,7 @@ async function assertEventOwner(eventId: string) {
 /** Fire invite emails for a set of invites (best-effort, non-blocking failures). */
 async function dispatchInviteEmails(
     invites: { email: string; name: string | null; token: string }[],
-    event: { id: string; title: string; start_datetime: string | null },
+    event: { id: string; slug?: string | null; title: string; start_datetime: string | null },
     organizerName: string
 ) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -68,6 +68,8 @@ async function dispatchInviteEmails(
                     to_email: inv.email,
                     to_name: inv.name,
                     event_id: event.id,
+                    // The function falls back to the id, so an older deploy still works.
+                    event_slug: event.slug ?? null,
                     event_title: event.title,
                     event_date: event.start_datetime,
                     organizer_name: organizerName,

@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.0'
 
 // Single atomic approve/reject endpoint for the app's approvals inbox.
 // Ports web's approveRegistration/rejectRegistration server actions so the
@@ -65,7 +65,7 @@ serve(async (req) => {
         // 3. Ownership — caller must be organizer of this event (owner or team owner/manager)
         const { data: event, error: evErr } = await supabase
             .from('events')
-            .select('id, title, start_datetime, venue_name, ticket_price, organizer_id, approval_email_subject, approval_email_body, rejection_email_subject, rejection_email_body, partners!events_organizer_id_fkey(business_name, user_id)')
+            .select('id, slug, title, start_datetime, venue_name, ticket_price, organizer_id, approval_email_subject, approval_email_body, rejection_email_subject, rejection_email_body, partners!events_organizer_id_fkey(business_name, user_id)')
             .eq('id', reg.event_id)
             .single()
         if (evErr || !event) return json({ error: 'Event not found' }, 404)
@@ -160,7 +160,7 @@ serve(async (req) => {
                     const bodyHtml = rawBody.trimStart().startsWith('<')
                         ? rawBody
                         : `<div style="font-family:sans-serif;line-height:1.6;white-space:pre-wrap">${rawBody}</div>`
-                    const eventUrl = `https://${ROOT_DOMAIN}/events/${event.id}`
+                    const eventUrl = `https://${ROOT_DOMAIN}/events/${event.slug || event.id}`
                     const htmlBody = `${bodyHtml}<div style="text-align:center;margin:28px 0"><a href="${eventUrl}" style="display:inline-block;background:#6366f1;color:#fff;text-decoration:none;font-weight:600;padding:14px 32px;border-radius:8px;font-family:sans-serif">Get your tickets</a></div>`
                     await fetch(`${FUNCTIONS_URL}/send-registration-email`, {
                         method: 'POST',

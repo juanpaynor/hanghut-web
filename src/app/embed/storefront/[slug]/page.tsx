@@ -69,6 +69,7 @@ export default async function EmbedStorefrontPage({
             bgColor={search.bg}
             textColor={search.text}
             theme={theme}
+            radius={search.radius}
         >
             <div style={{ padding: '16px' }}>
                 {/* Minimal header */}

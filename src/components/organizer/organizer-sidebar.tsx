@@ -8,7 +8,7 @@ import {
     LayoutDashboard, CalendarDays, Wallet, Mail, Users, ScanLine,
     Settings, Code2, ShieldCheck, ExternalLink, LogOut, Megaphone,
     MousePointerClick, Crown, Compass, BookOpen, CalendarClock, UserSearch,
-    Puzzle, Link2, Shirt, Store, UserCheck, Award, CreditCard, ChevronDown,
+    Link2, Shirt, Store, UserCheck, Award, CreditCard, ChevronDown,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -78,7 +78,6 @@ const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
             { label: 'Settings',     href: '/organizer/settings',      icon: Settings,   section: 'settings' },
             { label: 'Billing',      href: '/organizer/settings/billing', icon: CreditCard, section: 'billing' },
             { label: 'Developers',   href: '/organizer/developers',    icon: Code2,      section: 'developers', capability: 'organizer' },
-            { label: 'Embed Widget', href: '/organizer/developers/embed', icon: Puzzle,  section: 'embed', capability: 'organizer' },
             { label: 'Verification', href: '/organizer/verification',  icon: ShieldCheck, section: 'verification' },
         ],
     },
@@ -231,10 +230,11 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, 
                             <div className="space-y-0.5">
                                 {visibleItems.map(item => {
                                     const Icon = item.icon
-                                    // Parent routes that have deeper sibling links use exact
-                                    // matching so they don't stay highlighted on child routes
-                                    // (e.g. Developers vs. its /developers/embed child).
-                                    const exactMatch = item.href === '/organizer' || item.href === '/organizer/developers'
+                                    // /organizer is a prefix of every other item, so it alone
+                                    // must match exactly or it would highlight everywhere.
+                                    // Everything else prefix-matches, which keeps the parent
+                                    // lit on its own child routes (Developers → /developers/embed).
+                                    const exactMatch = item.href === '/organizer'
                                     const isActive = exactMatch
                                         ? pathname === item.href
                                         : pathname?.startsWith(item.href)

@@ -1,4 +1,6 @@
 import { createPublicClient } from '@/lib/supabase/public'
+import { resolveFont } from '@/lib/event-fonts'
+import { eventHref, absoluteUrl } from '@/lib/events/urls'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -584,18 +586,8 @@ export default async function PublicEventPage({
     // Font config
     const fontHeading: string = ov(sp.hh_fh, event.layout_config?.font_heading || 'inter')
     const fontBody: string = ov(sp.hh_fb, event.layout_config?.font_body || 'inter')
-    const FONT_MAP: Record<string, { name: string; url: string; css: string }> = {
-        inter:      { name: 'Inter',             url: '',                                                                                css: 'Inter, sans-serif' },
-        playfair:   { name: 'Playfair Display',  url: 'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&display=swap', css: "'Playfair Display', serif" },
-        grotesk:    { name: 'Space Grotesk',     url: 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap',    css: "'Space Grotesk', sans-serif" },
-        bebas:      { name: 'Bebas Neue',        url: 'https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap',                        css: "'Bebas Neue', cursive" },
-        cormorant:  { name: 'Cormorant Garamond',url: 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&display=swap', css: "'Cormorant Garamond', serif" },
-        mono:       { name: 'JetBrains Mono',    url: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap',       css: "'JetBrains Mono', monospace" },
-        outfit:     { name: 'Outfit',            url: 'https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&display=swap',        css: "'Outfit', sans-serif" },
-        dmserif:    { name: 'DM Serif Display',  url: 'https://fonts.googleapis.com/css2?family=DM+Serif+Display&display=swap',                  css: "'DM Serif Display', serif" },
-    }
-    const headingFont = FONT_MAP[fontHeading] || FONT_MAP.inter
-    const bodyFont    = FONT_MAP[fontBody]    || FONT_MAP.inter
+    const headingFont = resolveFont(fontHeading)
+    const bodyFont    = resolveFont(fontBody)
     // Font sheets the ORGANIZER's custom CSS asks for, on top of the ones their
     // font picker chose. sanitizeCustomCss strips @import outright, so without
     // this an imported font would load while they designed and then silently
@@ -2657,7 +2649,7 @@ export default async function PublicEventPage({
                                 : {}),
                             offers: {
                                 '@type': 'Offer',
-                                url: `https://hanghut.com/events/${event.id}`,
+                                url: absoluteUrl(eventHref(event as any)),
                                 price: (() => {
                                     const tiers = (event.ticket_tiers || []).filter((t: any) => isTierOnSale(t))
                                     const prices = tiers.length

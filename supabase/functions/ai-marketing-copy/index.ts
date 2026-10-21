@@ -134,7 +134,7 @@ serve(async (req) => {
         if (event_id) {
             const { data: ev } = await supabase
                 .from('events')
-                .select('id, title, cover_image_url, start_datetime, venue_name, city, ticket_price, ticket_tiers(price, is_active)')
+                .select('id, slug, title, cover_image_url, start_datetime, venue_name, city, ticket_price, ticket_tiers(price, is_active)')
                 .eq('id', event_id)
                 .maybeSingle()
             if (ev) {
@@ -142,7 +142,7 @@ serve(async (req) => {
                 const price = tiers.length ? Math.min(...tiers.map(t => Number(t.price))) : Number(ev.ticket_price || 0)
                 const priceLabel = price === 0 ? 'Free' : `From ₱${price.toLocaleString()}`
                 const venue = [ev.venue_name, ev.city].filter(Boolean).join(', ')
-                const url = `https://hanghut.com/events/${ev.id}`
+                const url = `https://hanghut.com/events/${ev.slug || ev.id}`
                 eventContext = `\n\nEVENT CONTEXT (weave in naturally; link the CTA button to the event URL):\n- Title: ${ev.title}\n- Date: ${fmtDate(ev.start_datetime)}\n- Venue: ${venue || 'n/a'}\n- Price: ${priceLabel}\n- Event URL: ${url}`
                 if (ev.cover_image_url) {
                     heroHtml = `<a href="${url}" style="text-decoration:none;"><img src="${esc(ev.cover_image_url)}" alt="${esc(ev.title)}" width="100%" style="display:block;width:100%;max-width:100%;height:auto;border:0;border-radius:12px;margin:0 0 18px;" /></a>`

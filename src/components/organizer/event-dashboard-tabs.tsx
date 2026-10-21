@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EventForm } from '@/components/organizer/event-form'
 import { TicketTiersManager } from '@/components/organizer/ticket-tiers-manager'
@@ -14,7 +15,8 @@ import type { StatusLink } from '@/lib/organizer/status-link-actions'
 import { StorefrontCustomizationForm } from '@/components/organizer/storefront-customization-form'
 import { SeatMapTab } from '@/components/organizer/seat-map-tab'
 import { AnalyticsTabLazy } from '@/components/organizer/analytics-tab-lazy'
-import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair, ExternalLink, ClipboardList, UserCheck, Mail, BarChart2 } from 'lucide-react'
+import { EventShareTab } from '@/components/organizer/event-share-tab'
+import { FileText, Ticket, Users, LayoutDashboard, Palette, Armchair, ExternalLink, ClipboardList, UserCheck, Mail, BarChart2, Share2 } from 'lucide-react'
 import { EventInvitesManager } from '@/components/organizer/event-invites-manager'
 import { Attendee } from '@/lib/organizer/attendee-actions'
 import { PromoCode } from '@/lib/organizer/promo-actions'
@@ -78,10 +80,6 @@ export function EventDashboardTabs({
     statusLinks = [],
     baseUrl = '',
 }: EventDashboardTabsProps) {
-    const [activeTab, setActiveTab] = useState('overview')
-
-    // Base 7 tabs (incl. Analytics) + optional Registrations / Seat Map / Invites.
-    // Literal class strings keep Tailwind's JIT happy (no dynamic grid-cols-${n}).
     // Registrations exist for ANY event with questions (auto-approve just skips
     // the review step), not only approval-gated ones. Gating the tab on
     // require_approval hid every auto-approved answer from the organizer.
@@ -89,15 +87,33 @@ export function EventDashboardTabs({
     // A mixed event sells part of its inventory off the seat map, so it needs
     // the Seat Map tab just as much as a fully assigned-seating one.
     const usesSeatMap = event.seating_type === 'assigned_seating' || event.seating_type === 'mixed'
-    const tabCount = 7
-        + (showRegistrations ? 1 : 0)
-        + (usesSeatMap ? 1 : 0)
-        + (event.invite_only ? 1 : 0)
-    const gridColsClass = ({ 7: 'grid-cols-7', 8: 'grid-cols-8', 9: 'grid-cols-9', 10: 'grid-cols-10' } as Record<number, string>)[tabCount] || 'grid-cols-7'
+
+    /**
+     * ?tab= opens a specific tab.
+     *
+     * The tab was local state only, so nothing could link INTO it — which is
+     * why the post-publish screen's "Embed widget" button had to send people
+     * to a global page where they re-picked the event they had just made.
+     *
+     * Validated against the tabs this event actually renders: a stale or
+     * hand-typed ?tab=seatmap on a general-admission event would otherwise
+     * select a trigger that does not exist and show a blank page.
+     */
+    const searchParams = useSearchParams()
+    const available = new Set([
+        'overview', 'analytics', 'attendees', 'tickets', 'edit', 'design', 'share', 'questions',
+        ...(showRegistrations ? ['registrations'] : []),
+        ...(event.invite_only ? ['invites'] : []),
+        ...(usesSeatMap ? ['seatmap'] : []),
+    ])
+    const requested = searchParams.get('tab')
+    const [activeTab, setActiveTab] = useState(
+        requested && available.has(requested) ? requested : 'overview',
+    )
 
     return (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className={`grid w-full max-w-5xl bg-muted/50 p-1 ${gridColsClass}`}>
+            <TabsList className="flex flex-wrap h-auto w-full max-w-5xl justify-start gap-1 bg-muted/50 p-1">
                 <TabsTrigger value="overview" className="flex items-center gap-2">
                     <LayoutDashboard className="h-4 w-4" />
                     Overview
@@ -121,6 +137,10 @@ export function EventDashboardTabs({
                 <TabsTrigger value="design" className="flex items-center gap-2">
                     <Palette className="h-4 w-4" />
                     Design
+                </TabsTrigger>
+                <TabsTrigger value="share" className="flex items-center gap-2">
+                    <Share2 className="h-4 w-4" />
+                    Share
                 </TabsTrigger>
                 <TabsTrigger value="questions" className="flex items-center gap-2">
                     <ClipboardList className="h-4 w-4" />
@@ -236,6 +256,16 @@ export function EventDashboardTabs({
                     eventId={eventId}
                     merchEnabled={merchEnabled}
                     initialData={event}
+                />
+            </TabsContent>
+
+            <TabsContent value="share" className="mt-6 animate-in fade-in-50 duration-300">
+                <EventShareTab
+                    eventId={eventId}
+                    eventTitle={event.title}
+                    eventSlug={event.slug}
+                    baseUrl={baseUrl || 'https://hanghut.com'}
+                    eventStatus={event.status}
                 />
             </TabsContent>
 

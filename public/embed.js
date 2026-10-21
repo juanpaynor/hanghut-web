@@ -43,6 +43,9 @@
       'data-border-radius': 'radius',
       'data-theme': 'theme',
       'data-layout': 'layout',
+      // data-design="event" makes the widget inherit the event page's own
+      // theme colour, text colour and font instead of the generic defaults.
+      'data-design': 'design',
     };
     for (var attr in map) {
       var val = el.getAttribute(attr);

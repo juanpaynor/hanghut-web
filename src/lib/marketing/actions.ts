@@ -1,4 +1,5 @@
 'use server'
+import { eventHref, absoluteUrl } from '@/lib/events/urls'
 
 import { createHmac, timingSafeEqual } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
@@ -497,7 +498,7 @@ export async function buildEventEmailBlock(eventId: string): Promise<{ html?: st
     const supabase = await createClient()
     const { data: event } = await supabase
         .from('events')
-        .select('id, title, cover_image_url, start_datetime, venue_name, city, ticket_price, ticket_tiers(price, is_active, sales_start, sales_end)')
+        .select('id, slug, title, cover_image_url, start_datetime, venue_name, city, ticket_price, ticket_tiers(price, is_active, sales_start, sales_end)')
         .eq('id', eventId)
         .maybeSingle()
     if (!event) return { error: 'Event not found' }
@@ -513,7 +514,7 @@ export async function buildEventEmailBlock(eventId: string): Promise<{ html?: st
         ? formatInManila(event.start_datetime, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
         : ''
     const venue = [event.venue_name, event.city].filter(Boolean).join(', ')
-    const url = `https://hanghut.com/events/${event.id}`
+    const url = absoluteUrl(eventHref(event as any))
 
     const cover = event.cover_image_url
         ? `<a href="${url}" style="text-decoration:none;"><img src="${esc(event.cover_image_url)}" alt="" width="100%" style="display:block;width:100%;height:auto;border:0;" /></a>`

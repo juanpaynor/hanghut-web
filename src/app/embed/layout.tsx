@@ -6,23 +6,53 @@ export const metadata: Metadata = {
     robots: { index: false, follow: false },
 }
 
+/**
+ * NOT a root layout.
+ *
+ * This used to render its own <html>, <head> and <body>. Those are already
+ * rendered by src/app/layout.tsx — a root layout always applies — so the
+ * browser received <body>…<html><head>…</head><body>…, which it cannot
+ * represent. It discards the inner tags and merges their attributes onto the
+ * outer ones, so the DOM never matches what React rendered and hydration fails
+ * on every load of /embed/*:
+ *
+ *   "Hydration failed because the server rendered HTML didn't match the client"
+ *   "You are mounting a new html component when a previous one has not…"
+ *
+ * Escaping a root layout needs route groups with two root layouts, not a
+ * nested <html>. Everything that layout was reaching for — transparent ground,
+ * no gutter, the Inter face — is done below without a second document.
+ * Components that must not run inside a widget already self-gate on the path;
+ * see cookie-consent.tsx.
+ */
 export default function EmbedLayout({
     children,
 }: {
     children: React.ReactNode
 }) {
     return (
-        <html lang="en" suppressHydrationWarning>
-            <head>
-                <link rel="preconnect" href="https://fonts.googleapis.com" />
-                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-                <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-            </head>
-            <body className="font-body antialiased bg-transparent" style={{ margin: 0, padding: 0 }}>
-                {children}
-                <EmbedBridge />
-            </body>
-        </html>
+        <>
+            {/* `precedence` is what tells React 19 to hoist a stylesheet into
+                <head> and dedupe it. Without it the tag renders where it sits,
+                which for a stylesheet means a flash of unstyled widget. */}
+            <link rel="preconnect" href="https://fonts.googleapis.com" />
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+            <link
+                rel="stylesheet"
+                href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+                precedence="default"
+            />
+            {/* The widget is painted onto the publisher's page, so it must not
+                bring the app's own background or the body gutter with it.
+                globals.css applies `bg-background` to body for every route. */}
+            <style
+                dangerouslySetInnerHTML={{
+                    __html: 'html,body{background:transparent!important;margin:0!important;padding:0!important}',
+                }}
+            />
+            {children}
+            <EmbedBridge />
+        </>
     )
 }
 

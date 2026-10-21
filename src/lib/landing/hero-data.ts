@@ -63,6 +63,7 @@ export async function getHeroData(): Promise<HeroData> {
             .from('events')
             .select(`
                 id,
+                slug,
                 title,
                 cover_image_url,
                 start_datetime,
