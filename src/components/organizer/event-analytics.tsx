@@ -6,7 +6,7 @@ import {
     Area, AreaChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid,
     PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { Eye, MousePointerClick, ShoppingCart, TrendingUp, Users, Mail, Ticket, Share2, CalendarPlus, Armchair } from 'lucide-react'
+import { Eye, MousePointerClick, ShoppingCart, TrendingUp, Users, Mail, Ticket, Share2, CalendarPlus, Armchair, Radio } from 'lucide-react'
 import { format } from 'date-fns'
 
 interface Analytics {
@@ -14,6 +14,8 @@ interface Analytics {
     unique_views: number
     daily: { date: string; views: number; get_tickets: number }[]
     funnel: { views: number; get_tickets: number; checkout_started: number; purchased: number; abandoned?: number }
+    /** Added by 20261021120000. Optional so an older cached payload still renders. */
+    sources?: { channel: string; visitors: number; checkouts: number; orders: number; revenue: number }[]
 }
 interface Customers {
     total_buyers: number
@@ -38,6 +40,123 @@ interface Props {
 }
 
 const fmtPct = (num: number, den: number) => (den > 0 ? `${Math.round((num / den) * 100)}%` : '—')
+
+/** Friendly names for the channels the tracker emits. Anything unmapped falls
+ *  through as-is, so a new source never shows up as blank. */
+const CHANNEL_LABEL: Record<string, string> = {
+    instagram: 'Instagram',
+    facebook: 'Facebook',
+    tiktok: 'TikTok',
+    twitter: 'X / Twitter',
+    youtube: 'YouTube',
+    google: 'Google',
+    search: 'Search',
+    link_in_bio: 'Link in bio',
+    email: 'Email',
+    share: 'Shared link',
+    embed: 'Embedded widget',
+    storefront: 'Your storefront',
+    landing: 'HangHut landing',
+    discover: 'HangHut Discover',
+    event: 'Event page',
+    app: 'HangHut app',
+    direct: 'Direct / unknown source',
+    unknown: 'Not recorded',
+    viber: 'Viber',
+    whatsapp: 'WhatsApp',
+    telegram: 'Telegram',
+}
+
+const peso = (n: number) =>
+    `\u20b1${Math.round(n).toLocaleString()}`
+
+/**
+ * Where the audience came from.
+ *
+ * Deliberately NO conversion column. `visitors` is a browser count that ad
+ * blockers and the consent gate reduce, while `orders` comes from the orders
+ * table and is complete — the funnel card above already explains that on this
+ * very event more people bought than were recorded reaching checkout. Dividing
+ * one by the other produces rates over 100%, so the two are shown side by side
+ * and the organizer is told why they do not reconcile.
+ */
+function TrafficSources({
+    sources,
+}: {
+    sources: { channel: string; visitors: number; checkouts: number; orders: number; revenue: number }[]
+}) {
+    if (!sources.length) return null
+
+    const totalRevenue = sources.reduce((sum, s) => sum + (s.revenue || 0), 0)
+    const totalVisitors = sources.reduce((sum, s) => sum + (s.visitors || 0), 0)
+
+    return (
+        <Card className="p-5">
+            <div className="flex items-center gap-2 mb-1">
+                <Radio className="h-4 w-4 text-primary" />
+                <h3 className="font-semibold">Where your audience came from</h3>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+                First touch — credited to whatever brought someone in, even if they came back later.
+            </p>
+
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                    <thead>
+                        <tr className="text-left text-xs text-muted-foreground border-b">
+                            <th className="pb-2 font-medium">Source</th>
+                            <th className="pb-2 font-medium text-right">Visitors</th>
+                            <th className="pb-2 font-medium text-right">Orders</th>
+                            <th className="pb-2 font-medium text-right">Revenue</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                        {sources.map(s => {
+                            const share = totalRevenue > 0 ? (s.revenue / totalRevenue) * 100 : 0
+                            return (
+                                <tr key={s.channel}>
+                                    <td className="py-2.5 pr-3">
+                                        <span className="font-medium">
+                                            {CHANNEL_LABEL[s.channel] ?? s.channel}
+                                        </span>
+                                        {/* A revenue share bar rather than a number: the
+                                            eye reads relative size faster than it reads
+                                            four percentages down a column. */}
+                                        {share > 0 && (
+                                            <div className="mt-1 h-1 w-full max-w-[140px] rounded-full bg-muted overflow-hidden">
+                                                <div
+                                                    className="h-full rounded-full bg-primary/70"
+                                                    style={{ width: `${Math.max(share, 2)}%` }}
+                                                />
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td className="py-2.5 text-right tabular-nums text-muted-foreground">
+                                        {s.visitors > 0 ? s.visitors.toLocaleString() : '—'}
+                                    </td>
+                                    <td className="py-2.5 text-right tabular-nums font-medium">
+                                        {s.orders > 0 ? s.orders.toLocaleString() : '—'}
+                                    </td>
+                                    <td className="py-2.5 text-right tabular-nums font-medium">
+                                        {s.revenue > 0 ? peso(s.revenue) : '—'}
+                                    </td>
+                                </tr>
+                            )
+                        })}
+                    </tbody>
+                </table>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground mt-4 leading-relaxed">
+                Visitors are counted in the browser, so ad blockers and privacy settings
+                reduce them. Orders and revenue come from your actual sales and are complete —
+                which is why a source can show orders with no visitors, and why we do not
+                divide one by the other.
+                {totalVisitors === 0 && ' No visitor data has been recorded for this event yet.'}
+            </p>
+        </Card>
+    )
+}
 
 function StatCard({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string | number; sub?: string }) {
     return (
@@ -192,6 +311,9 @@ export function EventAnalytics({ analytics, customers, emailCampaigns }: Props) 
                     )}
                 </Card>
             </div>
+
+            {/* ── Where the audience came from ─────────────────────── */}
+            <TrafficSources sources={analytics?.sources ?? []} />
 
             {/* ── Press breakdown ──────────────────────────────────── */}
             <Card className="p-5">
