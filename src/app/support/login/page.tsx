@@ -80,10 +80,11 @@ export default function SupportLoginPage() {
             // Send OTP code for 2FA
             try {
                 const { sendOtpCode } = await import('@/lib/admin/otp-actions')
-                const result = await sendOtpCode(authData.user.id)
-
-                document.cookie = `pending_2fa_user=${authData.user.id}; path=/; max-age=600`
-                document.cookie = `pending_2fa_email=${encodeURIComponent(result.maskedEmail)}; path=/; max-age=600`
+                // No user id and no cookies: the action reads the session, and
+                // /verify asks the server for the masked address. The old
+                // `pending_2fa_user` cookie was readable and writable by client
+                // JS and was trusted verbatim by verifyOtpCode.
+                await sendOtpCode()
 
                 router.push('/verify')
             } catch (otpErr: any) {

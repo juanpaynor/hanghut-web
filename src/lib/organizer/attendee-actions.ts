@@ -51,6 +51,23 @@ export interface Attendee {
     payment_method: string | null
     refunded_amount: number | null
     refunded_at: string | null
+    /**
+     * The promo code this ticket's ORDER was bought with, or null.
+     *
+     * Order-scoped, like order_token: the code is applied to the purchase
+     * intent, so every ticket in a multi-ticket order carries the same code.
+     *
+     * The link has always been recorded on purchase_intents.promo_code_id —
+     * it was simply never selected, so no organizer surface could show which
+     * code an attendee redeemed. Partners use 100%-off codes as a per-sponsor
+     * allocation ledger, which makes "who claimed this code" the question the
+     * code exists to answer.
+     */
+    promo_code: {
+        code: string
+        discount_type: string | null
+        discount_amount: number | null
+    } | null
 }
 
 export type AttendeeFilters = {
@@ -61,6 +78,16 @@ export type AttendeeFilters = {
     status?: 'all' | 'active' | 'refunded'
     /** Payment method (e.g. GCASH, QRPH, CARDS) or 'all' */
     payment?: string
+    /**
+     * Promo code: a promo_codes.id, 'any' (used some code), or 'all'.
+     *
+     * Deliberately no 'none' option. The code lives on the purchase intent, so
+     * isolating "used no code" needs an !inner embed plus an IS NULL test, and
+     * that silently drops box-office, offline and kiosk tickets — they have no
+     * purchase intent at all, yet they plainly used no promo code. A filter that
+     * quietly omits door sales is worse than no filter.
+     */
+    promo?: string
     /** Ticket tier id or 'all' */
     tierId?: string
     /** Check-in axis (orthogonal to status): any | in (scanned) | out (not scanned) */
@@ -79,6 +106,7 @@ export async function getEventAttendees(eventId: string, filters: AttendeeFilter
         search = '',
         status = 'all',
         payment = 'all',
+        promo = 'all',
         tierId = 'all',
         checkin = 'any',
         dateFrom,
@@ -88,10 +116,13 @@ export async function getEventAttendees(eventId: string, filters: AttendeeFilter
 
     const supabase = await createClient()
 
-    // When filtering by payment method, the embed must be !inner so the filter
-    // narrows the ticket rows (payment_method lives on the joined purchase_intent),
-    // not just the embedded object.
-    const intentInner = payment && payment !== 'all' ? '!inner' : ''
+    // When filtering by payment method OR promo code, the embed must be !inner so
+    // the filter narrows the ticket rows — both columns live on the joined
+    // purchase_intent, and against a left embed PostgREST would merely null the
+    // embedded object out while returning every ticket.
+    const filteringOnIntent =
+        (payment && payment !== 'all') || (promo && promo !== 'all')
+    const intentInner = filteringOnIntent ? '!inner' : ''
 
     // Base Query
     let query = supabase
@@ -123,7 +154,12 @@ export async function getEventAttendees(eventId: string, filters: AttendeeFilter
                 payment_method,
                 paid_at,
                 refunded_amount,
-                refunded_at
+                refunded_at,
+                promo:promo_codes (
+                    code,
+                    discount_type,
+                    discount_amount
+                )
             ),
             user:users!tickets_user_id_fkey (
                 email,
@@ -162,6 +198,14 @@ export async function getEventAttendees(eventId: string, filters: AttendeeFilter
     // Relies on the !inner embed above to filter ticket rows by the joined method.
     if (payment && payment !== 'all') {
         query = query.eq('purchase_intent.payment_method', payment)
+    }
+
+    // Promo code. 'any' answers "show me every discounted or comped attendee";
+    // a specific id answers "who claimed this sponsor's allocation".
+    if (promo === 'any') {
+        query = query.not('purchase_intent.promo_code_id', 'is', null)
+    } else if (promo && promo !== 'all') {
+        query = query.eq('purchase_intent.promo_code_id', promo)
     }
 
     // Purchase-date range (inclusive). dateTo is treated as end-of-day.
@@ -245,6 +289,14 @@ export async function getEventAttendees(eventId: string, filters: AttendeeFilter
         payment_method: pi.payment_method || null,
         refunded_amount: pi.refunded_amount || 0,
         refunded_at: pi.refunded_at || null,
+        promo_code: pi.promo ? {
+            code: pi.promo.code,
+            discount_type: pi.promo.discount_type ?? null,
+            // numeric arrives as a string over PostgREST.
+            discount_amount: pi.promo.discount_amount === null || pi.promo.discount_amount === undefined
+                ? null
+                : Number(pi.promo.discount_amount),
+        } : null,
         amount_paid: amountPaid,
         order_total: orderTotal,
         order_quantity: orderQty,
@@ -277,6 +329,52 @@ export async function getEventAttendees(eventId: string, filters: AttendeeFilter
  * GCash, direct debit, etc.) instead of a hardcoded list. Scoped to intents that
  * produced attendees (completed/refunded); excludes the unresolved 'multiple' placeholder.
  */
+export interface PromoCodeUsage {
+    id: string
+    code: string
+    /** Orders that redeemed it on THIS event, for the dropdown's count. */
+    orders: number
+}
+
+/**
+ * Promo codes actually redeemed on this event, for the attendee filter.
+ *
+ * Only used codes, not every code defined on the event: an organizer running
+ * one code per sponsor can have dozens declared and three redeemed, and listing
+ * the unredeemed ones makes the dropdown a wall of dead options. The manager tab
+ * is where you see codes that nobody has used.
+ *
+ * Counts orders, not tickets. The code is applied to the purchase intent, so a
+ * single redemption can carry ten tickets — "3" here means three redemptions.
+ */
+export async function getEventPromoCodesUsed(eventId: string): Promise<PromoCodeUsage[]> {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+        .from('purchase_intents')
+        .select('promo_code_id, promo:promo_codes!inner (id, code)')
+        .eq('event_id', eventId)
+        .in('status', ['completed', 'refunded'])
+        .not('promo_code_id', 'is', null)
+
+    if (error) {
+        // Non-fatal: the filter simply does not appear.
+        console.error('Error fetching used promo codes:', error)
+        return []
+    }
+
+    const byId = new Map<string, PromoCodeUsage>()
+    for (const row of (data || []) as any[]) {
+        const promo = row.promo
+        if (!promo?.id || !promo?.code) continue
+        const existing = byId.get(promo.id)
+        if (existing) existing.orders += 1
+        else byId.set(promo.id, { id: promo.id, code: promo.code, orders: 1 })
+    }
+
+    return Array.from(byId.values()).sort((a, b) =>
+        b.orders - a.orders || a.code.localeCompare(b.code))
+}
+
 export async function getEventPaymentMethods(eventId: string): Promise<string[]> {
     const supabase = await createClient()
     const { data } = await supabase

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { hasVerifiedMfa } from '@/lib/admin/mfa-session'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { AdminNav } from '@/components/admin/admin-nav'
@@ -26,14 +27,11 @@ export default async function AdminLayout({
         redirect('/login')
     }
 
-    // 2FA enforcement: check mfa_verified_at within 8 hours
-    const mfaVerifiedAt = user.app_metadata?.mfa_verified_at
-    const EIGHT_HOURS = 8 * 60 * 60 * 1000
-
-    if (!mfaVerifiedAt || Date.now() - new Date(mfaVerifiedAt).getTime() > EIGHT_HOURS) {
-        // Allow access to the verify page itself
-        // The verify page is at /admin/verify — handled by its own route
-        // We check the URL in the middleware instead — for now, redirect
+    // 2FA enforcement. The proof is per-browser-session and signed server-side
+    // (see lib/admin/mfa-session); it used to be `user.app_metadata.mfa_verified_at`,
+    // which sat on the user row and so was inherited by every other session for
+    // that user — including one opened by somebody who only had the password.
+    if (!(await hasVerifiedMfa(user.id))) {
         redirect('/verify')
     }
 

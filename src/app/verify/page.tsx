@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { verifyOtpCode, sendOtpCode } from '@/lib/admin/otp-actions'
+import { verifyOtpCode, sendOtpCode, getOtpContext } from '@/lib/admin/otp-actions'
 import { Mail, ShieldCheck, RefreshCw } from 'lucide-react'
 
 export default function VerifyPage() {
@@ -18,26 +18,31 @@ export default function VerifyPage() {
     const inputRefs = useRef<(HTMLInputElement | null)[]>([])
     const router = useRouter()
 
-    const [pendingUserId, setPendingUserId] = useState<string | null>(null)
+    // `ready` replaces the old `pendingUserId`. The user id is no longer carried
+    // through the browser at all — the server actions derive it from the session,
+    // so this page only needs to know whether there IS an admin session to verify
+    // against, plus the masked address to display.
+    const [ready, setReady] = useState(false)
     const [maskedEmail, setMaskedEmail] = useState<string>('')
 
     useEffect(() => {
-        const cookies = document.cookie.split(';').reduce((acc, c) => {
-            const [key, val] = c.trim().split('=')
-            acc[key] = val
-            return acc
-        }, {} as Record<string, string>)
+        let cancelled = false
 
-        const userId = cookies['pending_2fa_user']
-        const email = cookies['pending_2fa_email'] ? decodeURIComponent(cookies['pending_2fa_email']) : ''
+        getOtpContext()
+            .then(ctx => {
+                if (cancelled) return
+                if (!ctx) {
+                    router.push('/login')
+                    return
+                }
+                setMaskedEmail(ctx.maskedEmail)
+                setReady(true)
+            })
+            .catch(() => {
+                if (!cancelled) router.push('/login')
+            })
 
-        if (!userId) {
-            router.push('/login')
-            return
-        }
-
-        setPendingUserId(userId)
-        setMaskedEmail(email)
+        return () => { cancelled = true }
     }, [router])
 
     useEffect(() => {
@@ -48,7 +53,7 @@ export default function VerifyPage() {
 
     useEffect(() => {
         inputRefs.current[0]?.focus()
-    }, [pendingUserId])
+    }, [ready])
 
     const handleChange = (index: number, value: string) => {
         if (!/^\d*$/.test(value)) return
@@ -85,7 +90,7 @@ export default function VerifyPage() {
     }
 
     const handleVerify = async (codeStr?: string) => {
-        if (!pendingUserId) return
+        if (!ready) return
         const fullCode = codeStr || code.join('')
         if (fullCode.length !== 6) {
             setError('Please enter all 6 digits')
@@ -96,7 +101,7 @@ export default function VerifyPage() {
         setError(null)
 
         try {
-            const result = await verifyOtpCode(pendingUserId, fullCode)
+            const result = await verifyOtpCode(fullCode)
 
             if (!result.success) {
                 setError(result.error || 'Invalid code')
@@ -107,9 +112,6 @@ export default function VerifyPage() {
             }
 
             setSuccess(true)
-
-            document.cookie = 'pending_2fa_user=; path=/; max-age=0'
-            document.cookie = 'pending_2fa_email=; path=/; max-age=0'
 
             setTimeout(() => {
                 router.push('/admin')
@@ -122,12 +124,12 @@ export default function VerifyPage() {
     }
 
     const handleResend = async () => {
-        if (!pendingUserId || cooldown > 0) return
+        if (!ready || cooldown > 0) return
         setResending(true)
         setError(null)
 
         try {
-            const result = await sendOtpCode(pendingUserId)
+            const result = await sendOtpCode()
             setMaskedEmail(result.maskedEmail)
             setCooldown(60)
         } catch (err: any) {
@@ -137,7 +139,7 @@ export default function VerifyPage() {
         }
     }
 
-    if (!pendingUserId) return null
+    if (!ready) return null
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">

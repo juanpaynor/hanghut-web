@@ -2,7 +2,7 @@
 import { downloadBlob } from '@/lib/utils/download'
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { Attendee, getDeliveryFailures, type DeliveryFailure, getOrderEmailLog, getSentEmail, resendOrderEmail, type OrderEmail, type SentEmail, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, deleteFreeOrders, type SkippedOrder, getAttendeeStats, getEventPaymentMethods, getEventTiers, getEventTierSales, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters, type TierSales } from '@/lib/organizer/attendee-actions'
+import { Attendee, getDeliveryFailures, type DeliveryFailure, getOrderEmailLog, getSentEmail, resendOrderEmail, type OrderEmail, type SentEmail, getEventAttendees, getAllEventAttendeesForExport, correctOrderEmail, refundTicket, markIntentAsRefunded, deleteFreeOrders, type SkippedOrder, getAttendeeStats, getEventPaymentMethods, getEventTiers, getEventTierSales, getRegistrationAnswers, type RegistrationAnswerView, type AttendeeFilters, type TierSales, getEventPromoCodesUsed, type PromoCodeUsage } from '@/lib/organizer/attendee-actions'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
@@ -28,7 +28,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users, SlidersHorizontal, X, MailWarning, Trash2, Mail, Send, Link as LinkIcon } from 'lucide-react'
+import { MoreHorizontal, Search, RefreshCw, AlertCircle, Download, FileText, Sheet, Armchair, CheckCircle2, Loader2, ClipboardList, Users, SlidersHorizontal, X, MailWarning, Trash2, Mail, Send, Link as LinkIcon, TicketPercent } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
@@ -88,11 +88,14 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
     const [tierFilter, setTierFilter] = useState('all')
     // Payment-method filter (e.g. isolate QRPH attendees for manual refunds).
     const [paymentFilter, setPaymentFilter] = useState('all')
+    // Promo-code filter (e.g. which attendees claimed a sponsor's allocation).
+    const [promoFilter, setPromoFilter] = useState('all')
     const [dateFrom, setDateFrom] = useState('')
     const [dateTo, setDateTo] = useState('')
     const [sort, setSort] = useState<'newest' | 'oldest' | 'checkin'>('newest')
     // Options derived from the event's real data.
     const [paymentMethods, setPaymentMethods] = useState<string[]>([])
+    const [promoCodes, setPromoCodes] = useState<PromoCodeUsage[]>([])
     const [tiers, setTiers] = useState<{ id: string; name: string }[]>([])
 
     // Single source of truth for the current query — used by the effect, the
@@ -103,17 +106,19 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
         search: debouncedSearch,
         status: statusFilter,
         payment: paymentFilter,
+        promo: promoFilter,
         tierId: tierFilter,
         checkin: checkinFilter,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
         sort,
-    }), [page, debouncedSearch, statusFilter, paymentFilter, tierFilter, checkinFilter, dateFrom, dateTo, sort])
+    }), [page, debouncedSearch, statusFilter, paymentFilter, promoFilter, tierFilter, checkinFilter, dateFrom, dateTo, sort])
 
     // Reset every filter to its default (Clear all).
     const clearAllFilters = () => {
         setSearch(''); setStatusFilter('all'); setCheckinFilter('any')
-        setTierFilter('all'); setPaymentFilter('all'); setDateFrom(''); setDateTo('')
+        setTierFilter('all'); setPaymentFilter('all'); setPromoFilter('all')
+        setDateFrom(''); setDateTo('')
         setSort('newest'); setPage(1)
     }
     // Count of filters set inside the Filters popover (drives the trigger badge).
@@ -243,6 +248,7 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
     useEffect(() => {
         getAttendeeStats(eventId).then(setStats).catch(() => {})
         getEventPaymentMethods(eventId).then(setPaymentMethods).catch(() => {})
+        getEventPromoCodesUsed(eventId).then(setPromoCodes).catch(() => {})
         getEventTiers(eventId).then(setTiers).catch(() => {})
         getEventTierSales(eventId).then(setTierSales).catch(() => {})
     }, [eventId])
@@ -551,13 +557,14 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
         try {
             const rowsSource = await fetchAllForExport()
 
-            const headers = ['Ticket #', 'Name', 'Email', 'Tier', 'Price', 'Seat', 'Status', 'Purchased', 'Check-in Time']
+            const headers = ['Ticket #', 'Name', 'Email', 'Tier', 'Price', 'Promo Code', 'Seat', 'Status', 'Purchased', 'Check-in Time']
             const rows = rowsSource.map(a => [
                 a.ticket_number || a.id,
                 a.user?.display_name || a.guest_info?.name || 'Guest',
                 a.user?.email || a.guest_info?.email || '-',
                 a.tier?.name || 'General',
                 a.amount_paid.toString(),
+                a.promo_code?.code || '-',
                 seatLine(a.seat_info) || '-',
                 a.status,
                 a.created_at ? new Date(a.created_at).toLocaleString() : '-',
@@ -601,11 +608,12 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
             // listing one page made the header contradict the table.
             doc.text(`Attendees in this export: ${rowsSource.length}`, 14, 40)
 
-            const tableColumn = ["Ticket #", "Name", "Tier", "Status", "Email"]
+            const tableColumn = ["Ticket #", "Name", "Tier", "Promo", "Status", "Email"]
             const tableRows = rowsSource.map(attendee => [
                 attendee.ticket_number || attendee.id.slice(0, 8),
                 attendee.user?.display_name || attendee.guest_info?.name || 'Guest',
                 attendee.tier?.name || 'General',
+                attendee.promo_code?.code || '-',
                 attendee.status,
                 attendee.user?.email || attendee.guest_info?.email || '-'
             ])
@@ -803,6 +811,28 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                         </SelectContent>
                     </Select>
 
+                    {/* Promo code — only rendered when this event actually has
+                        redemptions. Most events have none, and a permanent "All
+                        promo codes" control on every attendee list would be one
+                        more thing to read past for no benefit. */}
+                    {promoCodes.length > 0 && (
+                        <Select value={promoFilter} onValueChange={(v) => { setPromoFilter(v); setPage(1) }}>
+                            <SelectTrigger className={cn('h-9 w-[170px]', promoFilter !== 'all' && 'border-primary text-primary')}>
+                                <SelectValue placeholder="All promo codes" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All promo codes</SelectItem>
+                                <SelectItem value="any">Any promo code</SelectItem>
+                                {promoCodes.map((c) => (
+                                    <SelectItem key={c.id} value={c.id}>
+                                        <span className="font-mono">{c.code}</span>
+                                        <span className="text-muted-foreground"> · {c.orders}</span>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    )}
+
                     {/* Filters popover (tier / check-in / date / sort) */}
                     <Popover>
                         <PopoverTrigger asChild>
@@ -954,7 +984,7 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                 </div>
 
                 {/* Active-filter chips */}
-                {(statusFilter !== 'all' || checkinFilter !== 'any' || tierFilter !== 'all' || paymentFilter !== 'all' || dateFrom || dateTo || sort !== 'newest' || debouncedSearch) && (
+                {(statusFilter !== 'all' || checkinFilter !== 'any' || tierFilter !== 'all' || paymentFilter !== 'all' || promoFilter !== 'all' || dateFrom || dateTo || sort !== 'newest' || debouncedSearch) && (
                     <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-medium text-muted-foreground">Filters:</span>
                         {debouncedSearch && <FilterChip label={`Search: "${debouncedSearch}"`} onClear={() => setSearch('')} />}
@@ -962,6 +992,7 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                         {checkinFilter !== 'any' && <FilterChip label={checkinFilter === 'in' ? 'Checked in' : 'Not checked in'} onClear={() => setCheckinFilter('any')} />}
                         {tierFilter !== 'all' && <FilterChip label={tiers.find(t => t.id === tierFilter)?.name || 'Ticket type'} onClear={() => setTierFilter('all')} />}
                         {paymentFilter !== 'all' && <FilterChip label={paymentFilter === 'UNKNOWN' ? 'Unknown payment' : getPaymentMethodLabel(paymentFilter)} onClear={() => setPaymentFilter('all')} />}
+                        {promoFilter !== 'all' && <FilterChip label={promoFilter === 'any' ? 'Any promo code' : (promoCodes.find(c => c.id === promoFilter)?.code || 'Promo code')} onClear={() => setPromoFilter('all')} />}
                         {(dateFrom || dateTo) && <FilterChip label={`${dateFrom || '…'} → ${dateTo || '…'}`} onClear={() => { setDateFrom(''); setDateTo('') }} />}
                         {sort !== 'newest' && <FilterChip label={sort === 'oldest' ? 'Oldest first' : 'Recently checked in'} onClear={() => setSort('newest')} />}
                         <button type="button" onClick={clearAllFilters} className="text-xs font-medium text-primary hover:underline">Clear all</button>
@@ -1034,6 +1065,16 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                                             <div className="text-xs text-muted-foreground mt-1">
                                                 ₱{attendee.amount_paid.toLocaleString()}
                                             </div>
+                                            {attendee.promo_code && (
+                                                <Badge
+                                                    variant="outline"
+                                                    className="w-fit mt-1 text-[10px] font-mono gap-1"
+                                                    title={`Promo code ${attendee.promo_code.code}${discountLabel(attendee.promo_code) ? ` — ${discountLabel(attendee.promo_code)}` : ''}`}
+                                                >
+                                                    <TicketPercent className="h-3 w-3" />
+                                                    {attendee.promo_code.code}
+                                                </Badge>
+                                            )}
                                         </TableCell>
                                         <TableCell className="text-sm">
                                             {seatLine(attendee.seat_info)
@@ -1581,6 +1622,19 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
             </button>
         </span>
     )
+}
+
+/**
+ * "50% off" / "₱150 off" for the promo badge's tooltip.
+ *
+ * Returns '' rather than a placeholder when the shape is unexpected, so the
+ * caller can leave the tooltip at just the code instead of printing "NaN off".
+ */
+function discountLabel(promo: NonNullable<Attendee['promo_code']>): string {
+    if (promo.discount_amount === null || !Number.isFinite(promo.discount_amount)) return ''
+    if (promo.discount_type === 'percentage') return `${promo.discount_amount}% off`
+    if (promo.discount_type === 'fixed_amount') return `₱${promo.discount_amount.toLocaleString()} off`
+    return ''
 }
 
 function getPaymentMethodLabel(method: string | null) {
