@@ -158,6 +158,17 @@
   animation: lp-lineup 48s linear infinite;
   will-change: transform;
 }
+/* The lower band runs the SAME keyframe in reverse, so the two rows drift
+   against each other. `reverse` beats a second keyframe here: one definition
+   cannot fall out of step with the other if the -50% loop point is ever
+   retuned. The duration is deliberately NOT 48s -- matched speeds make the
+   bands read as one mechanism sliding apart, and the names line up in a column
+   every lap. 56s and 48s only re-sync every 336s. */
+.lp-lineup-track--rev {
+  animation: lp-lineup 56s linear infinite reverse;
+}
+/* Matches BOTH tracks: the reversed band keeps the base class too. This rule is
+   more specific than the shorthand above, so it still wins on play-state. */
 .lp-lineup:focus-within .lp-lineup-track {
   animation-play-state: paused;
 }

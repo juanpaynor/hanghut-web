@@ -19,10 +19,15 @@ import { Reveal } from "./primitives";
  * rides along as a small avatar, at a size where a caricature, a watermark or a
  * 225px source all stop mattering and simply read as "this act has a face".
  *
- * One continuous ticker rather than a static row: seven names at poster size
- * do not fit a viewport, and a wrapped stack of them is a list, not a bill.
- * Pauses on hover so a name can be read and clicked. Under reduced motion it
- * becomes a centred, wrapping row — still a lineup, just one that holds still.
+ * Two counter-scrolling bands rather than a static row: nine names at poster
+ * size do not fit a viewport, and a wrapped stack of them is a list, not a
+ * bill. The halves drift against each other — top leftward, bottom rightward —
+ * which reads as a bill being posted rather than a logo strip on a conveyor,
+ * and buys twice the names per screen without shrinking the type.
+ *
+ * Pauses on keyboard focus so a tabbed-to act stays still long enough to
+ * activate. Under reduced motion both bands collapse into one centred,
+ * wrapping row — still a lineup, just one that holds still.
  */
 
 interface Act {
@@ -40,6 +45,8 @@ const LINEUP: Act[] = [
     { name: "Sonnet Entertainment", file: "sonnet.png",        slug: "sonnetentertainment" },
     { name: "URW Manila",           file: "urw-manila.jpg" },
     { name: "TLI",                  file: "tli.jpg" },
+    { name: "Pencilbox Studios",    file: "pencilbox.jpg",     slug: "pencilbox" },
+    { name: "Conyo Manila",         file: "conyo-manila.jpg",  slug: "conyomanila" },
 ];
 
 function ActItem({ act, tabbable }: { act: Act; tabbable: boolean }) {
@@ -83,10 +90,10 @@ function Mark() {
     );
 }
 
-function Bill({ tabbable }: { tabbable: boolean }) {
+function Bill({ acts, tabbable }: { acts: Act[]; tabbable: boolean }) {
     return (
         <span className="inline-flex shrink-0 items-center pr-6 md:pr-10">
-            {LINEUP.map((act, i) => (
+            {acts.map((act, i) => (
                 <span key={act.name} className="inline-flex items-center">
                     {i > 0 && <Mark />}
                     <ActItem act={act} tabbable={tabbable} />
@@ -96,6 +103,27 @@ function Bill({ tabbable }: { tabbable: boolean }) {
         </span>
     );
 }
+
+/**
+ * One scrolling band. The track holds the half TWICE and the keyframe travels
+ * exactly -50%, so the loop point lands on an identical frame no matter how
+ * many acts the half contains -- splitting 9 into 5 and 4 needs no new maths.
+ */
+function Band({ acts, reverse }: { acts: Act[]; reverse?: boolean }) {
+    return (
+        <div className={`lp-lineup-track flex w-max items-center${reverse ? " lp-lineup-track--rev" : ""}`}>
+            <Bill acts={acts} tabbable />
+            <Bill acts={acts} tabbable={false} />
+        </div>
+    );
+}
+
+/* Alternating rather than splitting down the middle: a straight slice would put
+   every headline act in the top band and leave the lower one looking like the
+   overflow. Interleaving spreads them, and still opens the top band on the
+   first name in LINEUP. */
+const TOP = LINEUP.filter((_, i) => i % 2 === 0);
+const BOTTOM = LINEUP.filter((_, i) => i % 2 === 1);
 
 /** The band between the hero and scene 01. */
 export default function Lineup() {
@@ -118,15 +146,13 @@ export default function Lineup() {
                     {LINEUP.map((act) => <ActItem key={act.name} act={act} tabbable />)}
                 </div>
             ) : (
-                <div className="lp-lineup relative">
+                <div className="lp-lineup relative flex flex-col gap-3 md:gap-5">
                     {/* Edge fades in the band's own colour, so the bill appears to
                         pass behind the page rather than get cut by it. */}
                     <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-[var(--lp-deep)] to-transparent md:w-32" />
                     <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-gradient-to-l from-[var(--lp-deep)] to-transparent md:w-32" />
-                    <div className="lp-lineup-track flex w-max items-center">
-                        <Bill tabbable />
-                        <Bill tabbable={false} />
-                    </div>
+                    <Band acts={TOP} />
+                    <Band acts={BOTTOM} reverse />
                 </div>
             )}
         </section>
