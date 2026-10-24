@@ -63,8 +63,10 @@ import {
     format, startOfMonth, endOfMonth, eachDayOfInterval, getDay,
     addMonths, subMonths, isSameDay, isToday, isBefore, startOfDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, Plus, Ban, Trash2, Loader2, CalendarClock, Users, X, UserPlus, Gift } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Ban, Trash2, Loader2, CalendarClock, Users, X, UserPlus, Gift, Repeat } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SessionsPanel } from '@/components/organizer/experiences/sessions-panel'
+import type { AvailabilityRule } from '@/lib/organizer/experience-availability'
 
 interface Schedule {
     id: string
@@ -75,16 +77,20 @@ interface Schedule {
     current_guests: number
     status: string
     price_per_person: number | null
+    /** Set when a recurring session produced this date; null if hand-added. */
+    generated_from_rule_id: string | null
 }
 
 interface Experience {
     id: string
     title: string
+    max_guests?: number | null
 }
 
 interface Props {
     experiences: Experience[]
     schedules: Schedule[]
+    rules: AvailabilityRule[]
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -101,7 +107,7 @@ const STATUS_BADGE: Record<string, string> = {
     completed: 'text-blue-700 bg-blue-50 border-blue-200',
 }
 
-export function CalendarManager({ experiences, schedules }: Props) {
+export function CalendarManager({ experiences, schedules, rules }: Props) {
     const { toast } = useToast()
     const [isPending, startTransition] = useTransition()
     const [month, setMonth] = useState(new Date())
@@ -125,6 +131,29 @@ export function CalendarManager({ experiences, schedules }: Props) {
     const [bkNote, setBkNote] = useState('')
 
     const expMap = useMemo(() => Object.fromEntries(experiences.map(e => [e.id, e.title])), [experiences])
+
+    // Which listing's sessions the panel below is editing. Separate from
+    // `selectedExp` (the add-slot form) so changing one does not move the other
+    // out from under the host mid-edit.
+    const [sessionExp, setSessionExp] = useState(experiences[0]?.id || '')
+
+    const expMaxGuests = useMemo(
+        () => Object.fromEntries(experiences.map(e => [e.id, e.max_guests ?? undefined])),
+        [experiences],
+    )
+
+    // SessionsPanel warns when a listing has no bookable dates. The count is
+    // derivable from the slots already on this page, so it costs no extra query.
+    const upcomingByExp = useMemo(() => {
+        const now = Date.now()
+        const map: Record<string, number> = {}
+        for (const slot of schedules) {
+            if (slot.status === 'cancelled') continue
+            if (new Date(slot.start_time).getTime() <= now) continue
+            map[slot.table_id] = (map[slot.table_id] ?? 0) + 1
+        }
+        return map
+    }, [schedules])
 
     // Build a map of date string → slots
     const slotsByDate = useMemo(() => {
@@ -227,8 +256,17 @@ export function CalendarManager({ experiences, schedules }: Props) {
         })
     }
 
-    const handleDelete = (slotId: string) => {
-        if (!confirm('Delete this slot permanently?')) return
+    const handleDelete = (slot: Schedule) => {
+        const slotId = slot.id
+        // A rule-generated date is NOT durably deletable: extend_experience_availability
+        // re-creates any date its rule still covers (ON CONFLICT DO NOTHING finds no
+        // row to skip), and it runs on every rule save, every blackout change and the
+        // 02:10 sweep. Blacking the date out is the durable move -- but that closes it
+        // across every session on the listing, so the host has to choose knowingly.
+        const warning = slot.generated_from_rule_id
+            ? 'This date comes from a recurring session, so deleting it is temporary — it will come back the next time dates are generated (within a day).\n\nTo close this date for good, edit the session below or black the date out.\n\nDelete anyway?'
+            : 'Delete this slot permanently?'
+        if (!confirm(warning)) return
         startTransition(async () => {
             const result = await deleteSlot(slotId)
             if (result.error) toast({ title: 'Error', description: result.error, variant: 'destructive' })
@@ -237,329 +275,381 @@ export function CalendarManager({ experiences, schedules }: Props) {
     }
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
 
-            {/* ── Calendar grid ── */}
-            <div className="rounded-2xl border border-border overflow-hidden">
-                {/* Month nav */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-muted/30">
-                    <button
-                        onClick={() => setMonth(m => subMonths(m, 1))}
-                        className="p-1.5 rounded-lg hover:bg-accent transition-colors"
-                    >
-                        <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <span className="font-semibold">{format(month, 'MMMM yyyy')}</span>
-                    <button
-                        onClick={() => setMonth(m => addMonths(m, 1))}
-                        className="p-1.5 rounded-lg hover:bg-accent transition-colors"
-                    >
-                        <ChevronRight className="h-4 w-4" />
-                    </button>
-                </div>
+                {/* ── Calendar grid ── */}
+                <div className="rounded-2xl border border-border overflow-hidden">
+                    {/* Month nav */}
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-muted/30">
+                        <button
+                            onClick={() => setMonth(m => subMonths(m, 1))}
+                            className="p-1.5 rounded-lg hover:bg-accent transition-colors"
+                        >
+                            <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <span className="font-semibold">{format(month, 'MMMM yyyy')}</span>
+                        <button
+                            onClick={() => setMonth(m => addMonths(m, 1))}
+                            className="p-1.5 rounded-lg hover:bg-accent transition-colors"
+                        >
+                            <ChevronRight className="h-4 w-4" />
+                        </button>
+                    </div>
 
-                {/* Day headers */}
-                <div className="grid grid-cols-7 border-b border-border">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-                        <div key={d} className="py-2 text-center text-xs font-semibold text-muted-foreground">
-                            {d}
-                        </div>
-                    ))}
-                </div>
-
-                {/* Day cells */}
-                <div className="grid grid-cols-7">
-                    {calendarDays.map((day, i) => {
-                        if (!day) return <div key={`pad-${i}`} className="border-b border-r border-border/50 min-h-[80px]" />
-
-                        const key = format(day, 'yyyy-MM-dd')
-                        const slots = slotsByDate[key] ?? []
-                        const isSelected = selectedDay && isSameDay(day, selectedDay)
-                        const isCurrentDay = isToday(day)
-                        const isPast = isBefore(day, startOfDay(new Date())) && !isCurrentDay
-
-                        return (
-                            <button
-                                key={key}
-                                onClick={() => handleDayClick(day)}
-                                className={cn(
-                                    'relative min-h-[80px] p-2 text-left border-b border-r border-border/50 transition-colors flex flex-col',
-                                    isSelected ? 'bg-primary/10' : 'hover:bg-muted/40',
-                                    isPast && 'opacity-50',
-                                )}
-                            >
-                                {/* Day number */}
-                                <span className={cn(
-                                    'text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full mb-1',
-                                    isCurrentDay && 'bg-primary text-primary-foreground',
-                                    isSelected && !isCurrentDay && 'text-primary',
-                                )}>
-                                    {format(day, 'd')}
-                                </span>
-
-                                {/* Slot dots */}
-                                {slots.length > 0 && (
-                                    <div className="flex flex-wrap gap-0.5 mt-auto">
-                                        {slots.slice(0, 3).map(slot => (
-                                            <span
-                                                key={slot.id}
-                                                className={cn('w-2 h-2 rounded-full shrink-0', STATUS_COLORS[slot.status] ?? 'bg-muted-foreground')}
-                                                title={`${format(new Date(slot.start_time), 'h:mm a')} — ${slot.status}`}
-                                            />
-                                        ))}
-                                        {slots.length > 3 && (
-                                            <span className="text-[10px] text-muted-foreground leading-none">+{slots.length - 3}</span>
-                                        )}
-                                    </div>
-                                )}
-                            </button>
-                        )
-                    })}
-                </div>
-
-                {/* Legend */}
-                <div className="px-4 py-3 border-t border-border/50 flex items-center gap-4 flex-wrap">
-                    {[['open', 'Open'], ['full', 'Full'], ['cancelled', 'Cancelled'], ['completed', 'Completed']].map(([status, label]) => (
-                        <span key={status} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <span className={cn('w-2.5 h-2.5 rounded-full', STATUS_COLORS[status])} />
-                            {label}
-                        </span>
-                    ))}
-                </div>
-            </div>
-
-            {/* ── Day panel ── */}
-            <div className="rounded-2xl border border-border overflow-hidden flex flex-col">
-                {selectedDay ? (
-                    <>
-                        {/* Panel header */}
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
-                            <div>
-                                <p className="font-semibold">{format(selectedDay, 'EEEE')}</p>
-                                <p className="text-xs text-muted-foreground">{format(selectedDay, 'MMMM d, yyyy')}</p>
+                    {/* Day headers */}
+                    <div className="grid grid-cols-7 border-b border-border">
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                            <div key={d} className="py-2 text-center text-xs font-semibold text-muted-foreground">
+                                {d}
                             </div>
-                            <div className="flex items-center gap-2">
-                                <Button size="sm" onClick={() => setShowAddForm(v => !v)} variant={showAddForm ? 'outline' : 'default'} className="h-8">
-                                    {showAddForm ? <><X className="h-3.5 w-3.5 mr-1" />Cancel</> : <><Plus className="h-3.5 w-3.5 mr-1" />Add Slot</>}
-                                </Button>
-                            </div>
-                        </div>
+                        ))}
+                    </div>
 
-                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                            {/* Add slot form */}
-                            {showAddForm && (
-                                <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-                                    <p className="text-sm font-semibold">New Slot</p>
+                    {/* Day cells */}
+                    <div className="grid grid-cols-7">
+                        {calendarDays.map((day, i) => {
+                            if (!day) return <div key={`pad-${i}`} className="border-b border-r border-border/50 min-h-[80px]" />
 
-                                    {experiences.length > 1 && (
-                                        <div className="space-y-1">
-                                            <Label className="text-xs">Experience</Label>
-                                            <Select value={selectedExp} onValueChange={setSelectedExp}>
-                                                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                                                <SelectContent>
-                                                    {experiences.map(e => <SelectItem key={e.id} value={e.id}>{e.title}</SelectItem>)}
-                                                </SelectContent>
-                                            </Select>
+                            const key = format(day, 'yyyy-MM-dd')
+                            const slots = slotsByDate[key] ?? []
+                            const isSelected = selectedDay && isSameDay(day, selectedDay)
+                            const isCurrentDay = isToday(day)
+                            const isPast = isBefore(day, startOfDay(new Date())) && !isCurrentDay
+
+                            return (
+                                <button
+                                    key={key}
+                                    onClick={() => handleDayClick(day)}
+                                    className={cn(
+                                        'relative min-h-[80px] p-2 text-left border-b border-r border-border/50 transition-colors flex flex-col',
+                                        isSelected ? 'bg-primary/10' : 'hover:bg-muted/40',
+                                        isPast && 'opacity-50',
+                                    )}
+                                >
+                                    {/* Day number */}
+                                    <span className={cn(
+                                        'text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full mb-1',
+                                        isCurrentDay && 'bg-primary text-primary-foreground',
+                                        isSelected && !isCurrentDay && 'text-primary',
+                                    )}>
+                                        {format(day, 'd')}
+                                    </span>
+
+                                    {/* Slot dots */}
+                                    {slots.length > 0 && (
+                                        <div className="flex flex-wrap gap-0.5 mt-auto">
+                                            {slots.slice(0, 3).map(slot => (
+                                                <span
+                                                    key={slot.id}
+                                                    className={cn('w-2 h-2 rounded-full shrink-0', STATUS_COLORS[slot.status] ?? 'bg-muted-foreground')}
+                                                    title={`${format(new Date(slot.start_time), 'h:mm a')} — ${slot.status}`}
+                                                />
+                                            ))}
+                                            {slots.length > 3 && (
+                                                <span className="text-[10px] text-muted-foreground leading-none">+{slots.length - 3}</span>
+                                            )}
                                         </div>
                                     )}
+                                </button>
+                            )
+                        })}
+                    </div>
 
-                                    {/* Time pickers */}
-                                    <div className="space-y-1">
-                                        <div className="flex items-center justify-between">
-                                            <Label className="text-xs">Time <span className="text-destructive">*</span></Label>
-                                            <div className="flex items-center gap-1.5">
-                                                {isOvernight(startTime, endTime) && (
-                                                    <span className="text-xs font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded">ends +1 day</span>
-                                                )}
-                                                {calcDuration(startTime, endTime) && (
-                                                    <span className="text-xs text-muted-foreground">{calcDuration(startTime, endTime)}</span>
-                                                )}
+                    {/* Legend */}
+                    <div className="px-4 py-3 border-t border-border/50 flex items-center gap-4 flex-wrap">
+                        {[['open', 'Open'], ['full', 'Full'], ['cancelled', 'Cancelled'], ['completed', 'Completed']].map(([status, label]) => (
+                            <span key={status} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <span className={cn('w-2.5 h-2.5 rounded-full', STATUS_COLORS[status])} />
+                                {label}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+
+                {/* ── Day panel ── */}
+                <div className="rounded-2xl border border-border overflow-hidden flex flex-col">
+                    {selectedDay ? (
+                        <>
+                            {/* Panel header */}
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+                                <div>
+                                    <p className="font-semibold">{format(selectedDay, 'EEEE')}</p>
+                                    <p className="text-xs text-muted-foreground">{format(selectedDay, 'MMMM d, yyyy')}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Button size="sm" onClick={() => setShowAddForm(v => !v)} variant={showAddForm ? 'outline' : 'default'} className="h-8">
+                                        {showAddForm ? <><X className="h-3.5 w-3.5 mr-1" />Cancel</> : <><Plus className="h-3.5 w-3.5 mr-1" />Add Slot</>}
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                {/* Add slot form */}
+                                {showAddForm && (
+                                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+                                        <p className="text-sm font-semibold">New Slot</p>
+
+                                        {experiences.length > 1 && (
+                                            <div className="space-y-1">
+                                                <Label className="text-xs">Experience</Label>
+                                                <Select value={selectedExp} onValueChange={setSelectedExp}>
+                                                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                                                    <SelectContent>
+                                                        {experiences.map(e => <SelectItem key={e.id} value={e.id}>{e.title}</SelectItem>)}
+                                                    </SelectContent>
+                                                </Select>
                                             </div>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <Select value={startTime} onValueChange={setStartTime}>
-                                                <SelectTrigger className="h-9 flex-1 text-sm"><SelectValue /></SelectTrigger>
-                                                <SelectContent className="max-h-56">
-                                                    {TIME_OPTIONS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                                                </SelectContent>
-                                            </Select>
-                                            <span className="text-xs text-muted-foreground shrink-0">to</span>
-                                            <Select value={endTime} onValueChange={setEndTime}>
-                                                <SelectTrigger className="h-9 flex-1 text-sm"><SelectValue /></SelectTrigger>
-                                                <SelectContent className="max-h-56">
-                                                    {TIME_OPTIONS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
+                                        )}
 
-                                    <div className="grid grid-cols-2 gap-2">
+                                        {/* Time pickers */}
                                         <div className="space-y-1">
-                                            <Label className="text-xs">Max Guests <span className="text-destructive">*</span></Label>
-                                            <Input type="number" min={1} className="h-9 text-sm" value={maxGuests} onChange={e => setMaxGuests(e.target.value)} />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Label className="text-xs">Price Override (₱)</Label>
-                                            <Input type="number" min={0} className="h-9 text-sm" placeholder="Optional" value={priceOverride} onChange={e => setPriceOverride(e.target.value)} />
-                                        </div>
-                                    </div>
-
-                                    <Button size="sm" className="w-full" onClick={handleAddSlot} disabled={isPending || !selectedExp || !startTime || !endTime}>
-                                        {isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Adding…</> : 'Add Slot'}
-                                    </Button>
-                                </div>
-                            )}
-
-                            {/* Slots for this day */}
-                            {selectedSlots.length === 0 && !showAddForm ? (
-                                <div className="flex flex-col items-center justify-center py-12 text-center gap-2">
-                                    <CalendarClock className="h-8 w-8 text-muted-foreground/30" />
-                                    <p className="text-sm text-muted-foreground">No slots on this day</p>
-                                    <Button size="sm" variant="outline" onClick={() => setShowAddForm(true)}>
-                                        <Plus className="h-3.5 w-3.5 mr-1.5" />Add a slot
-                                    </Button>
-                                </div>
-                            ) : (
-                                <div className="space-y-2">
-                                    {selectedSlots.map(slot => {
-                                        const start = new Date(slot.start_time)
-                                        const end = slot.end_time ? new Date(slot.end_time) : null
-                                        const spotsLeft = slot.max_guests - slot.current_guests
-                                        const canDelete = slot.current_guests === 0
-                                        const canCancel = slot.status === 'open' || slot.status === 'full'
-                                        const canBook = slot.status === 'open' && spotsLeft > 0
-                                        const isBooking = bookingSlotId === slot.id
-
-                                        return (
-                                            <div key={slot.id} className="rounded-xl border border-border p-3 space-y-2">
-                                                <div className="flex items-start justify-between gap-2">
-                                                    <div>
-                                                        <p className="text-sm font-semibold">
-                                                            {format(start, 'h:mm a')}
-                                                            {end && ` – ${format(end, 'h:mm a')}`}
-                                                        </p>
-                                                        <p className="text-xs text-muted-foreground mt-0.5">{expMap[slot.table_id]}</p>
-                                                    </div>
-                                                    <Badge variant="outline" className={cn('text-xs capitalize shrink-0', STATUS_BADGE[slot.status])}>
-                                                        {slot.status}
-                                                    </Badge>
-                                                </div>
-
-                                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                                    <span className="flex items-center gap-1">
-                                                        <Users className="h-3 w-3" />
-                                                        {slot.current_guests}/{slot.max_guests} guests
-                                                        {slot.status === 'open' && spotsLeft <= 3 && spotsLeft > 0 && (
-                                                            <span className="text-orange-500 font-medium">({spotsLeft} left)</span>
-                                                        )}
-                                                    </span>
-                                                    {slot.price_per_person && (
-                                                        <span>₱{Number(slot.price_per_person).toLocaleString()}/person</span>
+                                            <div className="flex items-center justify-between">
+                                                <Label className="text-xs">Time <span className="text-destructive">*</span></Label>
+                                                <div className="flex items-center gap-1.5">
+                                                    {isOvernight(startTime, endTime) && (
+                                                        <span className="text-xs font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded">ends +1 day</span>
+                                                    )}
+                                                    {calcDuration(startTime, endTime) && (
+                                                        <span className="text-xs text-muted-foreground">{calcDuration(startTime, endTime)}</span>
                                                     )}
                                                 </div>
-
-                                                {canBook && !isBooking && (
-                                                    <div className="pt-1">
-                                                        <Button size="sm" variant="outline" className="h-7 text-xs w-full text-primary border-primary/40 hover:bg-primary/5" onClick={() => openBooking(slot.id)} disabled={isPending}>
-                                                            <UserPlus className="h-3 w-3 mr-1" /> Book a guest
-                                                        </Button>
-                                                    </div>
-                                                )}
-
-                                                {/* Manual booking form — comps and door sales, no checkout */}
-                                                {isBooking && (
-                                                    <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2.5">
-                                                        <div className="flex items-center justify-between">
-                                                            <p className="text-xs font-semibold flex items-center gap-1">
-                                                                <UserPlus className="h-3.5 w-3.5" /> Book a guest
-                                                            </p>
-                                                            <button onClick={() => setBookingSlotId(null)} className="text-muted-foreground hover:text-foreground">
-                                                                <X className="h-3.5 w-3.5" />
-                                                            </button>
-                                                        </div>
-
-                                                        <div className="space-y-1">
-                                                            <Label className="text-xs">Guest name <span className="text-destructive">*</span></Label>
-                                                            <Input className="h-8 text-sm" placeholder="Full name" value={bkName} onChange={e => setBkName(e.target.value)} />
-                                                        </div>
-
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                            <div className="space-y-1">
-                                                                <Label className="text-xs">Guests</Label>
-                                                                <Input type="number" min={1} max={spotsLeft} className="h-8 text-sm" value={bkQty} onChange={e => setBkQty(e.target.value)} />
-                                                            </div>
-                                                            <div className="space-y-1">
-                                                                <Label className="text-xs">Payment</Label>
-                                                                <Select value={bkMethod} onValueChange={(v) => setBkMethod(v as any)}>
-                                                                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                                                                    <SelectContent>
-                                                                        <SelectItem value="COMP">Comp (free)</SelectItem>
-                                                                        <SelectItem value="CASH">Cash</SelectItem>
-                                                                        <SelectItem value="TERMINAL">Card terminal</SelectItem>
-                                                                        <SelectItem value="BANK">Bank transfer</SelectItem>
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="space-y-1">
-                                                            <Label className="text-xs">Email <span className="text-muted-foreground font-normal">(sends a confirmation)</span></Label>
-                                                            <Input type="email" className="h-8 text-sm" placeholder="Optional" value={bkEmail} onChange={e => setBkEmail(e.target.value)} />
-                                                        </div>
-
-                                                        <div className="space-y-1">
-                                                            <Label className="text-xs">Phone</Label>
-                                                            <Input className="h-8 text-sm" placeholder="Optional" value={bkPhone} onChange={e => setBkPhone(e.target.value)} />
-                                                        </div>
-
-                                                        <div className="space-y-1">
-                                                            <Label className="text-xs">Note</Label>
-                                                            <Input className="h-8 text-sm" placeholder="Optional — e.g. VIP guest of the host" value={bkNote} onChange={e => setBkNote(e.target.value)} />
-                                                        </div>
-
-                                                        {bkMethod === 'COMP' && (
-                                                            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                                                                <Gift className="h-3 w-3" /> Free booking — no charge, no commission.
-                                                            </p>
-                                                        )}
-
-                                                        <Button size="sm" className="w-full h-8" onClick={() => handleBook(slot)} disabled={isPending || !bkName.trim()}>
-                                                            {isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Booking…</> : 'Add booking'}
-                                                        </Button>
-                                                    </div>
-                                                )}
-
-                                                {(canCancel || canDelete) && !isBooking && (
-                                                    <div className="flex gap-2 pt-1">
-                                                        {canCancel && (
-                                                            <Button size="sm" variant="outline" className="h-7 text-xs flex-1 text-muted-foreground hover:text-destructive hover:border-destructive" onClick={() => handleCancel(slot.id)} disabled={isPending}>
-                                                                <Ban className="h-3 w-3 mr-1" /> Cancel
-                                                            </Button>
-                                                        )}
-                                                        {canDelete && (
-                                                            <Button size="sm" variant="outline" className="h-7 text-xs text-muted-foreground hover:text-destructive hover:border-destructive" onClick={() => handleDelete(slot.id)} disabled={isPending}>
-                                                                <Trash2 className="h-3 w-3" />
-                                                            </Button>
-                                                        )}
-                                                    </div>
-                                                )}
                                             </div>
-                                        )
-                                    })}
-                                </div>
-                            )}
+                                            <div className="flex items-center gap-2">
+                                                <Select value={startTime} onValueChange={setStartTime}>
+                                                    <SelectTrigger className="h-9 flex-1 text-sm"><SelectValue /></SelectTrigger>
+                                                    <SelectContent className="max-h-56">
+                                                        {TIME_OPTIONS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                                                    </SelectContent>
+                                                </Select>
+                                                <span className="text-xs text-muted-foreground shrink-0">to</span>
+                                                <Select value={endTime} onValueChange={setEndTime}>
+                                                    <SelectTrigger className="h-9 flex-1 text-sm"><SelectValue /></SelectTrigger>
+                                                    <SelectContent className="max-h-56">
+                                                        {TIME_OPTIONS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="space-y-1">
+                                                <Label className="text-xs">Max Guests <span className="text-destructive">*</span></Label>
+                                                <Input type="number" min={1} className="h-9 text-sm" value={maxGuests} onChange={e => setMaxGuests(e.target.value)} />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <Label className="text-xs">Price Override (₱)</Label>
+                                                <Input type="number" min={0} className="h-9 text-sm" placeholder="Optional" value={priceOverride} onChange={e => setPriceOverride(e.target.value)} />
+                                            </div>
+                                        </div>
+
+                                        <Button size="sm" className="w-full" onClick={handleAddSlot} disabled={isPending || !selectedExp || !startTime || !endTime}>
+                                            {isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Adding…</> : 'Add Slot'}
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {/* Slots for this day */}
+                                {selectedSlots.length === 0 && !showAddForm ? (
+                                    <div className="flex flex-col items-center justify-center py-12 text-center gap-2">
+                                        <CalendarClock className="h-8 w-8 text-muted-foreground/30" />
+                                        <p className="text-sm text-muted-foreground">No slots on this day</p>
+                                        <Button size="sm" variant="outline" onClick={() => setShowAddForm(true)}>
+                                            <Plus className="h-3.5 w-3.5 mr-1.5" />Add a slot
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {selectedSlots.map(slot => {
+                                            const start = new Date(slot.start_time)
+                                            const end = slot.end_time ? new Date(slot.end_time) : null
+                                            const spotsLeft = slot.max_guests - slot.current_guests
+                                            const canDelete = slot.current_guests === 0
+                                            const canCancel = slot.status === 'open' || slot.status === 'full'
+                                            const canBook = slot.status === 'open' && spotsLeft > 0
+                                            const isBooking = bookingSlotId === slot.id
+
+                                            return (
+                                                <div key={slot.id} className="rounded-xl border border-border p-3 space-y-2">
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div>
+                                                            <p className="text-sm font-semibold">
+                                                                {format(start, 'h:mm a')}
+                                                                {end && ` – ${format(end, 'h:mm a')}`}
+                                                            </p>
+                                                            <p className="text-xs text-muted-foreground mt-0.5">{expMap[slot.table_id]}</p>
+                                                            {slot.generated_from_rule_id && (
+                                                                <p className="text-[11px] text-muted-foreground/70 mt-0.5 flex items-center gap-1">
+                                                                    <Repeat className="h-3 w-3 shrink-0" />
+                                                                    From a recurring session
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        <Badge variant="outline" className={cn('text-xs capitalize shrink-0', STATUS_BADGE[slot.status])}>
+                                                            {slot.status}
+                                                        </Badge>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                                        <span className="flex items-center gap-1">
+                                                            <Users className="h-3 w-3" />
+                                                            {slot.current_guests}/{slot.max_guests} guests
+                                                            {slot.status === 'open' && spotsLeft <= 3 && spotsLeft > 0 && (
+                                                                <span className="text-orange-500 font-medium">({spotsLeft} left)</span>
+                                                            )}
+                                                        </span>
+                                                        {slot.price_per_person && (
+                                                            <span>₱{Number(slot.price_per_person).toLocaleString()}/person</span>
+                                                        )}
+                                                    </div>
+
+                                                    {canBook && !isBooking && (
+                                                        <div className="pt-1">
+                                                            <Button size="sm" variant="outline" className="h-7 text-xs w-full text-primary border-primary/40 hover:bg-primary/5" onClick={() => openBooking(slot.id)} disabled={isPending}>
+                                                                <UserPlus className="h-3 w-3 mr-1" /> Book a guest
+                                                            </Button>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Manual booking form — comps and door sales, no checkout */}
+                                                    {isBooking && (
+                                                        <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2.5">
+                                                            <div className="flex items-center justify-between">
+                                                                <p className="text-xs font-semibold flex items-center gap-1">
+                                                                    <UserPlus className="h-3.5 w-3.5" /> Book a guest
+                                                                </p>
+                                                                <button onClick={() => setBookingSlotId(null)} className="text-muted-foreground hover:text-foreground">
+                                                                    <X className="h-3.5 w-3.5" />
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="space-y-1">
+                                                                <Label className="text-xs">Guest name <span className="text-destructive">*</span></Label>
+                                                                <Input className="h-8 text-sm" placeholder="Full name" value={bkName} onChange={e => setBkName(e.target.value)} />
+                                                            </div>
+
+                                                            <div className="grid grid-cols-2 gap-2">
+                                                                <div className="space-y-1">
+                                                                    <Label className="text-xs">Guests</Label>
+                                                                    <Input type="number" min={1} max={spotsLeft} className="h-8 text-sm" value={bkQty} onChange={e => setBkQty(e.target.value)} />
+                                                                </div>
+                                                                <div className="space-y-1">
+                                                                    <Label className="text-xs">Payment</Label>
+                                                                    <Select value={bkMethod} onValueChange={(v) => setBkMethod(v as any)}>
+                                                                        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                                                                        <SelectContent>
+                                                                            <SelectItem value="COMP">Comp (free)</SelectItem>
+                                                                            <SelectItem value="CASH">Cash</SelectItem>
+                                                                            <SelectItem value="TERMINAL">Card terminal</SelectItem>
+                                                                            <SelectItem value="BANK">Bank transfer</SelectItem>
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="space-y-1">
+                                                                <Label className="text-xs">Email <span className="text-muted-foreground font-normal">(sends a confirmation)</span></Label>
+                                                                <Input type="email" className="h-8 text-sm" placeholder="Optional" value={bkEmail} onChange={e => setBkEmail(e.target.value)} />
+                                                            </div>
+
+                                                            <div className="space-y-1">
+                                                                <Label className="text-xs">Phone</Label>
+                                                                <Input className="h-8 text-sm" placeholder="Optional" value={bkPhone} onChange={e => setBkPhone(e.target.value)} />
+                                                            </div>
+
+                                                            <div className="space-y-1">
+                                                                <Label className="text-xs">Note</Label>
+                                                                <Input className="h-8 text-sm" placeholder="Optional — e.g. VIP guest of the host" value={bkNote} onChange={e => setBkNote(e.target.value)} />
+                                                            </div>
+
+                                                            {bkMethod === 'COMP' && (
+                                                                <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                                                    <Gift className="h-3 w-3" /> Free booking — no charge, no commission.
+                                                                </p>
+                                                            )}
+
+                                                            <Button size="sm" className="w-full h-8" onClick={() => handleBook(slot)} disabled={isPending || !bkName.trim()}>
+                                                                {isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Booking…</> : 'Add booking'}
+                                                            </Button>
+                                                        </div>
+                                                    )}
+
+                                                    {(canCancel || canDelete) && !isBooking && (
+                                                        <div className="flex gap-2 pt-1">
+                                                            {canCancel && (
+                                                                <Button size="sm" variant="outline" className="h-7 text-xs flex-1 text-muted-foreground hover:text-destructive hover:border-destructive" onClick={() => handleCancel(slot.id)} disabled={isPending}>
+                                                                    <Ban className="h-3 w-3 mr-1" /> Cancel
+                                                                </Button>
+                                                            )}
+                                                            {canDelete && (
+                                                                <Button size="sm" variant="outline" className="h-7 text-xs text-muted-foreground hover:text-destructive hover:border-destructive" onClick={() => handleDelete(slot)} disabled={isPending}>
+                                                                    <Trash2 className="h-3 w-3" />
+                                                                </Button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-3">
+                            <CalendarClock className="h-10 w-10 text-muted-foreground/30" />
+                            <div>
+                                <p className="font-medium text-sm">Select a day</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">Click any day on the calendar to view or add slots</p>
+                            </div>
                         </div>
-                    </>
-                ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-3">
-                        <CalendarClock className="h-10 w-10 text-muted-foreground/30" />
-                        <div>
-                            <p className="font-medium text-sm">Select a day</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">Click any day on the calendar to view or add slots</p>
-                        </div>
-                    </div>
-                )}
+                    )}
+                </div>
             </div>
+
+            {/* ── Sessions: the recurring rules that fill this calendar ──
+                These used to live only on the experience's edit page, so the one
+                screen a host comes to to think about dates had no way to set the
+                weekly pattern behind them -- and on prod not a single rule had
+                ever been created. */}
+            {experiences.length > 0 && (
+                <div className="rounded-2xl border border-border p-5 space-y-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <h2 className="text-lg font-semibold">Sessions</h2>
+                            <p className="text-sm text-muted-foreground mt-0.5 max-w-prose">
+                                The weekly pattern that fills the calendar above. Saving
+                                regenerates the next 90 days of dates — already-booked
+                                dates keep the price and capacity they were sold at.
+                            </p>
+                        </div>
+                        {experiences.length > 1 && (
+                            <Select value={sessionExp} onValueChange={setSessionExp}>
+                                <SelectTrigger className="w-full sm:w-[240px] shrink-0">
+                                    <SelectValue placeholder="Choose an experience" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {experiences.map(e => (
+                                        <SelectItem key={e.id} value={e.id}>{e.title}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        )}
+                    </div>
+
+                    {/* key= forces a remount when the host switches listing.
+                        SessionsPanel seeds its state from initialRules ONCE, so
+                        without this you would be editing the previous
+                        experience's sessions under the new one's name. */}
+                    <SessionsPanel
+                        key={sessionExp}
+                        experienceId={sessionExp}
+                        initialRules={rules.filter(r => r.table_id === sessionExp)}
+                        upcomingSlots={upcomingByExp[sessionExp] ?? 0}
+                        defaultMaxGuests={expMaxGuests[sessionExp]}
+                    />
+                </div>
+            )}
         </div>
     )
 }

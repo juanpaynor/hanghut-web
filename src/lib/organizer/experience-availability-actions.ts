@@ -99,7 +99,12 @@ export async function saveAvailabilityRule(
     if (error) return { error: error.message }
 
     const generated = await regenerateAvailability(experienceId)
-    revalidatePath(`/organizer/experiences/${experienceId}`)
+    // The edit page is at [id]/edit -- revalidating `/organizer/experiences/<id>`
+    // matched no route at all, so a saved session kept showing the old rules
+    // until a hard reload. The Calendar reads the slots these rules generate,
+    // so it has to be revalidated too or the new dates appear only on refresh.
+    revalidatePath(`/organizer/experiences/${experienceId}/edit`)
+    revalidatePath('/organizer/experiences/calendar')
 
     return { success: true as const, id: data.id, ...generated }
 }
@@ -121,7 +126,12 @@ export async function deactivateAvailabilityRule(ruleId: string, experienceId: s
     if (error) return { error: error.message }
 
     const generated = await regenerateAvailability(experienceId)
-    revalidatePath(`/organizer/experiences/${experienceId}`)
+    // The edit page is at [id]/edit -- revalidating `/organizer/experiences/<id>`
+    // matched no route at all, so a saved session kept showing the old rules
+    // until a hard reload. The Calendar reads the slots these rules generate,
+    // so it has to be revalidated too or the new dates appear only on refresh.
+    revalidatePath(`/organizer/experiences/${experienceId}/edit`)
+    revalidatePath('/organizer/experiences/calendar')
     return { success: true as const, ...generated }
 }
 
@@ -138,7 +148,12 @@ export async function addBlackout(experienceId: string, date: string, reason?: s
     if (error) return { error: error.message }
 
     const generated = await regenerateAvailability(experienceId)
-    revalidatePath(`/organizer/experiences/${experienceId}`)
+    // The edit page is at [id]/edit -- revalidating `/organizer/experiences/<id>`
+    // matched no route at all, so a saved session kept showing the old rules
+    // until a hard reload. The Calendar reads the slots these rules generate,
+    // so it has to be revalidated too or the new dates appear only on refresh.
+    revalidatePath(`/organizer/experiences/${experienceId}/edit`)
+    revalidatePath('/organizer/experiences/calendar')
     return { success: true as const, ...generated }
 }
 
@@ -153,7 +168,12 @@ export async function removeBlackout(experienceId: string, date: string) {
     if (error) return { error: error.message }
 
     const generated = await regenerateAvailability(experienceId)
-    revalidatePath(`/organizer/experiences/${experienceId}`)
+    // The edit page is at [id]/edit -- revalidating `/organizer/experiences/<id>`
+    // matched no route at all, so a saved session kept showing the old rules
+    // until a hard reload. The Calendar reads the slots these rules generate,
+    // so it has to be revalidated too or the new dates appear only on refresh.
+    revalidatePath(`/organizer/experiences/${experienceId}/edit`)
+    revalidatePath('/organizer/experiences/calendar')
     return { success: true as const, ...generated }
 }
 
