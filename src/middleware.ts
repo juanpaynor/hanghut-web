@@ -3,7 +3,17 @@ import { updateSession } from '@/lib/supabase/middleware'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'
-const RESERVED_SUBDOMAINS = ['www', 'admin', 'api', 'mail', 'smtp', 'send']
+/**
+ * Hostnames that are the platform, never a partner storefront.
+ *
+ * 'docs' is here so that docs.hanghut.com is routed deliberately (see the branch
+ * below) rather than by accident. Without it, `getSubdomain` returns 'docs', the
+ * storefront branch rewrites `/` to `/docs`, and the API docs render — but only
+ * because a route of that name happens to exist. The moment a partner registered
+ * the slug `docs` they would own the hostname, and nothing today stops them:
+ * there is no reserved-slug check at signup.
+ */
+const RESERVED_SUBDOMAINS = ['www', 'admin', 'api', 'mail', 'smtp', 'send', 'docs']
 
 async function getPartnerSlugForCustomDomain(hostname: string): Promise<string | null> {
     try {
@@ -115,6 +125,24 @@ export async function middleware(request: NextRequest) {
         return NextResponse.rewrite(url)
     }
 
+    // 1c. Docs subdomain → rewrite to /docs. Public, so no session round trip.
+    //
+    // docs.hanghut.com/          → /docs
+    // docs.hanghut.com/api       → /docs/api
+    // docs.hanghut.com/api/v1/…  → left alone: /api is in appRoutePrefixes and the
+    //                              real API must stay reachable on this host, or
+    //                              the sandbox console on the docs page would have
+    //                              to call across an origin it does not control.
+    //
+    // The '/docs' guard stops a doubled path if someone links the canonical
+    // docs.hanghut.com/docs by hand.
+    if (hostname === `docs.${ROOT_DOMAIN}`) {
+        if (url.pathname.startsWith('/api')) return NextResponse.next()
+        if (url.pathname === '/docs' || url.pathname.startsWith('/docs/')) return NextResponse.next()
+        url.pathname = `/docs${url.pathname === '/' ? '' : url.pathname}`
+        return NextResponse.rewrite(url)
+    }
+
     // 2. Admin subdomain → rewrite to /admin path (with auth)
     if (hostname === `admin.${ROOT_DOMAIN}`) {
         // If requesting /login on admin subdomain, let it pass through
@@ -130,7 +158,10 @@ export async function middleware(request: NextRequest) {
     // '/x' is the hosted experience pass, the experiences twin of '/t'. Both are
     // addressed by an unguessable token and render with the anon key, so an auth
     // round trip here would buy nothing and undo their ISR.
-    const publicPrefixes = ['/events', '/terms', '/privacy', '/how-it-works', '/embed', '/checkout', '/t', '/x']
+    // '/docs' is here for the apex spelling (hanghut.com/docs). The docs
+    // subdomain already returned above; this stops the canonical path paying for
+    // a session lookup it never reads.
+    const publicPrefixes = ['/events', '/terms', '/privacy', '/how-it-works', '/embed', '/checkout', '/t', '/x', '/docs']
     if (publicPrefixes.some(p => url.pathname.startsWith(p))) {
         return NextResponse.next()
     }

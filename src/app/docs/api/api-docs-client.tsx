@@ -2,9 +2,8 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { Lang } from './code-samples'
-import * as samples from './code-samples'
-import { CodeBlock, ResponseBlock, MethodBadge, ParamTable, StatusTable, AlertBox, LanguageSwitcher } from './api-doc-components'
-import { ApiKeyProvider, ApiKeyBar, TryIt } from './try-it'
+import { MethodBadge, ParamTable, StatusTable, AlertBox, LanguageSwitcher } from './api-doc-components'
+import { Panel } from './panels'
 
 /* ─── Sidebar config ─── */
 const SECTIONS = [
@@ -408,7 +407,6 @@ export function ApiDocsClient() {
     )
 
     return (
-        <ApiKeyProvider>
         <div className="min-h-screen bg-[#0a0a0f] text-zinc-300">
             {/* ── Header ── */}
             <header className="sticky top-0 z-50 border-b border-zinc-800/60 bg-[#0a0a0f]/95 backdrop-blur-xl">
@@ -457,13 +455,12 @@ export function ApiDocsClient() {
                     {sidebarContent}
                 </nav>
 
-                {/* ── Main ── */}
-                <main ref={mainRef} className="flex-1 min-w-0">
+                {/* ── Prose ── */}
+                <main ref={mainRef} className="flex-1 min-w-0 max-w-3xl">
 
                     {/* ═══ OVERVIEW ═══ */}
                     <section id="overview" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="inline-flex items-center gap-2 bg-[#6c5ce7]/10 border border-[#6c5ce7]/20 rounded-full px-3 py-1 mb-4">
                                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                                     <span className="text-[11px] font-medium text-[#6c5ce7]">API v1.0 — Live</span>
@@ -487,38 +484,11 @@ export function ApiDocsClient() {
                                     ))}
                                 </div>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 border-l border-zinc-800/40">
-                                <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 mb-3">Base URL</p>
-                                <div className="bg-[#161b22] border border-zinc-800/60 rounded-xl px-4 py-3 mb-8">
-                                    <pre className="text-[15px] font-mono text-emerald-400">https://www.hanghut.com/api/v1</pre>
-                                </div>
-                                <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 mb-3">Endpoints</p>
-                                <div className="space-y-1.5 font-mono text-[13px]">
-                                    {[
-                                        ['GET', '/events'], ['GET', '/events/:id'], ['POST', '/events'], ['PUT', '/events/:id'],
-                                        ['GET', '/events/:id/attendees'], ['GET', '/events/:id/sections'],
-                                        ['POST', '/checkouts'], ['GET', '/tickets/:id'],
-                                        ['POST', '/tickets/:id/check-in'], ['POST', '/tickets/:id/refund'], ['GET', '/orders'],
-                                        ['POST', '/webhooks'], ['GET', '/analytics/sales'], ['POST', '/promo-codes'],
-                                        ['GET', '/subscription-tiers'], ['GET', '/subscriptions'],
-                                    ].map(([method, path]) => {
-                                        const color = method === 'GET' ? 'text-blue-400' : method === 'POST' ? 'text-emerald-400' : 'text-amber-400'
-                                        return (
-                                            <div key={`${method}${path}`} className="flex items-center gap-3 py-0.5">
-                                                <span className={`${color} w-12 text-[11px] font-bold`}>{method}</span>
-                                                <span className="text-zinc-400">{path}</span>
-                                            </div>
-                                        )
-                                    })}
-                                </div>
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ AUTHENTICATION ═══ */}
                     <section id="authentication" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <h2 className="text-xl font-bold text-white mb-3">Authentication</h2>
                                 <p className="text-[15px] text-zinc-400 leading-relaxed mb-4">
                                     Authenticate every request with your API key in the <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">Authorization</code> header as a Bearer token.
@@ -528,28 +498,26 @@ export function ApiDocsClient() {
                                 </p>
                                 <AlertBox type="warning"><strong>Keep your keys secret.</strong> Never expose them in client-side code or public repositories.</AlertBox>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 mb-2">Header</p>
-                                    <div className="bg-[#161b22] border border-zinc-800/60 rounded-xl px-4 py-3">
-                                        <pre className="text-[13px] font-mono"><span className="text-zinc-500">Authorization:</span> <span className="text-emerald-400">Bearer hh_live_3dd28059a859bddb...</span></pre>
-                                    </div>
-                                </div>
-                                <CodeBlock samples={samples.authSamples} activeLang={lang} label="Example Request" />
-                                <ApiKeyBar />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ RATE LIMITS ═══ */}
                     <section id="rate-limits" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <h2 className="text-xl font-bold text-white mb-3">Rate Limits</h2>
+                                <p className="text-[15px] text-zinc-400 leading-relaxed mb-4">
+                                    Each API key may make 100 requests per minute. The 101st in a window is refused with{' '}
+                                    <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">429</code>{' '}
+                                    and a <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">Retry-After</code>{' '}
+                                    header giving the seconds until the window rolls. The window is fixed, not sliding:
+                                    it opens on your first request and your full budget returns 60 seconds later.
+                                </p>
                                 <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">
-                                    Keep each API key under 100 requests per minute. Traffic above that ceiling may be
-                                    throttled with <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">429</code>,
-                                    so handle that status with a retry after the window rather than assuming it cannot happen.
+                                    Every authenticated response carries{' '}
+                                    <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">X-RateLimit-Limit</code>,{' '}
+                                    <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">X-RateLimit-Remaining</code>{' '}
+                                    and <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">X-RateLimit-Reset</code>,
+                                    so you can back off before you are refused rather than after. The budget is per key,
+                                    so issuing a second key for a background job keeps it from starving your checkout path.
                                 </p>
                                 <div className="grid grid-cols-3 gap-3">
                                     {[
@@ -564,22 +532,11 @@ export function ApiDocsClient() {
                                     ))}
                                 </div>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 border-l border-zinc-800/40">
-                                <ResponseBlock status={429} json={`{
-  "error": {
-    "message": "Rate limit exceeded. Max 100 requests per minute.",
-    "status": 429
-  }
-}`} />
-                                <p className="text-[13px] text-zinc-500 mt-4">Wait for the window to reset (60 seconds) before retrying.</p>
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ ERRORS ═══ */}
                     <section id="errors" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <h2 className="text-xl font-bold text-white mb-3">Errors</h2>
                                 <p className="text-[15px] text-zinc-400 leading-relaxed mb-6">All errors return a consistent JSON structure.</p>
                                 <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-[#0d1117]/50">
@@ -593,21 +550,11 @@ export function ApiDocsClient() {
                                     </table>
                                 </div>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 border-l border-zinc-800/40">
-                                <ResponseBlock status={404} json={`{
-  "error": {
-    "message": "Event not found",
-    "status": 404
-  }
-}`} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ LIST EVENTS ═══ */}
                     <section id="list-events" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="GET" />
                                     <code className="font-mono text-white text-lg">/events</code>
@@ -619,22 +566,11 @@ export function ApiDocsClient() {
                                     { name: 'status', type: 'string', description: 'Exact match on one of draft, active, paused, hidden, sold_out, cancelled, completed. Not a list — one value per request. Because it defaults to active, a plain call does NOT return your hidden or paused events even though those are still selling.', default: 'active' },
                                 ]} />
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.listEventsSamples} activeLang={lang} label="Request" />
-                                <TryIt method="GET" path="/events" queryParams={[
-                                    { name: 'status', value: 'active' },
-                                    { name: 'per_page', value: '5' },
-                                    { name: 'page', placeholder: '1' },
-                                ]} />
-                                <ResponseBlock status={200} json={listEventsRes} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ GET EVENT ═══ */}
                     <section id="get-event" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="GET" />
                                     <code className="font-mono text-white text-lg">/events/:id</code>
@@ -643,19 +579,11 @@ export function ApiDocsClient() {
                                 <ParamTable title="Path Parameters" params={[{ name: 'id', type: 'uuid', required: true, description: 'Event ID' }]} />
                                 <p className="text-[15px] text-zinc-400 leading-relaxed mt-6">Each tier includes an <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[12px]">available</code> field (<code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[12px]">quantity_total - quantity_sold</code>).</p>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.getEventSamples} activeLang={lang} label="Request" />
-                                <TryIt method="GET" path="/events/:id" pathParams={[
-                                    { name: 'id', placeholder: 'Event UUID — copy one from List Events above' },
-                                ]} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ CREATE EVENT ═══ */}
                     <section id="create-event" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="POST" />
                                     <code className="font-mono text-white text-lg">/events</code>
@@ -679,38 +607,11 @@ export function ApiDocsClient() {
                                     { name: 'cover_image_url', type: 'string', description: 'Public HTTPS URL of the cover image. Stored exactly as sent and served from wherever you host it — we do not copy or re-host the file, so it must stay publicly reachable for as long as the event is live.' },
                                 ]} />
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <AlertBox type="info">
-                                    <strong>Formatting a description?</strong> Send{' '}
-                                    <code className="font-mono">description_html</code>. Putting HTML in the plain{' '}
-                                    <code className="font-mono">description</code> field works, but it is the field the
-                                    dashboard editor writes back to — so the next person who opens the event in the UI
-                                    and saves it can flatten your markup.
-                                </AlertBox>
-                                <CodeBlock samples={samples.createEventSamples} activeLang={lang} label="Request" />
-                                <TryIt
-                                    method="POST"
-                                    path="/events"
-                                    risk="write"
-                                    effect="It creates a real event on your account — as a draft, so nothing is public until you publish it."
-                                    body={`{
-  "title": "API test event",
-  "start_datetime": "2030-01-01T19:00:00+08:00",
-  "venue_name": "Test Venue",
-  "city": "Manila",
-  "capacity": 10,
-  "ticket_price": 0
-}`}
-                                />
-                                <ResponseBlock status={201} json={createEventRes} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ UPDATE EVENT ═══ */}
                     <section id="update-event" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="PUT" />
                                     <code className="font-mono text-white text-lg">/events/:id</code>
@@ -718,26 +619,11 @@ export function ApiDocsClient() {
                                 <p className="text-[15px] text-zinc-400 leading-relaxed mb-4">Update event details. Only include fields you want to change. Set <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">status</code> to <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">active</code> to publish.</p>
                                 <p className="text-[15px] text-zinc-400 leading-relaxed">Accepts the same fields as <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">POST /events</code>, including <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">description_html</code>. Anything you omit is left untouched.</p>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.updateEventSamples} activeLang={lang} label="Request" />
-                                <TryIt
-                                    method="PUT"
-                                    path="/events/:id"
-                                    risk="write"
-                                    effect="It edits a live event. Sending status: active publishes it to the public immediately."
-                                    pathParams={[{ name: 'id', placeholder: 'Event UUID' }]}
-                                    body={`{
-  "title": "Updated title"
-}`}
-                                />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ LIST ATTENDEES ═══ */}
                     <section id="list-attendees" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="GET" />
                                     <code className="font-mono text-white text-lg">/events/:id/attendees</code>
@@ -749,23 +635,11 @@ export function ApiDocsClient() {
                                     { name: 'status', type: 'string', description: 'One of valid (sold, not yet scanned), checked_in (scanned at the door), refunded, cancelled. Omit for all. checked_in is an alias we map to the stored value used.' },
                                 ]} />
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.listAttendeesSamples} activeLang={lang} label="Request" />
-                                <TryIt method="GET" path="/events/:id/attendees"
-                                    pathParams={[{ name: 'id', placeholder: 'Event UUID' }]}
-                                    queryParams={[
-                                        { name: 'status', placeholder: 'valid · checked_in · refunded' },
-                                        { name: 'per_page', value: '5' },
-                                    ]} />
-                                <ResponseBlock status={200} json={attendeesRes} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ LIST SECTIONS ═══ */}
                     <section id="list-sections" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="GET" />
                                     <code className="font-mono text-white text-lg">/events/:id/sections</code>
@@ -799,24 +673,11 @@ export function ApiDocsClient() {
                                     so treat them as a snapshot, not a reservation.
                                 </p>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.listSectionsSamples} activeLang={lang} label="Request" />
-                                <TryIt method="GET" path="/events/:id/sections" pathParams={[
-                                    { name: 'id', placeholder: 'Event UUID' },
-                                ]} />
-                                <ResponseBlock status={200} json={sectionsRes} />
-                                <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 mb-2">General admission event</p>
-                                    <ResponseBlock status={200} json={sectionsUnseatedRes} />
-                                </div>
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ CREATE CHECKOUT ═══ */}
                     <section id="create-checkout" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="POST" />
                                     <code className="font-mono text-white text-lg">/checkouts</code>
@@ -837,32 +698,11 @@ export function ApiDocsClient() {
                                     ]} />
                                 </div>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.createCheckoutSamples} activeLang={lang} label="Request" />
-                                <TryIt
-                                    method="POST"
-                                    path="/checkouts"
-                                    risk="write"
-                                    effect="It holds real tickets out of your inventory and returns a working payment link. The hold releases itself if nobody pays, but until then those seats are unavailable to actual buyers."
-                                    body={`{
-  "event_id": "",
-  "quantity": 1,
-  "customer": {
-    "name": "API Test",
-    "email": "test@example.com"
-  },
-  "success_url": "https://example.com/thanks"
-}`}
-                                />
-                                <ResponseBlock status={201} json={checkoutRes} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ VERIFY TICKET ═══ */}
                     <section id="verify-ticket" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="GET" />
                                     <code className="font-mono text-white text-lg">/tickets/:id</code>
@@ -880,20 +720,11 @@ export function ApiDocsClient() {
                                     ]} />
                                 </div>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.verifyTicketSamples} activeLang={lang} label="Request" />
-                                <TryIt method="GET" path="/tickets/:id" pathParams={[
-                                    { name: 'id', placeholder: 'Ticket UUID — from List Attendees' },
-                                ]} />
-                                <ResponseBlock status={200} json={verifyTicketRes} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ CHECK IN ═══ */}
                     <section id="check-in" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="POST" />
                                     <code className="font-mono text-white text-lg">/tickets/:id/check-in</code>
@@ -901,25 +732,11 @@ export function ApiDocsClient() {
                                 <p className="text-[15px] text-zinc-400 leading-relaxed mb-4">Mark a ticket as checked in. Returns <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">409</code> if already used, refunded, or cancelled.</p>
                                 <AlertBox type="success">Build your own QR scanner — scan the ticket ID, call this endpoint, and show the result.</AlertBox>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.checkInSamples} activeLang={lang} label="Request" />
-                                <TryIt
-                                    method="POST"
-                                    path="/tickets/:id/check-in"
-                                    risk="destructive"
-                                    confirmWord="CHECKIN"
-                                    effect="It marks a real attendee's ticket as used. There is no un-check-in — if that person has not actually arrived, they will be turned away at the door."
-                                    pathParams={[{ name: 'id', placeholder: 'Ticket UUID' }]}
-                                />
-                                <ResponseBlock status={200} json={checkInRes} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ REFUND TICKET ═══ */}
                     <section id="refund-ticket" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="POST" />
                                     <code className="font-mono text-white text-lg">/tickets/:id/refund</code>
@@ -927,25 +744,11 @@ export function ApiDocsClient() {
                                 <p className="text-[15px] text-zinc-400 leading-relaxed mb-4">Mark a ticket as refunded. Updates status and decrements sold count.</p>
                                 <AlertBox type="warning"><strong>Note:</strong> This only updates the ticket status. The actual payment refund must be processed separately through your payment provider.</AlertBox>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.refundTicketSamples} activeLang={lang} label="Request" />
-                                <TryIt
-                                    method="POST"
-                                    path="/tickets/:id/refund"
-                                    risk="destructive"
-                                    confirmWord="REFUND"
-                                    effect="It voids a real ticket and returns it to inventory. Your customer's ticket stops working and there is no undo."
-                                    pathParams={[{ name: 'id', placeholder: 'Ticket UUID' }]}
-                                />
-                                <ResponseBlock status={200} json={refundRes} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ LIST ORDERS ═══ */}
                     <section id="list-orders" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="GET" />
                                     <code className="font-mono text-white text-lg">/orders</code>
@@ -957,21 +760,11 @@ export function ApiDocsClient() {
                                     { name: 'event_id', type: 'uuid', description: 'Filter by event' },
                                 ]} />
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.listOrdersSamples} activeLang={lang} label="Request" />
-                                <TryIt method="GET" path="/orders" queryParams={[
-                                    { name: 'event_id', placeholder: 'Optional — filter to one event' },
-                                    { name: 'per_page', value: '5' },
-                                ]} />
-                                <ResponseBlock status={200} json={listOrdersRes} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ WEBHOOKS ═══ */}
                     <section id="webhooks" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <h2 className="text-xl font-bold text-white mb-3">Webhooks</h2>
                                 <p className="text-[15px] text-zinc-400 leading-relaxed mb-4">Receive real-time notifications when events happen. Register an HTTPS endpoint and we&apos;ll POST signed payloads.</p>
                                 <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-3">Available Events</p>
@@ -986,17 +779,11 @@ export function ApiDocsClient() {
                                 </div>
                                 <p className="text-[15px] text-zinc-400 leading-relaxed">Each delivery includes an <code className="text-zinc-200 bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px]">X-HangHut-Signature</code> header (HMAC-SHA256) for verification.</p>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <ResponseBlock status={200} json={webhookPayloadRes} />
-                                <CodeBlock samples={samples.webhookVerifySamples} activeLang={lang} label="Verify Signature" />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ REGISTER WEBHOOK ═══ */}
                     <section id="register-webhook" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="POST" />
                                     <code className="font-mono text-white text-lg">/webhooks</code>
@@ -1007,27 +794,11 @@ export function ApiDocsClient() {
                                     { name: 'events', type: 'string[]', required: true, description: 'Event types to subscribe to' },
                                 ]} />
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.registerWebhookSamples} activeLang={lang} label="Request" />
-                                <TryIt
-                                    method="POST"
-                                    path="/webhooks"
-                                    risk="write"
-                                    effect="It registers a real endpoint that will start receiving your live order traffic."
-                                    body={`{
-  "url": "https://example.com/hanghut-webhook",
-  "events": ["order.completed"]
-}`}
-                                />
-                                <ResponseBlock status={201} json={registerWebhookRes} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ ANALYTICS ═══ */}
                     <section id="analytics" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="GET" />
                                     <code className="font-mono text-white text-lg">/analytics/sales</code>
@@ -1039,23 +810,12 @@ export function ApiDocsClient() {
                                     { name: 'to', type: 'ISO 8601', description: 'End of date range' },
                                 ]} />
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.analyticsSamples} activeLang={lang} label="Request" />
-                                <TryIt method="GET" path="/analytics/sales" queryParams={[
-                                    { name: 'event_id', placeholder: 'Optional — one event' },
-                                    { name: 'from', placeholder: 'Optional — ISO date' },
-                                    { name: 'to', placeholder: 'Optional — ISO date' },
-                                ]} />
-                                <ResponseBlock status={200} json={analyticsRes} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ PROMO CODES ═══ */}
                     {/* ═══ SUBSCRIPTIONS ═══ */}
                     <section id="list-subscription-tiers" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="GET" />
                                     <code className="font-mono text-white text-lg">/subscription-tiers</code>
@@ -1069,17 +829,10 @@ export function ApiDocsClient() {
                                     not through the API.
                                 </AlertBox>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.listSubscriptionTiersSamples} activeLang={lang} label="Request" />
-                                <TryIt method="GET" path="/subscription-tiers" />
-                                <ResponseBlock status={200} json={subscriptionTiersRes} />
-                            </div>
-                        </div>
                     </section>
 
                     <section id="list-subscriptions" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="GET" />
                                     <code className="font-mono text-white text-lg">/subscriptions</code>
@@ -1104,20 +857,10 @@ export function ApiDocsClient() {
                                     </AlertBox>
                                 </div>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.listSubscriptionsSamples} activeLang={lang} label="Request" />
-                                <TryIt method="GET" path="/subscriptions" queryParams={[
-                                    { name: 'status', placeholder: 'active · cancelled' },
-                                    { name: 'per_page', value: '5' },
-                                ]} />
-                                <ResponseBlock status={200} json={subscriptionsRes} />
-                            </div>
-                        </div>
                     </section>
 
                     <section id="get-subscription" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="GET" />
                                     <code className="font-mono text-white text-lg">/subscriptions/:id</code>
@@ -1132,19 +875,10 @@ export function ApiDocsClient() {
                                     { status: '404', desc: 'Not found, or not yours', color: 'bg-red-500' },
                                 ]} />
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.listSubscriptionsSamples} activeLang={lang} label="Request" />
-                                <TryIt method="GET" path="/subscriptions/:id" pathParams={[
-                                    { name: 'id', placeholder: 'Subscription UUID' },
-                                ]} />
-                                <ResponseBlock status={200} json={subscriptionsRes} />
-                            </div>
-                        </div>
                     </section>
 
                     <section id="cancel-subscription" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="POST" />
                                     <code className="font-mono text-white text-lg">/subscriptions/:id/cancel</code>
@@ -1170,16 +904,10 @@ export function ApiDocsClient() {
                                     ]} />
                                 </div>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.cancelSubscriptionSamples} activeLang={lang} label="Request" />
-                                <ResponseBlock status={503} json={subscriptionWriteUnavailableRes} />
-                            </div>
-                        </div>
                     </section>
 
                     <section id="promo-codes" className="scroll-mt-16 border-b border-zinc-800/40">
-                        <div className="grid lg:grid-cols-2">
-                            <div className="p-8 lg:p-12">
+                        <div className="px-6 py-10 lg:px-10 lg:py-12">
                                 <div className="flex items-center gap-3 mb-4">
                                     <MethodBadge method="POST" />
                                     <code className="font-mono text-white text-lg">/promo-codes</code>
@@ -1208,24 +936,6 @@ export function ApiDocsClient() {
                                     </AlertBox>
                                 </div>
                             </div>
-                            <div className="bg-[#0d1117] p-8 lg:p-12 space-y-6 border-l border-zinc-800/40">
-                                <CodeBlock samples={samples.createPromoSamples} activeLang={lang} label="Request" />
-                                <TryIt
-                                    method="POST"
-                                    path="/promo-codes"
-                                    risk="write"
-                                    effect="It creates a live, redeemable discount code on a real event."
-                                    body={`{
-  "event_id": "",
-  "code": "APITEST10",
-  "discount_type": "percentage",
-  "discount_amount": 10,
-  "usage_limit": 1
-}`}
-                                />
-                                <ResponseBlock status={201} json={promoRes} />
-                            </div>
-                        </div>
                     </section>
 
                     {/* ═══ FOOTER ═══ */}
@@ -1236,8 +946,39 @@ export function ApiDocsClient() {
                         <p className="text-[11px] text-zinc-600 mt-2">© {new Date().getFullYear()} HangHut. All rights reserved.</p>
                     </div>
                 </main>
+
+                {/*
+                  ── Code panel ──
+
+                  One panel for the whole page rather than one per section, so it
+                  can stay in view while the prose scrolls past it. It follows
+                  `activeSection`, which the IntersectionObserver above already
+                  tracked for the sidebar highlight — the panel just reads the
+                  same value, so the two can never disagree about where you are.
+
+                  Hidden below lg: at that width a sticky half-screen panel leaves
+                  no room to read, and the alternative — repeating every sample
+                  inline — is the two-column layout this replaced. Small screens
+                  get the prose, and the sandbox lives on the reference page.
+                */}
+                <aside className="hidden lg:flex flex-col w-[32rem] shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] border-l border-zinc-800/40 bg-[#0d1117]">
+                    {/*
+                      `sticky` sits on the flex ITEM, matching the sidebar above.
+                      It was on an inner div, which pins correctly but leaves the
+                      aside itself full-height — so the scroll box was the child
+                      of a container taller than the viewport and the wheel went
+                      to the page instead of the panel.
+
+                      overflow-y is stated outright rather than inherited from
+                      overflow-x being non-visible. That inference is real CSS,
+                      and it is also the kind of thing that silently stops being
+                      true when someone adds a sibling utility class.
+                    */}
+                    <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-6 space-y-6">
+                        <Panel id={activeSection} lang={lang} />
+                    </div>
+                </aside>
             </div>
         </div>
-        </ApiKeyProvider>
     )
 }

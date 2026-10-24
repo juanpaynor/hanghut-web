@@ -1,0 +1,27 @@
+-- Remove the superseded rate-limit table.
+--
+-- `api_rate_limits` was keyed on key_prefix, which is why it was replaced rather
+-- than re-keyed: a prefix is "hh_live_" plus 4 hex, so 65,536 values, and
+-- metering on it would let anyone who guessed a prefix drain a real partner's
+-- quota without ever holding a key. `api_key_rate_limits` (companion migration
+-- 20261024090000) meters the validated key id instead.
+--
+-- SAFE TO RUN: the table has never held a row -- it was created alongside a
+-- `check_rate_limit` function that was never created, so nothing ever wrote to
+-- it. Confirmed empty before writing this file. Nothing in the application
+-- references it; authenticate_api_key() reads only the new table.
+--
+-- This is split out of the companion migration purely so that the migration
+-- which must run is not itself a destructive one. Apply that first, confirm the
+-- limiter works, then run this.
+--
+-- ROLLBACK: recreate it if some forgotten caller turns up. It starts empty
+-- either way, so there is no data to restore.
+--
+--   CREATE TABLE public.api_rate_limits (
+--       key_prefix    varchar PRIMARY KEY,
+--       request_count integer NOT NULL DEFAULT 0,
+--       window_start  timestamptz NOT NULL DEFAULT now()
+--   );
+
+DROP TABLE IF EXISTS public.api_rate_limits;

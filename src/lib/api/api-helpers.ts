@@ -13,10 +13,10 @@ export function apiSuccess(data: any, status = 200, extraHeaders?: Record<string
 /**
  * Standardized error response
  */
-export function apiError(message: string, status = 400) {
+export function apiError(message: string, status = 400, extraHeaders?: Record<string, string>) {
     return NextResponse.json(
         { error: { message, status } },
-        { status, headers: corsHeaders() }
+        { status, headers: { ...corsHeaders(), ...(extraHeaders ?? {}) } }
     )
 }
 
