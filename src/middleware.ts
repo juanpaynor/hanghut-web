@@ -94,7 +94,7 @@ export async function middleware(request: NextRequest) {
     // this list became /<slug>/account/login and 404'd. Auth cookies are already
     // scoped to `.{ROOT_DOMAIN}` (see src/lib/supabase/*.ts), so a session created
     // on a subdomain is valid on the apex too — only the routing was missing.
-    const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan', '/box-office', '/checkin', '/embed', '/t', '/account', '/login', '/reset-password', '/monitoring']
+    const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan', '/box-office', '/checkin', '/embed', '/t', '/account', '/login', '/reset-password', '/monitoring', '/unsubscribe']
 
     // 1a. Custom domain → look up partner slug and rewrite to storefront
     const isHanghutDomain = hostname === ROOT_DOMAIN || hostname.endsWith(`.${ROOT_DOMAIN}`) || hostname.endsWith('.localhost') || hostname === 'localhost'
@@ -161,7 +161,12 @@ export async function middleware(request: NextRequest) {
     // '/docs' is here for the apex spelling (hanghut.com/docs). The docs
     // subdomain already returned above; this stops the canonical path paying for
     // a session lookup it never reads.
-    const publicPrefixes = ['/events', '/terms', '/privacy', '/how-it-works', '/embed', '/checkout', '/t', '/x', '/docs']
+    // '/unsubscribe' is reached from an email, never from a session. Listing it
+    // in appRoutePrefixes above keeps it working on a partner subdomain or custom
+    // domain -- unlisted, it was rewritten to /<slug>/unsubscribe and 404'd, so
+    // the moment a campaign goes out from a partner domain its unsubscribe link
+    // is dead. Listing it here also drops a session round trip it never reads.
+    const publicPrefixes = ['/events', '/terms', '/privacy', '/how-it-works', '/embed', '/checkout', '/t', '/x', '/docs', '/unsubscribe']
     if (publicPrefixes.some(p => url.pathname.startsWith(p))) {
         return NextResponse.next()
     }

@@ -49,87 +49,96 @@ function verifyUnsubscribeSig(email: string, partnerId: string, sig: string): bo
 }
 
 export async function processUnsubscribe(token: string): Promise<UnsubscribeResult> {
-    const supabase = await createClient()
+    // THE TOKEN IS THE CREDENTIAL, so this runs as the service role.
+    //
+    // This used to use the request-scoped `createClient()`, i.e. ANON for anyone
+    // arriving from an email link. Every SELECT policy on partner_subscribers
+    // keys off auth.uid() ("Partners can view their own subscribers",
+    // "Organizers can manage subscribers"), so the lookup below returned zero
+    // rows and EVERY subscriber who clicked Unsubscribe was told
+    // "Invalid or expired unsubscribe link". 1,053 subscribers across 29
+    // partners, and not one of them could get off a list.
+    //
+    // There is also an UPDATE policy, "Public can unsubscribe via token", that
+    // matches `unsubscribe_token` against an `x-unsubscribe-token` request
+    // header. Nothing in the app has ever sent that header, so the write was
+    // blocked too -- the read just failed first.
+    //
+    // processAttendeeUnsubscribe below has always done it this way: validate the
+    // credential in application code, then act with the admin client. An
+    // unguessable token presented by someone holding it is the authorisation,
+    // exactly as the HMAC signature is on that path.
+    const supabase = createAdminClient()
 
-    // 1. Verify token and get subscription details
     const { data: subscription, error: fetchError } = await supabase
         .from('partner_subscribers')
-        .select(`
-            *,
-            partner:partners (
-                business_name
-            )
-        `)
+        .select('*, partner:partners(business_name)')
         .eq('unsubscribe_token', token)
-        .single()
+        .maybeSingle()
 
-    if (fetchError || !subscription) {
-        return {
-            success: false,
-            message: "Invalid or expired unsubscribe link."
-        }
+    if (fetchError) {
+        console.error('[unsubscribe] lookup failed:', fetchError)
+        return { success: false, message: 'System error. Please contact support.' }
     }
 
-    // 2. Already unsubscribed?
+    if (!subscription) {
+        return { success: false, message: 'Invalid or expired unsubscribe link.' }
+    }
+
+    const organizer = subscription.partner?.business_name || 'Organizer'
+
+    // Idempotent: mail clients and link scanners re-fetch these URLs, and a
+    // second visit must read as success, not as an error.
     if (!subscription.is_active) {
         return {
             success: true,
-            message: "You are already unsubscribed.",
-            organizer: subscription.partner?.business_name || "Organizer",
-            email: subscription.email
+            message: 'You are already unsubscribed.',
+            organizer,
+            email: subscription.email,
         }
     }
 
-    // 3. Perform unsubscribe
-    // Note: We need to use service role if RLS blocks update, 
-    // but typically we can set up secure RLS or just use a dedicated RPC.
-    // However, since we are in a server action with createClient() it uses user auth or anon.
-    // Anon + RLS policies I set up earlier might block this update unless we use a token policy.
-
-    // FOR NOW: Let's assume the "Public Unsubscribe Policy" I wrote in migration works,
-    // OR createAdminClient() is needed.
-    // Let's use createAdminClient pattern if available or just try standard update.
-
-    // WARNING: `createClient` from `@/lib/supabase/server` usually returns a client scoped to the request cookies.
-    // If the user is unauthenticated (clicking email link), they are ANON.
-    // The RLS policy: USING (unsubscribe_token = current_setting(...)) is complex to trigger from client.
-
-    // BETTER APPROACH: Use `supabase-admin` here to bypass RLS since we validated the token securely in step 1.
-    // But I don't see a `createAdminClient` utility exported commonly. 
-    // I'll try the standard update. If it fails due to RLS, I might need to adjust RLS or use a secure endpoint.
-
     const { error: updateError } = await supabase
         .from('partner_subscribers')
-        .update({
-            is_active: false,
-            unsubscribed_at: new Date().toISOString()
-        })
+        .update({ is_active: false, unsubscribed_at: new Date().toISOString() })
         .eq('id', subscription.id)
 
     if (updateError) {
-        // Fallback: This might be RLS blocking.
-        // In a real production app, we'd use a Service Role client here.
-        console.error("Unsubscribe update failed:", updateError)
-        return {
-            success: false,
-            message: "System error. Please contact support."
-        }
+        console.error('[unsubscribe] update failed:', updateError)
+        return { success: false, message: 'System error. Please contact support.' }
+    }
+
+    // Suppress as well as deactivate. is_active only governs the campaign
+    // audience query; email_suppressions is what the senders check, so without
+    // this row a later import or a re-subscribe would quietly put them back in
+    // the send list. Mirrors what the attendee path records.
+    const { error: suppressError } = await supabase
+        .from('email_suppressions')
+        .upsert(
+            {
+                partner_id: subscription.partner_id,
+                email: String(subscription.email).toLowerCase(),
+                reason: 'unsubscribe',
+                source: 'subscriber_unsub',
+            },
+            { onConflict: 'partner_id,email', ignoreDuplicates: true },
+        )
+
+    // Already off the list at this point -- a suppression failure is logged, not
+    // surfaced, because telling them it failed would invite a second click that
+    // cannot do any more than the first.
+    if (suppressError) {
+        console.error('[unsubscribe] suppression upsert failed:', suppressError)
     }
 
     return {
         success: true,
-        message: "Successfully unsubscribed.",
-        organizer: subscription.partner?.business_name || "Organizer",
-        email: subscription.email
+        message: 'Successfully unsubscribed.',
+        organizer,
+        email: subscription.email,
     }
 }
 
-/**
- * Unsubscribe for an event attendee who is NOT on the partner's subscriber
- * list (so they have no token). The link carries email + partner_id + an HMAC
- * signature; we verify the signature, then record the address in
- * email_suppressions so future sends from this partner skip it.
- */
 export async function processAttendeeUnsubscribe(
     email: string,
     partnerId: string,
