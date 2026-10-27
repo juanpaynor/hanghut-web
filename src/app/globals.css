@@ -13,6 +13,27 @@
  */
 @config "../../tailwind.config.ts";
 
+/* ---- Fumadocs (API reference at /docs-next) ----------------------------
+ * neutral.css, NOT shadcn.css: theirs maps --color-fd-* straight onto
+ * var(--background) etc., which assumes tokens holding complete colours.
+ * Ours hold raw HSL triplets consumed as hsl(var(--background)), so every
+ * mapped colour would come out invalid.
+ */
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+@import 'fumadocs-openapi/css/preset.css';
+
+/* fumadocs-ui/css/lib/base.css:275 declares
+ *   @variant dark (&:where(.dark, .dark *))
+ * which GLOBALLY replaces the variant our darkMode:'class' config generates.
+ * :where() has zero specificity, so every dark: utility in the app gets
+ * weaker, and it also matches .dark itself rather than only its descendants.
+ * We use dark:prose-invert on event pages and partner storefronts, so this
+ * is not cosmetic. Put it back.
+ */
+@variant dark (&:is(.dark *));
+
+
 @layer base {
 
   :root,
