@@ -47,7 +47,7 @@ export function FeatureCard({ title, description, icon, color, index, children }
             <motion.div
                 style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
             >
-                <Card className={`group relative overflow-hidden h-full p-8 md:p-12 rounded-[40px] border border-white/20 shadow-xl hover:shadow-2xl transition-all duration-500 ${color} backdrop-blur-xl bg-opacity-60`}>
+                <Card className={`group relative overflow-hidden h-full p-8 md:p-12 rounded-[40px] border border-white/20 shadow-xl hover:shadow-2xl transition-all duration-500 ${color} backdrop-blur-xl`}>
 
                     {/* Inner Shine Effect */}
                     <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/10 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />

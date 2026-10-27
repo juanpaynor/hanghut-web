@@ -97,6 +97,24 @@
     @apply bg-background text-foreground;
   }
 
+  /* Restores Tailwind v3's preflight rule, which v4 dropped on the grounds that
+   * the browser default (`cursor: default`) is more correct for a <button>.
+   *
+   * It is not more correct for this app. Nothing here sets `cursor-pointer`
+   * per-button -- not the shadcn Button base, not the 379 hand-written
+   * <button> elements -- so taking the v4 default means every button on the
+   * site silently stops showing a hand cursor: the buy button, every dialog
+   * close, every organizer action. That is a site-wide regression with no
+   * visible diff and no test that would catch it.
+   *
+   * `:not(:disabled)` is deliberately stricter than the v3 rule it replaces --
+   * a disabled control should never invite a click.
+   */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
   /* Horizontal-overflow backstop.
    *
    * There was none, site-wide, so ONE element wider than the viewport anywhere
