@@ -1,0 +1,1114 @@
+# HangHut Public API — OpenAPI 3.1
+#
+# SOURCE OF TRUTH. This file is written against the route handlers in
+# src/app/api/v1/, not against the old hand-written docs page, and it is the
+# input for three things: the published reference, the partner-facing MCP
+# server, and any client SDK. If a handler changes, change this with it.
+#
+# Deliberate accuracy notes, so nobody "fixes" these into a lie:
+#   * POST /subscriptions and POST /subscriptions/{id}/cancel answer 503 unless
+#     SUBSCRIPTIONS_API_WRITE_ENABLED=true. They are documented as such rather
+#     than hidden, because the read endpoints beside them do work.
+#   * subscription.created and subscription.renewed are accepted by
+#     POST /webhooks but are dispatched from nowhere in the codebase. Marked
+#     deprecated here; subscribing to them yields silence.
+openapi: 3.1.0
+
+info:
+  title: HangHut API
+  version: "1.0.0"
+  description: |
+    Ticketing, attendees and payouts for HangHut organizers.
+
+    **Base URL** `https://hanghut.com/api/v1`
+
+    ### Authentication
+    Every endpoint takes a Bearer API key, created in
+    Organizer → Settings → API. Keys look like `hh_live_` followed by 32 hex
+    characters, are shown once, and are scoped to the partner that created
+    them — a key reaches that partner's events and nothing else.
+
+    ### Response envelope
+    Success is always `{ "data": ... }`. Failure is always
+    `{ "error": { "message": string, "status": number } }`. There is no
+    partial-success shape.
+
+    ### Rate limiting
+    100 requests per minute per key, metered inside the same statement that
+    validates the key. Responses carry `X-RateLimit-Limit`,
+    `X-RateLimit-Remaining` and `X-RateLimit-Reset`; exceeding it returns 429
+    with `Retry-After` in seconds.
+
+    ### Pagination
+    List endpoints take `page` (1-based) and `per_page`, and return a `meta`
+    object. `per_page` is capped at 50, except attendees which allows 100.
+  contact:
+    name: HangHut Support
+    email: contact@hanghut.com
+
+servers:
+  - url: https://hanghut.com/api/v1
+    description: Production
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Events
+    description: Create, read and update events, and read their attendees and seat sections.
+  - name: Checkout
+    description: Start a hosted checkout for a buyer.
+  - name: Orders
+    description: Completed orders for the partner.
+  - name: Tickets
+    description: Verify, check in and refund individual tickets.
+  - name: Analytics
+    description: Sales aggregates.
+  - name: Promo codes
+    description: Per-event discount codes.
+  - name: Subscriptions
+    description: Recurring memberships. Reads are live; writes are gated (503).
+  - name: Webhooks
+    description: Register HTTPS endpoints to receive events.
+
+paths:
+  /events:
+    get:
+      operationId: listEvents
+      tags: [Events]
+      summary: List events
+      description: Events belonging to the authenticated partner, soonest first.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: status
+          in: query
+          description: Filter by event status. Defaults to `active`.
+          schema:
+            $ref: '#/components/schemas/EventStatus'
+      responses:
+        '200':
+          description: A page of events.
+          headers:
+            Server-Timing: { $ref: '#/components/headers/ServerTiming' }
+            X-RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [events, meta]
+                    properties:
+                      events:
+                        type: array
+                        items: { $ref: '#/components/schemas/Event' }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: createEvent
+      tags: [Events]
+      summary: Create an event
+      description: |
+        A venue event needs coordinates. Send `latitude` and `longitude`, or an
+        `address` that geocodes — if geocoding is unavailable and no
+        coordinates were sent, the request is rejected rather than stored
+        without a location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventCreate' }
+      responses:
+        '201':
+          description: The created event.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Event' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /events/{id}:
+    get:
+      operationId: getEvent
+      tags: [Events]
+      summary: Get an event
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      responses:
+        '200':
+          description: The event.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Event' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: updateEvent
+      tags: [Events]
+      summary: Update an event
+      description: |
+        Partial update — send only the fields you are changing. Sending no
+        recognised field is a 400 rather than a silent no-op. A successful
+        update dispatches the `event.updated` webhook.
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventUpdate' }
+      responses:
+        '200':
+          description: The updated event.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Event' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /events/{id}/attendees:
+    get:
+      operationId: listAttendees
+      tags: [Events]
+      summary: List attendees
+      description: One row per ticket, including the buyer it belongs to.
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/Page'
+        - name: per_page
+          in: query
+          description: Results per page. Capped at 100 here, unlike other lists.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: status
+          in: query
+          description: Filter by ticket status.
+          schema: { $ref: '#/components/schemas/TicketStatus' }
+      responses:
+        '200':
+          description: A page of attendees.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      attendees:
+                        type: array
+                        items: { $ref: '#/components/schemas/Attendee' }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /events/{id}/sections:
+    get:
+      operationId: listEventSections
+      tags: [Events]
+      summary: List seat-map sections
+      description: |
+        Sections for a reserved-seating event, with availability. Call this
+        before `POST /checkouts` for a seated event: the checkout needs a
+        `section_id`, and seats are assigned best-available inside it.
+      parameters: [{ $ref: '#/components/parameters/EventId' }]
+      responses:
+        '200':
+          description: The event's sections.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      sections:
+                        type: array
+                        items: { $ref: '#/components/schemas/Section' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /checkouts:
+    post:
+      operationId: createCheckout
+      tags: [Checkout]
+      summary: Create a checkout
+      description: |
+        Returns a hosted `checkout_url` to send the buyer to. Inventory is held
+        only until `expires_at`.
+
+        For a reserved-seating event, pass `section_id` (from
+        `GET /events/{id}/sections`); omitting it is a 400 rather than a
+        general-admission fallback. The seats the buyer was given come back in
+        `assigned_seats`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckoutCreate' }
+      responses:
+        '201':
+          description: Checkout created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Checkout' }
+        '400':
+          description: |
+            Invalid body, or the event/tier cannot be sold right now — the
+            event is not active, the tier is locked, or its sales window has
+            not opened or has closed. The message says which.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: |
+            Event or ticket tier not found. Also returned for an event that
+            exists but belongs to another partner, deliberately, so the API
+            does not confirm its existence.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [Orders]
+      summary: List orders
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: event_id
+          in: query
+          description: Restrict to one event.
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: A page of orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      orders:
+                        type: array
+                        items: { $ref: '#/components/schemas/Order' }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /tickets/{id}:
+    get:
+      operationId: getTicket
+      tags: [Tickets]
+      summary: Verify a ticket
+      description: The read behind a door scan — status, who holds it, and which tier.
+      parameters: [{ $ref: '#/components/parameters/TicketId' }]
+      responses:
+        '200':
+          description: The ticket.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Ticket' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /tickets/{id}/check-in:
+    post:
+      operationId: checkInTicket
+      tags: [Tickets]
+      summary: Check in a ticket
+      description: |
+        Admits the holder: sets `status` to `used` and stamps `checked_in_at`,
+        then dispatches `ticket.checked_in`.
+
+        Note the vocabulary: the *status* becomes `used`, while the event and
+        the timestamp field are named `checked_in`. There is no `checked_in`
+        status value.
+
+        Not idempotent — a second call is a 409, which is what makes it usable
+        as a turnstile.
+      parameters: [{ $ref: '#/components/parameters/TicketId' }]
+      responses:
+        '200':
+          description: Checked in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      status: { type: string, const: used }
+                      checked_in_at: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already checked in, or the ticket is refunded or cancelled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /tickets/{id}/refund:
+    post:
+      operationId: refundTicket
+      tags: [Tickets]
+      summary: Refund a ticket
+      description: Marks the ticket refunded and dispatches `ticket.refunded`.
+      parameters: [{ $ref: '#/components/parameters/TicketId' }]
+      responses:
+        '200':
+          description: Refunded.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      status: { type: string, const: refunded }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already refunded, cancelled, or never paid for.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /analytics/sales:
+    get:
+      operationId: getSalesAnalytics
+      tags: [Analytics]
+      summary: Sales aggregates
+      parameters:
+        - name: event_id
+          in: query
+          description: Restrict to one event. Omit for all of the partner's events.
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          description: Inclusive start, ISO 8601 date.
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          description: Inclusive end, ISO 8601 date.
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Sales totals for the window.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SalesAnalytics' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /promo-codes:
+    get:
+      operationId: listPromoCodes
+      tags: [Promo codes]
+      summary: List promo codes
+      parameters:
+        - name: event_id
+          in: query
+          required: true
+          description: Required — promo codes are always scoped to one event.
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The event's promo codes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      promo_codes:
+                        type: array
+                        items: { $ref: '#/components/schemas/PromoCode' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: createPromoCode
+      tags: [Promo codes]
+      summary: Create a promo code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromoCodeCreate' }
+      responses:
+        '201':
+          description: The created promo code.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PromoCode' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: That code already exists for this event.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /subscription-tiers:
+    get:
+      operationId: listSubscriptionTiers
+      tags: [Subscriptions]
+      summary: List subscription tiers
+      parameters:
+        - name: include_inactive
+          in: query
+          description: Pass `true` to include inactive tiers.
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: The partner's tiers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      tiers:
+                        type: array
+                        items: { $ref: '#/components/schemas/SubscriptionTier' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /subscriptions:
+    get:
+      operationId: listSubscriptions
+      tags: [Subscriptions]
+      summary: List subscriptions
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/SubscriptionStatus' }
+        - name: tier_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: A page of subscriptions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      subscriptions:
+                        type: array
+                        items: { $ref: '#/components/schemas/Subscription' }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      operationId: createSubscription
+      tags: [Subscriptions]
+      summary: Create a subscription
+      description: |
+        **Not enabled.** Returns 503 until recurring billing is live
+        (`SUBSCRIPTIONS_API_WRITE_ENABLED`). The handler is written and
+        validates its input, but no caller should depend on it yet. Read
+        endpoints in this tag do work.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriptionCreate' }
+      responses:
+        '201':
+          description: The created subscription. Not currently reachable.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Subscription' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: That customer already has an active subscription to this partner.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503': { $ref: '#/components/responses/NotEnabled' }
+
+  /subscriptions/{id}:
+    get:
+      operationId: getSubscription
+      tags: [Subscriptions]
+      summary: Get a subscription
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The subscription.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Subscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /subscriptions/{id}/cancel:
+    post:
+      operationId: cancelSubscription
+      tags: [Subscriptions]
+      summary: Cancel a subscription
+      description: |
+        **Not enabled.** Returns 503 until recurring billing is live
+        (`SUBSCRIPTIONS_API_WRITE_ENABLED`). When enabled it dispatches
+        `subscription.cancelled` — which is why that webhook event effectively
+        never fires today.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Cancelled. Not currently reachable.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Subscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already cancelled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503': { $ref: '#/components/responses/NotEnabled' }
+
+  /webhooks:
+    get:
+      operationId: listWebhooks
+      tags: [Webhooks]
+      summary: List webhook endpoints
+      responses:
+        '200':
+          description: The partner's endpoints.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      webhooks:
+                        type: array
+                        items: { $ref: '#/components/schemas/Webhook' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      operationId: createWebhook
+      tags: [Webhooks]
+      summary: Register a webhook endpoint
+      description: |
+        `url` must be HTTPS. `events` must be a non-empty array drawn from the
+        enum — an unknown value is a 400 that names the offenders.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookCreate' }
+      responses:
+        '201':
+          description: The created endpoint, including its signing secret.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Webhook' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        `Authorization: Bearer hh_live_...`. Create and revoke keys in
+        Organizer → Settings → API. A key carries full access to its partner's
+        data, including refunds and promo codes — treat it as a production
+        credential and keep it server-side.
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: 1-based page number.
+      schema: { type: integer, minimum: 1, default: 1 }
+    PerPage:
+      name: per_page
+      in: query
+      description: Results per page. Values above the maximum are clamped, not rejected.
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    EventId:
+      name: id
+      in: path
+      required: true
+      description: Event id.
+      schema: { type: string, format: uuid }
+    TicketId:
+      name: id
+      in: path
+      required: true
+      description: Ticket id.
+      schema: { type: string, format: uuid }
+
+  headers:
+    ServerTiming:
+      description: Per-step server durations for this request.
+      schema: { type: string }
+    RateLimitRemaining:
+      description: Requests left in the current minute.
+      schema: { type: integer }
+
+  responses:
+    BadRequest:
+      description: The request body or query string is invalid. `message` says which field.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing, malformed, invalid or revoked API key.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: |
+        No such resource for this partner. Resources owned by another partner
+        also answer 404 rather than 403, so the API never confirms that
+        someone else's id exists.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: More than 100 requests in a minute.
+      headers:
+        Retry-After:
+          description: Seconds until the window resets.
+          schema: { type: integer }
+        X-RateLimit-Reset:
+          description: When the window resets.
+          schema: { type: string, format: date-time }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotEnabled:
+      description: The endpoint exists but is switched off in this environment.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServerError:
+      description: Something failed server-side. Safe to retry.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [message, status]
+          properties:
+            message: { type: string, description: Human-readable. Safe to log, not to parse. }
+            status: { type: integer, description: Repeats the HTTP status. }
+
+    PageMeta:
+      type: object
+      required: [page, per_page, total, total_pages, has_more]
+      properties:
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer, description: Total matching rows, not rows on this page. }
+        total_pages: { type: integer }
+        has_more: { type: boolean }
+
+    EventStatus:
+      type: string
+      description: |
+        An event that is selling may be `active`, `hidden` (reachable by link,
+        absent from discovery) or `paused`. Treating `active` as "selling" and
+        the rest as "not selling" undercounts.
+      enum: [draft, active, hidden, paused, cancelled, completed]
+      default: active
+
+    EventType:
+      type: string
+      enum: [concert, workshop, conference, sports, social, food, nightlife, art, other]
+
+    TicketStatus:
+      type: string
+      description: |
+        `valid` is a live ticket; `used` is one that has been admitted.
+        `reserved` means an abandoned checkout and is not a sold ticket.
+      enum: [reserved, valid, used, refunded, cancelled]
+
+    Event:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { $ref: '#/components/schemas/EventStatus' }
+        start_datetime: { type: string, format: date-time }
+        end_datetime: { type: string, format: date-time, nullable: true }
+        is_online: { type: boolean }
+        venue_name: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        capacity:
+          type: integer
+          nullable: true
+          description: |
+            Venue capacity. Independent of the sum of tier quantities — the two
+            are not kept in sync, and checkout enforces tier quantities.
+        cover_image_url:
+          type: string
+          nullable: true
+          description: May be on any host, including a partner's own CDN. Stored verbatim.
+        ticket_price: { type: number, description: Headline price. Tiers carry the real prices. }
+        event_type: { $ref: '#/components/schemas/EventType' }
+        tickets_sold: { type: integer, description: Maintained by a database trigger. Read-only. }
+        ticket_tiers:
+          type: array
+          items: { $ref: '#/components/schemas/TicketTier' }
+
+    TicketTier:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        price: { type: number }
+        quantity_total: { type: integer, nullable: true, description: Null means uncapped. }
+        quantity_sold: { type: integer }
+        is_active: { type: boolean, description: False locks the tier — checkout refuses it. }
+        sort_order: { type: integer }
+
+    EventCreate:
+      type: object
+      required: [title, start_datetime, capacity, ticket_price]
+      properties:
+        title: { type: string }
+        start_datetime: { type: string, format: date-time }
+        end_datetime: { type: string, format: date-time }
+        capacity: { type: integer, minimum: 1 }
+        ticket_price: { type: number, minimum: 0 }
+        description: { type: string, description: Plain text. Converted to HTML for display. }
+        description_html: { type: string, description: Sanitised server-side before storage. }
+        event_type: { $ref: '#/components/schemas/EventType' }
+        venue_name: { type: string }
+        address: { type: string, description: Geocoded when latitude/longitude are absent. }
+        city: { type: string }
+        latitude: { type: number, description: Must be sent with longitude. }
+        longitude: { type: number, description: Must be sent with latitude. }
+        is_online: { type: boolean, default: false }
+        cover_image_url: { type: string }
+
+    EventUpdate:
+      type: object
+      description: Partial. Sending no recognised field returns 400.
+      properties:
+        title: { type: string }
+        start_datetime: { type: string, format: date-time }
+        end_datetime: { type: string, format: date-time }
+        capacity: { type: integer, minimum: 1 }
+        ticket_price: { type: number, minimum: 0 }
+        status: { $ref: '#/components/schemas/EventStatus' }
+        description: { type: string }
+        description_html: { type: string }
+        event_type: { $ref: '#/components/schemas/EventType' }
+        venue_name: { type: string }
+        address: { type: string }
+        city: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
+        is_online:
+          type: boolean
+          description: Switching to a venue event requires latitude and longitude in the same call.
+        online_url: { type: string, description: Join link. Stored access-controlled, never on the event row. }
+        cover_image_url: { type: string }
+
+    Section:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        is_active: { type: boolean }
+        capacity: { type: integer, nullable: true }
+        available: { type: integer, nullable: true }
+
+    Attendee:
+      type: object
+      properties:
+        ticket_id: { type: string, format: uuid }
+        ticket_number: { type: string }
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        checked_in_at: { type: string, format: date-time, nullable: true }
+        tier: { type: string, nullable: true }
+        seat_info: { type: object, nullable: true, additionalProperties: true }
+        name: { type: string, nullable: true }
+        email: { type: string, format: email, nullable: true }
+
+    CheckoutCreate:
+      type: object
+      required: [event_id, quantity, customer, success_url]
+      properties:
+        event_id: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+        customer:
+          type: object
+          required: [email, name]
+          properties:
+            email: { type: string, format: email }
+            name: { type: string }
+        success_url: { type: string, format: uri, description: Where the buyer lands after paying. }
+        cancel_url: { type: string, format: uri }
+        tier_id: { type: string, format: uuid, description: Defaults to the event's first sellable tier. }
+        section_id:
+          type: string
+          format: uuid
+          description: Required for reserved-seating events. Seats are assigned best-available within it.
+
+    Checkout:
+      type: object
+      properties:
+        checkout_id: { type: string, format: uuid, nullable: true }
+        checkout_url: { type: string, format: uri, description: Send the buyer here. }
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Inventory is released after this.
+        assigned_seats:
+          type: array
+          description: Present only for seated events.
+          items:
+            type: object
+            properties:
+              section: { type: string }
+              row: { type: string }
+              seat: { type: string }
+              label: { type: string }
+
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string }
+        total_amount: { type: number }
+        created_at: { type: string, format: date-time }
+        paid_at: { type: string, format: date-time, nullable: true }
+        customer:
+          type: object
+          properties:
+            name: { type: string, nullable: true }
+            email: { type: string, format: email, nullable: true }
+        event:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            title: { type: string }
+
+    Ticket:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        checked_in_at: { type: string, format: date-time, nullable: true }
+        purchased_at: { type: string, format: date-time }
+        event:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            title: { type: string }
+            start_datetime: { type: string, format: date-time }
+            venue_name: { type: string, nullable: true }
+        tier:
+          type: object
+          nullable: true
+          properties:
+            name: { type: string }
+            price: { type: number }
+        customer:
+          type: object
+          nullable: true
+          properties:
+            name: { type: string, nullable: true }
+            email: { type: string, format: email, nullable: true }
+
+    SalesAnalytics:
+      type: object
+      properties:
+        gross_revenue: { type: number }
+        net_revenue: { type: number, description: After platform and processing fees. }
+        tickets_sold: { type: integer }
+        orders: { type: integer }
+        by_event:
+          type: array
+          items:
+            type: object
+            properties:
+              event_id: { type: string, format: uuid }
+              title: { type: string }
+              tickets_sold: { type: integer }
+              gross_revenue: { type: number }
+
+    PromoCode:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        discount_type: { type: string, enum: [percentage, fixed_amount] }
+        discount_amount: { type: number }
+        max_uses: { type: integer, nullable: true }
+        times_used: { type: integer }
+        is_active: { type: boolean }
+        expires_at: { type: string, format: date-time, nullable: true }
+
+    PromoCodeCreate:
+      type: object
+      required: [event_id, code, discount_type, discount_amount]
+      properties:
+        event_id: { type: string, format: uuid }
+        code: { type: string, minLength: 3 }
+        discount_type: { type: string, enum: [percentage, fixed_amount] }
+        discount_amount:
+          type: number
+          exclusiveMinimum: 0
+          description: For `percentage`, must not exceed 100.
+        max_uses: { type: integer, minimum: 1 }
+        expires_at: { type: string, format: date-time }
+
+    SubscriptionStatus:
+      type: string
+      enum: [active, cancelled, past_due, expired]
+
+    SubscriptionTier:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        price: { type: number }
+        interval: { type: string, description: Billing period, e.g. `month`. }
+        is_active: { type: boolean }
+        perks: { type: array, items: { type: object, additionalProperties: true } }
+
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/SubscriptionStatus' }
+        tier: { $ref: '#/components/schemas/SubscriptionTier' }
+        current_period_end: { type: string, format: date-time, nullable: true }
+        cancelled_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    SubscriptionCreate:
+      type: object
+      required: [tier_id]
+      description: Needs `customer.email` or `customer.fan_id` — one of the two.
+      properties:
+        tier_id: { type: string, format: uuid }
+        customer:
+          type: object
+          properties:
+            email: { type: string, format: email }
+            fan_id: { type: string, format: uuid }
+        success_url: { type: string, format: uri }
+        cancel_url: { type: string, format: uri }
+
+    WebhookEvent:
+      type: string
+      description: |
+        Subscribable event types. `subscription.created` and
+        `subscription.renewed` are accepted but dispatched from nowhere;
+        `subscription.cancelled` fires only from an endpoint that is currently
+        503. The four `ticket.*`/`event.*` values are the ones that deliver today.
+      enum:
+        - ticket.purchased
+        - ticket.refunded
+        - ticket.checked_in
+        - event.updated
+        - subscription.created
+        - subscription.renewed
+        - subscription.cancelled
+
+    Webhook:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/WebhookEvent' }
+        is_active: { type: boolean }
+        secret:
+          type: string
+          description: Returned on creation only. Verify deliveries with it.
+        created_at: { type: string, format: date-time }
+
+    WebhookCreate:
+      type: object
+      required: [url, events]
+      properties:
+        url: { type: string, format: uri, description: Must be HTTPS. }
+        events:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/WebhookEvent' }
