@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { useAutogrowTextarea } from '@/lib/use-autogrow-textarea'
 import { useSupportStream } from '@/lib/support/use-support-stream'
 import {
     listSupportThreads,
@@ -441,6 +442,11 @@ function Thread({
     const [pending, startTransition] = useTransition()
     const bottomRef = useRef<HTMLDivElement>(null)
     const fileRef = useRef<HTMLInputElement>(null)
+    const composerRef = useRef<HTMLTextAreaElement>(null)
+
+    // 160px ceiling, lower than the admin composer's 320: this sits in a small
+    // floating panel, so an unbounded box would eat the conversation above it.
+    useAutogrowTextarea(composerRef, body, 160)
 
     const load = useCallback(async () => {
         const list = await getSupportMessages(ticketId)
@@ -649,9 +655,10 @@ function Thread({
                         {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                     </button>
                     <Textarea
+                        ref={composerRef}
                         value={body}
                         onChange={(e) => setBody(e.target.value)}
-                        rows={2}
+                        rows={1}
                         maxLength={8000}
                         placeholder="Reply…"
                         className="min-h-0 resize-none text-sm"

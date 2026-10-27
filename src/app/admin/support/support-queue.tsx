@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { useAutogrowTextarea } from '@/lib/use-autogrow-textarea'
 import { useSupportStream } from '@/lib/support/use-support-stream'
 import { getSupportMessages, type SupportMessage } from '@/lib/support/actions'
 import {
@@ -498,6 +499,9 @@ function AgentThreadView({
     const [error, setError] = useState<string | null>(null)
     const [pending, startTransition] = useTransition()
     const bottomRef = useRef<HTMLDivElement>(null)
+    const composerRef = useRef<HTMLTextAreaElement>(null)
+
+    useAutogrowTextarea(composerRef, body)
 
     const load = useCallback(async () => {
         // The console is the one surface that should see internal notes.
@@ -785,13 +789,18 @@ function AgentThreadView({
                         )}
 
                         <Textarea
+                            ref={composerRef}
                             value={body}
                             onChange={(e) => setBody(e.target.value)}
-                            rows={3}
+                            rows={2}
                             maxLength={8000}
                             placeholder={internal ? 'Note for the team…' : 'Write a reply…'}
                             className={cn(
-                                'resize-none rounded-xl bg-white text-[15px] leading-relaxed',
+                                // No fixed height: useAutogrowTextarea owns it.
+                                // min-h-0 defeats the Textarea component's own
+                                // min-height, which would otherwise pin the box
+                                // taller than two rows and stop it collapsing.
+                                'min-h-0 resize-none rounded-xl bg-white text-[15px] leading-relaxed',
                                 internal && 'border-amber-300 focus-visible:ring-amber-400',
                             )}
                             onKeyDown={(e) => {
