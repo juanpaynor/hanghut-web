@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Crown, Users, Pencil, FileText, Link2, Package, Mic2, Star, Ticket } from 'lucide-react'
+import { Plus, Crown, Users, Pencil, FileText, Link2, Package, Mic2, Star, Ticket, MessageCircle } from 'lucide-react'
 import { updateSubscriptionTier, type PerkItem } from '@/lib/subscriptions/actions'
 import { TierEditor } from './tier-editor'
 
@@ -34,6 +34,7 @@ const PERK_ICONS: Record<PerkItem['type'], IconFC> = {
     community_link:   Users,
     merch:            Package,
     shoutout:         Mic2,
+    subscriber_chat:  MessageCircle,
     custom:           Star,
 }
 

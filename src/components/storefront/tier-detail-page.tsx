@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast'
 import {
     Crown, Check, Loader2, ArrowLeft,
     Package, Megaphone, Zap, Download, Link2, Gift, Star,
+    MessageCircle,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { initiateSubscriptionCheckout, cancelSubscription } from '@/lib/subscriptions/actions'
@@ -23,6 +24,7 @@ const PERK_ICONS: Record<PerkItem['type'], typeof Crown> = {
     community_link:   Link2,
     merch:            Package,
     shoutout:         Megaphone,
+    subscriber_chat:  MessageCircle,
     custom:           Star,
 }
 

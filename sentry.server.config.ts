@@ -17,9 +17,12 @@ Sentry.init({
     // off; turn it up deliberately once the error signal is understood.
     tracesSampleRate: 0,
 
-    // Off, always. See sentry-scrub: this app carries buyer emails, medical
-    // answers and ticket tokens, and none of it belongs in an issue tracker.
-    sendDefaultPii: false,
+    // NOTE: `sendDefaultPii: false` used to sit here. Sentry v11 removed the
+    // option entirely -- it is not in @sentry/core's options type and nothing
+    // reads it at runtime, so it was dead config that only produced a type
+    // error. The guard that actually matters is `beforeSend: scrubEvent`
+    // below: this app carries buyer emails, medical answers and ticket tokens,
+    // and sentry-scrub strips them from every event before it leaves.
 
     beforeSend: scrubEvent,
     beforeSendTransaction: scrubEvent,

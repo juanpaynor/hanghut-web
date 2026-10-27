@@ -97,6 +97,20 @@ interface EventFormData {
     approval_email_body: string
     rejection_email_subject: string
     rejection_email_body: string
+
+    /* EDITOR-ONLY STATE, not event data.
+     *
+     * Which tab the approval / rejection email editor is on. These ride in
+     * formData because handleInputChange is the one setter that also clears a
+     * field's validation error, and duplicating that for two toggles was not
+     * worth it. They were being written at runtime but never declared, so
+     * every write was a type error and every read needed `as any`.
+     *
+     * They are NOT submitted: handleSubmit appends named fields to a
+     * FormData one at a time rather than spreading this object, so nothing
+     * prefixed with `_` ever reaches the server. Keep it that way. */
+    _approval_mode?: 'visual' | 'html' | 'preview'
+    _rejection_mode?: 'visual' | 'html' | 'preview'
 }
 
 /**
@@ -1913,7 +1927,7 @@ export function EventForm({
                                                     type="button"
                                                     onClick={() => handleInputChange('_approval_mode', mode)}
                                                     className={`text-xs px-3 py-1 rounded-md border transition-colors capitalize ${
-                                                        ((formData as any)._approval_mode || 'visual') === mode
+                                                        (formData._approval_mode || 'visual') === mode
                                                             ? 'bg-primary text-primary-foreground border-primary'
                                                             : 'bg-background border-border hover:bg-muted'
                                                     }`}
@@ -1986,7 +2000,7 @@ export function EventForm({
                                                     type="button"
                                                     onClick={() => handleInputChange('_rejection_mode', mode)}
                                                     className={`text-xs px-3 py-1 rounded-md border transition-colors capitalize ${
-                                                        ((formData as any)._rejection_mode || 'visual') === mode
+                                                        (formData._rejection_mode || 'visual') === mode
                                                             ? 'bg-primary text-primary-foreground border-primary'
                                                             : 'bg-background border-border hover:bg-muted'
                                                     }`}

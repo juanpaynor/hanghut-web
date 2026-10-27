@@ -23,5 +23,13 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    // Deno edge functions. They import from URLs and use the `Deno` global,
+    // neither of which this (Next/bundler) tsconfig can resolve, so every one
+    // of them reported errors that are not real: 270 of the 274 `tsc --noEmit`
+    // emitted, burying the 4 that ARE in src/. They are typechecked by the
+    // Supabase CLI / Deno toolchain at deploy time, not here.
+    "supabase/functions"
+  ]
 }
