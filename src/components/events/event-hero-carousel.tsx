@@ -150,8 +150,8 @@ export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
                             {active.kind === 'experience' ? 'Experience' : active.is_featured ? 'Featured' : 'Spotlight'}
                         </span>
 
-                        <h2 className="font-headline mt-5 text-4xl font-extrabold leading-[1.03] tracking-tight drop-shadow-sm md:text-5xl xl:text-6xl">
-                            <Link href={activeHref} className="rounded-sm outline-none transition-colors hover:text-white/85 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-4 focus-visible:ring-offset-transparent">
+                        <h2 className="font-headline mt-5 text-4xl font-extrabold leading-[1.03] tracking-tight drop-shadow-xs md:text-5xl xl:text-6xl">
+                            <Link href={activeHref} className="rounded-sm outline-hidden transition-colors hover:text-white/85 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-4 focus-visible:ring-offset-transparent">
                                 {active.title.trim()}
                             </Link>
                         </h2>
@@ -194,7 +194,7 @@ export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
                         <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3">
                             <Link
                                 href={activeHref}
-                                className="font-headline inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-bold text-neutral-900 shadow-xl transition-transform hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#4f46e5] motion-reduce:transition-none motion-reduce:hover:scale-100"
+                                className="font-headline inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-bold text-neutral-900 shadow-xl transition-transform hover:scale-[1.02] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#4f46e5] motion-reduce:transition-none motion-reduce:hover:scale-100"
                             >
                                 {activeSoldOut ? 'Join waitlist' : active.kind === 'experience' ? 'Book now' : 'Get tickets'}
                                 {!activeSoldOut && (
@@ -290,7 +290,7 @@ export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
                                         onClick={() => go(i)}
                                         aria-label={`Show ${event.title.trim()}`}
                                         aria-current={i === index}
-                                        className={`group flex w-[172px] shrink-0 flex-col gap-2 rounded-lg p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:w-[196px] ${
+                                        className={`group flex w-[172px] shrink-0 flex-col gap-2 rounded-lg p-2 text-left transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-white sm:w-[196px] ${
                                             i === index ? 'bg-white/20 ring-1 ring-white/30' : 'hover:bg-white/10'
                                         }`}
                                     >
@@ -338,14 +338,14 @@ export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
                             <button
                                 onClick={prev}
                                 aria-label="Previous event"
-                                className="grid h-9 w-9 place-items-center rounded-full border border-white/20 text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                                className="grid h-9 w-9 place-items-center rounded-full border border-white/20 text-white transition-colors hover:bg-white/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-white"
                             >
                                 <ChevronLeft className="h-4 w-4" />
                             </button>
                             <button
                                 onClick={next}
                                 aria-label="Next event"
-                                className="grid h-9 w-9 place-items-center rounded-full border border-white/20 text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                                className="grid h-9 w-9 place-items-center rounded-full border border-white/20 text-white transition-colors hover:bg-white/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-white"
                             >
                                 <ChevronRight className="h-4 w-4" />
                             </button>

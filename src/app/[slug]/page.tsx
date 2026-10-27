@@ -391,7 +391,7 @@ export default async function StorefrontPage({
                                 />
                             </div>
                         )}
-                        <div className="flex-grow" />
+                        <div className="grow" />
                     </>
                 ) : (
                 <>
@@ -428,7 +428,7 @@ export default async function StorefrontPage({
                         </div>
 
                         {/* Profile Content Container */}
-                        <div className="container mx-auto px-4 relative z-20 -mt-32 pb-20 flex-grow">
+                        <div className="container mx-auto px-4 relative z-20 -mt-32 pb-20 grow">
                             <div className="flex flex-col lg:flex-row gap-8 items-start">
 
                                 {/* Left Column: Brand Identity Card */}
@@ -580,7 +580,7 @@ export default async function StorefrontPage({
                                             alt="Cover"
                                             fill
                                             sizes="100vw"
-                                            className="object-cover blur-sm scale-110"
+                                            className="object-cover blur-xs scale-110"
                                         />
                                     </>
                                 ) : (
@@ -606,7 +606,7 @@ export default async function StorefrontPage({
                             </div>
 
                             <div className="container mx-auto px-4 max-w-5xl relative z-30">
-                                <div className={cn("bg-card rounded-xl p-8 shadow-sm border space-y-8 min-h-[400px]", animate('delay-300'))}>
+                                <div className={cn("bg-card rounded-xl p-8 shadow-xs border space-y-8 min-h-[400px]", animate('delay-300'))}>
                                     {(branding.description_html || partner.description) && (
                                         <div className="text-center max-w-2xl mx-auto space-y-4">
                                             {branding.description_html ? (
@@ -666,7 +666,7 @@ export default async function StorefrontPage({
                                 </div>
                             </div>
                         </div>
-                        <div className="flex-grow" /> {/* Spacer */}
+                        <div className="grow" /> {/* Spacer */}
                     </>
                 )}
 

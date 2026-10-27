@@ -44,17 +44,17 @@ export default function TicketingPage() {
 
                         {/* Key Benefits */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto pt-8">
-                            <div className="p-6 rounded-2xl bg-white/50 backdrop-blur-sm border border-border/50 hover:shadow-lg transition-shadow">
+                            <div className="p-6 rounded-2xl bg-white/50 backdrop-blur-xs border border-border/50 hover:shadow-lg transition-shadow">
                                 <div className="text-4xl mb-3">📱</div>
                                 <h3 className="font-bold text-lg mb-2">Built-in Audience</h3>
                                 <p className="text-sm text-muted-foreground">Your events land on our social app feed and map the moment you go live</p>
                             </div>
-                            <div className="p-6 rounded-2xl bg-white/50 backdrop-blur-sm border border-border/50 hover:shadow-lg transition-shadow">
+                            <div className="p-6 rounded-2xl bg-white/50 backdrop-blur-xs border border-border/50 hover:shadow-lg transition-shadow">
                                 <div className="text-4xl mb-3">🎯</div>
                                 <h3 className="font-bold text-lg mb-2">Just 2% + ₱15 Per Ticket</h3>
                                 <p className="text-sm text-muted-foreground">Or pass it to attendees and keep 100%. Zero monthly fees, zero setup, zero risk</p>
                             </div>
-                            <div className="p-6 rounded-2xl bg-white/50 backdrop-blur-sm border border-border/50 hover:shadow-lg transition-shadow">
+                            <div className="p-6 rounded-2xl bg-white/50 backdrop-blur-xs border border-border/50 hover:shadow-lg transition-shadow">
                                 <div className="text-4xl mb-3">⚡</div>
                                 <h3 className="font-bold text-lg mb-2">Up and Running Today</h3>
                                 <p className="text-sm text-muted-foreground">Create your event, set your price, and start selling in under 10 minutes</p>
@@ -80,7 +80,7 @@ export default function TicketingPage() {
                     </div>
 
                     <div className="container relative z-10 mx-auto px-4 text-center space-y-8">
-                        <div className="inline-block px-6 py-2 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-sm font-bold uppercase tracking-wider mb-4">
+                        <div className="inline-block px-6 py-2 rounded-full bg-white/20 backdrop-blur-xs border border-white/30 text-sm font-bold uppercase tracking-wider mb-4">
                             ✨ Your Audience Is Already Here
                         </div>
 

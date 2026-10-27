@@ -85,7 +85,7 @@ export default function AppShowcase() {
                                 whileInView={{ opacity: 1, y: 0 }}
                                 viewport={{ once: true }}
                                 transition={{ delay: index * 0.1 }}
-                                className="flex flex-col sm:flex-row gap-6 p-8 rounded-3xl bg-background border border-border/50 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+                                className="flex flex-col sm:flex-row gap-6 p-8 rounded-3xl bg-background border border-border/50 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
                             >
                                 <div className={`shrink-0 w-16 h-16 rounded-2xl ${feature.color} flex items-center justify-center`}>
                                     <Icon className="w-8 h-8" />
@@ -109,7 +109,7 @@ export default function AppShowcase() {
                     transition={{ delay: 0.5 }}
                     className="mt-16 text-center"
                 >
-                    <div className="inline-flex items-center gap-2 bg-background/50 backdrop-blur px-6 py-3 rounded-full border border-border/50 text-muted-foreground text-sm">
+                    <div className="inline-flex items-center gap-2 bg-background/50 backdrop-blur-sm px-6 py-3 rounded-full border border-border/50 text-muted-foreground text-sm">
                         <ShieldCheck className="h-4 w-4 text-green-500" />
                         <span>Profiles are verified for safety. You're in control.</span>
                     </div>

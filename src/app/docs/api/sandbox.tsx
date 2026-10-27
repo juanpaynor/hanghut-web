@@ -270,7 +270,7 @@ export function Sandbox({
                             onChange={e => { setBodyText(e.target.value); setBodyError(null) }}
                             spellCheck={false}
                             rows={Math.min(14, bodyText.split('\n').length + 1)}
-                            className="w-full font-mono text-[12px] bg-black/40 text-zinc-200 rounded-lg px-3 py-2 ring-1 ring-zinc-800/60 focus:ring-indigo-500/50 outline-none resize-y"
+                            className="w-full font-mono text-[12px] bg-black/40 text-zinc-200 rounded-lg px-3 py-2 ring-1 ring-zinc-800/60 focus:ring-indigo-500/50 outline-hidden resize-y"
                         />
                         {bodyError && (
                             <p className="mt-1.5 text-[11px] text-rose-400">Invalid JSON — {bodyError}</p>
@@ -386,7 +386,7 @@ function Fields({
                             onChange={e => onChange(f.name, e.target.value)}
                             placeholder={f.placeholder}
                             spellCheck={false}
-                            className="w-full bg-transparent font-mono text-[12px] text-zinc-200 placeholder:text-zinc-700 outline-none"
+                            className="w-full bg-transparent font-mono text-[12px] text-zinc-200 placeholder:text-zinc-700 outline-hidden"
                         />
                     </label>
                 ))}

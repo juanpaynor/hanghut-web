@@ -121,7 +121,7 @@ export function PopupsClient({ initialPopups }: { initialPopups: AdminPopup[] })
                 </Button>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-x-auto">
                 <table className="w-full min-w-[62rem]">
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200">

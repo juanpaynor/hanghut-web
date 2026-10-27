@@ -414,7 +414,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="bg-background rounded-xl p-6 border shadow-sm text-center relative overflow-hidden">
+                                    <div className="bg-background rounded-xl p-6 border shadow-xs text-center relative overflow-hidden">
                                         {coverPreview && (
                                             <div className="absolute top-0 left-0 w-full h-16 bg-cover bg-center opacity-50" style={{ backgroundImage: `url(${coverPreview})` }} />
                                         )}
@@ -940,7 +940,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                         <div className="space-y-2">
                                             <Label>Primary Brand Color</Label>
                                             <div className="flex gap-4 items-center">
-                                                <div className="h-12 w-12 rounded-lg border shadow-sm overflow-hidden relative cursor-pointer">
+                                                <div className="h-12 w-12 rounded-lg border shadow-xs overflow-hidden relative cursor-pointer">
                                                     <Input
                                                         type="color"
                                                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"

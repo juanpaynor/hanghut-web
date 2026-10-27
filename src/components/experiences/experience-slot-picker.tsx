@@ -312,7 +312,7 @@ export function ExperienceSlotPicker({
                                     'relative aspect-square flex items-center justify-center rounded-md text-xs transition-all duration-150',
                                     !hasSlot && 'text-muted-foreground/30 cursor-default',
                                     hasSlot && !isSelected && 'font-semibold text-foreground hover:bg-primary/10 cursor-pointer',
-                                    isSelected && 'bg-primary text-primary-foreground font-bold shadow-sm',
+                                    isSelected && 'bg-primary text-primary-foreground font-bold shadow-xs',
                                     today && !isSelected && 'ring-1 ring-primary/40'
                                 )}
                             >
@@ -502,7 +502,7 @@ export function ExperienceSlotPicker({
                                 autoCapitalize="characters"
                                 autoComplete="off"
                                 spellCheck={false}
-                                className="h-10 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm uppercase tracking-wide outline-none focus:border-primary"
+                                className="h-10 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm uppercase tracking-wide outline-hidden focus:border-primary"
                             />
                             <Button
                                 type="button"

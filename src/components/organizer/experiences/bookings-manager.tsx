@@ -146,7 +146,7 @@ export function BookingsManager({ bookings }: Props) {
                             key={booking.id}
                             className={cn(
                                 'rounded-xl border border-border overflow-hidden transition-all',
-                                isExpanded && 'border-primary/30 shadow-sm'
+                                isExpanded && 'border-primary/30 shadow-xs'
                             )}
                         >
                             {/* Row — always visible */}

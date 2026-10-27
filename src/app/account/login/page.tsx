@@ -82,7 +82,7 @@ function LoginForm() {
                                 className={cn(
                                     'flex-1 py-2 text-sm font-medium rounded-lg transition-all',
                                     mode === m
-                                        ? 'bg-background shadow-sm text-foreground'
+                                        ? 'bg-background shadow-xs text-foreground'
                                         : 'text-muted-foreground hover:text-foreground'
                                 )}
                             >

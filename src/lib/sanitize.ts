@@ -56,7 +56,7 @@ const SAFE_STYLE_PROPERTIES = [
     'border-width', 'border-style', 'border-color', 'border-radius',
     'box-shadow', 'outline', 'box-sizing',
     // layout — safe because none of these can escape the description block
-    'display', 'flex', 'flex-direction', 'flex-wrap', 'flex-grow', 'flex-shrink', 'flex-basis',
+    'display', 'flex', 'flex-direction', 'flex-wrap', 'grow', 'flex-shrink', 'flex-basis',
     'grid-template-columns', 'grid-template-rows', 'grid-column', 'grid-row',
     'gap', 'row-gap', 'column-gap',
     'align-items', 'align-self', 'justify-content', 'justify-items', 'justify-self', 'order',

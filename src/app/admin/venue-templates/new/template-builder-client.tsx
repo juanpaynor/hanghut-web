@@ -125,7 +125,7 @@ export function TemplateBuilderClient({
     return (
         <div className="flex flex-col h-full gap-3">
             {/* Header Bar */}
-            <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm flex-wrap">
+            <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-xs flex-wrap">
                 <Link href="/admin/venue-templates">
                     <Button variant="ghost" size="sm">
                         <ArrowLeft className="w-4 h-4 mr-1" />
@@ -175,7 +175,7 @@ export function TemplateBuilderClient({
                     placeholder="Template name (e.g. MOA Arena – Concert)"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="flex-1 min-w-[140px] bg-transparent text-sm font-medium text-slate-900 placeholder-slate-400 focus:outline-none"
+                    className="flex-1 min-w-[140px] bg-transparent text-sm font-medium text-slate-900 placeholder-slate-400 focus:outline-hidden"
                 />
 
                 <div className="h-6 w-px bg-slate-200 shrink-0" />
@@ -185,21 +185,21 @@ export function TemplateBuilderClient({
                     placeholder="Venue name"
                     value={venueName}
                     onChange={(e) => setVenueName(e.target.value)}
-                    className="w-36 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-none"
+                    className="w-36 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-hidden"
                 />
                 <input
                     type="text"
                     placeholder="Address (optional)"
                     value={venueAddress}
                     onChange={(e) => setVenueAddress(e.target.value)}
-                    className="w-44 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-none"
+                    className="w-44 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-hidden"
                 />
                 <input
                     type="text"
                     placeholder="Tags (comma-sep)"
                     value={tags}
                     onChange={(e) => setTags(e.target.value)}
-                    className="w-32 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-none"
+                    className="w-32 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-hidden"
                 />
 
                 <div className="h-6 w-px bg-slate-200 shrink-0" />

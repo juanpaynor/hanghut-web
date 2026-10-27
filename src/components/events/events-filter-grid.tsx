@@ -314,7 +314,7 @@ export function EventsFilterGrid({ events, categories, heroExtras = [] }: Events
             {/* Filters (sticky under the fixed h-20 header) */}
             <section
                 id="all-events"
-                className="border-y bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 sticky top-20 z-40 mt-12 scroll-mt-20"
+                className="border-y bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80 sticky top-20 z-40 mt-12 scroll-mt-20"
             >
                 <div className="container mx-auto px-4">
                     {/* Categories */}
@@ -365,7 +365,7 @@ export function EventsFilterGrid({ events, categories, heroExtras = [] }: Events
                             <select
                                 value={sort}
                                 onChange={e => setSort(e.target.value as SortKey)}
-                                className="h-8 rounded-md border bg-background px-2 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                className="h-8 rounded-md border bg-background px-2 text-xs font-medium text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                                 aria-label="Sort events"
                             >
                                 {SORTS.map(s => (

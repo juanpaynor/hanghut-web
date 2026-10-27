@@ -263,7 +263,7 @@ export default function AdminManagementPage() {
             {loading ? (
                 <div className="text-center py-12 text-slate-500">Loading...</div>
             ) : (
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
                     <table className="w-full">
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">

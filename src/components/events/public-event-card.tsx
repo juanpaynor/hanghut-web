@@ -28,7 +28,7 @@ export function PublicEventCard({ event, categoryLabel, categoryEmoji }: PublicE
 
     return (
         <Link href={eventHref(event)} className="group block h-full">
-            <div data-hh-card className="h-full bg-card rounded-2xl overflow-hidden border border-border/50 shadow-sm hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 transition-all duration-300 flex flex-col">
+            <div data-hh-card className="h-full bg-card rounded-2xl overflow-hidden border border-border/50 shadow-xs hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 transition-all duration-300 flex flex-col">
                 {/* Image Container */}
                 <div className="relative aspect-[4/3] overflow-hidden">
                     {event.cover_image_url ? (
@@ -63,16 +63,16 @@ export function PublicEventCard({ event, categoryLabel, categoryEmoji }: PublicE
                                 Off-site
                             </Badge>
                         ) : (
-                            <Badge className="bg-primary/90 text-primary-foreground hover:bg-primary backdrop-blur-md font-semibold text-[10px] shadow-sm">
+                            <Badge className="bg-primary/90 text-primary-foreground hover:bg-primary backdrop-blur-md font-semibold text-[10px] shadow-xs">
                                 On HangHut
                             </Badge>
                         )}
                         {isSoldOut && (
-                            <Badge variant="destructive" className="font-bold uppercase tracking-widest text-[10px] shadow-sm">
+                            <Badge variant="destructive" className="font-bold uppercase tracking-widest text-[10px] shadow-xs">
                                 Sold Out
                             </Badge>
                         )}
-                        <Badge variant={event.ticket_price === 0 ? "secondary" : "default"} className="font-semibold shadow-sm backdrop-blur-md bg-background/80 text-foreground hover:bg-background/90">
+                        <Badge variant={event.ticket_price === 0 ? "secondary" : "default"} className="font-semibold shadow-xs backdrop-blur-md bg-background/80 text-foreground hover:bg-background/90">
                             {event.ticket_price === 0 ? 'Free' : `₱${event.ticket_price.toLocaleString()}`}
                         </Badge>
                     </div>

@@ -324,7 +324,7 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, 
                 tabIndex={overflow.down ? 0 : -1}
                 aria-hidden={!overflow.down}
                 className={cn(
-                    'absolute bottom-1.5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-muted-foreground shadow-sm transition-all duration-200 hover:border-primary/40 hover:text-foreground',
+                    'absolute bottom-1.5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-muted-foreground shadow-xs transition-all duration-200 hover:border-primary/40 hover:text-foreground',
                     overflow.down ? 'opacity-100' : 'pointer-events-none translate-y-1 opacity-0'
                 )}
             >

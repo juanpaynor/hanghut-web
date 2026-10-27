@@ -149,7 +149,7 @@ export function SupportWidget({ currentPath }: { currentPath?: string }) {
                         transition={{ type: 'spring', stiffness: 460, damping: 26, mass: 0.7 }}
                         whileHover={reduce ? undefined : { scale: 1.06 }}
                         whileTap={reduce ? undefined : { scale: 0.94 }}
-                        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                     >
                         {/* Attention halo, only while something is waiting. It
                             sits behind the button face and never intercepts
@@ -177,7 +177,7 @@ export function SupportWidget({ currentPath }: { currentPath?: string }) {
                                     animate={{ scale: 1, opacity: 1 }}
                                     exit={{ scale: 0.3, opacity: 0 }}
                                     transition={{ type: 'spring', stiffness: 600, damping: 18 }}
-                                    className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-semibold text-destructive-foreground shadow"
+                                    className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-semibold text-destructive-foreground shadow-sm"
                                 >
                                     {unread > 9 ? '9+' : unread}
                                 </motion.span>

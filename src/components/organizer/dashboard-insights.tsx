@@ -53,7 +53,7 @@ function SoftTooltip({ active, payload, label, mode }: {
     const current = payload.find(p => p.dataKey === 'current')?.value ?? 0
     const previous = payload.find(p => p.dataKey === 'previous')?.value
     return (
-        <div className="rounded-xl border bg-background/95 backdrop-blur px-3 py-2 shadow-lg">
+        <div className="rounded-xl border bg-background/95 backdrop-blur-sm px-3 py-2 shadow-lg">
             <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
             <p className="text-sm font-semibold tabular-nums">
                 {mode === 'revenue' ? peso(current) : `${current} ticket${current === 1 ? '' : 's'}`}
@@ -396,7 +396,7 @@ function Segmented({ options, value, onChange }: {
                     className={cn(
                         'rounded-[6px] px-2.5 py-1 text-xs font-medium transition-colors',
                         value === o.v
-                            ? 'bg-background text-foreground shadow-sm'
+                            ? 'bg-background text-foreground shadow-xs'
                             : 'text-muted-foreground hover:text-foreground',
                     )}
                 >

@@ -56,7 +56,7 @@ export function RichTextEditor({ value, onChange, disabled }: RichTextEditorProp
         },
         editorProps: {
             attributes: {
-                class: 'min-h-[300px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 prose prose-sm max-w-none dark:prose-invert [&img]:rounded-md [&img]:max-w-full',
+                class: 'min-h-[300px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 prose prose-sm max-w-none dark:prose-invert [&img]:rounded-md [&img]:max-w-full',
             },
         },
     })
@@ -173,7 +173,7 @@ export function RichTextEditor({ value, onChange, disabled }: RichTextEditorProp
             className={cn(
                 'flex items-center gap-1 px-2.5 py-1 text-xs rounded font-medium transition-colors',
                 activeTab === tab
-                    ? 'bg-background shadow-sm text-foreground'
+                    ? 'bg-background shadow-xs text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
             )}
         >
@@ -298,7 +298,7 @@ export function RichTextEditor({ value, onChange, disabled }: RichTextEditorProp
                     }}
                     disabled={disabled}
                     spellCheck={false}
-                    className="min-h-[300px] w-full resize-y p-3 font-mono text-xs bg-background text-foreground border-0 outline-none focus:ring-0 rounded-b-md"
+                    className="min-h-[300px] w-full resize-y p-3 font-mono text-xs bg-background text-foreground border-0 outline-hidden focus:ring-0 rounded-b-md"
                     placeholder="Paste or type HTML here…"
                 />
             )}

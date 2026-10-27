@@ -75,7 +75,7 @@ export function ExperiencePassView({ booking }: { booking: ExperienceBooking }) 
         <div className="relative min-h-screen bg-muted/30 px-4 py-8">
             <div className="mx-auto w-full max-w-md space-y-4">
                 {/* Experience header */}
-                <div className="overflow-hidden rounded-2xl border bg-background shadow-sm">
+                <div className="overflow-hidden rounded-2xl border bg-background shadow-xs">
                     {experience.cover_image_url && (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={experience.cover_image_url} alt="" className="h-40 w-full object-cover" />
@@ -131,7 +131,7 @@ export function ExperiencePassView({ booking }: { booking: ExperienceBooking }) 
 
                         {/* The pass itself — the events "classic" card, with the
                             guest count in the seat row's place. */}
-                        <div className="overflow-hidden rounded-2xl border bg-background shadow-sm">
+                        <div className="overflow-hidden rounded-2xl border bg-background shadow-xs">
                             <div className="flex items-center justify-between border-b px-5 py-3">
                                 <span className="flex items-center gap-2 text-sm font-medium">
                                     <Users className="h-4 w-4" />

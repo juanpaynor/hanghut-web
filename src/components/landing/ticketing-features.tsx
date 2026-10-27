@@ -167,12 +167,12 @@ export function TicketingFeatures() {
                 {/* 3. Customer Interaction */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
                     <div className="order-2 lg:order-1 relative">
-                        <div className="relative aspect-square rounded-[40px] bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-100 backdrop-blur-sm overflow-hidden p-8 flex flex-col justify-center gap-4">
+                        <div className="relative aspect-square rounded-[40px] bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-100 backdrop-blur-xs overflow-hidden p-8 flex flex-col justify-center gap-4">
                             <motion.div
                                 initial={{ y: 20, opacity: 0 }}
                                 whileInView={{ y: 0, opacity: 1 }}
                                 viewport={{ once: true }}
-                                className="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm max-w-[80%] self-start"
+                                className="bg-white p-4 rounded-2xl rounded-tl-none shadow-xs max-w-[80%] self-start"
                             >
                                 <p className="text-sm font-medium text-foreground/80">Hey! Is there parking nearby?</p>
                             </motion.div>

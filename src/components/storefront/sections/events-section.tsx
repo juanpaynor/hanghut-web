@@ -97,7 +97,7 @@ function ListEventCard({ event }: { event: any }) {
 
     return (
         <Link href={eventHref(event)} className="group block">
-            <div className="flex gap-4 bg-card rounded-xl overflow-hidden border border-border/50 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
+            <div className="flex gap-4 bg-card rounded-xl overflow-hidden border border-border/50 shadow-xs hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
                 {/* Compact side thumbnail */}
                 <div className="relative w-40 md:w-52 shrink-0 overflow-hidden">
                     {event.cover_image_url ? (

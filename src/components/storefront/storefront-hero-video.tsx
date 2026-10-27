@@ -80,7 +80,7 @@ export function StorefrontHeroVideo({ videoUrl, videoPosition = 'center' }: Stor
                 <Button
                     variant="secondary"
                     size="icon"
-                    className="h-10 w-10 rounded-full bg-black/50 hover:bg-black/70 text-white border-none shadow-lg backdrop-blur-sm"
+                    className="h-10 w-10 rounded-full bg-black/50 hover:bg-black/70 text-white border-none shadow-lg backdrop-blur-xs"
                     onClick={toggleMute}
                 >
                     {isMuted ? (

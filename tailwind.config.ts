@@ -1,7 +1,10 @@
 import type { Config } from 'tailwindcss';
 
 export default {
-  darkMode: ['class'],
+  // Tailwind 4 types darkMode as `'class' | ['class', selector] | ...`, so the
+  // one-element array form is no longer valid. The bare string means the same
+  // thing it always did: dark styles apply under a `.dark` ancestor.
+  darkMode: 'class',
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',

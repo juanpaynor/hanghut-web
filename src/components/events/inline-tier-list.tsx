@@ -162,7 +162,7 @@ export function InlineTierList({
                                 style={selected && accent ? { borderColor: accent } : undefined}
                                 className={cn(
                                     'group relative text-left rounded-xl border-2 p-4 transition-colors',
-                                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+                                    'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/50',
                                     tOff ? 'opacity-55 cursor-not-allowed' : 'cursor-pointer hover:border-primary/50',
                                     tLocked && 'grayscale',
                                     selected ? 'border-primary bg-primary/5' : 'border-border',

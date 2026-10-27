@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 
 const SocialVortex = dynamic(() => import('./social-vortex'), {
     ssr: false,
-    loading: () => <div className="w-full h-full bg-white/50 backdrop-blur-sm" />
+    loading: () => <div className="w-full h-full bg-white/50 backdrop-blur-xs" />
 });
 
 export default function SocialCircleSection() {

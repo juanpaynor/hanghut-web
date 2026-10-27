@@ -1016,7 +1016,7 @@ export function EventForm({
                         </p>
                     </div>
                     {!isEditing && (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 backdrop-blur px-3 py-1 text-xs text-white/90">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 backdrop-blur-sm px-3 py-1 text-xs text-white/90">
                             <span className="h-1.5 w-1.5 rounded-full bg-green-400" /> Draft autosaved
                         </span>
                     )}
@@ -1060,7 +1060,7 @@ export function EventForm({
 
             {/* Edit: single-page manage view with a section jump-nav */}
             {isEditing && (
-                <nav className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-1.5 rounded-lg bg-background/85 px-1 py-2 backdrop-blur">
+                <nav className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-1.5 rounded-lg bg-background/85 px-1 py-2 backdrop-blur-sm">
                     {[
                         { key: 'basics', label: 'Basics', show: true },
                         { key: 'when', label: 'When & where', show: true },
@@ -2482,7 +2482,7 @@ export function EventForm({
 
             {/* Sticky nav for the guided steps (create) */}
             {!isEditing && curStepIdx < stepKeys.length - 1 && (
-                <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/90 backdrop-blur">
+                <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/90 backdrop-blur-sm">
                     <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
                         <span className="text-xs text-muted-foreground hidden sm:block">
                             Step {curStepIdx + 1} of {stepKeys.length} · {STEP_TITLE[curKey]}
@@ -2540,7 +2540,7 @@ function EventPreviewPane({
             <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Live preview
             </div>
-            <div className="rounded-2xl border overflow-hidden bg-card shadow-sm">
+            <div className="rounded-2xl border overflow-hidden bg-card shadow-xs">
                 <div className="aspect-[16/10] relative bg-muted">
                     {coverPreview ? (
                         <img src={coverPreview} alt="" className="w-full h-full object-cover" />
@@ -2550,7 +2550,7 @@ function EventPreviewPane({
                         </div>
                     )}
                     {categoryLabel && (
-                        <span className="absolute top-3 left-3 rounded-full bg-black/55 text-white text-xs font-medium px-3 py-1 backdrop-blur">
+                        <span className="absolute top-3 left-3 rounded-full bg-black/55 text-white text-xs font-medium px-3 py-1 backdrop-blur-sm">
                             {categoryLabel}
                         </span>
                     )}

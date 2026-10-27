@@ -72,7 +72,7 @@ export default function WaitlistPage() {
                 </Link>
                 <Link
                     href="/"
-                    className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors bg-white/60 backdrop-blur-md px-4 py-2 rounded-full border border-slate-200/60 shadow-sm"
+                    className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors bg-white/60 backdrop-blur-md px-4 py-2 rounded-full border border-slate-200/60 shadow-xs"
                 >
                     <ArrowLeft className="h-4 w-4" />
                     Back

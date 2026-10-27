@@ -100,7 +100,7 @@ export function MobileTicketButton({ showTickets, isSoldOut, isExternal, externa
 
     if (isExternal && externalUrl) {
         return (
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur border-t md:hidden z-50 animate-in slide-in-from-bottom">
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-sm border-t md:hidden z-50 animate-in slide-in-from-bottom">
                 <a
                     href={externalUrl}
                     target="_blank"
@@ -117,7 +117,7 @@ export function MobileTicketButton({ showTickets, isSoldOut, isExternal, externa
     }
 
     return (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur border-t md:hidden z-50 animate-in slide-in-from-bottom">
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-sm border-t md:hidden z-50 animate-in slide-in-from-bottom">
             <Button
                 className="w-full h-12 text-lg font-bold shadow-lg"
                 onClick={() => {

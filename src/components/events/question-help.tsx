@@ -29,7 +29,7 @@ export function QuestionHelp({ text, imageUrl }: {
                     <button
                         type="button"
                         onClick={() => setZoomed(true)}
-                        className="group relative block overflow-hidden rounded-lg border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="group relative block overflow-hidden rounded-lg border bg-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                         aria-label="Open the reference image full size"
                     >
                         {/* eslint-disable-next-line @next/next/no-img-element */}

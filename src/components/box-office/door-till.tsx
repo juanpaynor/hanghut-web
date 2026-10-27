@@ -248,7 +248,7 @@ export function DoorTill({
                                     onClick={() => setMode(m)}
                                     aria-pressed={mode === m}
                                     className={`rounded-md px-5 py-1.5 text-sm font-medium capitalize transition-colors ${
-                                        mode === m ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                                        mode === m ? 'bg-background shadow-xs' : 'text-muted-foreground hover:text-foreground'
                                     }`}
                                 >
                                     {m === 'find' ? 'Find a buyer' : 'Sell'}
@@ -538,7 +538,7 @@ export function DoorTill({
                     {/* Success covers the sale column rather than pushing it, so the
                         layout never shifts under someone's hand. */}
                     {last && mode === 'sell' && (
-                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 bg-card/97 px-8 backdrop-blur-sm">
+                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 bg-card/97 px-8 backdrop-blur-xs">
                             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/15">
                                 <Check className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
                             </div>

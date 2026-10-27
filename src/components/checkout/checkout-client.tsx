@@ -874,7 +874,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, termsDo
                 )}
 
                 {/* 1. Account / Guest Info */}
-                <Card className="border-border/50 shadow-sm">
+                <Card className="border-border/50 shadow-xs">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-primary">
                             <User className="w-5 h-5" />
@@ -996,7 +996,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, termsDo
 
                 {/* 2. Promo + Terms — moved out of the summary so the summary stays
                     short and the pay button is reachable without scrolling. */}
-                <Card className="border-border/50 shadow-sm">
+                <Card className="border-border/50 shadow-xs">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-primary text-lg">
                             <ClipboardList className="w-5 h-5" />
@@ -1192,7 +1192,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, termsDo
                             {/* Compact event row: small poster thumbnail + details */}
                             <div className="flex gap-3">
                                 {event.cover_image_url && (
-                                    <div className="relative w-20 h-24 shrink-0 overflow-hidden rounded-lg border border-border/50 shadow-sm">
+                                    <div className="relative w-20 h-24 shrink-0 overflow-hidden rounded-lg border border-border/50 shadow-xs">
                                         <Image
                                             src={event.cover_image_url}
                                             alt={event.title}
@@ -1285,7 +1285,7 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, termsDo
             </div>
 
             {/* Mobile fixed pay bar — always reachable, mirrors the desktop CTA */}
-            <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.08)]" style={themeStyle}>
+            <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.08)]" style={themeStyle}>
                 <div className="flex items-center gap-3">
                     <div className="flex flex-col leading-tight">
                         <span className="text-[11px] text-muted-foreground">Total</span>

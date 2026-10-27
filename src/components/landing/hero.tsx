@@ -92,14 +92,14 @@ export default function Hero() {
                 >
                     <Link
                         href="/events"
-                        className="group inline-flex items-center justify-center gap-2 rounded-full bg-kinetic-brand px-7 py-3.5 text-sm font-bold uppercase tracking-wide text-kinetic-brand-fg transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kinetic-brand/50"
+                        className="group inline-flex items-center justify-center gap-2 rounded-full bg-kinetic-brand px-7 py-3.5 text-sm font-bold uppercase tracking-wide text-kinetic-brand-fg transition-transform hover:scale-[1.03] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-kinetic-brand/50"
                     >
                         Explore events
                         <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                     </Link>
                     <Link
                         href="/organizer/login"
-                        className="inline-flex items-center justify-center gap-2 rounded-full border border-kinetic-line bg-kinetic-panel/70 px-7 py-3.5 text-sm font-bold uppercase tracking-wide text-kinetic-text backdrop-blur-sm transition-colors hover:border-kinetic-brand/40 hover:bg-kinetic-brand/5"
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-kinetic-line bg-kinetic-panel/70 px-7 py-3.5 text-sm font-bold uppercase tracking-wide text-kinetic-text backdrop-blur-xs transition-colors hover:border-kinetic-brand/40 hover:bg-kinetic-brand/5"
                     >
                         Start selling
                     </Link>

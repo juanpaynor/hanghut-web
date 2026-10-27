@@ -111,7 +111,7 @@ export default function VideoBanner() {
                 type="button"
                 onClick={toggleSound}
                 aria-label={muted ? "Unmute video" : "Mute video"}
-                className="absolute bottom-4 right-4 flex items-center gap-2 rounded-full bg-black/55 px-4 py-2 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/75"
+                className="absolute bottom-4 right-4 flex items-center gap-2 rounded-full bg-black/55 px-4 py-2 text-sm font-medium text-white backdrop-blur-xs transition-colors hover:bg-black/75"
               >
                 {muted ? (
                   <>

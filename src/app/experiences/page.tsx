@@ -81,7 +81,7 @@ export default async function ExperiencesPage({ searchParams }: ExperiencesPageP
     return (
         <div className="min-h-screen bg-background">
             {/* Navbar */}
-            <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur">
+            <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-sm">
                 <div className="container mx-auto px-4 flex h-14 items-center justify-between">
                     <Link href="/" className="flex items-center gap-2 font-bold text-xl hover:opacity-80 transition-opacity">
                         <div className="bg-primary px-3 py-1 rounded-md text-primary-foreground transform -rotate-2 text-base">
@@ -157,7 +157,7 @@ export default async function ExperiencesPage({ searchParams }: ExperiencesPageP
                                             {/* Verified badge */}
                                             {exp.verified_by_hanghut && (
                                                 <div className="absolute top-3 left-3">
-                                                    <Badge className="gap-1 bg-green-500/90 text-white hover:bg-green-500 text-[10px] font-bold uppercase tracking-wider rounded-md px-2 py-1 shadow-sm">
+                                                    <Badge className="gap-1 bg-green-500/90 text-white hover:bg-green-500 text-[10px] font-bold uppercase tracking-wider rounded-md px-2 py-1 shadow-xs">
                                                         <ShieldCheck className="h-3 w-3" />
                                                         Verified
                                                     </Badge>
@@ -166,7 +166,7 @@ export default async function ExperiencesPage({ searchParams }: ExperiencesPageP
 
                                             {/* Heart icon */}
                                             <div className="absolute top-3 right-3">
-                                                <div className="bg-white/90 backdrop-blur-sm rounded-full p-2 shadow-sm hover:bg-white transition-colors">
+                                                <div className="bg-white/90 backdrop-blur-xs rounded-full p-2 shadow-xs hover:bg-white transition-colors">
                                                     <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                                                     </svg>

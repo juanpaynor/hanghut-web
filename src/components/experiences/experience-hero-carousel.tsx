@@ -40,7 +40,7 @@ export function ExperienceHeroCarousel({ images, videoUrl, title, locationName }
                     <X className="h-5 w-5" />
                 </button>
                 {hasMultiple && (
-                    <div className="absolute top-4 left-4 z-10 bg-black/50 text-white text-sm px-3 py-1.5 rounded-full backdrop-blur-sm">
+                    <div className="absolute top-4 left-4 z-10 bg-black/50 text-white text-sm px-3 py-1.5 rounded-full backdrop-blur-xs">
                         {current + 1} / {allMedia.length}
                     </div>
                 )}
@@ -52,7 +52,7 @@ export function ExperienceHeroCarousel({ images, videoUrl, title, locationName }
                     </>
                 )}
                 {hasMultiple && (
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 bg-black/40 backdrop-blur-sm rounded-xl px-3 py-2">
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 bg-black/40 backdrop-blur-xs rounded-xl px-3 py-2">
                         {allMedia.map((src, i) => (
                             <button key={i} onClick={() => setCurrent(i)} className={cn('relative shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all duration-200', i === current ? 'border-white scale-110' : 'border-transparent opacity-50 hover:opacity-80')}>
                                 <img src={src} alt="" className="w-full h-full object-cover" />
@@ -114,10 +114,10 @@ export function ExperienceHeroCarousel({ images, videoUrl, title, locationName }
             {/* Nav arrows */}
             {hasMultiple && (
                 <>
-                    <button onClick={(e) => { e.stopPropagation(); prev() }} className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 text-white rounded-full p-2 backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100">
+                    <button onClick={(e) => { e.stopPropagation(); prev() }} className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 text-white rounded-full p-2 backdrop-blur-xs transition-all opacity-0 group-hover:opacity-100">
                         <ChevronLeft className="h-5 w-5" />
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); next() }} className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 text-white rounded-full p-2 backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100">
+                    <button onClick={(e) => { e.stopPropagation(); next() }} className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 text-white rounded-full p-2 backdrop-blur-xs transition-all opacity-0 group-hover:opacity-100">
                         <ChevronRight className="h-5 w-5" />
                     </button>
                 </>
@@ -139,7 +139,7 @@ export function ExperienceHeroCarousel({ images, videoUrl, title, locationName }
             {/* Expand button */}
             <button
                 onClick={(e) => { e.stopPropagation(); setFullscreen(true) }}
-                className="absolute top-4 right-4 bg-black/40 hover:bg-black/60 text-white rounded-lg px-3 py-1.5 text-xs font-medium backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100 flex items-center gap-1.5"
+                className="absolute top-4 right-4 bg-black/40 hover:bg-black/60 text-white rounded-lg px-3 py-1.5 text-xs font-medium backdrop-blur-xs transition-all opacity-0 group-hover:opacity-100 flex items-center gap-1.5"
             >
                 <Expand className="h-3.5 w-3.5" />
                 Show all photos

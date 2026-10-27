@@ -799,7 +799,7 @@ export function CampaignComposer() {
     const selectedEvent = events.find(e => e.id === selectedEventId)
 
     return (
-        <Card className="w-full overflow-hidden border-border/60 shadow-sm">
+        <Card className="w-full overflow-hidden border-border/60 shadow-xs">
             <CardHeader className="border-b bg-gradient-to-r from-muted/40 to-transparent pb-4">
                 <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -908,7 +908,7 @@ export function CampaignComposer() {
                                 onClick={() => { setAudienceType('all_subscribers'); setSelectedEventId('') }}
                                 className={`flex items-center gap-3 p-4 rounded-lg border-2 transition-all text-left ${
                                     audienceType === 'all_subscribers'
-                                        ? 'border-primary bg-primary/5 shadow-sm'
+                                        ? 'border-primary bg-primary/5 shadow-xs'
                                         : 'border-border hover:border-primary/40'
                                 }`}
                             >
@@ -923,7 +923,7 @@ export function CampaignComposer() {
                                 onClick={() => setAudienceType('event_attendees')}
                                 className={`flex items-center gap-3 p-4 rounded-lg border-2 transition-all text-left ${
                                     audienceType === 'event_attendees'
-                                        ? 'border-primary bg-primary/5 shadow-sm'
+                                        ? 'border-primary bg-primary/5 shadow-xs'
                                         : 'border-border hover:border-primary/40'
                                 }`}
                             >
@@ -938,7 +938,7 @@ export function CampaignComposer() {
                                 onClick={() => setAudienceType('customer_segment')}
                                 className={`flex items-center gap-3 p-4 rounded-lg border-2 transition-all text-left ${
                                     audienceType === 'customer_segment'
-                                        ? 'border-primary bg-primary/5 shadow-sm'
+                                        ? 'border-primary bg-primary/5 shadow-xs'
                                         : 'border-border hover:border-primary/40'
                                 }`}
                             >
@@ -1291,7 +1291,7 @@ export function CampaignComposer() {
                                 key={t.id}
                                 type="button"
                                 onClick={() => applyTemplate(t)}
-                                className="text-left rounded-xl border p-4 transition-all hover:border-primary/50 hover:shadow-sm"
+                                className="text-left rounded-xl border p-4 transition-all hover:border-primary/50 hover:shadow-xs"
                             >
                                 <div className="flex items-center justify-between gap-2">
                                     <p className="font-semibold text-sm">{t.name}</p>

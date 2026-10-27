@@ -18,7 +18,7 @@ import PhysicsEcosystem from "./physics-ecosystem";
 
 const SocialVortex = dynamic(() => import('./social-vortex'), {
   ssr: false,
-  loading: () => <div className="w-full h-[300px] bg-white/50 backdrop-blur-sm rounded-[30px]" />
+  loading: () => <div className="w-full h-[300px] bg-white/50 backdrop-blur-xs rounded-[30px]" />
 });
 
 export default function Features() {

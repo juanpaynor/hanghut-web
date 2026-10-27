@@ -139,7 +139,7 @@ export default function Discover() {
                                         onFocus={() => setPaused(true)}
                                         onBlur={() => setPaused(false)}
                                         aria-expanded={on}
-                                        className="group relative w-full py-7 text-left focus-visible:outline-none"
+                                        className="group relative w-full py-7 text-left focus-visible:outline-hidden"
                                     >
                                         {/* Dwell indicator — the line fills for as long as
                                             this mode is up, so the rotation is legible

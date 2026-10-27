@@ -158,7 +158,7 @@ export function RegistrationQuestionsForm({ eventId, questions, isOpen, onClose,
                                     value={answers[q.id] ?? ''}
                                     onChange={e => setAnswer(q.id, e.target.value)}
                                     className={cn(
-                                        'w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                        'w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
                                         errors[q.id] && 'border-destructive'
                                     )}
                                 >

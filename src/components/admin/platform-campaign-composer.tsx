@@ -572,7 +572,7 @@ export function PlatformCampaignComposer() {
                                     </div>
                                     <div className="min-h-0 flex-1 overflow-y-auto p-6">
                                         <div
-                                            className="prose prose-sm mx-auto max-w-[640px] rounded-lg border bg-white p-6 text-gray-800 shadow-sm"
+                                            className="prose prose-sm mx-auto max-w-[640px] rounded-lg border bg-white p-6 text-gray-800 shadow-xs"
                                             dangerouslySetInnerHTML={{ __html: aiResult.html }}
                                         />
                                     </div>

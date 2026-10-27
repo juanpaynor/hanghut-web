@@ -84,7 +84,7 @@ export default async function MerchClaimPage({ params }: { params: Promise<{ tok
                     </div>
                 </div>
 
-                <div className="overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm">
+                <div className="overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-xs">
 
                     {/* Status */}
                     <div

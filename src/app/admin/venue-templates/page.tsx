@@ -44,7 +44,7 @@ export default async function VenueTemplatesPage() {
                     {templates.map((template) => (
                         <div
                             key={template.id}
-                            className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all group"
+                            className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs hover:shadow-md transition-all group"
                         >
                             {/* Preview Area */}
                             <div className="h-48 bg-slate-100 flex items-center justify-center relative">

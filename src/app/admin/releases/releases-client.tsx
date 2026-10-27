@@ -156,7 +156,7 @@ export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClient
 
             {/* Upload Form */}
             {showForm && (
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
                     <h3 className="font-bold text-lg text-slate-900">Upload New Release</h3>
                     <form ref={formRef} onSubmit={handleUpload} className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -170,7 +170,7 @@ export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClient
                                     required
                                     disabled={uploading}
                                     placeholder="e.g. 1.2.0"
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 disabled:opacity-50"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-slate-900 disabled:opacity-50"
                                 />
                             </div>
                             <div>
@@ -183,7 +183,7 @@ export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClient
                                     required
                                     disabled={uploading}
                                     placeholder="e.g. 12"
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 disabled:opacity-50"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-slate-900 disabled:opacity-50"
                                 />
                             </div>
                         </div>
@@ -196,7 +196,7 @@ export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClient
                                 rows={3}
                                 disabled={uploading}
                                 placeholder="What's new in this version..."
-                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 disabled:opacity-50"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-slate-900 disabled:opacity-50"
                             />
                         </div>
                         <div>
@@ -269,7 +269,7 @@ export function ReleasesClient({ initialReleases, initialTotal }: ReleasesClient
             )}
 
             {/* Releases Table */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <table className="w-full">
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200">

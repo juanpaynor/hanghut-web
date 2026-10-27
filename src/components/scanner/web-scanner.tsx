@@ -333,7 +333,7 @@ export function WebScanner({ events }: WebScannerProps) {
                                 {lastResult.ticket && (
                                     <>
                                         <p className="text-green-800/80 font-medium mt-1">{lastResult.ticket.tier_name || lastResult.ticket.ticket_tiers?.name}</p>
-                                        <div className="bg-white/60 p-3 rounded-lg text-sm mt-3 backdrop-blur-sm">
+                                        <div className="bg-white/60 p-3 rounded-lg text-sm mt-3 backdrop-blur-xs">
                                             <p className="text-muted-foreground uppercase text-xs tracking-wider mb-1">Guest</p>
                                             <p className="font-semibold text-xl text-slate-900">{lastResult.ticket.guestName}</p>
                                         </div>

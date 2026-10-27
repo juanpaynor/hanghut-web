@@ -263,7 +263,7 @@ export function TicketBadges({
                                 onClick={() => share(b)}
                                 disabled={sharing === b.id}
                                 aria-label={`Share ${b.name}`}
-                                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors hover:bg-accent disabled:opacity-60"
+                                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-xs transition-colors hover:bg-accent disabled:opacity-60"
                                 style={accent ? { borderColor: `${accent}55` } : undefined}
                             >
                                 {sharing === b.id

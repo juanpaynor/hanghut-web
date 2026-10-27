@@ -17,34 +17,34 @@ const TEMPLATE_ICONS: Record<TemplateName, any> = {
 const TEMPLATE_PREVIEWS: Record<TemplateName, React.ReactNode> = {
     modern: (
         <div className="w-full h-24 bg-muted rounded-lg flex gap-1.5 p-1.5 overflow-hidden">
-            <div className="w-1/3 bg-background rounded border shadow-sm h-full" />
+            <div className="w-1/3 bg-background rounded border shadow-xs h-full" />
             <div className="w-2/3 space-y-1.5">
-                <div className="w-full h-8 bg-background rounded border shadow-sm" />
+                <div className="w-full h-8 bg-background rounded border shadow-xs" />
                 <div className="grid grid-cols-2 gap-1">
-                    <div className="h-12 bg-background rounded border shadow-sm" />
-                    <div className="h-12 bg-background rounded border shadow-sm" />
+                    <div className="h-12 bg-background rounded border shadow-xs" />
+                    <div className="h-12 bg-background rounded border shadow-xs" />
                 </div>
             </div>
         </div>
     ),
     classic: (
         <div className="w-full h-24 bg-muted rounded-lg space-y-1.5 p-1.5 overflow-hidden">
-            <div className="w-full h-10 bg-background rounded border shadow-sm" />
+            <div className="w-full h-10 bg-background rounded border shadow-xs" />
             <div className="grid grid-cols-3 gap-1">
-                <div className="h-10 bg-background rounded border shadow-sm" />
-                <div className="h-10 bg-background rounded border shadow-sm" />
-                <div className="h-10 bg-background rounded border shadow-sm" />
+                <div className="h-10 bg-background rounded border shadow-xs" />
+                <div className="h-10 bg-background rounded border shadow-xs" />
+                <div className="h-10 bg-background rounded border shadow-xs" />
             </div>
         </div>
     ),
 
     minimal: (
         <div className="w-full h-24 bg-muted rounded-lg flex flex-col items-center justify-center gap-1 p-1.5 overflow-hidden">
-            <div className="w-16 h-3 bg-background rounded border shadow-sm" />
+            <div className="w-16 h-3 bg-background rounded border shadow-xs" />
             <div className="w-24 h-2 bg-background/70 rounded" />
             <div className="grid grid-cols-2 gap-1 mt-1 w-full">
-                <div className="h-10 bg-background rounded border shadow-sm" />
-                <div className="h-10 bg-background rounded border shadow-sm" />
+                <div className="h-10 bg-background rounded border shadow-xs" />
+                <div className="h-10 bg-background rounded border shadow-xs" />
             </div>
         </div>
     ),
@@ -100,7 +100,7 @@ export function SectionTemplates({ currentTemplate, onApply }: SectionTemplatesP
                                 onClick={() => onApply(getTemplateSections(name), name)}
                                 className={cn(
                                     'border-2 rounded-xl p-3 text-left hover:border-primary/50 transition-all flex flex-col gap-2',
-                                    isActive ? 'border-primary bg-primary/5 shadow-sm' : 'border-border'
+                                    isActive ? 'border-primary bg-primary/5 shadow-xs' : 'border-border'
                                 )}
                             >
                                 {TEMPLATE_PREVIEWS[name]}

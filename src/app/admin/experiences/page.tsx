@@ -87,7 +87,7 @@ export default async function AdminExperiencesPage() {
                 </div>
             </div>
 
-            <div className="border rounded-lg bg-white overflow-hidden shadow-sm">
+            <div className="border rounded-lg bg-white overflow-hidden shadow-xs">
                 <Table>
                     <TableHeader>
                         <TableRow className="bg-slate-50">

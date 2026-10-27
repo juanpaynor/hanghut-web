@@ -75,7 +75,7 @@ export function StorefrontNavbar({ partner, sections, fontClass, isLoggedIn }: S
                 "fixed top-0 left-0 right-0 z-50 transition-all duration-300",
                 fontClass,
                 scrolled 
-                    ? "bg-background/90 backdrop-blur-md border-b shadow-sm py-3" 
+                    ? "bg-background/90 backdrop-blur-md border-b shadow-xs py-3" 
                     : "bg-transparent py-5"
             )}
         >
@@ -109,7 +109,7 @@ export function StorefrontNavbar({ partner, sections, fontClass, isLoggedIn }: S
                                 href={`#${link.id}`}
                                 className={cn(
                                     "text-sm font-medium transition-colors hover:text-primary",
-                                    scrolled ? "text-muted-foreground" : "text-white/80 drop-shadow-sm hover:text-white"
+                                    scrolled ? "text-muted-foreground" : "text-white/80 drop-shadow-xs hover:text-white"
                                 )}
                             >
                                 {link.label}
@@ -120,7 +120,7 @@ export function StorefrontNavbar({ partner, sections, fontClass, isLoggedIn }: S
                                 href={`/${partner.slug}/membership`}
                                 className={cn(
                                     "text-sm font-medium transition-colors hover:text-primary",
-                                    scrolled ? "text-muted-foreground" : "text-white/80 drop-shadow-sm hover:text-white"
+                                    scrolled ? "text-muted-foreground" : "text-white/80 drop-shadow-xs hover:text-white"
                                 )}
                             >
                                 Members

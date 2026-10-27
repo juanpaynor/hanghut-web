@@ -1795,7 +1795,7 @@ export function CanvasBuilder({
         </Stage>
 
         {/* Zoom indicator */}
-        <div className="absolute bottom-4 left-4 bg-slate-800/80 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none">
+        <div className="absolute bottom-4 left-4 bg-slate-800/80 backdrop-blur-xs text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none">
           {Math.round(state.zoom * 100)}%
         </div>
 
@@ -1804,7 +1804,7 @@ export function CanvasBuilder({
           type="button"
           onClick={() => setIsFullscreen((f) => !f)}
           title={isFullscreen ? 'Exit full screen' : 'Full screen'}
-          className="absolute top-4 right-4 z-10 flex items-center gap-1.5 bg-slate-800/80 hover:bg-slate-700 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none transition-colors"
+          className="absolute top-4 right-4 z-10 flex items-center gap-1.5 bg-slate-800/80 hover:bg-slate-700 backdrop-blur-xs text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none transition-colors"
         >
           {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           {isFullscreen ? 'Exit' : 'Full screen'}
@@ -1812,20 +1812,20 @@ export function CanvasBuilder({
 
         {/* Image upload progress */}
         {uploadingImage && (
-          <div className="absolute top-16 right-4 bg-slate-800/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none">
+          <div className="absolute top-16 right-4 bg-slate-800/90 backdrop-blur-xs text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none">
             Uploading image…
           </div>
         )}
 
         {/* Tool hint bar */}
         {toolHint && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur-sm text-white text-sm px-4 py-2 rounded-lg border border-slate-700 select-none whitespace-nowrap pointer-events-none">
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur-xs text-white text-sm px-4 py-2 rounded-lg border border-slate-700 select-none whitespace-nowrap pointer-events-none">
             {toolHint}
           </div>
         )}
 
         {/* Section count badge */}
-        <div className="absolute bottom-4 right-4 bg-slate-800/80 backdrop-blur-sm text-slate-400 text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none">
+        <div className="absolute bottom-4 right-4 bg-slate-800/80 backdrop-blur-xs text-slate-400 text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none">
           {state.sections.length} sections •{' '}
           {state.sections.reduce((sum, s) => sum + s.seats.length, 0)} seats
         </div>

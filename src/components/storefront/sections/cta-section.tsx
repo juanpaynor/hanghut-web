@@ -53,7 +53,7 @@ export function CTASection({ config, primaryColor }: CTASectionProps) {
                 {buttonText && buttonLink && (
                     <a
                         href={buttonLink}
-                        className="mt-8 inline-flex items-center justify-center rounded-full bg-primary px-8 py-3.5 text-[0.9375rem] font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                        className="mt-8 inline-flex items-center justify-center rounded-full bg-primary px-8 py-3.5 text-[0.9375rem] font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                     >
                         {buttonText}
                     </a>

@@ -86,7 +86,7 @@ export function NewsletterSection({ config, partnerId, partnerName }: Newsletter
                                     onChange={(e) => setEmail(e.target.value)}
                                     placeholder="Enter your email"
                                     required
-                                    className="flex-1 sm:w-56 px-4 py-2.5 rounded-full border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                    className="flex-1 sm:w-56 px-4 py-2.5 rounded-full border bg-background text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/50"
                                 />
                                 <button
                                     type="submit"
@@ -131,7 +131,7 @@ export function NewsletterSection({ config, partnerId, partnerName }: Newsletter
                             onChange={(e) => setEmail(e.target.value)}
                             placeholder="Enter your email"
                             required
-                            className="flex-1 px-5 py-3 rounded-full border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            className="flex-1 px-5 py-3 rounded-full border bg-background text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/50"
                         />
                         <button
                             type="submit"

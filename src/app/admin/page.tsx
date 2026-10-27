@@ -31,7 +31,7 @@ function GaugeCard({
     const bgLight = percent >= 90 ? 'bg-red-50' : percent >= 70 ? 'bg-amber-50' : 'bg-emerald-50'
 
     return (
-        <Card className={`${bgLight} border-0 shadow-sm`}>
+        <Card className={`${bgLight} border-0 shadow-xs`}>
             <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
@@ -69,7 +69,7 @@ function StatCard({
     href?: string
 }) {
     const card = (
-        <Card className={`bg-white border-0 shadow-sm ${href ? 'hover:shadow-md transition-shadow cursor-pointer' : ''}`}>
+        <Card className={`bg-white border-0 shadow-xs ${href ? 'hover:shadow-md transition-shadow cursor-pointer' : ''}`}>
             <CardContent className="p-5">
                 <div className="flex items-center justify-between">
                     <div>
@@ -223,7 +223,7 @@ async function PlatformDashboard() {
             {/* Bottom Row: Chart + Recent Users */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* User Growth Chart */}
-                <Card className="lg:col-span-2 bg-white border-0 shadow-sm">
+                <Card className="lg:col-span-2 bg-white border-0 shadow-xs">
                     <CardHeader className="pb-2">
                         <CardTitle className="text-base font-semibold flex items-center gap-2">
                             <TrendingUp className="h-4 w-4 text-indigo-500" />
@@ -236,7 +236,7 @@ async function PlatformDashboard() {
                 </Card>
 
                 {/* Recent Signups */}
-                <Card className="bg-white border-0 shadow-sm">
+                <Card className="bg-white border-0 shadow-xs">
                     <CardHeader className="pb-2">
                         <CardTitle className="text-base font-semibold flex items-center gap-2">
                             <UserPlus className="h-4 w-4 text-pink-500" />
@@ -295,7 +295,7 @@ function PlatformSkeleton() {
         <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {Array.from({ length: 4 }).map((_, i) => (
-                    <Card key={i} className="bg-white border-0 shadow-sm">
+                    <Card key={i} className="bg-white border-0 shadow-xs">
                         <CardContent className="p-5 space-y-3">
                             <Skeleton className="h-3 w-20 bg-slate-100" />
                             <Skeleton className="h-7 w-24 bg-slate-100" />
@@ -306,7 +306,7 @@ function PlatformSkeleton() {
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {Array.from({ length: 4 }).map((_, i) => (
-                    <Card key={i} className="bg-white border-0 shadow-sm">
+                    <Card key={i} className="bg-white border-0 shadow-xs">
                         <CardContent className="p-5 space-y-3">
                             <Skeleton className="h-3 w-20 bg-slate-100" />
                             <Skeleton className="h-7 w-16 bg-slate-100" />
@@ -315,12 +315,12 @@ function PlatformSkeleton() {
                 ))}
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card className="lg:col-span-2 bg-white border-0 shadow-sm">
+                <Card className="lg:col-span-2 bg-white border-0 shadow-xs">
                     <CardContent className="p-6">
                         <Skeleton className="h-[280px] w-full bg-slate-100 rounded-lg" />
                     </CardContent>
                 </Card>
-                <Card className="bg-white border-0 shadow-sm">
+                <Card className="bg-white border-0 shadow-xs">
                     <CardContent className="p-6 space-y-3">
                         {Array.from({ length: 8 }).map((_, i) => (
                             <div key={i} className="flex items-center gap-3">

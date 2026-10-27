@@ -384,11 +384,11 @@ export function MembershipPage({ partner, tiers, posts, subscriptionStatus, subs
                                             </>
                                         ) : (
                                             <div className="relative">
-                                                <p className="text-sm text-muted-foreground line-clamp-2 blur-sm select-none">
+                                                <p className="text-sm text-muted-foreground line-clamp-2 blur-xs select-none">
                                                     {post.body}
                                                 </p>
                                                 <div className="absolute inset-0 flex items-center justify-center">
-                                                    <div className="flex items-center gap-2 bg-card/90 backdrop-blur-sm border border-border rounded-full px-3 py-1.5 text-xs font-medium">
+                                                    <div className="flex items-center gap-2 bg-card/90 backdrop-blur-xs border border-border rounded-full px-3 py-1.5 text-xs font-medium">
                                                         <Lock className="h-3 w-3" />
                                                         Subscribe to {partner.business_name} to read
                                                     </div>

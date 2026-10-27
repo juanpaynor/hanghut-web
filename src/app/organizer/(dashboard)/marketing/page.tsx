@@ -34,7 +34,7 @@ export default function MarketingPage() {
                 <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
                 <div className="pointer-events-none absolute -bottom-20 right-24 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
                 <div className="relative">
-                    <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur">
+                    <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur-sm">
                         <Sparkles className="h-3.5 w-3.5" /> Marketing
                     </div>
                     <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight">Reach your audience</h2>
@@ -50,7 +50,7 @@ export default function MarketingPage() {
                         <TabsTrigger
                             key={value}
                             value={value}
-                            className="gap-1.5 rounded-lg px-3 py-1.5 text-sm data-[state=active]:shadow-sm"
+                            className="gap-1.5 rounded-lg px-3 py-1.5 text-sm data-[state=active]:shadow-xs"
                         >
                             <Icon className="h-4 w-4" />
                             {label}

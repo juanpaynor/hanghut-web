@@ -70,7 +70,7 @@ function ActItem({ act, tabbable }: { act: Act; tabbable: boolean }) {
     return act.slug ? (
         <Link
             href={`/${act.slug}`}
-            className={`${cls} rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--lp-brand-soft)] focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--lp-deep)]`}
+            className={`${cls} rounded-xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[var(--lp-brand-soft)] focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--lp-deep)]`}
             aria-label={`${act.name} on HangHut`}
             // The ticker is doubled for the seamless loop; only one copy takes focus.
             tabIndex={tabbable ? 0 : -1}

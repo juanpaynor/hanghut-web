@@ -114,7 +114,7 @@ export default function Hero() {
                     <Magnetic>
                         <Link
                             href="/events"
-                            className="group inline-flex items-center gap-2 rounded-full bg-[var(--lp-brand)] px-8 py-4 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--lp-brand-fg)] shadow-[0_14px_34px_-10px_rgba(79,70,229,0.55)] transition-shadow hover:shadow-[0_18px_46px_-8px_rgba(79,70,229,0.7)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--lp-brand-soft)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--lp-void)]"
+                            className="group inline-flex items-center gap-2 rounded-full bg-[var(--lp-brand)] px-8 py-4 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--lp-brand-fg)] shadow-[0_14px_34px_-10px_rgba(79,70,229,0.55)] transition-shadow hover:shadow-[0_18px_46px_-8px_rgba(79,70,229,0.7)] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[var(--lp-brand-soft)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--lp-void)]"
                         >
                             Explore events
                             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -123,7 +123,7 @@ export default function Hero() {
                     <Magnetic>
                         <Link
                             href="/organizer/login"
-                            className="inline-flex items-center gap-2 rounded-full border border-[var(--lp-line-strong)] bg-[var(--lp-deep)] px-8 py-4 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--lp-text)] backdrop-blur-sm transition-colors hover:border-[var(--lp-brand-soft)] hover:bg-[var(--lp-brand)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--lp-brand-soft)]"
+                            className="inline-flex items-center gap-2 rounded-full border border-[var(--lp-line-strong)] bg-[var(--lp-deep)] px-8 py-4 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--lp-text)] backdrop-blur-xs transition-colors hover:border-[var(--lp-brand-soft)] hover:bg-[var(--lp-brand)]/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[var(--lp-brand-soft)]"
                         >
                             Start selling
                         </Link>

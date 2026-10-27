@@ -92,7 +92,7 @@ export default function PartnerCTA() {
                             initial={{ opacity: 0, scale: 0.8, rotate: -5 }}
                             whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
                             viewport={{ once: true }}
-                            className="relative aspect-square bg-white/5 rounded-[60px] border border-white/10 backdrop-blur-sm flex items-center justify-center shadow-inner overflow-hidden"
+                            className="relative aspect-square bg-white/5 rounded-[60px] border border-white/10 backdrop-blur-xs flex items-center justify-center shadow-inner overflow-hidden"
                         >
                             {/* Inner graphic representing metrics/growth */}
                             <div className="p-12 space-y-8 w-full">

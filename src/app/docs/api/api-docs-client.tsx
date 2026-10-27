@@ -372,7 +372,7 @@ export function ApiDocsClient() {
                     placeholder="Search endpoints…"
                     autoComplete="off"
                     spellCheck={false}
-                    className="w-full rounded-lg border border-zinc-800/60 bg-[#0d1117] px-3 py-1.5 text-[13px] text-zinc-300 placeholder:text-zinc-600 outline-none focus:border-[#6c5ce7]/60"
+                    className="w-full rounded-lg border border-zinc-800/60 bg-[#0d1117] px-3 py-1.5 text-[13px] text-zinc-300 placeholder:text-zinc-600 outline-hidden focus:border-[#6c5ce7]/60"
                 />
             </div>
 

@@ -192,7 +192,7 @@ export function TierDetailPage({ partner, tier, subscriptionStatus, fontClass, t
                     <div className="flex items-center gap-3 text-sm">
                         <Link
                             href={`/${partner.slug}/membership`}
-                            className="text-white/80 hover:text-white transition-colors flex items-center gap-1 drop-shadow"
+                            className="text-white/80 hover:text-white transition-colors flex items-center gap-1 drop-shadow-sm"
                         >
                             <ArrowLeft className="h-3.5 w-3.5" />
                             All tiers
@@ -200,7 +200,7 @@ export function TierDetailPage({ partner, tier, subscriptionStatus, fontClass, t
                         <span className="text-white/40">·</span>
                         <Link
                             href={`/${partner.slug}`}
-                            className="text-white/80 hover:text-white transition-colors drop-shadow"
+                            className="text-white/80 hover:text-white transition-colors drop-shadow-sm"
                         >
                             {partner.business_name}
                         </Link>

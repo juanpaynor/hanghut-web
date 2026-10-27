@@ -148,7 +148,7 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
 
             {/* Create Form */}
             {showForm && (
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6">
                     <h3 className="font-bold text-lg text-slate-900 mb-4">Create Push Notification</h3>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {/* Form Fields */}
@@ -162,7 +162,7 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
                                     value={title}
                                     onChange={(e) => setTitle(e.target.value.slice(0, 65))}
                                     placeholder="🎉 New Feature!"
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-slate-900"
                                 />
                             </div>
                             <div>
@@ -174,7 +174,7 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
                                     onChange={(e) => setBody(e.target.value.slice(0, 240))}
                                     rows={3}
                                     placeholder="Check out the new map filters!"
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-slate-900"
                                 />
                             </div>
                             <div>
@@ -186,7 +186,7 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
                                     value={imageUrl}
                                     onChange={(e) => setImageUrl(e.target.value)}
                                     placeholder="https://example.com/promo.jpg"
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-slate-900"
                                 />
                             </div>
                             <div>
@@ -196,7 +196,7 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
                                 <select
                                     value={segment}
                                     onChange={(e) => setSegment(e.target.value)}
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 bg-white"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-slate-900 bg-white"
                                 >
                                     {SEGMENTS.map(s => (
                                         <option key={s.value} value={s.value}>{s.label}</option>
@@ -219,7 +219,7 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
                         <div>
                             <p className="text-sm font-medium text-slate-700 mb-2">Preview</p>
                             <div className="bg-slate-100 rounded-2xl p-4 max-w-sm">
-                                <div className="bg-white rounded-xl shadow-sm p-4 space-y-2">
+                                <div className="bg-white rounded-xl shadow-xs p-4 space-y-2">
                                     <div className="flex items-center gap-2 mb-1">
                                         <div className="h-5 w-5 bg-indigo-600 rounded-md flex items-center justify-center">
                                             <span className="text-white text-[10px] font-bold">H</span>
@@ -249,7 +249,7 @@ export function BroadcastsClient({ initialBroadcasts, initialTotal }: Broadcasts
             )}
 
             {/* Broadcast History Table */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <table className="w-full">
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200">

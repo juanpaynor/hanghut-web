@@ -85,7 +85,7 @@ function TierSelect({
     <select
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value || null)}
-      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
     >
       <option value="">{inheritLabel}</option>
       {tiers.map((t) => (
@@ -144,7 +144,7 @@ function NewTierForm({
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setOpen(false) }}
         placeholder="Name — e.g. VIP, Lower Box"
-        className="w-full bg-slate-900 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        className="w-full bg-slate-900 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
       />
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
@@ -157,7 +157,7 @@ function NewTierForm({
             onChange={(e) => setPrice(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setOpen(false) }}
             placeholder="0"
-            className="w-full bg-slate-900 border border-slate-700 rounded-md pl-6 pr-2.5 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="w-full bg-slate-900 border border-slate-700 rounded-md pl-6 pr-2.5 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
           />
         </div>
         <button
@@ -764,7 +764,7 @@ export function CanvasProperties({
                 value={selectedShape.label ?? ''}
                 placeholder={selectedShape.type === 'text' ? 'Your text' : 'e.g. STAGE (optional)'}
                 onChange={(e) => onUpdateShape(selectedShape.id, { label: e.target.value })}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
               />
             </div>
           )}
@@ -864,7 +864,7 @@ export function CanvasProperties({
                     const v = e.target.value as SectionType
                     if (v) onUpdateSections?.(ids, { sectionType: v, color: SECTION_TYPE_COLORS[v] })
                   }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="">— Set type for all —</option>
                   {sectionTypes.map((t) => (<option key={t.value} value={t.value}>{t.label}</option>))}
@@ -938,7 +938,7 @@ export function CanvasProperties({
               onChange={(e) =>
                 onUpdateSection(selectedSection.id, { label: e.target.value })
               }
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>
 
@@ -956,7 +956,7 @@ export function CanvasProperties({
                   color: SECTION_TYPE_COLORS[e.target.value as SectionType],
                 })
               }
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
             >
               {sectionTypes.map((t) => (
                 <option key={t.value} value={t.value}>
@@ -1086,7 +1086,7 @@ export function CanvasProperties({
                                 else delete next[row]
                                 onUpdateSection(selectedSection.id, { rowTierOverrides: next })
                               }}
-                              className="flex-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              className="flex-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1 text-xs text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                             >
                               <option value="">Section default</option>
                               {tiers.map((t) => (
@@ -1127,7 +1127,7 @@ export function CanvasProperties({
                       type="text"
                       value={dropRow}
                       onChange={(e) => onSetDropRow(e.target.value.toUpperCase())}
-                      className="w-full bg-slate-800/80 border border-indigo-500/40 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-center"
+                      className="w-full bg-slate-800/80 border border-indigo-500/40 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono text-center"
                       placeholder="A"
                     />
                   </div>
@@ -1140,7 +1140,7 @@ export function CanvasProperties({
                       min={1}
                       value={dropSeatNumber}
                       onChange={(e) => onSetDropSeatNumber(parseInt(e.target.value) || 1)}
-                      className="w-full bg-slate-800/80 border border-indigo-500/40 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center"
+                      className="w-full bg-slate-800/80 border border-indigo-500/40 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-center"
                     />
                   </div>
                 </div>
@@ -1167,7 +1167,7 @@ export function CanvasProperties({
                       onChange={(e) =>
                         setFillRows(Math.max(1, parseInt(e.target.value) || 1))
                       }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                   <div>
@@ -1182,7 +1182,7 @@ export function CanvasProperties({
                       onChange={(e) =>
                         setFillCols(Math.max(1, parseInt(e.target.value) || 1))
                       }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                 </div>
@@ -1258,7 +1258,7 @@ export function CanvasProperties({
                       min={1}
                       value={fillStartNumber}
                       onChange={(e) => setFillStartNumber(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                   <label className="flex items-end gap-2 pb-2 text-[11px] text-slate-400 cursor-pointer">
@@ -1360,7 +1360,7 @@ export function CanvasProperties({
                     value={aisleInput}
                     onChange={(e) => setAisleInput(e.target.value)}
                     placeholder="e.g. 5, 15"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono"
                   />
                   <p className="text-[10px] text-slate-600 mt-1">Comma-separated seat positions for aisle gaps</p>
                 </div>
@@ -1779,7 +1779,7 @@ function RowPanel({
     const { start, end } = pathEndpoints(row.path)
     onUpdateRow({ path: pathFromCurvature(start, end, c) })
   }
-  const inputCls = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500'
+  const inputCls = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500'
   const segBtn = (active: boolean) => `flex-1 py-1.5 text-[11px] rounded-lg border transition-all ${active ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`
   return (
     <div className="p-4 space-y-4">
@@ -1941,7 +1941,7 @@ function BestAvailableBlock({
         <select
           value={section.rowOrder ?? 'asc'}
           onChange={(e) => onUpdateSection(section.id, { rowOrder: e.target.value === 'desc' ? 'desc' : 'asc', rowOrderManual: true })}
-          className="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1 text-xs text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
         >
           <option value="asc">First row label (A / 1) — top of the section</option>
           <option value="desc">Last row label — bottom of the section</option>

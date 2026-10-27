@@ -73,7 +73,7 @@ export function RegistrationFileLink({
             <button
                 type="button"
                 onClick={open}
-                className="group mt-1.5 block overflow-hidden rounded-lg border bg-background transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="group mt-1.5 block overflow-hidden rounded-lg border bg-background transition-colors hover:border-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                 title={`${file.name} — click to open full size`}
             >
                 {/* eslint-disable-next-line @next/next/no-img-element */}

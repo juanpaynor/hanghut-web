@@ -176,7 +176,7 @@ export function CheckinKiosk({
                                     onChange={(e) => setName(e.target.value)}
                                     autoComplete="off"
                                     autoCapitalize="words"
-                                    className="h-14 w-full rounded-xl border border-border bg-card px-4 text-lg text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                    className="h-14 w-full rounded-xl border border-border bg-card px-4 text-lg text-foreground outline-hidden focus:border-primary focus:ring-2 focus:ring-primary/20"
                                 />
                             </div>
                             <div>
@@ -192,7 +192,7 @@ export function CheckinKiosk({
                                     autoComplete="off"
                                     autoCapitalize="none"
                                     spellCheck={false}
-                                    className="h-14 w-full rounded-xl border border-border bg-card px-4 text-lg text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                    className="h-14 w-full rounded-xl border border-border bg-card px-4 text-lg text-foreground outline-hidden focus:border-primary focus:ring-2 focus:ring-primary/20"
                                 />
                             </div>
                             <div>

@@ -143,7 +143,7 @@ export function ProfileActions({ shareUrl, partnerId, partnerName }: ProfileActi
                                     placeholder="your@email.com"
                                     required
                                     disabled={status === 'loading'}
-                                    className="w-full px-4 py-3 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                                    className="w-full px-4 py-3 rounded-xl border bg-background text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
                                 />
                             </div>
 

@@ -128,7 +128,7 @@ export function TicketPdfButton({
                 type="button"
                 onClick={handleDownload}
                 disabled={busy}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border bg-background px-4 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent disabled:opacity-60"
             >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 Download PDF

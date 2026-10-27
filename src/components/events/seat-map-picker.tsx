@@ -1593,13 +1593,13 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
 
                 {/* Controls overlay */}
                 <div className="absolute top-3 right-3 flex flex-col gap-1.5">
-                    <Button size="icon" variant="secondary" className="h-8 w-8 shadow-sm" onClick={() => zoomButton(1.3)}>
+                    <Button size="icon" variant="secondary" className="h-8 w-8 shadow-xs" onClick={() => zoomButton(1.3)}>
                         <Plus className="h-4 w-4" />
                     </Button>
-                    <Button size="icon" variant="secondary" className="h-8 w-8 shadow-sm" onClick={() => zoomButton(1 / 1.3)}>
+                    <Button size="icon" variant="secondary" className="h-8 w-8 shadow-xs" onClick={() => zoomButton(1 / 1.3)}>
                         <Minus className="h-4 w-4" />
                     </Button>
-                    <Button size="icon" variant="secondary" className="h-8 w-8 shadow-sm" onClick={() => fitOverview()}>
+                    <Button size="icon" variant="secondary" className="h-8 w-8 shadow-xs" onClick={() => fitOverview()}>
                         <RotateCcw className="h-4 w-4" />
                     </Button>
                 </div>
@@ -1608,7 +1608,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                     <Button
                         size="sm"
                         variant="secondary"
-                        className="absolute top-3 left-3 shadow-sm"
+                        className="absolute top-3 left-3 shadow-xs"
                         onClick={() => fitOverview()}
                     >
                         <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
@@ -1617,7 +1617,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                 )}
 
                 {!activeSection && !autoSheet && !gaSection && (
-                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-background/90 backdrop-blur-sm border rounded-full px-4 py-1.5 text-xs text-muted-foreground shadow-sm pointer-events-none">
+                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-background/90 backdrop-blur-xs border rounded-full px-4 py-1.5 text-xs text-muted-foreground shadow-xs pointer-events-none">
                         {selectionMode === 'pick' ? 'Tap a section to pick seats' : `Tap a section for the best ${partySize} ${partySize === 1 ? 'seat' : 'seats'}`}
                     </div>
                 )}

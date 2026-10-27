@@ -52,7 +52,7 @@ export function WaitlistForm() {
                                     id="name"
                                     name="name"
                                     required
-                                    className="peer w-full h-14 bg-background border-2 border-muted hover:border-primary/50 focus:border-primary rounded-2xl px-4 pt-4 pb-1 text-base outline-none transition-all"
+                                    className="peer w-full h-14 bg-background border-2 border-muted hover:border-primary/50 focus:border-primary rounded-2xl px-4 pt-4 pb-1 text-base outline-hidden transition-all"
                                     placeholder=" "
                                 />
                                 <label
@@ -70,7 +70,7 @@ export function WaitlistForm() {
                                     id="email"
                                     name="email"
                                     required
-                                    className="peer w-full h-14 bg-background border-2 border-muted hover:border-primary/50 focus:border-primary rounded-2xl px-4 pt-4 pb-1 text-base outline-none transition-all"
+                                    className="peer w-full h-14 bg-background border-2 border-muted hover:border-primary/50 focus:border-primary rounded-2xl px-4 pt-4 pb-1 text-base outline-hidden transition-all"
                                     placeholder=" "
                                 />
                                 <label

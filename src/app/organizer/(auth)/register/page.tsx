@@ -156,9 +156,9 @@ export default function OrganizerRegisterPage() {
                             <>
                                 <OAuthButtons disabled={loading} />
                                 <div className="relative flex items-center">
-                                    <div className="flex-grow border-t border-border" />
+                                    <div className="grow border-t border-border" />
                                     <span className="mx-3 text-xs uppercase tracking-wide text-muted-foreground">or sign up with email</span>
-                                    <div className="flex-grow border-t border-border" />
+                                    <div className="grow border-t border-border" />
                                 </div>
                             </>
                         )}

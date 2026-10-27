@@ -54,7 +54,7 @@ export function ExperienceMapMarker({
 
                 {/* Price pill */}
                 <div className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                    <span className="bg-black/80 text-white text-xs font-bold px-2.5 py-1 rounded-full backdrop-blur-sm">
+                    <span className="bg-black/80 text-white text-xs font-bold px-2.5 py-1 rounded-full backdrop-blur-xs">
                         {symbol}{pricePerPerson.toLocaleString()}
                     </span>
                 </div>

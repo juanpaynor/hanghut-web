@@ -22,7 +22,7 @@ export function UserFeatures() {
                     <div className="relative z-10 h-full flex flex-col justify-between">
                         <div className="space-y-2">
                             <div className="flex items-center gap-3 mb-2">
-                                <div className="p-3 rounded-2xl bg-white shadow-sm border border-indigo-100 text-indigo-600">
+                                <div className="p-3 rounded-2xl bg-white shadow-xs border border-indigo-100 text-indigo-600">
                                     <Compass className="h-6 w-6" />
                                 </div>
                                 <h3 className="text-2xl font-bold font-headline">Discovery Layer</h3>
@@ -34,7 +34,7 @@ export function UserFeatures() {
 
                         {/* Interactive Visual */}
                         <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div className="p-4 rounded-3xl bg-white/60 border border-white/40 shadow-sm transition-transform group-hover:-translate-y-1">
+                            <div className="p-4 rounded-3xl bg-white/60 border border-white/40 shadow-xs transition-transform group-hover:-translate-y-1">
                                 <div className="flex items-center gap-2 mb-2 text-indigo-600">
                                     <MapPin className="h-4 w-4" />
                                     <span className="font-bold text-sm">Interactive Map</span>
@@ -122,7 +122,7 @@ export function UserFeatures() {
                     <div className="relative z-10 flex flex-col md:flex-row gap-8 items-center h-full">
                         <div className="flex-1 space-y-4">
                             <div className="flex items-center gap-3">
-                                <div className="p-3 rounded-2xl bg-white shadow-sm border border-pink-100 text-pink-500">
+                                <div className="p-3 rounded-2xl bg-white shadow-xs border border-pink-100 text-pink-500">
                                     <HeartPulse className="h-6 w-6" />
                                 </div>
                                 <h3 className="text-2xl font-bold font-headline">True Connection</h3>
@@ -138,7 +138,7 @@ export function UserFeatures() {
                         </div>
 
                         {/* Chat Graphic */}
-                        <div className="flex-1 w-full max-w-xs space-y-3 p-4 bg-white/80 rounded-3xl border border-white/40 shadow-sm hover:scale-[1.02] transition-transform duration-500">
+                        <div className="flex-1 w-full max-w-xs space-y-3 p-4 bg-white/80 rounded-3xl border border-white/40 shadow-xs hover:scale-[1.02] transition-transform duration-500">
                             <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
                                 <MessageCircle className="w-4 h-4 text-indigo-500" />
                                 <span className="text-xs font-bold text-slate-700">Activity Chat</span>
@@ -172,7 +172,7 @@ export function UserFeatures() {
 
 function Badge({ children, className }: { children: React.ReactNode, className?: string }) {
     return (
-        <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2", className)}>
+        <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2", className)}>
             {children}
         </span>
     )

@@ -171,7 +171,7 @@ export function TicketOrderView({
 
         if (template === 'minimal') {
             return (
-                <div className="overflow-hidden rounded-2xl border bg-background shadow-sm">
+                <div className="overflow-hidden rounded-2xl border bg-background shadow-xs">
                     <div className="flex flex-col items-center gap-3 p-6">
                         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide" style={tColor ? { color: tColor } : undefined}>
                             <TicketIcon className="h-3.5 w-3.5" /> {t.tier || 'General'}
@@ -197,7 +197,7 @@ export function TicketOrderView({
         if (template === 'boarding') {
             return (
                 <div
-                    className="flex items-stretch overflow-hidden rounded-2xl border bg-background shadow-sm"
+                    className="flex items-stretch overflow-hidden rounded-2xl border bg-background shadow-xs"
                     style={tColor ? { borderLeft: `5px solid ${tColor}` } : undefined}
                 >
                     {/* Info stub */}
@@ -242,7 +242,7 @@ export function TicketOrderView({
             // alone is enough. Tier colour drives the head band.
             const band = tColor || accent || '#4E47DC'
             return (
-                <div className="overflow-hidden rounded-2xl border bg-background shadow-sm">
+                <div className="overflow-hidden rounded-2xl border bg-background shadow-xs">
                     {/* Tier band */}
                     <div
                         className="flex items-center justify-between gap-3 px-5 py-3"
@@ -317,7 +317,7 @@ export function TicketOrderView({
         // classic (default)
         return (
             <div
-                className="overflow-hidden rounded-2xl border bg-background shadow-sm"
+                className="overflow-hidden rounded-2xl border bg-background shadow-xs"
                 style={tColor ? { borderLeft: `4px solid ${tColor}` } : undefined}
             >
                 <div className="flex items-center justify-between border-b px-5 py-3">
@@ -364,7 +364,7 @@ export function TicketOrderView({
 
             <div className="relative z-10 mx-auto w-full max-w-md space-y-4">
                 {/* Event header */}
-                <div className="overflow-hidden rounded-2xl border bg-background shadow-sm">
+                <div className="overflow-hidden rounded-2xl border bg-background shadow-xs">
                     {showBanner && (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={headerImage!} alt="" className="h-40 w-full object-cover" />
@@ -467,7 +467,7 @@ export function TicketOrderView({
                                         href={safeUrl(l.url)}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1.5 rounded-full border bg-background px-3.5 py-1.5 text-xs font-semibold shadow-sm transition-colors hover:bg-accent"
+                                        className="inline-flex items-center gap-1.5 rounded-full border bg-background px-3.5 py-1.5 text-xs font-semibold shadow-xs transition-colors hover:bg-accent"
                                         style={accent ? { borderColor: `${accent}55` } : undefined}
                                     >
                                         {l.label}

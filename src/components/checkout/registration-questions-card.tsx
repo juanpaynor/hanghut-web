@@ -83,7 +83,7 @@ export function RegistrationQuestionsCard({ eventId, registrationQuestions, regA
                                 id={`q_${q.id}`}
                                 value={regAnswers[q.id] ?? ''}
                                 onChange={(e) => setRegAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                                className="w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                className="w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-sm ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                             >
                                 <option value="">Choose…</option>
                                 {q.options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
@@ -126,7 +126,7 @@ export function RegistrationQuestionsCard({ eventId, registrationQuestions, regA
                             <textarea
                                 id={`q_${q.id}`}
                                 rows={3}
-                                className="w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                className="w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                                 value={regAnswers[q.id] ?? ''}
                                 onChange={(e) => setRegAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
                             />
@@ -196,7 +196,7 @@ export function RegistrationQuestionsCard({ eventId, registrationQuestions, regA
     if (bare) return fields
 
     return (
-        <Card className="border-border/50 shadow-sm">
+        <Card className="border-border/50 shadow-xs">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-primary">
                     <ClipboardList className="w-5 h-5" />

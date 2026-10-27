@@ -1272,7 +1272,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                             onClick={() => setPreviewDevice('desktop')}
                                             aria-pressed={previewIsDesktop}
                                             title="Desktop"
-                                            className={cn("rounded-md p-1.5", previewIsDesktop ? "bg-background shadow-sm text-foreground" : "text-muted-foreground")}
+                                            className={cn("rounded-md p-1.5", previewIsDesktop ? "bg-background shadow-xs text-foreground" : "text-muted-foreground")}
                                         >
                                             <Monitor className="h-3.5 w-3.5" />
                                         </button>
@@ -1281,7 +1281,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
                                             onClick={() => setPreviewDevice('mobile')}
                                             aria-pressed={!previewIsDesktop}
                                             title="Mobile"
-                                            className={cn("rounded-md p-1.5", !previewIsDesktop ? "bg-background shadow-sm text-foreground" : "text-muted-foreground")}
+                                            className={cn("rounded-md p-1.5", !previewIsDesktop ? "bg-background shadow-xs text-foreground" : "text-muted-foreground")}
                                         >
                                             <Smartphone className="h-3.5 w-3.5" />
                                         </button>

@@ -77,7 +77,7 @@ export default async function DownloadPage() {
                     <div className="animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-300 fill-mode-both space-y-8">
                         
                         {/* iOS TestFlight Section */}
-                        <div className="bg-white/5 border border-white/10 rounded-3xl p-8 max-w-md mx-auto shadow-xl backdrop-blur-sm relative overflow-hidden">
+                        <div className="bg-white/5 border border-white/10 rounded-3xl p-8 max-w-md mx-auto shadow-xl backdrop-blur-xs relative overflow-hidden">
                             <div className="absolute top-0 right-0 bg-blue-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wider">
                                 Recommended
                             </div>
@@ -119,7 +119,7 @@ export default async function DownloadPage() {
 
                         {/* Android APK Section */}
                         {release ? (
-                            <div className="bg-white/5 border border-white/10 rounded-3xl p-8 max-w-md mx-auto shadow-xl backdrop-blur-sm space-y-6">
+                            <div className="bg-white/5 border border-white/10 rounded-3xl p-8 max-w-md mx-auto shadow-xl backdrop-blur-xs space-y-6">
                                 <div className="flex justify-center">
                                     <div className="h-16 w-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center">
                                         <Smartphone className="h-8 w-8 text-emerald-500" />

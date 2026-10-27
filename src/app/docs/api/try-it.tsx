@@ -64,7 +64,7 @@ export function ApiKeyBar() {
                 placeholder="hh_live_..."
                 spellCheck={false}
                 autoComplete="off"
-                className="w-full bg-[#0d1117] border border-zinc-800/80 rounded-lg px-3 py-2.5 font-mono text-[13px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-[#6c5ce7]/60 focus:ring-1 focus:ring-[#6c5ce7]/30"
+                className="w-full bg-[#0d1117] border border-zinc-800/80 rounded-lg px-3 py-2.5 font-mono text-[13px] text-zinc-200 placeholder:text-zinc-600 focus:outline-hidden focus:border-[#6c5ce7]/60 focus:ring-1 focus:ring-[#6c5ce7]/30"
             />
             <p className="text-[12px] text-zinc-500 mt-2 leading-relaxed">
                 Used only by your browser to call this API directly. It is never stored and never
@@ -258,7 +258,7 @@ export function TryIt({
                                     onChange={e => setPathVals(v => ({ ...v, [p.name]: e.target.value.trim() }))}
                                     placeholder={p.placeholder}
                                     spellCheck={false}
-                                    className="mt-1 w-full bg-[#0d1117] border border-zinc-800/80 rounded-lg px-3 py-2 font-mono text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-[#6c5ce7]/60"
+                                    className="mt-1 w-full bg-[#0d1117] border border-zinc-800/80 rounded-lg px-3 py-2 font-mono text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:outline-hidden focus:border-[#6c5ce7]/60"
                                 />
                             </label>
                         ))}
@@ -275,7 +275,7 @@ export function TryIt({
                                     onChange={e => setQueryVals(v => ({ ...v, [p.name]: e.target.value.trim() }))}
                                     placeholder={p.placeholder}
                                     spellCheck={false}
-                                    className="mt-1 w-full bg-[#0d1117] border border-zinc-800/80 rounded-lg px-3 py-2 font-mono text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-[#6c5ce7]/60"
+                                    className="mt-1 w-full bg-[#0d1117] border border-zinc-800/80 rounded-lg px-3 py-2 font-mono text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:outline-hidden focus:border-[#6c5ce7]/60"
                                 />
                             </label>
                         ))}
@@ -290,7 +290,7 @@ export function TryIt({
                             onChange={e => setBodyText(e.target.value)}
                             rows={Math.min(14, Math.max(4, bodyText.split('\n').length))}
                             spellCheck={false}
-                            className="mt-1 w-full bg-[#0d1117] border border-zinc-800/80 rounded-lg px-3 py-2 font-mono text-[12px] text-zinc-200 leading-relaxed focus:outline-none focus:border-[#6c5ce7]/60 resize-y"
+                            className="mt-1 w-full bg-[#0d1117] border border-zinc-800/80 rounded-lg px-3 py-2 font-mono text-[12px] text-zinc-200 leading-relaxed focus:outline-hidden focus:border-[#6c5ce7]/60 resize-y"
                         />
                     </label>
                 )}
@@ -321,7 +321,7 @@ export function TryIt({
                                     onChange={e => setTyped(e.target.value)}
                                     spellCheck={false}
                                     autoComplete="off"
-                                    className="mt-1 w-full bg-[#0d1117] border border-red-500/30 rounded-lg px-3 py-2 font-mono text-[12px] text-zinc-200 focus:outline-none focus:border-red-500/60"
+                                    className="mt-1 w-full bg-[#0d1117] border border-red-500/30 rounded-lg px-3 py-2 font-mono text-[12px] text-zinc-200 focus:outline-hidden focus:border-red-500/60"
                                 />
                             </label>
                         )}

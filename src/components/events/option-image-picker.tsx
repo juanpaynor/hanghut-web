@@ -54,7 +54,7 @@ export function OptionImagePicker({
                         aria-pressed={on}
                         className={cn(
                             'group relative overflow-hidden rounded-xl border-2 text-left transition-all',
-                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
                             on ? 'border-primary' : 'border-border hover:border-primary/40'
                         )}
                     >

@@ -67,12 +67,12 @@ export function DesignOptionGrid({
                 className={cn(
                     'relative p-2 rounded-xl border-2 text-left transition-all',
                     selected
-                        ? 'border-primary bg-primary/5 shadow-sm'
+                        ? 'border-primary bg-primary/5 shadow-xs'
                         : 'border-border hover:border-primary/50 hover:bg-muted/50',
                 )}
             >
                 {selected && (
-                    <span className="absolute top-3 right-3 z-10 rounded-full bg-primary text-primary-foreground p-0.5 shadow">
+                    <span className="absolute top-3 right-3 z-10 rounded-full bg-primary text-primary-foreground p-0.5 shadow-sm">
                         <Check className="h-3 w-3" />
                     </span>
                 )}

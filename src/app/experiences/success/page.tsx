@@ -51,7 +51,7 @@ export default async function ExperienceSuccessPage({ searchParams }: Props) {
     return (
         <div className="min-h-screen bg-background flex flex-col">
             {/* Navbar */}
-            <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur">
+            <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-sm">
                 <div className="container mx-auto px-4 flex h-14 items-center">
                     <Link href="/" className="flex items-center gap-2 font-bold text-xl hover:opacity-80 transition-opacity">
                         <div className="bg-primary px-3 py-1 rounded-md text-primary-foreground transform -rotate-2 text-base">

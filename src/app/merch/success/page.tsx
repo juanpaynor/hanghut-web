@@ -109,7 +109,7 @@ export default async function MerchSuccessPage({
 
                 <div className="space-y-3">
                     {claimToken && (
-                        <Button asChild className="w-full h-11 text-base shadow-sm">
+                        <Button asChild className="w-full h-11 text-base shadow-xs">
                             <Link href={`/m/${claimToken}`} className="flex items-center gap-2">
                                 <PackageCheck className="h-4 w-4" />
                                 View my order

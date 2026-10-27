@@ -827,7 +827,7 @@ export default async function PublicEventPage({
                     {/* Centered overlay content */}
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-center px-4 z-20">
                         <div className="flex gap-2 justify-center">
-                            <span data-hh-badge className="bg-white/15 backdrop-blur border border-white/25 text-white text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
+                            <span data-hh-badge className="bg-white/15 backdrop-blur-sm border border-white/25 text-white text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full">
                                 {event.event_type || 'Event'}
                             </span>
                             {event.is_featured && (
@@ -918,17 +918,17 @@ export default async function PublicEventPage({
     const TitleSection = () => (
         <div className="space-y-4 py-8">
             <div className="flex gap-2 mb-2">
-                <Badge data-hh-badge variant="secondary" className="bg-background/80 backdrop-blur text-foreground border shadow-sm">
+                <Badge data-hh-badge variant="secondary" className="bg-background/80 backdrop-blur-sm text-foreground border shadow-xs">
                     {event.event_type ? event.event_type.toUpperCase() : 'EVENT'}
                 </Badge>
                 {event.is_featured && <Badge data-hh-badge className="bg-yellow-500 text-white hover:bg-yellow-600">Featured</Badge>}
                 {event.status === 'hidden' && (
-                    <Badge variant="outline" className="border-purple-300 text-purple-600 bg-purple-50/80 backdrop-blur">
+                    <Badge variant="outline" className="border-purple-300 text-purple-600 bg-purple-50/80 backdrop-blur-sm">
                         🔒 Unlisted Event
                     </Badge>
                 )}
             </div>
-            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight leading-tight text-foreground drop-shadow-sm">
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight leading-tight text-foreground drop-shadow-xs">
                 {event.title}
             </h1>
         </div>
@@ -1868,7 +1868,7 @@ export default async function PublicEventPage({
                 {/* Hero: content floats bottom-left over the poster */}
                 <section className="relative z-10 min-h-screen flex flex-col justify-end px-6 md:px-10 pb-16 pt-24 max-w-4xl">
                     <div className="flex flex-wrap gap-2 mb-5">
-                        <span data-hh-badge className="bg-white/12 backdrop-blur border border-white/25 text-white text-[11px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-full">{event.event_type || 'Event'}</span>
+                        <span data-hh-badge className="bg-white/12 backdrop-blur-sm border border-white/25 text-white text-[11px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-full">{event.event_type || 'Event'}</span>
                         {event.is_featured && <span data-hh-badge className="bg-yellow-400/90 text-yellow-900 text-[11px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-full">⭐ Featured</span>}
                     </div>
                     <h1 data-hh-title className="font-black text-white drop-shadow-2xl leading-[0.95] tracking-[-0.02em]" style={{ fontSize: 'clamp(2.6rem, 8vw, 7rem)', fontFamily: 'var(--font-heading)' }}>
@@ -2010,7 +2010,7 @@ export default async function PublicEventPage({
                             <span className="text-sm">{event.organizer.business_name}</span>
                         </a>
                     ) : (
-                        <Link href="/" className={cn("backdrop-blur px-3 py-1 rounded-md font-black text-sm", pc.wordmark)}>
+                        <Link href="/" className={cn("backdrop-blur-sm px-3 py-1 rounded-md font-black text-sm", pc.wordmark)}>
                             HANGHUT
                         </Link>
                     )}
@@ -2021,7 +2021,7 @@ export default async function PublicEventPage({
                 <section className="relative z-10 min-h-screen flex flex-col items-center justify-center text-center px-4 pt-24 pb-16 gap-6">
                     {/* Badges */}
                     <div className="flex gap-2 justify-center">
-                        <span data-hh-badge className={cn("backdrop-blur border text-xs font-bold uppercase tracking-[0.15em] px-4 py-1.5 rounded-full", pc.chip)}>
+                        <span data-hh-badge className={cn("backdrop-blur-sm border text-xs font-bold uppercase tracking-[0.15em] px-4 py-1.5 rounded-full", pc.chip)}>
                             {event.event_type || 'Event'}
                         </span>
                         {event.is_featured && (
@@ -2498,7 +2498,7 @@ export default async function PublicEventPage({
         return (
             <div data-hh-event data-hh-theme={pageTheme} data-hh-layout="minimal" className="min-h-screen bg-background pb-20" style={{ ...fontStyle, fontFamily: 'var(--font-body)' }}>
                 <PageHead />
-                <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-sm supports-[backdrop-filter]:bg-background/60">
                     <div className="container mx-auto px-4 flex h-16 items-center justify-between">
                         {event.organizer ? (
                             <a href={`https://${event.organizer.slug}.hanghut.com`} className="flex items-center gap-3 font-bold text-xl hover:opacity-80 transition-opacity">
@@ -2721,7 +2721,7 @@ export default async function PublicEventPage({
                 />
             )}
             {/* Navbar */}
-            <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 relative z-50">
+            <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-sm supports-[backdrop-filter]:bg-background/60 relative z-50">
                 <div className="container mx-auto px-4 flex h-16 items-center justify-between">
                     {event.organizer ? (
                         <a href={`https://${event.organizer.slug}.hanghut.com`} className="flex items-center gap-3 font-bold text-xl hover:opacity-80 transition-opacity">

@@ -1,6 +1,17 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind 4 replaces the three @tailwind directives with one import. */
+@import "tailwindcss";
+
+/* KEEP THE JS CONFIG. v4 is CSS-first by default, but @config loads a v3-style
+ * config verbatim -- theme, plugins, content globs and all. tailwind.config.ts
+ * carries 40+ `hsl(var(--token))` colour aliases, five keyframes, a custom
+ * boxShadow and the content glob that scans src/lib for class strings built in
+ * data files. Porting that to @theme by hand is a large, silent, purely
+ * cosmetic diff across a 113-page app. This is the supported way to not do it.
+ *
+ * tailwindcss-animate and @tailwindcss/typography load through the config's
+ * `plugins` array as before; they need no v4-specific handling.
+ */
+@config "../../tailwind.config.ts";
 
 @layer base {
 

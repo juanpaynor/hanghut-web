@@ -180,7 +180,7 @@ export function AdminNav({ adminRole }: AdminNavProps) {
                             className={cn(
                                 'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-all',
                                 isActive
-                                    ? 'bg-indigo-50 text-indigo-700 shadow-sm'
+                                    ? 'bg-indigo-50 text-indigo-700 shadow-xs'
                                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                             )}
                         >

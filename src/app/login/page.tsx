@@ -135,7 +135,7 @@ export default function LoginPage() {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
-            <Card className="w-full max-w-md border-slate-700 bg-slate-800/50 backdrop-blur">
+            <Card className="w-full max-w-md border-slate-700 bg-slate-800/50 backdrop-blur-sm">
                 <CardHeader className="space-y-1">
                     <CardTitle className="text-2xl font-bold text-white">HangHut Admin</CardTitle>
                     <CardDescription className="text-slate-400">

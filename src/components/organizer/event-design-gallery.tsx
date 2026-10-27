@@ -370,7 +370,7 @@ export function EventDesignGallery({
                             key={t.id}
                             type="button"
                             onClick={() => onApply(t)}
-                            className={`group text-left rounded-2xl border-2 overflow-hidden transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                            className={`group text-left rounded-2xl border-2 overflow-hidden transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary ${
                                 isActive
                                     ? 'border-primary shadow-md'
                                     : 'border-border hover:border-primary/50 hover:shadow-md'
@@ -380,7 +380,7 @@ export function EventDesignGallery({
                                 <PreviewBackground t={t} />
                                 <PreviewContent t={t} />
                                 {isActive && (
-                                    <div className="absolute top-2 right-2 bg-primary text-primary-foreground rounded-full p-1 shadow">
+                                    <div className="absolute top-2 right-2 bg-primary text-primary-foreground rounded-full p-1 shadow-sm">
                                         <Check className="h-3 w-3" />
                                     </div>
                                 )}

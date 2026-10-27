@@ -92,7 +92,7 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
                     and nothing has to come between the news and the button. */}
                 {ticketToken && (
                     <div className="space-y-2">
-                        <Button className="w-full h-12 text-base shadow-sm" asChild>
+                        <Button className="w-full h-12 text-base shadow-xs" asChild>
                             <Link href={`/t/${ticketToken}`} className="flex items-center gap-2">
                                 <Ticket className="h-4 w-4" />
                                 View my {quantity > 1 ? 'tickets' : 'ticket'}
@@ -168,7 +168,7 @@ export default async function PurchaseSuccessPage({ searchParams }: Props) {
                 </div>
 
                 <div className="space-y-3 pt-2">
-                    <Button variant={ticketToken ? 'outline' : 'default'} className="w-full h-11 text-base shadow-sm" asChild>
+                    <Button variant={ticketToken ? 'outline' : 'default'} className="w-full h-11 text-base shadow-xs" asChild>
                         <Link href="/" className="flex items-center gap-2">
                             <Home className="h-4 w-4" />
                             Return to Home

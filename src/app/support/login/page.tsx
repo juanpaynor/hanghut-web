@@ -100,7 +100,7 @@ export default function SupportLoginPage() {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
-            <Card className="w-full max-w-md border-slate-700 bg-slate-800/50 backdrop-blur">
+            <Card className="w-full max-w-md border-slate-700 bg-slate-800/50 backdrop-blur-sm">
                 <CardHeader className="space-y-1">
                     <div className="flex items-center gap-2 mb-1">
                         <Headset className="h-5 w-5 text-indigo-400" />

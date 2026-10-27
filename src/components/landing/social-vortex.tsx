@@ -42,7 +42,7 @@ export default function SocialVortex({ isFullScreen = false }: { isFullScreen?: 
     const opacity = useTransform(scrollYProgress, [0.2, 0.8], [0, 1]);
 
     return (
-        <div ref={containerRef} className={`relative w-full ${isFullScreen ? 'h-full' : 'h-[300px]'} flex items-center justify-center overflow-hidden ${isFullScreen ? '' : 'bg-white/50 backdrop-blur-sm rounded-[30px] border border-blue-100/50'}`}>
+        <div ref={containerRef} className={`relative w-full ${isFullScreen ? 'h-full' : 'h-[300px]'} flex items-center justify-center overflow-hidden ${isFullScreen ? '' : 'bg-white/50 backdrop-blur-xs rounded-[30px] border border-blue-100/50'}`}>
 
             {/* Center "Group Chat" Hub */}
             <motion.div

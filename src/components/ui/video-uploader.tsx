@@ -197,7 +197,7 @@ export function VideoUploader({ value, onChange, className, disabled }: VideoUpl
                             type="button"
                             variant="destructive"
                             size="icon"
-                            className="h-8 w-8 shadow-sm"
+                            className="h-8 w-8 shadow-xs"
                             onClick={handleRemove}
                             disabled={disabled || isUploading}
                         >

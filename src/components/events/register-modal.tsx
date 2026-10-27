@@ -472,7 +472,7 @@ function QuestionStep({ q, value, onChange, eventId, compact }: {
                 <select
                     value={str}
                     onChange={(e) => onChange(e.target.value)}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                 >
                     <option value="">Choose…</option>
                     {q.options.map((opt) => (
@@ -511,7 +511,7 @@ function QuestionStep({ q, value, onChange, eventId, compact }: {
                     value={str}
                     onChange={(e) => onChange(e.target.value)}
                     placeholder="Your answer"
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                 />
             )}
 
