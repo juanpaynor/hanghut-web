@@ -21,9 +21,11 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // NOTE: the `eslint` key was removed in Next 16, along with `next lint`
+  // itself -- `next build` no longer runs linting at all. It held
+  // `ignoreDuringBuilds: true`, which was belt-and-braces over nothing: this
+  // repo has no eslint packages and no eslint config, so there was never a
+  // lint step to suppress.
   images: {
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [320, 640, 960, 1280, 1536, 1920],
@@ -176,6 +178,20 @@ const nextConfig: NextConfig = {
  * (tracesSampleRate 0, replay rates 0) but their code still ships unless these
  * flags let the bundler drop it. Flip the flag if you ever turn the feature on,
  * or it will be silently inert.
+ */
+/**
+ * Next 16 builds with Turbopack by default and REFUSES to build when a webpack
+ * config is present, rather than silently ignoring it. The build script
+ * therefore passes `--webpack`.
+ *
+ * Opting out is deliberate, not laziness: Turbopack has no DefinePlugin, so
+ * moving to it drops the five __SENTRY_* flags below. They are what strip
+ * Tracing and Replay from the bundle -- both are off at runtime but their code
+ * still ships without these. That is the ~69kB this block exists to remove
+ * from every page of a consumer ticketing site whose buyers are on phones.
+ *
+ * Migrating the bundler is a separate change with its own bundle measurement.
+ * It does not belong in a framework upgrade.
  */
 const withBundleFlags: NextConfig = {
   ...nextConfig,
