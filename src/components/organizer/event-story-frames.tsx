@@ -252,10 +252,12 @@ export function EventStoryFrames({ eventId, coverImageUrl }: {
                         {uploading
                             ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             : <Upload className="mr-2 h-4 w-4" />}
-                        Upload for review
+                        Upload
                     </Button>
                     <p className="mt-2 text-xs text-muted-foreground">
-                        Frames are reviewed before they go live.
+                        {frames.some((f) => f.is_active)
+                            ? 'Uploads are saved but not switched on — use Live below when you want to swap.'
+                            : 'Goes live on this event straight away. You can switch it off any time.'}
                     </p>
                 </div>
 
@@ -313,10 +315,12 @@ function StatusChip({ status, active }: { status: EventFrame['status']; active: 
             </span>
         )
     }
+    // 'pending' is no longer produced by the upload path, but older rows can
+    // still carry it and the column still allows it, so it keeps a label.
     const map = {
         pending: { icon: Clock, label: 'Waiting for review', cls: 'text-amber-600' },
-        approved: { icon: CheckCircle2, label: 'Approved, not live', cls: 'text-muted-foreground' },
-        rejected: { icon: XCircle, label: 'Rejected', cls: 'text-destructive' },
+        approved: { icon: CheckCircle2, label: 'Not live', cls: 'text-muted-foreground' },
+        rejected: { icon: XCircle, label: 'Taken down by HangHut', cls: 'text-destructive' },
     }[status]
     const Icon = map.icon
     return (

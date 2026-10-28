@@ -56,8 +56,13 @@ export async function listEventFrames(eventId: string): Promise<EventFrame[]> {
  * Record an uploaded frame. The file itself goes browser-direct to storage --
  * a 1080x1920 PNG has no business travelling through a server action body.
  *
- * Always lands as `pending` and inactive. The database default says so too;
- * this is not relying on the caller.
+ * NO REVIEW GATE. Frames land `approved`, and go live immediately if the event
+ * has nothing live already. Rich's call 2026-10-28, overriding the approval step
+ * the app team asked for in #368: an organizer uploading at 11pm the night before
+ * their event cannot wait on a human, and a gate nobody is awake to clear is just
+ * a broken feature. The `status` column and the kill switch both stay, so a frame
+ * can still be pulled the moment anyone sees a problem -- what changed is that
+ * the default is live rather than blocked.
  */
 export async function createEventFrame(input: {
     eventId: string
@@ -70,6 +75,18 @@ export async function createEventFrame(input: {
     if (!name) throw new Error('Give the frame a name')
 
     const supabase = await createClient()
+
+    // Only the FIRST frame goes live on its own. If the organizer already has one
+    // running, uploading another must not silently swap what their attendees see
+    // mid-event -- that is a deliberate act, so it stays behind the toggle.
+    const { data: live, error: liveErr } = await supabase
+        .from('event_frames')
+        .select('id')
+        .eq('event_id', input.eventId)
+        .eq('is_active', true)
+        .maybeSingle()
+    if (liveErr) throw new Error(liveErr.message)
+
     const { data, error } = await supabase
         .from('event_frames')
         .insert({
@@ -77,11 +94,32 @@ export async function createEventFrame(input: {
             name,
             image_url: input.imageUrl,
             created_by: userId,
-            status: 'pending',
-            is_active: false,
+            status: 'approved',
+            is_active: !live,
         })
         .select('id, event_id, name, image_url, status, is_active, created_by, created_at')
         .single()
+
+    // A second upload racing this one loses the unique partial index rather than
+    // the data: retry inactive, so the organizer gets their frame and simply has
+    // to pick which is live.
+    if (error?.code === '23505') {
+        const { data: retry, error: retryErr } = await supabase
+            .from('event_frames')
+            .insert({
+                event_id: input.eventId,
+                name,
+                image_url: input.imageUrl,
+                created_by: userId,
+                status: 'approved',
+                is_active: false,
+            })
+            .select('id, event_id, name, image_url, status, is_active, created_by, created_at')
+            .single()
+        if (retryErr) throw new Error(retryErr.message)
+        revalidatePath(`/organizer/events/${input.eventId}`)
+        return retry as EventFrame
+    }
 
     if (error) throw new Error(error.message)
     revalidatePath(`/organizer/events/${input.eventId}`)
@@ -89,11 +127,13 @@ export async function createEventFrame(input: {
 }
 
 /**
- * The kill switch, and the only way a frame goes live.
+ * The kill switch, and how an organizer swaps which frame is live.
  *
  * Deactivating is always allowed and never blocked by state -- if artwork has
  * to come down at 11pm on a Saturday, nothing about this call should be able to
- * refuse. Activating is the guarded direction.
+ * refuse. Activating is the guarded direction: with the review gate dropped the
+ * `approved` check now only stops a frame WE rejected from being switched back
+ * on by the organizer who uploaded it.
  */
 export async function setEventFrameActive(
     frameId: string,
