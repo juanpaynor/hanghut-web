@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react'
 import Image from 'next/image'
-import { Loader2, Upload, Trash2, CheckCircle2, Clock, XCircle, Power } from 'lucide-react'
+import { Loader2, Upload, Trash2, CheckCircle2, Clock, XCircle, Power, Wand2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import {
-    validateFrameFile, FRAME_WIDTH, FRAME_HEIGHT, SAFE_TOP, SAFE_BOTTOM,
+    validateFrameFile, resizeFrameFile, FRAME_WIDTH, FRAME_HEIGHT, SAFE_TOP, SAFE_BOTTOM,
+    type FrameValidation,
 } from '@/lib/frames/validate-frame'
 import {
     listEventFrames, createEventFrame, setEventFrameActive, deleteEventFrame,
@@ -32,6 +33,11 @@ export function EventStoryFrames({ eventId, coverImageUrl }: {
     const [previewUrl, setPreviewUrl] = useState<string | null>(null)
     const [issues, setIssues] = useState<string[]>([])
     const [uploading, setUploading] = useState(false)
+    // The file we turned away, kept only so we can offer to resize it rather
+    // than making the organizer go back to their design tool for a crop.
+    const [rejected, setRejected] = useState<{ file: File; check: FrameValidation } | null>(null)
+    const [resizing, setResizing] = useState(false)
+    const [notice, setNotice] = useState<string | null>(null)
     const fileRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
@@ -47,17 +53,67 @@ export function EventStoryFrames({ eventId, coverImageUrl }: {
 
     async function pick(f: File | null) {
         setIssues([])
+        setNotice(null)
+        setRejected(null)
         setFile(null)
         if (previewUrl) URL.revokeObjectURL(previewUrl)
         setPreviewUrl(null)
         if (!f) return
 
         const result = await validateFrameFile(f)
-        if (!result.ok) { setIssues(result.errors); return }
+        if (!result.ok) {
+            setIssues(result.errors)
+            if (result.canResize) setRejected({ file: f, check: result })
+            return
+        }
 
+        accept(f, f.name, null)
+    }
+
+    /** Name comes from the SOURCE file, so a resize does not rename the frame. */
+    function accept(f: File, nameSource: string, note: string | null) {
         setFile(f)
         setPreviewUrl(URL.createObjectURL(f))
-        if (!name.trim()) setName(f.name.replace(/\.png$/i, '').slice(0, 60))
+        setNotice(note)
+        setName((n) => (n.trim() ? n : nameSource.replace(/\.png$/i, '').slice(0, 60)))
+    }
+
+    /**
+     * Redraw the rejected file at 1080x1920 in the browser.
+     *
+     * Re-validated afterwards rather than assumed fixed: fewer pixels usually
+     * means fewer bytes, but canvas PNG output is unoptimised, so a heavy frame
+     * can come back still over 2 MB. If it does, the organizer sees that instead
+     * of a silent success.
+     */
+    async function resize() {
+        const source = rejected
+        if (!source) return
+        setResizing(true)
+        setError(null)
+        try {
+            const resized = await resizeFrameFile(source.file)
+            const check = await validateFrameFile(resized)
+            if (!check.ok) {
+                setIssues(check.errors)
+                setRejected(null)
+                return
+            }
+            setIssues([])
+            setRejected(null)
+            accept(
+                resized,
+                source.file.name,
+                `Resized from ${source.check.width}×${source.check.height} to ${FRAME_WIDTH}×${FRAME_HEIGHT}` +
+                    (source.check.aspectMatches
+                        ? '. Nothing was cropped.'
+                        : ' and padded with transparency, so nothing was cropped or stretched. Check the preview.'),
+            )
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Could not resize that PNG')
+        } finally {
+            setResizing(false)
+        }
     }
 
     async function upload() {
@@ -79,7 +135,7 @@ export function EventStoryFrames({ eventId, coverImageUrl }: {
                 eventId, name: name.trim(), imageUrl: urlData.publicUrl,
             })
             setFrames((f) => [created, ...f])
-            setFile(null); setName('')
+            setFile(null); setName(''); setNotice(null); setRejected(null)
             if (previewUrl) URL.revokeObjectURL(previewUrl)
             setPreviewUrl(null)
             if (fileRef.current) fileRef.current.value = ''
@@ -123,8 +179,9 @@ export function EventStoryFrames({ eventId, coverImageUrl }: {
             <h3 className="text-base font-semibold">Story frame</h3>
             <p className="mt-1 text-sm text-muted-foreground">
                 A transparent PNG your attendees can put over their own photo and post to
-                their story. Exactly {FRAME_WIDTH}×{FRAME_HEIGHT}, under 2&nbsp;MB.
-                Keep artwork out of the shaded bands — Instagram&apos;s own buttons sit there.
+                their story. {FRAME_WIDTH}×{FRAME_HEIGHT} and under 2&nbsp;MB — if yours is
+                bigger we can resize it for you. Keep artwork out of the shaded bands —
+                Instagram&apos;s own buttons sit there.
             </p>
 
             <div className="mt-5 grid gap-6 md:grid-cols-[minmax(0,1fr)_240px]">
@@ -154,6 +211,35 @@ export function EventStoryFrames({ eventId, coverImageUrl }: {
                                 </li>
                             ))}
                         </ul>
+                    )}
+
+                    {rejected?.check.canResize && (
+                        <div className="mt-3 rounded-lg border border-dashed p-3">
+                            <p className="text-sm">
+                                {rejected.check.aspectMatches
+                                    ? 'That is already the right shape, just bigger. We can resize it here.'
+                                    : 'We can resize it here, fitted inside the frame so nothing is cropped or stretched.'}
+                            </p>
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                className="mt-2"
+                                onClick={resize}
+                                disabled={resizing}
+                            >
+                                {resizing
+                                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    : <Wand2 className="mr-2 h-4 w-4" />}
+                                Resize to {FRAME_WIDTH}×{FRAME_HEIGHT}
+                            </Button>
+                        </div>
+                    )}
+
+                    {notice && (
+                        <p className="mt-3 flex gap-2 text-sm text-emerald-600">
+                            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                            {notice}
+                        </p>
                     )}
 
                     {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
