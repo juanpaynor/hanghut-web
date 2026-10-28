@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { EventStoryFrames } from '@/components/organizer/event-story-frames'
 import { EventForm } from '@/components/organizer/event-form'
 import { TicketTiersManager } from '@/components/organizer/ticket-tiers-manager'
 import { AttendeeManager } from '@/components/organizer/attendee-manager'
@@ -260,13 +261,19 @@ export function EventDashboardTabs({
             </TabsContent>
 
             <TabsContent value="share" className="mt-6 animate-in fade-in-50 duration-300">
-                <EventShareTab
-                    eventId={eventId}
-                    eventTitle={event.title}
-                    eventSlug={event.slug}
-                    baseUrl={baseUrl || 'https://hanghut.com'}
-                    eventStatus={event.status}
-                />
+                <div className="space-y-6">
+                    <EventShareTab
+                        eventId={eventId}
+                        eventTitle={event.title}
+                        eventSlug={event.slug}
+                        baseUrl={baseUrl || 'https://hanghut.com'}
+                        eventStatus={event.status}
+                    />
+                    <EventStoryFrames
+                        eventId={eventId}
+                        coverImageUrl={event.cover_image_url}
+                    />
+                </div>
             </TabsContent>
 
             <TabsContent value="questions" className="mt-6 animate-in fade-in-50 duration-300">
