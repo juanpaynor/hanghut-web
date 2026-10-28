@@ -105,6 +105,24 @@ const nextConfig: NextConfig = {
       { source: '/.well-known/apple-app-site-association', destination: '/aasa' },
       // Android App Links: Digital Asset Links file (same no-redirect requirement).
       { source: '/.well-known/assetlinks.json', destination: '/assetlinks' },
+      // docs.hanghut.com/api -> the API reference.
+      //
+      // The middleware branch for this host advertises exactly this mapping in
+      // a comment, but could never deliver it: the middleware `matcher`
+      // excludes any path starting with `api`, so middleware never runs for
+      // /api and its in-branch `startsWith('/api')` guard is unreachable. Only
+      // the longer /docs/api worked.
+      //
+      // Fixed here rather than by widening that matcher, which would put a
+      // Supabase session round trip in front of every real /api/v1 request on
+      // the money path. `has` keys this to the docs host only, and the source
+      // is exactly '/api' -- /api/v1/... is untouched and stays reachable on
+      // this host, which the docs page's own sandbox console depends on.
+      {
+        source: '/api',
+        has: [{ type: 'host', value: `docs.${process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'}` }],
+        destination: '/docs/api',
+      },
     ]
   },
   async headers() {
