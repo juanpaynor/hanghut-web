@@ -7,6 +7,7 @@ import { getAuthUser, getPartner, getUserRole } from '@/lib/auth/cached'
 import type { UserRole } from '@/lib/auth/cached'
 import { OrganizerSidebar } from '@/components/organizer/organizer-sidebar'
 import { SupportWidget } from '@/components/support/support-widget'
+import { OrganizerThemeProvider, ORGANIZER_THEME_SCRIPT } from '@/components/organizer/organizer-theme'
 
 // Role-based nav visibility matrix
 const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
@@ -77,6 +78,11 @@ export default async function OrganizerLayout({
     const capabilities: string[] = pf.capabilities ?? ['organizer']
 
     return (
+        <OrganizerThemeProvider>
+            {/* Applies the stored theme before this subtree paints. Inlined here
+                rather than in the root layout so it only ever runs for the
+                dashboard -- the public site is light-only. */}
+            <script dangerouslySetInnerHTML={{ __html: ORGANIZER_THEME_SCRIPT }} />
         <div className="min-h-screen bg-background flex">
             {/* Sidebar */}
             <OrganizerSidebar
@@ -113,5 +119,6 @@ export default async function OrganizerLayout({
                 contact page they have to go find. */}
             <SupportWidget />
         </div>
+        </OrganizerThemeProvider>
     )
 }

@@ -262,7 +262,7 @@ export function TransactionDetailDialog({
                             <div className="rounded-lg border border-amber-300 bg-amber-50/50 p-4 space-y-3">
                                 {/* QRPH: choose how to refund — send automatically via Xendit, or record an off-platform payout. */}
                                 {isManualOnly && (
-                                    <div className="grid grid-cols-2 gap-1 rounded-lg bg-white/60 p-1 border border-amber-200">
+                                    <div className="grid grid-cols-2 gap-1 rounded-lg bg-background/60 p-1 border border-amber-200">
                                         <button type="button" onClick={() => { setQrphMode('auto'); setRefundError(null) }}
                                             className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${qrphMode === 'auto' ? 'bg-amber-600 text-white' : 'text-amber-800 hover:bg-amber-100'}`}>
                                             Send via Xendit
@@ -320,7 +320,7 @@ export function TransactionDetailDialog({
                                             )}
                                         </div>
                                         {/* Itemized transfer-fee disclosure — the organizer's wallet pays amount + fee. */}
-                                        <div className="rounded-md border border-amber-200 bg-white/70 p-3 text-sm">
+                                        <div className="rounded-md border border-amber-200 bg-background/70 p-3 text-sm">
                                             <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Refund to customer</span><span className="font-medium">₱{(Number(amount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
                                             <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Transfer fee</span><span className="font-medium">₱{transferFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
                                             <div className="flex justify-between border-t border-amber-200 mt-1 pt-1"><span className="font-semibold">Debited from your wallet</span><span className="font-semibold text-destructive">₱{((Number(amount) || 0) + transferFee).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>

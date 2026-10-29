@@ -477,7 +477,7 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                                 >
                                     <div className="h-36 bg-slate-100 flex items-center justify-center relative">
                                         {applyingTemplate === template.id && (
-                                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-xs">
+                                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70 backdrop-blur-xs">
                                                 <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
                                             </div>
                                         )}

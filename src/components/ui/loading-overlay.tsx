@@ -40,7 +40,11 @@ export function LoadingOverlay({ isLoading, message = "Loading..." }: LoadingOve
                         exit={{ scale: 0.8, opacity: 0 }}
                         className="flex flex-col items-center gap-6"
                     >
-                        <div className="relative flex h-28 w-28 items-center justify-center">
+                        {/* 176px. The source is 500x500, so this still renders
+                            below 1:1 on a 2x display (352 < 500) and stays
+                            crisp — about 250px is where it would start to
+                            soften. */}
+                        <div className="relative flex h-44 w-44 items-center justify-center">
                             {/*
                              * The ring is not decoration, it is the fallback. The GIF is
                              * 406 KB, and the first time anyone navigates it has not been
@@ -51,8 +55,8 @@ export function LoadingOverlay({ isLoading, message = "Loading..." }: LoadingOve
                              */}
                             {(!ready || reduceMotion) && (
                                 <>
-                                    <span className="absolute inline-flex h-24 w-24 animate-ping rounded-full bg-primary/20 duration-1000" />
-                                    <span className="relative h-16 w-16 rounded-full bg-primary shadow-xl shadow-primary/30" />
+                                    <span className="absolute inline-flex h-36 w-36 animate-ping rounded-full bg-primary/20 duration-1000" />
+                                    <span className="relative h-24 w-24 rounded-full bg-primary shadow-xl shadow-primary/30" />
                                 </>
                             )}
 
@@ -64,13 +68,13 @@ export function LoadingOverlay({ isLoading, message = "Loading..." }: LoadingOve
                                 <img
                                     src={LOGO_SRC}
                                     alt=""
-                                    width={112}
-                                    height={112}
+                                    width={176}
+                                    height={176}
                                     // Decorative: `message` below already says what is
                                     // happening, so announcing it twice helps nobody.
                                     aria-hidden="true"
                                     onLoad={() => { logoReady = true; setReady(true); }}
-                                    className={`absolute h-28 w-28 object-contain transition-opacity duration-200 ${
+                                    className={`absolute h-44 w-44 object-contain transition-opacity duration-200 ${
                                         ready ? "opacity-100" : "opacity-0"
                                     }`}
                                 />

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { OrganizerThemeToggle } from '@/components/organizer/organizer-theme'
 import type { UserRole } from '@/lib/auth/cached'
 
 interface NavItem {
@@ -334,10 +335,14 @@ export function OrganizerSidebar({ role, isVerified, businessName, partnerSlug, 
             </div>
 
             {/* Footer */}
-            <div className="px-2 py-3 border-t border-border shrink-0">
+            <div className="px-2 py-3 border-t border-border shrink-0 space-y-2">
+                <OrganizerThemeToggle />
                 <button
                     onClick={handleLogout}
-                    className="flex items-center gap-2.5 px-2 py-2 w-full rounded-md text-sm font-medium text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors"
+                    /* bg-red-50 is a near-white wash -- fine on a light sidebar,
+                       a glaring panel on a dark one. An alpha tint of the same
+                       red reads correctly on both grounds. */
+                    className="flex items-center gap-2.5 px-2 py-2 w-full rounded-md text-sm font-medium text-muted-foreground hover:text-red-600 hover:bg-red-500/10 transition-colors"
                 >
                     <LogOut className="h-4 w-4 shrink-0" />
                     Logout

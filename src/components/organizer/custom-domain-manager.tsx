@@ -184,7 +184,7 @@ export function CustomDomainManager({ currentDomain, currentVerified }: Props) {
                             </ol>
 
                             {/* DNS record table */}
-                            <div className="rounded-md border bg-white overflow-hidden text-sm">
+                            <div className="rounded-md border bg-card overflow-hidden text-sm">
                                 <div className="grid grid-cols-[80px_1fr_1fr] bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                                     <span>Type</span>
                                     <span>Name</span>

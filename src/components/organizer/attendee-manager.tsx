@@ -1597,12 +1597,12 @@ function StatusBadge({ status }: { status: string }) {
         completed: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
         refunded: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
         failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-        used: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400',
+        used: 'bg-muted text-muted-foreground',
         cancelled: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
     }
 
     return (
-        <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${variants[status] || 'bg-gray-100 text-gray-800'}`}>
+        <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${variants[status] || 'bg-muted text-muted-foreground'}`}>
             {status}
         </span>
     )
