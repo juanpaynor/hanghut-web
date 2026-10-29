@@ -1,7 +1,11 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { DocsPage, DocsBody, DocsTitle, DocsDescription } from 'fumadocs-ui/page'
+// NOT 'fumadocs-ui/page' -- that re-exports the DOCS layout's page, and we
+// render the NOTEBOOK layout. Mixing them is why the table of contents column
+// never appeared: the TOC is a slot the matching layout mounts, so a page from
+// the wrong family passes `toc` to something that is not listening.
+import { DocsPage, DocsBody, DocsTitle } from 'fumadocs-ui/layouts/notebook/page'
 import { source } from '@/lib/docs/source'
 import { openapi } from '@/lib/docs/openapi'
 import { OpenAPIPage } from '../openapi-page'
@@ -26,9 +30,26 @@ export default async function Page({ params }: { params: Promise<{ slug?: string
     const { bundled } = await openapi.getSchema(props.document)
 
     return (
-        <DocsPage toc={page.data.toc}>
+        <DocsPage
+            toc={page.data.toc}
+            // The table of contents is OFF, and it is not a style choice.
+            // fumadocs-openapi only emits TOC entries when a page carries
+            // `showTitle` (see utils/pages/to-static-data.js) -- and we render ONE
+            // operation per page, so the only heading it could list is the page
+            // title already at the top. The column was therefore always empty,
+            // and an empty column is just dead space on the right.
+            tableOfContent={{ enabled: false }}
+            tableOfContentPopover={{ enabled: false }}
+            // With no TOC to make room for, let the article take the width back.
+            // It matters here more than on a prose page: fumadocs-openapi puts
+            // the example request and response in a second column.
+            full
+        >
             <DocsTitle>{page.data.title}</DocsTitle>
-            <DocsDescription>{page.data.description}</DocsDescription>
+            {/* No <DocsDescription>. The description in the spec is Markdown, and
+                this slot renders a plain string -- so it printed the raw source,
+                asterisks and backticks included, directly above the SAME text
+                rendered properly by OpenAPIPage below. */}
             <DocsBody>
                 <OpenAPIPage {...props} payload={{ bundled }} />
             </DocsBody>
@@ -53,11 +74,11 @@ function IndexPage() {
     return (
         <DocsPage>
             <DocsTitle>HangHut API</DocsTitle>
-            <DocsDescription>
-                Ticketing, attendees and payouts. Every endpoint takes a Bearer API key
-                from Organizer → Settings → API, and is limited to 100 requests a minute.
-            </DocsDescription>
             <DocsBody>
+                <p className="text-fd-muted-foreground">
+                    Ticketing, attendees and payouts. Every endpoint takes a Bearer API key
+                    from Organizer → Settings → API, and is limited to 100 requests a minute.
+                </p>
                 {[...groups.entries()].map(([tag, items]) => (
                     <section key={tag}>
                         <h2>{tag}</h2>

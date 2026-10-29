@@ -413,3 +413,150 @@
     animation: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   API REFERENCE THEME (Fumadocs)
+
+   Fumadocs ships its own palette as `--color-fd-*`, declared in an @theme
+   block by fumadocs-ui/css/lib/default-colors.css. Those are plain custom
+   properties once emitted, so re-declaring them on :root here re-skins every
+   Fumadocs component at once — sidebar, search, code blocks, the OpenAPI
+   playground — without touching a single component.
+
+   Two things make this safe to put on :root rather than scoping it:
+   nothing outside Fumadocs reads a `--color-fd-*` variable, and Fumadocs'
+   search dialog portals to <body>, so a scoped block would skin the page and
+   leave the dialog grey.
+
+   Order matters. Tailwind v4 emits @theme into `@layer theme`, and unlayered
+   rules beat layered ones, so this block wins wherever it sits — but it is at
+   the end of the file so it also wins on source order against the plain
+   `.dark` rule in default-colors.css, which is unlayered too.
+
+   The values are the landing page's tokens, not a second palette invented for
+   the docs: --lp-brand is already the app's --primary held exactly, so the API
+   reference, the landing page and the dashboard agree on the one colour that
+   has to match.
+   ───────────────────────────────────────────────────────────────────── */
+:root {
+  --color-fd-background: var(--lp-void);
+  --color-fd-foreground: var(--lp-text);
+  --color-fd-muted: var(--lp-deep);
+  --color-fd-muted-foreground: var(--lp-muted);
+  --color-fd-popover: var(--lp-panel);
+  --color-fd-popover-foreground: var(--lp-text);
+  --color-fd-card: var(--lp-panel);
+  --color-fd-card-foreground: var(--lp-text);
+  --color-fd-border: var(--lp-line);
+  --color-fd-primary: var(--lp-brand);
+  --color-fd-primary-foreground: var(--lp-brand-fg);
+  --color-fd-secondary: var(--lp-deep);
+  --color-fd-secondary-foreground: var(--lp-text);
+  /* Hover and the active sidebar row. Brand at low alpha rather than a grey,
+     so selection reads as "ours" instead of as a disabled state. */
+  --color-fd-accent: rgba(79, 70, 229, 0.09);
+  --color-fd-accent-foreground: var(--lp-brand);
+  --color-fd-ring: var(--lp-brand-soft);
+  --color-fd-overlay: rgba(23, 21, 48, 0.28);
+}
+
+/* The landing page is light-only by design, so dark has no tokens to inherit.
+   This is the same hue family taken down rather than a neutral grey: the ground
+   is the landing's near-black (#17152f) pushed darker, which keeps the indigo
+   bias that makes the light theme feel like HangHut and not like Tailwind.
+   The brand lifts to --lp-brand-soft and beyond, because #4f46e5 on a dark
+   ground fails contrast for body-sized text. */
+.dark {
+  --color-fd-background: #0d0c18;
+  --color-fd-foreground: #eceafa;
+  --color-fd-muted: #17152f;
+  --color-fd-muted-foreground: #a7a3c4;
+  --color-fd-popover: #1b1934;
+  --color-fd-popover-foreground: #eceafa;
+  --color-fd-card: #15142a;
+  --color-fd-card-foreground: #eceafa;
+  --color-fd-border: rgba(236, 234, 250, 0.12);
+  --color-fd-primary: #9b90ff;
+  --color-fd-primary-foreground: #0d0c18;
+  --color-fd-secondary: #1b1934;
+  --color-fd-secondary-foreground: #eceafa;
+  --color-fd-accent: rgba(155, 144, 255, 0.16);
+  --color-fd-accent-foreground: #c6beff;
+  --color-fd-ring: #9b90ff;
+  --color-fd-overlay: rgba(5, 4, 12, 0.6);
+}
+
+/* neutral.css lifts the sidebar off the page ground with its own greys. Ours
+   are indigo-biased to match, or the sidebar reads as a different product. */
+.dark #nd-sidebar {
+  --color-fd-muted: #1b1934;
+  --color-fd-secondary: #201e3c;
+  --color-fd-muted-foreground: #b4b0d0;
+}
+
+/* THE DARK-MODE INVISIBLE TEXT FIX.
+ *
+ * Two different `prose` implementations land on the same element: Fumadocs'
+ * own (driven by --color-fd-*, which flips with the theme) and the one
+ * @tailwindcss/typography generates (driven by --tw-prose-*, which does NOT).
+ * Typography only switches to its dark values when something adds the
+ * `prose-invert` class, and Fumadocs never does -- it has its own dark theme.
+ *
+ * So in dark mode the typography rules kept painting LIGHT-theme colours:
+ * near-black body text, near-black headings and near-black inline code on a
+ * near-black ground. The text was never missing, it was the same colour as
+ * what was behind it.
+ *
+ * Rather than fight over which rule wins, point typography's variables at the
+ * Fumadocs tokens. Now whichever rule applies, the colour is right, and it
+ * follows the theme for free because --color-fd-* already does.
+ *
+ * THE SELECTOR IS THE WHOLE FIX. Both libraries declare these variables ON THE
+ * `.prose` ELEMENT ITSELF, and typography's declaration comes later in the
+ * sheet, so it wins. Setting them on an ancestor (`.hh-docs`) does nothing:
+ * an element's own declaration always beats an inherited value, however
+ * specific the ancestor's selector is. `.hh-docs .prose` lands on the same
+ * element with higher specificity, which is the only thing that works.
+ */
+.hh-docs .prose,
+.hh-docs.prose {
+  --tw-prose-body: var(--color-fd-foreground);
+  --tw-prose-headings: var(--color-fd-foreground);
+  --tw-prose-lead: var(--color-fd-muted-foreground);
+  --tw-prose-links: var(--color-fd-primary);
+  --tw-prose-bold: var(--color-fd-foreground);
+  --tw-prose-counters: var(--color-fd-muted-foreground);
+  --tw-prose-bullets: var(--color-fd-muted-foreground);
+  --tw-prose-hr: var(--color-fd-border);
+  --tw-prose-quotes: var(--color-fd-foreground);
+  --tw-prose-quote-borders: var(--color-fd-border);
+  --tw-prose-captions: var(--color-fd-muted-foreground);
+  --tw-prose-kbd: var(--color-fd-foreground);
+  --tw-prose-code: var(--color-fd-foreground);
+  --tw-prose-pre-code: var(--color-fd-foreground);
+  --tw-prose-pre-bg: var(--color-fd-muted);
+  --tw-prose-th-borders: var(--color-fd-border);
+  --tw-prose-td-borders: var(--color-fd-border);
+}
+
+/* @tailwindcss/typography decorates inline code with literal backticks --
+   `code::before { content: "`" }` in its styles.js -- which is a reasonable
+   default for a blog and wrong in an API reference, where it rendered
+   `status` as a bordered box containing the backticks themselves. Fumadocs
+   has its own inline-code styling, so this only removes the decoration our
+   plugin added on top. */
+.hh-docs code::before,
+.hh-docs code::after {
+  content: none;
+}
+
+/* Headings in the landing's display face, body left alone. The landing uses
+   Bricolage Grotesque for display only, and running an API reference entirely
+   in it would hurt scanning — the point here is recognition, not flavour. */
+.hh-docs h1,
+.hh-docs h2,
+.hh-docs h3 {
+  font-family: var(--lp-display);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}

@@ -1,14 +1,29 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 interface LoadingOverlayProps {
     isLoading: boolean;
     message?: string;
 }
 
+const LOGO_SRC = "/loading_image/logo_animated.gif";
+
+/**
+ * Whether the GIF has finished downloading at least once this session.
+ *
+ * Module scope, not component state, on purpose: the overlay is unmounted by
+ * AnimatePresence every time it closes, so component state would reset to
+ * "not loaded" on the next navigation and flash the fallback ring even though
+ * the browser serves the file instantly from cache.
+ */
+let logoReady = false;
+
 export function LoadingOverlay({ isLoading, message = "Loading..." }: LoadingOverlayProps) {
+    const reduceMotion = useReducedMotion();
+    const [ready, setReady] = React.useState(logoReady);
+
     return (
         <AnimatePresence>
             {isLoading && (
@@ -19,34 +34,49 @@ export function LoadingOverlay({ isLoading, message = "Loading..." }: LoadingOve
                     transition={{ duration: 0.3 }}
                     className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background/60 backdrop-blur-md"
                 >
-                    {/* Logo / Spinner Container */}
                     <motion.div
                         initial={{ scale: 0.8, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0.8, opacity: 0 }}
                         className="flex flex-col items-center gap-6"
                     >
-                        {/* Pulsing Circle Effect */}
-                        <div className="relative flex items-center justify-center">
-                            <span className="absolute inline-flex h-24 w-24 animate-ping rounded-full bg-primary/20 duration-1000" />
-                            <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-primary shadow-xl shadow-primary/30">
-                                {/* Simple SVG Logo or Icon */}
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="3"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    className="h-8 w-8 text-white animate-pulse"
-                                >
-                                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                                </svg>
-                            </div>
+                        <div className="relative flex h-28 w-28 items-center justify-center">
+                            {/*
+                             * The ring is not decoration, it is the fallback. The GIF is
+                             * 406 KB, and the first time anyone navigates it has not been
+                             * downloaded yet — on a PH mobile connection that is seconds of
+                             * a completely blank overlay. So the ring holds the space until
+                             * the GIF reports it is ready, and is also what reduced-motion
+                             * users get instead of a 150-frame running figure.
+                             */}
+                            {(!ready || reduceMotion) && (
+                                <>
+                                    <span className="absolute inline-flex h-24 w-24 animate-ping rounded-full bg-primary/20 duration-1000" />
+                                    <span className="relative h-16 w-16 rounded-full bg-primary shadow-xl shadow-primary/30" />
+                                </>
+                            )}
+
+                            {!reduceMotion && (
+                                // A plain <img>, not next/image: Next's optimiser re-encodes
+                                // and would serve a single still frame unless `unoptimized`
+                                // is set, at which point next/image is only adding markup.
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                    src={LOGO_SRC}
+                                    alt=""
+                                    width={112}
+                                    height={112}
+                                    // Decorative: `message` below already says what is
+                                    // happening, so announcing it twice helps nobody.
+                                    aria-hidden="true"
+                                    onLoad={() => { logoReady = true; setReady(true); }}
+                                    className={`absolute h-28 w-28 object-contain transition-opacity duration-200 ${
+                                        ready ? "opacity-100" : "opacity-0"
+                                    }`}
+                                />
+                            )}
                         </div>
 
-                        {/* Loading Text */}
                         <h3 className="text-lg font-medium text-foreground tracking-tight animate-pulse">
                             {message}
                         </h3>
