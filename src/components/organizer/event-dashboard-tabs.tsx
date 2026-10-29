@@ -179,6 +179,13 @@ export function EventDashboardTabs({
                 {!event.is_external && (
                     <StatusLinksManager eventId={eventId} baseUrl={baseUrl} initialLinks={statusLinks} />
                 )}
+                {/* On the overview rather than under Share, because the frame is
+                    something the organizer SETS UP once while preparing the event,
+                    not something they hand out. Share is a drawer of links to copy;
+                    the frame is configuration, and it was being missed in there.
+                    Not gated on is_external: an external event still has attendees
+                    at a venue, and the frame is what they post from it. */}
+                <EventStoryFrames eventId={eventId} coverImageUrl={event.cover_image_url} />
             </TabsContent>
 
             <TabsContent value="analytics" className="mt-6 animate-in fade-in-50 duration-300">
@@ -261,19 +268,13 @@ export function EventDashboardTabs({
             </TabsContent>
 
             <TabsContent value="share" className="mt-6 animate-in fade-in-50 duration-300">
-                <div className="space-y-6">
-                    <EventShareTab
-                        eventId={eventId}
-                        eventTitle={event.title}
-                        eventSlug={event.slug}
-                        baseUrl={baseUrl || 'https://hanghut.com'}
-                        eventStatus={event.status}
-                    />
-                    <EventStoryFrames
-                        eventId={eventId}
-                        coverImageUrl={event.cover_image_url}
-                    />
-                </div>
+                <EventShareTab
+                    eventId={eventId}
+                    eventTitle={event.title}
+                    eventSlug={event.slug}
+                    baseUrl={baseUrl || 'https://hanghut.com'}
+                    eventStatus={event.status}
+                />
             </TabsContent>
 
             <TabsContent value="questions" className="mt-6 animate-in fade-in-50 duration-300">
