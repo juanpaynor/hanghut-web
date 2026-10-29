@@ -42,8 +42,10 @@ export function EventStoryFrames({ eventId, coverImageUrl }: {
 
     useEffect(() => {
         listEventFrames(eventId)
-            .then(setFrames)
-            .catch((e) => setError(e.message))
+            .then((r) => (r.ok ? setFrames(r.data) : setError(r.error)))
+            // A rejected promise here means the action never ran (network, or a
+            // crash before our own error handling) -- not a refusal we chose.
+            .catch((e) => setError(e instanceof Error ? e.message : 'Could not reach the server'))
             .finally(() => setLoading(false))
     }, [eventId])
 
@@ -134,7 +136,12 @@ export function EventStoryFrames({ eventId, coverImageUrl }: {
             const created = await createEventFrame({
                 eventId, name: name.trim(), imageUrl: urlData.publicUrl,
             })
-            setFrames((f) => [created, ...f])
+            if (!created.ok) { setError(created.error); return }
+
+            // One active per event, so a frame that lands live stands the others down.
+            setFrames((f) => created.data.is_active
+                ? [created.data, ...f.map((x) => ({ ...x, is_active: false }))]
+                : [created.data, ...f])
             setFile(null); setName(''); setNotice(null); setRejected(null)
             if (previewUrl) URL.revokeObjectURL(previewUrl)
             setPreviewUrl(null)
@@ -149,28 +156,23 @@ export function EventStoryFrames({ eventId, coverImageUrl }: {
     function toggle(frame: EventFrame) {
         setError(null)
         startTransition(async () => {
-            try {
-                await setEventFrameActive(frame.id, eventId, !frame.is_active)
-                setFrames((all) => all.map((f) =>
-                    f.id === frame.id
-                        ? { ...f, is_active: !frame.is_active }
-                        // One active per event, so activating stands the others down.
-                        : frame.is_active ? f : { ...f, is_active: false },
-                ))
-            } catch (e) {
-                setError(e instanceof Error ? e.message : 'Could not change the frame')
-            }
+            const r = await setEventFrameActive(frame.id, eventId, !frame.is_active)
+            if (!r.ok) { setError(r.error); return }
+            setFrames((all) => all.map((f) =>
+                f.id === frame.id
+                    ? { ...f, is_active: !frame.is_active }
+                    // One active per event, so activating stands the others down.
+                    : frame.is_active ? f : { ...f, is_active: false },
+            ))
         })
     }
 
     function remove(frame: EventFrame) {
+        setError(null)
         startTransition(async () => {
-            try {
-                await deleteEventFrame(frame.id, eventId)
-                setFrames((all) => all.filter((f) => f.id !== frame.id))
-            } catch (e) {
-                setError(e instanceof Error ? e.message : 'Could not delete the frame')
-            }
+            const r = await deleteEventFrame(frame.id, eventId)
+            if (!r.ok) { setError(r.error); return }
+            setFrames((all) => all.filter((f) => f.id !== frame.id))
         })
     }
 

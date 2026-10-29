@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { getAuthUser } from '@/lib/auth/cached'
+import { getAuthUser, getActingPartnerId } from '@/lib/auth/cached'
 
 export interface EventFrame {
     id: string
@@ -16,40 +16,68 @@ export interface EventFrame {
 }
 
 /**
- * Confirm the caller owns the event, through the partner that organises it.
+ * Every action here RETURNS its failure instead of throwing.
  *
- * Permission comes from the EVENT, never from a frame's `created_by` -- a frame
- * uploaded by HangHut staff on a partner's behalf still belongs to the
- * partner's event, and must stay manageable by them.
+ * A server action that throws does not reach the browser as its message: Next
+ * replaces it with a digest and React renders "Minified React error #441 -- the
+ * specific message is omitted in production builds". So the one thing the
+ * organizer needs, the reason, is the one thing thrown errors destroy. Returning
+ * the reason costs a union type and makes the UI able to say what went wrong.
  */
-async function assertOwnsEvent(eventId: string): Promise<string> {
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
+
+/**
+ * Confirm the caller may manage this event, through the partner that organises it.
+ *
+ * Uses getActingPartnerId, NOT `partners.user_id = auth.uid()`. That helper
+ * exists precisely because a platform-support seat is not an owner row, and
+ * comparing user_id directly locks ghost mode out of the dashboard -- the same
+ * mistake this file made in its first version.
+ *
+ * Permission comes from the EVENT, never from a frame's `created_by`: a frame
+ * uploaded by HangHut staff on a partner's behalf must stay manageable by the
+ * partner.
+ */
+async function resolveAccess(
+    eventId: string,
+): Promise<{ ok: true; userId: string } | { ok: false; error: string }> {
     const { user } = await getAuthUser()
-    if (!user) throw new Error('Not signed in')
+    if (!user) return { ok: false, error: 'You are signed out. Reload the page and sign in again.' }
+
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (!actingPartnerId) return { ok: false, error: 'This account has no partner profile.' }
 
     const supabase = await createClient()
-    const { data, error } = await supabase
+    const { data: event, error } = await supabase
         .from('events')
-        .select('id, partners!inner(user_id)')
+        .select('id, organizer_id')
         .eq('id', eventId)
         .maybeSingle()
 
-    if (error) throw new Error(error.message)
-    const owner = (data as { partners?: { user_id?: string } } | null)?.partners?.user_id
-    if (!data || owner !== user.id) throw new Error('Event not found')
-    return user.id
+    if (error) return { ok: false, error: `Could not read the event: ${error.message}` }
+    if (!event) return { ok: false, error: 'That event no longer exists.' }
+    if (event.organizer_id !== actingPartnerId) {
+        return { ok: false, error: 'This event belongs to a different organizer.' }
+    }
+
+    return { ok: true, userId: user.id }
 }
 
-export async function listEventFrames(eventId: string): Promise<EventFrame[]> {
-    await assertOwnsEvent(eventId)
+const FRAME_COLUMNS = 'id, event_id, name, image_url, status, is_active, created_by, created_at'
+
+export async function listEventFrames(eventId: string): Promise<Result<EventFrame[]>> {
+    const access = await resolveAccess(eventId)
+    if (!access.ok) return access
+
     const supabase = await createClient()
     const { data, error } = await supabase
         .from('event_frames')
-        .select('id, event_id, name, image_url, status, is_active, created_by, created_at')
+        .select(FRAME_COLUMNS)
         .eq('event_id', eventId)
         .order('created_at', { ascending: false })
 
-    if (error) throw new Error(error.message)
-    return (data ?? []) as EventFrame[]
+    if (error) return { ok: false, error: `Could not load frames: ${error.message}` }
+    return { ok: true, data: (data ?? []) as EventFrame[] }
 }
 
 /**
@@ -68,11 +96,12 @@ export async function createEventFrame(input: {
     eventId: string
     name: string
     imageUrl: string
-}): Promise<EventFrame> {
-    const userId = await assertOwnsEvent(input.eventId)
+}): Promise<Result<EventFrame>> {
+    const access = await resolveAccess(input.eventId)
+    if (!access.ok) return access
 
     const name = input.name.trim()
-    if (!name) throw new Error('Give the frame a name')
+    if (!name) return { ok: false, error: 'Give the frame a name.' }
 
     const supabase = await createClient()
 
@@ -85,20 +114,26 @@ export async function createEventFrame(input: {
         .eq('event_id', input.eventId)
         .eq('is_active', true)
         .maybeSingle()
-    if (liveErr) throw new Error(liveErr.message)
+    if (liveErr) return { ok: false, error: `Could not check the live frame: ${liveErr.message}` }
+
+    const row = {
+        event_id: input.eventId,
+        name,
+        image_url: input.imageUrl,
+        created_by: access.userId,
+        status: 'approved' as const,
+    }
 
     const { data, error } = await supabase
         .from('event_frames')
-        .insert({
-            event_id: input.eventId,
-            name,
-            image_url: input.imageUrl,
-            created_by: userId,
-            status: 'approved',
-            is_active: !live,
-        })
-        .select('id, event_id, name, image_url, status, is_active, created_by, created_at')
+        .insert({ ...row, is_active: !live })
+        .select(FRAME_COLUMNS)
         .single()
+
+    if (data) {
+        revalidatePath(`/organizer/events/${input.eventId}`)
+        return { ok: true, data: data as EventFrame }
+    }
 
     // A second upload racing this one loses the unique partial index rather than
     // the data: retry inactive, so the organizer gets their frame and simply has
@@ -106,24 +141,15 @@ export async function createEventFrame(input: {
     if (error?.code === '23505') {
         const { data: retry, error: retryErr } = await supabase
             .from('event_frames')
-            .insert({
-                event_id: input.eventId,
-                name,
-                image_url: input.imageUrl,
-                created_by: userId,
-                status: 'approved',
-                is_active: false,
-            })
-            .select('id, event_id, name, image_url, status, is_active, created_by, created_at')
+            .insert({ ...row, is_active: false })
+            .select(FRAME_COLUMNS)
             .single()
-        if (retryErr) throw new Error(retryErr.message)
+        if (retryErr) return { ok: false, error: `Could not save the frame: ${retryErr.message}` }
         revalidatePath(`/organizer/events/${input.eventId}`)
-        return retry as EventFrame
+        return { ok: true, data: retry as EventFrame }
     }
 
-    if (error) throw new Error(error.message)
-    revalidatePath(`/organizer/events/${input.eventId}`)
-    return data as EventFrame
+    return { ok: false, error: `Could not save the frame: ${error?.message ?? 'unknown error'}` }
 }
 
 /**
@@ -139,8 +165,10 @@ export async function setEventFrameActive(
     frameId: string,
     eventId: string,
     active: boolean,
-): Promise<void> {
-    await assertOwnsEvent(eventId)
+): Promise<Result<null>> {
+    const access = await resolveAccess(eventId)
+    if (!access.ok) return access
+
     const supabase = await createClient()
 
     if (active) {
@@ -150,22 +178,21 @@ export async function setEventFrameActive(
             .eq('id', frameId)
             .eq('event_id', eventId)
             .maybeSingle()
-        if (readErr) throw new Error(readErr.message)
-        if (!frame) throw new Error('Frame not found')
+        if (readErr) return { ok: false, error: `Could not read the frame: ${readErr.message}` }
+        if (!frame) return { ok: false, error: 'That frame no longer exists.' }
         if (frame.status !== 'approved') {
-            throw new Error('This frame has not been approved yet, so it cannot go live.')
+            return { ok: false, error: 'HangHut took this frame down, so it cannot go back up.' }
         }
 
         // One active frame per event is a unique partial index, so the old one
-        // has to stand down first or the insert collides. Same-row update is a
-        // no-op, which keeps re-activating the current frame harmless.
+        // has to stand down first or the update collides.
         const { error: clearErr } = await supabase
             .from('event_frames')
             .update({ is_active: false })
             .eq('event_id', eventId)
             .eq('is_active', true)
             .neq('id', frameId)
-        if (clearErr) throw new Error(clearErr.message)
+        if (clearErr) return { ok: false, error: `Could not stand down the live frame: ${clearErr.message}` }
     }
 
     const { error } = await supabase
@@ -174,18 +201,23 @@ export async function setEventFrameActive(
         .eq('id', frameId)
         .eq('event_id', eventId)
 
-    if (error) throw new Error(error.message)
+    if (error) return { ok: false, error: `Could not change the frame: ${error.message}` }
     revalidatePath(`/organizer/events/${eventId}`)
+    return { ok: true, data: null }
 }
 
-export async function deleteEventFrame(frameId: string, eventId: string): Promise<void> {
-    await assertOwnsEvent(eventId)
+export async function deleteEventFrame(frameId: string, eventId: string): Promise<Result<null>> {
+    const access = await resolveAccess(eventId)
+    if (!access.ok) return access
+
     const supabase = await createClient()
     const { error } = await supabase
         .from('event_frames')
         .delete()
         .eq('id', frameId)
         .eq('event_id', eventId)
-    if (error) throw new Error(error.message)
+
+    if (error) return { ok: false, error: `Could not delete the frame: ${error.message}` }
     revalidatePath(`/organizer/events/${eventId}`)
+    return { ok: true, data: null }
 }
