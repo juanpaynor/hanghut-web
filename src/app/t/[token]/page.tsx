@@ -1,3 +1,4 @@
+import type { Viewport } from 'next'
 import { notFound } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
@@ -7,6 +8,18 @@ import { TicketOrderView, type TicketOrder } from '@/components/tickets/ticket-o
 // effectively immutable (event, seat, QR payload). Cache it so on-sale spikes
 // don't hammer the DB; live check-in status is owned by the gate scanner.
 export const revalidate = 300
+
+/**
+ * Emits <meta name="color-scheme" content="light">.
+ *
+ * Without it, Chrome and Samsung Internet on Android apply "force dark" to this
+ * page — inverting the white ticket surfaces and lifting the QR's black modules
+ * to grey. The QR component pins its own colours too, but declaring the scheme
+ * at the page level stops the browser rewriting the whole ticket, not just the
+ * code: the card, the seat, the ticket number and the event name all read as
+ * designed. Scoped to this route, so nothing else in the app is affected.
+ */
+export const viewport: Viewport = { colorScheme: 'light' }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

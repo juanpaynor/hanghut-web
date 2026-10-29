@@ -671,9 +671,15 @@ function MerchClaimCard({ claim }: { claim: MerchClaim }) {
     return (
         <Card className="p-4">
             <div className="flex items-start gap-4">
+                {/* Colours pinned for the same reason as TicketQR: this code is
+                    scanned at a venue, and a phone's force-dark turns black modules
+                    grey on white. See components/tickets/ticket-qr.tsx. */}
                 {!isShip && (
-                    <div className={`shrink-0 rounded-lg bg-white p-2 border ${claimed ? 'opacity-40' : ''}`}>
-                        <QRCodeSVG value={claim.claim_token} size={88} />
+                    <div
+                        className={`shrink-0 rounded-lg bg-white p-2 border ${claimed ? 'opacity-40' : ''}`}
+                        style={{ colorScheme: 'light', forcedColorAdjust: 'none', backgroundColor: '#ffffff' }}
+                    >
+                        <QRCodeSVG value={claim.claim_token} size={88} fgColor="#000000" bgColor="#ffffff" />
                     </div>
                 )}
                 <div className="min-w-0 flex-1">

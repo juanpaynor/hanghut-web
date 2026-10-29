@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { getActingPartnerId } from '@/lib/auth/cached'
+import { notifyInternalAlert, escapeHtml } from '@/lib/notifications/internal-alert'
 
 function experienceDatetime() {
     // Keeps experience out of the hangout feed (which filters by upcoming datetime)
@@ -69,6 +70,46 @@ export async function createExperience(data: {
         .single()
 
     if (error) return { error: error.message }
+
+    // Creating an experience IS submitting it for review -- there is no separate
+    // submit step. It lands with verified_by_hanghut = false and is invisible to
+    // buyers until someone on the team verifies it at /admin/experiences/<id>.
+    // Nobody was being told that had happened, so a submission sat unverified
+    // until a staff member happened to open the admin list.
+    //
+    // Awaited, but it cannot fail the submission: notifyInternalAlert swallows
+    // everything, and the SQL function behind it is pg_net fire-and-forget.
+    const { data: partnerRow } = await supabase
+        .from('partners')
+        .select('business_name, work_email')
+        .eq('id', partner.id)
+        .maybeSingle()
+
+    const title = escapeHtml(data.title.trim())
+    const adminUrl = `https://admin.hanghut.com/experiences/${experience.id}`
+
+    await notifyInternalAlert({
+        type: 'status_update',
+        subject: `New experience to review: ${data.title.trim()}`,
+        bodyHtml: `
+            <p><strong>${escapeHtml(partnerRow?.business_name ?? 'A partner')}</strong>
+            submitted a new experience. It is <strong>not visible to buyers</strong>
+            until someone verifies it.</p>
+            <p style="font-size:16px;font-weight:600;margin:16px 0 4px;">${title}</p>
+            <p style="color:#555;margin:0 0 16px;">${escapeHtml(data.description.trim()).slice(0, 400)}</p>
+            <p><a href="${adminUrl}"
+                  style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600;">
+                  Review it</a></p>
+        `,
+        metadata: {
+            Partner: partnerRow?.business_name ?? '—',
+            Contact: partnerRow?.work_email ?? user.email ?? '—',
+            Type: data.experience_type,
+            Price: `${data.currency || 'PHP'} ${data.price_per_person.toLocaleString()}`,
+            'Max guests': data.max_guests,
+            Location: data.location_name.trim(),
+        },
+    })
 
     revalidatePath('/organizer/experiences')
     return { success: true as const, id: experience.id }

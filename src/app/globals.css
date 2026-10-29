@@ -74,6 +74,11 @@
   }
 
   .dark {
+    /* Tells the browser this subtree really is dark, so native scrollbars, form
+       controls and autofill render dark instead of light-on-dark -- and so a
+       mobile browser's force-dark does not try to darken an already-dark page
+       a second time. */
+    color-scheme: dark;
     --background: 0 0% 7%;
     --foreground: 0 0% 95%;
     /* Lifted off the page ground, not equal to it. These were all 0 0% 7% --
