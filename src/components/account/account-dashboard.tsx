@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { format } from 'date-fns'
-import { formatEventShort, formatEventShortWithEnd } from '@/lib/datetime'
+import { formatEventShort, formatEventShortWithEnd, formatEventTime, isMultiDayEvent } from '@/lib/datetime'
 import { createClient } from '@/lib/supabase/client'
 import { TicketQR } from '@/components/tickets/ticket-qr'
 import { Armchair } from 'lucide-react'
@@ -545,9 +545,27 @@ function TicketCard({ ticket }: { ticket: TicketRow }) {
                             <Calendar className="h-3 w-3 shrink-0" />
                             {/* Manila-pinned: this is a client component, so date-fns
                                 would format in the viewer's zone and disagree with the
-                                server-rendered event page. */}
-                            {formatEventShortWithEnd(event.start_datetime, event.end_datetime)}
+                                server-rendered event page.
+
+                                Date WITHOUT a time, for the same reason as the hosted
+                                ticket (see ticket-order-view.tsx): when an event sells
+                                two sessions as tiers, start_datetime is the first one,
+                                and showing it alone tells half the buyers the wrong
+                                hour. The labelled span goes on its own line below and
+                                the tier -- the thing that actually admits them -- is
+                                already listed under it. */}
+                            {isMultiDayEvent(event.start_datetime, event.end_datetime)
+                                ? formatEventShortWithEnd(event.start_datetime, event.end_datetime)
+                                : formatEventShort(event.start_datetime).replace(/ · .*$/, '')}
                         </p>
+                        {!isMultiDayEvent(event.start_datetime, event.end_datetime) && event.start_datetime && (
+                            <p className="flex items-center gap-1.5 opacity-80">
+                                <span className="h-3 w-3 shrink-0" />
+                                {event.end_datetime
+                                    ? `Event runs ${formatEventTime(event.start_datetime)} – ${formatEventTime(event.end_datetime)}`
+                                    : `Event starts ${formatEventTime(event.start_datetime)}`}
+                            </p>
+                        )}
                         <p className="flex items-center gap-1.5">
                             <MapPin className="h-3 w-3 shrink-0" />
                             {event.venue_name}

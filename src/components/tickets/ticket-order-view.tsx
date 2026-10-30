@@ -3,7 +3,7 @@ import { TicketPdfButton } from '@/components/tickets/ticket-pdf-button'
 import { TicketBadges, type TicketBadge } from '@/components/tickets/ticket-badges'
 import { CalendarClock, MapPin, Ticket as TicketIcon, Armchair, CheckCircle2, ExternalLink, Globe, Video } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { formatEventDateTimeWithEnd } from '@/lib/datetime'
+import { formatEventDateTimeWithEnd, formatEventDate, formatEventTime, isMultiDayEvent } from '@/lib/datetime'
 
 // The rendering half of the hosted ticket page, split out so /t/[token] (ISR,
 // the real buyer-facing page) and /t/[token]/preview (dynamic, organizer-only)
@@ -160,7 +160,35 @@ export function TicketOrderView({
 
     // Pinned to Manila: this page renders on the server (UTC), My Tickets renders in
     // the browser. Without a fixed zone the same ticket showed two different dates.
-    const eventDate = event.start_datetime ? formatEventDateTimeWithEnd(event.start_datetime, event.end_datetime) : null
+    //
+    // A TICKET MUST NEVER PRESENT ONE TIME AS "YOUR" TIME.
+    //
+    // This used to render `start_datetime` as a bare "Sunday, November 22 at 2:00 PM"
+    // beside a calendar icon, which every buyer reads as the time THEY should turn
+    // up. On an event selling two sessions as tiers -- THE GRAND YEAR-ENDER SHOWCASE
+    // has "2:00PM SHOW" and "7:00PM SHOW" -- the start is the FIRST session, so the
+    // 120 people holding the later tier were told, in the most prominent line on the
+    // ticket, to arrive five hours early. They emailed support instead, which is the
+    // only reason we found out.
+    //
+    // Until a tier can carry its own session time, the ticket states the DATE plainly
+    // and the event's span as an explicitly LABELLED range. "Event runs 2:00 PM –
+    // 10:00 PM" cannot be misread as a personal call time, and the admission itself
+    // is the tier, already the most prominent thing on the card.
+    //
+    // Multi-day events keep the old formatter: it already renders a day range, so
+    // there is no single time to be mistaken for a session.
+    const multiDay = isMultiDayEvent(event.start_datetime, event.end_datetime)
+    const eventDate = event.start_datetime
+        ? (multiDay
+            ? formatEventDateTimeWithEnd(event.start_datetime, event.end_datetime)
+            : formatEventDate(event.start_datetime))
+        : null
+    const eventWindow = !multiDay && event.start_datetime
+        ? (event.end_datetime
+            ? `Event runs ${formatEventTime(event.start_datetime)} – ${formatEventTime(event.end_datetime)}`
+            : `Event starts ${formatEventTime(event.start_datetime)}`)
+        : null
 
     // ── Per-template ticket card ────────────────────────────
     function TicketCard({ t }: { t: OrderTicket }) {
@@ -265,7 +293,12 @@ export function TicketOrderView({
                         {eventDate && (
                             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                                 <CalendarClock className="mt-px h-3.5 w-3.5 shrink-0" />
-                                <span>{eventDate}</span>
+                                <span>
+                                    {eventDate}
+                                    {eventWindow && (
+                                        <span className="block opacity-80">{eventWindow}</span>
+                                    )}
+                                </span>
                             </p>
                         )}
                         {event.is_online ? (
@@ -384,8 +417,14 @@ export function TicketOrderView({
                         )}
                         <h1 className="text-xl font-bold tracking-tight">{event.title}</h1>
                         {eventDate && (
-                            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <CalendarClock className="h-4 w-4 shrink-0" /> {eventDate}
+                            <p className="flex items-start gap-2 text-sm text-muted-foreground">
+                                <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" />
+                                <span>
+                                    {eventDate}
+                                    {eventWindow && (
+                                        <span className="block text-xs opacity-80">{eventWindow}</span>
+                                    )}
+                                </span>
                             </p>
                         )}
                         {event.is_online ? (
@@ -481,7 +520,7 @@ export function TicketOrderView({
                             <div className="flex justify-center pt-2">
                                 <TicketPdfButton
                                     eventTitle={event.title}
-                                    eventDate={eventDate}
+                                    eventDate={[eventDate, eventWindow].filter(Boolean).join(' · ')}
                                     venue={event.venue_name}
                                     organizer={organizer?.name ?? null}
                                     tickets={tickets.map((t) => ({
