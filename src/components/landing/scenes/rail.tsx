@@ -2,13 +2,17 @@
 
 import { useEffect, useState } from "react";
 
+// Renumbered 2026-10-31 when the film scene was removed. These numbers are the
+// visible scene index, so they have to stay contiguous -- a rail that reads
+// 02..06 announces a missing first scene. The ids must also match real elements:
+// the observer below silently drops any that do not resolve, so a stale entry
+// here becomes a rail item that never lights up and scrolls nowhere.
 const SCENES = [
-    { id: "scene-film", n: "01", label: "The film" },
-    { id: "scene-discover", n: "02", label: "Go out" },
-    { id: "scene-platform", n: "03", label: "Run it" },
-    { id: "scene-pricing", n: "04", label: "Pricing" },
-    { id: "scene-trust", n: "05", label: "Trust" },
-    { id: "scene-start", n: "06", label: "Start" },
+    { id: "scene-discover", n: "01", label: "Go out" },
+    { id: "scene-platform", n: "02", label: "Run it" },
+    { id: "scene-pricing", n: "03", label: "Pricing" },
+    { id: "scene-trust", n: "04", label: "Trust" },
+    { id: "scene-start", n: "05", label: "Start" },
 ];
 
 /**

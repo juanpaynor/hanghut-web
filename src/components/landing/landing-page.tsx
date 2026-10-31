@@ -2,7 +2,6 @@ import LandingHeader from "@/components/landing/scenes/header";
 import LandingFooter from "@/components/landing/scenes/footer";
 import Hero from "@/components/landing/scenes/hero";
 import Lineup from "@/components/landing/scenes/lineup";
-import Film from "@/components/landing/scenes/film";
 import Discover from "@/components/landing/scenes/discover";
 import Platform from "@/components/landing/scenes/platform";
 import Pricing from "@/components/landing/scenes/pricing";
@@ -12,7 +11,15 @@ import Rail from "@/components/landing/scenes/rail";
 import { SectionErrorBoundary } from "@/components/landing/section-error-boundary";
 
 /**
- * The landing page: six numbered scenes.
+ * The landing page: five numbered scenes.
+ *
+ * The film scene was removed on 2026-10-31. It autoplayed a 16MB MP4 out of the
+ * VIDEO-BANNER bucket on scroll-into-view, so every visitor paid for it whether
+ * they watched or not -- roughly 46,000 plays, and the bulk of 737GB of Supabase
+ * cache egress. It was also the worst possible first impression on PH mobile
+ * data. scenes/film.tsx is left in the tree: to bring it back, re-encode the
+ * source to ~2MB, give it a poster and preload="none", and restore the import,
+ * the section, and the rail entry.
  *
  * The `.landing-theme` class on the root scopes the palette defined in
  * globals.css to this subtree. It is white, like the rest of the app — a dark
@@ -24,9 +31,9 @@ import { SectionErrorBoundary } from "@/components/landing/section-error-boundar
  * components/landing/ are still used by /events, /pricing, /ticketing and the
  * use-case pages, so they are deliberately left alone.
  *
- * Each scene stays wrapped in SectionErrorBoundary. Several of them run WebGL,
- * a physics solver, or a video, and a landing page that blanks because one
- * canvas failed on one device is worse than a landing page missing a scene.
+ * Each scene stays wrapped in SectionErrorBoundary. Several of them run WebGL or
+ * a physics solver, and a landing page that blanks because one canvas failed on
+ * one device is worse than a landing page missing a scene.
  */
 export default function LandingPage() {
     return (
@@ -44,12 +51,6 @@ export default function LandingPage() {
                 <SectionErrorBoundary>
                     <Lineup />
                 </SectionErrorBoundary>
-
-                <div id="scene-film" className="scroll-mt-24">
-                    <SectionErrorBoundary>
-                        <Film />
-                    </SectionErrorBoundary>
-                </div>
 
                 <div id="scene-discover" className="scroll-mt-24">
                     <SectionErrorBoundary>
