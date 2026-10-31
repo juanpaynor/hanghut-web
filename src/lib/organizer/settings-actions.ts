@@ -257,11 +257,18 @@ export async function updatePartnerProfile(
     console.log('[updatePartnerProfile] Performing update:', updates)
 
     // Perform Update
-    const { error } = await supabase
+    //
+    // `.select('id')` is not decoration. Without it, an UPDATE that matches zero
+    // rows — which is what RLS does when it filters the row rather than raising —
+    // comes back with error === null, and this function happily reports
+    // "Profile updated successfully!" while nothing was written. The organizer
+    // then sees their edits vanish on the next page load with no error anywhere.
+    // Asking for the row back makes that case observable.
+    const { data: updated, error } = await supabase
         .from('partners')
         .update(updates)
         .eq('id', partner.id)
-
+        .select('id')
 
     if (error) {
         if (error.code === '23505') { // Unique violation
@@ -273,6 +280,18 @@ export async function updatePartnerProfile(
             }
         }
         return { message: 'Database error: ' + error.message }
+    }
+
+    if (!updated || updated.length === 0) {
+        // Zero rows matched despite the ownership check above passing. The two
+        // disagree only when the RLS policy and getActingPartnerId() resolve
+        // access differently — a platform-support seat is the known case, since
+        // the policy compares partners.user_id to auth.uid() directly.
+        console.error('[updatePartnerProfile] update matched 0 rows', {
+            partnerId: partner.id,
+            userId: user.id,
+        })
+        return { message: 'Your changes were not saved — this account does not have permission to edit this profile. Please contact support@hanghut.com.' }
     }
 
     revalidatePath('/organizer/settings')

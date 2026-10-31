@@ -20,6 +20,7 @@ import { VideoUploader } from '@/components/ui/video-uploader'
 import { DraggableVideoCropper } from '@/components/ui/draggable-video-cropper'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { updatePartnerProfile } from '@/lib/organizer/settings-actions'
+import { downscaleImage } from '@/lib/images/downscale'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { SectionList } from './section-editor/section-list'
@@ -28,6 +29,61 @@ import { StorefrontSection, TemplateName } from '@/lib/storefront/section-types'
 import { CustomDomainManager } from './custom-domain-manager'
 import { MembershipTabToggle } from './membership-tab-toggle'
 import { MAXIMALIST_PRESET_CSS } from '@/lib/design-code-library'
+
+/**
+ * IMAGE LIMITS — read this before changing any number here.
+ *
+ * Images on this form ride inside the server action's request body, which makes
+ * Vercel's function-body ceiling the real constraint: it rejects anything over
+ * 4.5MB AT THE EDGE, before Next, before our code, before any logging. When that
+ * happens `updatePartnerProfile` never runs, so no amount of server-side error
+ * handling can help — the organizer gets a bare "Something went wrong" and
+ * Sentry gets nothing. That is exactly how Anti-Burnout Club lost every
+ * storefront edit they tried to make: the old cap here was 5MB PER FILE across
+ * three file inputs, so the form cheerfully accepted up to 15MB and the save
+ * died at the edge every time.
+ *
+ * Two rules keep that from recurring:
+ *   1. Every selected image is downscaled in the browser first (see
+ *      lib/images/downscale.ts). A 9MB phone photo becomes 200-500KB of WebP,
+ *      which makes the ceiling irrelevant in practice.
+ *   2. BUDGET_BYTES is checked against the real total before submitting, so a
+ *      payload that would die at the edge is refused HERE, with a message that
+ *      names the files and their sizes.
+ *
+ * ACCEPT_RAW_BYTES is what we take IN (pre-downscale) and is deliberately
+ * generous, because the downscaler is what makes it safe.
+ */
+const ACCEPT_RAW_BYTES = 12 * 1024 * 1024
+const ACCEPT_RAW_LABEL = '12MB'
+
+/**
+ * Total post-downscale budget for all images plus the form's text. Set below
+ * Vercel's 4.5MB so we fail with our own message rather than the platform's
+ * silence, and below next.config's 4mb bodySizeLimit for the same reason.
+ * 600KB of headroom covers the text fields, which can be large on their own:
+ * description_html, custom_css (40KB cap) and the sections array.
+ */
+const BUDGET_BYTES = 3.4 * 1024 * 1024
+
+/** The logo renders as a small avatar; 1024px is already generous for it. */
+const MAX_EDGE = { logo: 1024, cover: 2048, banner: 2048 } as const
+
+function formatMB(bytes: number): string {
+    return `${(bytes / 1024 / 1024).toFixed(1)}MB`
+}
+
+/**
+ * HEIC needs naming explicitly. `createImageBitmap` cannot decode it in any
+ * current browser, so the downscaler's catch-all hands the original file back
+ * untouched; it then uploads fine and renders as a broken image everywhere,
+ * because no browser can display HEIC either. An iPhone set to "High
+ * Efficiency" produces these by default, so this is the common case, not an
+ * edge case — and the fix is in iOS settings, which is not guessable.
+ */
+function isHeic(file: File): boolean {
+    return /heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name)
+}
 
 interface PartnerSettingsFormProps {
     initialData: {
@@ -105,6 +161,8 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
     const router = useRouter()
     const { toast } = useToast()
     const [isLoading, setIsLoading] = useState(false)
+    /** Set while an image is being downscaled, so Save can't fire mid-resize. */
+    const [isProcessingImage, setIsProcessingImage] = useState(false)
     const [errors, setErrors] = useState<Record<string, any>>({})
     const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
@@ -273,31 +331,71 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
         setSuccessMessage(null)
     }
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'cover' | 'banner') => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'cover' | 'banner') => {
         const file = e.target.files?.[0]
         if (!file) return
 
-        const maxSize = 5 * 1024 * 1024
-        const maxSizeLabel = '5MB'
+        // Let the same image be re-picked after a rejection. Without this the
+        // input keeps its value and choosing the identical file fires no change
+        // event, which looks like the picker itself is broken.
+        e.target.value = ''
 
-        if (file.size > maxSize) {
+        if (isHeic(file)) {
             toast({
-                title: "File too large",
-                description: `Image must be less than ${maxSizeLabel}`,
-                variant: "destructive"
+                title: 'iPhone photo format',
+                description: `"${file.name}" is a HEIC photo, which browsers cannot display. On your iPhone go to Settings → Camera → Formats and choose "Most Compatible", then retake or re-export it. A screenshot of the image also works.`,
+                variant: 'destructive',
             })
             return
         }
 
-        const previewUrl = URL.createObjectURL(file)
+        if (!file.type.startsWith('image/')) {
+            toast({
+                title: 'Not an image',
+                description: `"${file.name}" is not an image file. Use PNG, JPG or WebP.`,
+                variant: 'destructive',
+            })
+            return
+        }
+
+        if (file.size > ACCEPT_RAW_BYTES) {
+            toast({
+                title: 'Image too large',
+                description: `"${file.name}" is ${formatMB(file.size)}. The limit is ${ACCEPT_RAW_LABEL} — export it smaller and try again.`,
+                variant: 'destructive',
+            })
+            return
+        }
+
+        // Shrink before anything else sees it, so the File held in state, the
+        // preview, and the bytes we eventually upload are all the same thing.
+        // downscaleImage never throws and never returns something worse than
+        // what it was given, so a failure here just means a bigger upload — it
+        // is the budget check at submit that guarantees correctness.
+        setIsProcessingImage(true)
+        let prepared: File
+        try {
+            prepared = await downscaleImage(file, { maxEdge: MAX_EDGE[type] })
+        } finally {
+            setIsProcessingImage(false)
+        }
+
+        if (prepared.size < file.size * 0.9) {
+            toast({
+                title: 'Image optimised',
+                description: `Resized "${file.name}" from ${formatMB(file.size)} to ${formatMB(prepared.size)} so it uploads reliably.`,
+            })
+        }
+
+        const previewUrl = URL.createObjectURL(prepared)
         if (type === 'logo') {
-            setLogoFile(file)
+            setLogoFile(prepared)
             setLogoPreview(previewUrl)
         } else if (type === 'banner') {
-            setTicketBannerFile(file)
+            setTicketBannerFile(prepared)
             setTicketBannerPreview(previewUrl)
         } else {
-            setCoverFile(file)
+            setCoverFile(prepared)
             setCoverPreview(previewUrl)
         }
         setSuccessMessage(null)
@@ -331,6 +429,27 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
             if (initialData.profile_photo_url) data.append('profile_photo_url', initialData.profile_photo_url)
             if (initialData.cover_image_url) data.append('cover_image_url', initialData.cover_image_url)
 
+            // Refuse an over-budget payload HERE rather than letting Vercel drop
+            // it at the edge, where the failure is invisible to us and
+            // meaningless to the organizer. Named files and real sizes, because
+            // "too large" without saying which file is not actionable when three
+            // inputs are in play.
+            const attached: { label: string; file: File }[] = []
+            if (logoFile) attached.push({ label: 'Logo', file: logoFile })
+            if (coverFile) attached.push({ label: 'Cover image', file: coverFile })
+            if (ticketBannerFile) attached.push({ label: 'Ticket banner', file: ticketBannerFile })
+
+            const imageBytes = attached.reduce((sum, a) => sum + a.file.size, 0)
+            if (imageBytes > BUDGET_BYTES) {
+                const breakdown = attached.map(a => `${a.label} ${formatMB(a.file.size)}`).join(', ')
+                toast({
+                    title: 'Images too large to save together',
+                    description: `${breakdown} — ${formatMB(imageBytes)} in total, over the ${formatMB(BUDGET_BYTES)} limit for one save. Save them one at a time, or use smaller images.`,
+                    variant: 'destructive',
+                })
+                return // `finally` clears isLoading
+            }
+
             const result = await updatePartnerProfile(undefined, data)
 
             if (result.errors) {
@@ -348,7 +467,20 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
 
         } catch (error) {
             console.error(error)
-            toast({ title: "Error", description: "Something went wrong.", variant: "destructive" })
+
+            // Reaching here with images attached almost always means the request
+            // never arrived: the body was rejected at the edge, or a mobile
+            // connection dropped mid-upload. Both surface as an opaque fetch
+            // failure with no server response to read, so say what the organizer
+            // can actually do instead of "Something went wrong."
+            const hadImages = Boolean(logoFile || coverFile || ticketBannerFile)
+            toast({
+                title: hadImages ? "Couldn't upload your images" : 'Could not save',
+                description: hadImages
+                    ? 'The save did not reach our server — usually a dropped connection or images that are still too large. Your text is safe on this page: try saving once without the images, then add them one at a time.'
+                    : 'The save did not reach our server. Check your connection and try again — nothing on this page has been lost.',
+                variant: 'destructive',
+            })
         } finally {
             setIsLoading(false)
         }
@@ -383,8 +515,10 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                             View Live Store
                         </Button>
                     </a>
-                    <Button type="submit" size="lg" disabled={isLoading} className={cn("min-w-[140px]", successMessage ? "bg-green-600 hover:bg-green-700" : "")}>
-                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : (successMessage ? <><CheckCircle2 className="h-4 w-4 mr-2" /> Saved</> : 'Save Changes')}
+                    <Button type="submit" size="lg" disabled={isLoading || isProcessingImage} className={cn("min-w-[140px]", successMessage ? "bg-green-600 hover:bg-green-700" : "")}>
+                        {isProcessingImage
+                            ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Optimising image</>
+                            : isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : (successMessage ? <><CheckCircle2 className="h-4 w-4 mr-2" /> Saved</> : 'Save Changes')}
                     </Button>
                 </div>
             </div>
@@ -590,7 +724,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                                     ref={logoInputRef}
                                                     type="file"
                                                     className="hidden"
-                                                    accept="image/*"
+                                                    accept="image/png,image/jpeg,image/webp"
                                                     onChange={(e) => handleFileChange(e, 'logo')}
                                                 />
                                             </div>
@@ -616,14 +750,14 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                                             <ImageIcon className="h-6 w-6 text-muted-foreground" />
                                                         </div>
                                                         <p className="text-sm font-medium">Upload Cover Image</p>
-                                                        <p className="text-xs text-muted-foreground mt-1">16:9 Recommended, Max 5MB</p>
+                                                        <p className="text-xs text-muted-foreground mt-1">16:9 recommended. Large photos are resized automatically.</p>
                                                     </div>
                                                 )}
                                                 <input
                                                     ref={coverInputRef}
                                                     type="file"
                                                     className="hidden"
-                                                    accept="image/*"
+                                                    accept="image/png,image/jpeg,image/webp"
                                                     onChange={(e) => handleFileChange(e, 'cover')}
                                                 />
                                             </div>
@@ -1224,7 +1358,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                             <div className="space-y-2">
                                 <Label>Ticket banner</Label>
                                 <p className="text-xs text-muted-foreground">
-                                    Shown at the top of the ticket page. Falls back to the event cover if empty. Max 5MB.
+                                    Shown at the top of the ticket page. Falls back to the event cover if empty. Large photos are resized automatically.
                                 </p>
                                 <div className="flex items-center gap-4">
                                     <div className="h-24 w-44 overflow-hidden rounded-lg border bg-muted/40 flex items-center justify-center shrink-0">
@@ -1239,7 +1373,7 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                         <input
                                             ref={ticketBannerInputRef}
                                             type="file"
-                                            accept="image/*"
+                                            accept="image/png,image/jpeg,image/webp"
                                             className="hidden"
                                             onChange={(e) => handleFileChange(e, 'banner')}
                                         />
