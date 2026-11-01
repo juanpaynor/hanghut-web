@@ -654,6 +654,24 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
         return sec ? computeSeatRadius(sec.seats) : 6
     }, [activeSection, mapData])
 
+    /**
+     * Seat dot SHAPE, from the same canvas_data the editor writes.
+     *
+     * This was hardcoded to a circle here for a long time while the editor
+     * offered circle/square/diamond, so an organizer could pick a shape, see it
+     * in the builder and the preview, and buyers would still get circles. The
+     * value has always been on the wire (get_event_seat_geometry returns
+     * seat_shape, and preview-bundle mirrors it) -- only this renderer ignored
+     * it, which is why honouring it needs no migration and no RPC change.
+     *
+     * Unknown or absent values fall back to a circle, so every map saved before
+     * the editor had a shape picker renders exactly as it does today.
+     */
+    const activeSeatShape = useMemo<'circle' | 'square' | 'diamond'>(() => {
+        const s = mapData?.seat_shape
+        return s === 'square' || s === 'diamond' ? s : 'circle'
+    }, [mapData])
+
     // Row labels for the open section. Published-with-rows maps carry them;
     // older maps get the same derivation the editor uses, from the seats.
     const activeRows = useMemo<RowData[]>(() => {
@@ -1462,40 +1480,59 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                             const isSel = selectedSeatIds.includes(seat.id)
                             const isPending = pendingSeatIds.includes(seat.id)
                             const r = isSel ? activeSeatRadius * 1.15 : activeSeatRadius
+                            // Every prop except the geometry is shared across the
+                            // three shapes, so they are spread from one object --
+                            // a square that quietly stopped being clickable, or
+                            // lost its hover tooltip, is exactly the kind of drift
+                            // three parallel copies of this block would produce.
+                            const seatProps = {
+                                fill: seatFill(seat),
+                                stroke: '#ffffff',
+                                strokeWidth: Math.max(0.75, activeSeatRadius * (isSel ? 0.3 : 0.16)),
+                                opacity: isPending ? 0.55 : (seat.status === 'available' || isSel ? 1 : 0.5),
+                                shadowColor: isSel ? '#0f172a' : undefined,
+                                shadowBlur: isSel ? activeSeatRadius * 0.8 : 0,
+                                shadowOpacity: isSel ? 0.5 : 0,
+                                onClick: seatsPickable ? () => handleSeatTap(seat) : undefined,
+                                onTap: seatsPickable ? () => handleSeatTap(seat) : undefined,
+                                listening: seatsPickable,
+                                hitStrokeWidth: Math.max(8, activeSeatRadius),
+                                perfectDrawEnabled: false,
+                                onMouseEnter: (e: Konva.KonvaEventObject<MouseEvent>) => {
+                                    const stage = e.target.getStage()
+                                    const pos = stage?.getPointerPosition()
+                                    if (pos) setHoveredSeat({ seat, screenX: pos.x, screenY: pos.y })
+                                    const container = stage?.container()
+                                    if (container) container.style.cursor = isPending ? 'progress' : (seat.status === 'available' || isSel ? 'pointer' : 'not-allowed')
+                                },
+                                onMouseMove: (e: Konva.KonvaEventObject<MouseEvent>) => {
+                                    const stage = e.target.getStage()
+                                    const pos = stage?.getPointerPosition()
+                                    if (pos) setHoveredSeat(prev => prev ? { ...prev, screenX: pos.x, screenY: pos.y } : null)
+                                },
+                                onMouseLeave: (e: Konva.KonvaEventObject<MouseEvent>) => {
+                                    setHoveredSeat(null)
+                                    const container = e.target.getStage()?.container()
+                                    if (container) container.style.cursor = 'default'
+                                },
+                            }
                             return (
                                 <Group key={seat.id} x={seat.x} y={seat.y}>
-                                    <Circle
-                                        radius={r}
-                                        fill={seatFill(seat)}
-                                        stroke="#ffffff"
-                                        strokeWidth={Math.max(0.75, activeSeatRadius * (isSel ? 0.3 : 0.16))}
-                                        opacity={isPending ? 0.55 : (seat.status === 'available' || isSel ? 1 : 0.5)}
-                                        shadowColor={isSel ? '#0f172a' : undefined}
-                                        shadowBlur={isSel ? activeSeatRadius * 0.8 : 0}
-                                        shadowOpacity={isSel ? 0.5 : 0}
-                                        onClick={seatsPickable ? () => handleSeatTap(seat) : undefined}
-                                        onTap={seatsPickable ? () => handleSeatTap(seat) : undefined}
-                                        listening={seatsPickable}
-                                        hitStrokeWidth={Math.max(8, activeSeatRadius)}
-                                        perfectDrawEnabled={false}
-                                        onMouseEnter={(e) => {
-                                            const stage = e.target.getStage()
-                                            const pos = stage?.getPointerPosition()
-                                            if (pos) setHoveredSeat({ seat, screenX: pos.x, screenY: pos.y })
-                                            const container = stage?.container()
-                                            if (container) container.style.cursor = isPending ? 'progress' : (seat.status === 'available' || isSel ? 'pointer' : 'not-allowed')
-                                        }}
-                                        onMouseMove={(e) => {
-                                            const stage = e.target.getStage()
-                                            const pos = stage?.getPointerPosition()
-                                            if (pos) setHoveredSeat(prev => prev ? { ...prev, screenX: pos.x, screenY: pos.y } : null)
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            setHoveredSeat(null)
-                                            const container = e.target.getStage()?.container()
-                                            if (container) container.style.cursor = 'default'
-                                        }}
-                                    />
+                                    {/* Geometry is the only thing that differs, and
+                                        it mirrors the builder's own maths: a square
+                                        is drawn from its top-left so it stays
+                                        centred on the seat, and a diamond is that
+                                        same square rotated 45 degrees about its
+                                        own centre. Keep these in step with
+                                        canvas-builder.tsx or the preview and the
+                                        buyer's view stop agreeing. */}
+                                    {activeSeatShape === 'square' ? (
+                                        <Rect x={-r} y={-r} width={r * 2} height={r * 2} cornerRadius={2} {...seatProps} />
+                                    ) : activeSeatShape === 'diamond' ? (
+                                        <Rect width={r * 2} height={r * 2} rotation={45} offsetX={r} offsetY={r} {...seatProps} />
+                                    ) : (
+                                        <Circle radius={r} {...seatProps} />
+                                    )}
                                     {showSeatLabels && (
                                         <Text
                                             text={String(seat.seat)}

@@ -16,6 +16,8 @@ import { CanvasToolbar } from './canvas-toolbar'
 import { CanvasProperties } from './canvas-properties'
 import type { CanvasData, SectionData, SeatData, BackgroundShape, SeatShape, TierInfo } from './types'
 import { SEAT_COLORS, resolveSeatTier } from './types'
+import { useToast } from '@/hooks/use-toast'
+import { downscaleImage } from '@/lib/images/downscale'
 import { pointInPolygon, flatToVertices } from './algorithms/point-in-polygon'
 import { rowLabelAnchors, pointOnPath, transformRows, arcThrough, nextRowLabel, layoutRow } from '@/lib/seat-map/rows'
 import type { RowData } from './types'
@@ -486,6 +488,7 @@ export function CanvasBuilder({
   // Save clears it. Backed by a beforeunload guard so closing the tab can't
   // silently discard work.
   const [dirty, setDirty] = useState(false)
+  const { toast } = useToast()
   const dispatchWithHistory = useCallback((action: Parameters<typeof rawDispatchWithHistory>[0]) => {
     setDirty(true)
     rawDispatchWithHistory(action)
@@ -1334,18 +1337,31 @@ export function CanvasBuilder({
 
       setUploadingImage(true)
       try {
-        // Prefer Storage upload (keeps canvas_data small); fall back to data URL
-        let imageUrl: string | null = null
-        if (onUploadImageFile) {
-          imageUrl = await onUploadImageFile(file)
+        /**
+         * The floor plan goes to Storage and ONLY to Storage.
+         *
+         * There used to be a FileReader fallback here that turned the file into
+         * a base64 data URL whenever the upload returned null. That looked like
+         * resilience and behaved like a trap: the image went into the
+         * canvas_data JSONB column instead, so a single floor plan became
+         * megabytes of base64 inside a database row -- copied again into
+         * seat_map_versions on every publish, and dragged over the wire on every
+         * poll of the buyer's picker. Prod still carries 33 embedded copies of
+         * 4 images, ~32MB, from that path. Worst of all it was silent: the
+         * upload had failed, and the organizer was told it worked.
+         *
+         * So a failed upload is now a failed upload, said out loud.
+         */
+        if (!onUploadImageFile) {
+          throw new Error('Image uploads are not available in this view.')
         }
+
+        // Shrink first: a phone photo or an architect's export can be 4000px+,
+        // and the editor only ever draws it fitted to a 1400x900 canvas.
+        const prepared = await downscaleImage(file, { maxEdge: 2400 })
+        const imageUrl = await onUploadImageFile(prepared)
         if (!imageUrl) {
-          imageUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onload = (ev) => resolve(ev.target?.result as string)
-            reader.onerror = reject
-            reader.readAsDataURL(file)
-          })
+          throw new Error('The upload did not complete.')
         }
 
         // Measure natural size so we can fit the image to the canvas
@@ -1354,7 +1370,7 @@ export function CanvasBuilder({
           image.crossOrigin = 'anonymous'
           image.onload = () => resolve(image)
           image.onerror = reject
-          image.src = imageUrl!
+          image.src = imageUrl
         })
 
         const fitScale = Math.min(
@@ -1379,11 +1395,16 @@ export function CanvasBuilder({
         dispatchWithHistory({ type: 'ADD_SHAPE', shape: newShape })
       } catch (err) {
         console.error('Failed to add background image:', err)
+        toast({
+          title: "Couldn't add the floor plan",
+          description: `${err instanceof Error ? err.message : 'Unknown error'} Check your connection and try again — nothing else on the map has changed.`,
+          variant: 'destructive',
+        })
       } finally {
         setUploadingImage(false)
       }
     },
-    [dispatchWithHistory, state.canvasWidth, state.canvasHeight, onUploadImageFile]
+    [dispatchWithHistory, state.canvasWidth, state.canvasHeight, onUploadImageFile, toast]
   )
 
   // ─── Selected section(s) / shape ────────────────────────────────────

@@ -84,6 +84,41 @@ export function TemplateBuilderClient({
         }
     }, [])
 
+    /**
+     * Floor plan upload for the canvas, handed to CanvasBuilder.
+     *
+     * This has to exist. The builder used to fall back to embedding the image as
+     * a base64 data URL when no uploader was supplied, which is how 4 of the
+     * venue_templates rows ended up carrying megabytes of base64 in their
+     * canvas_data — a template is copied into every event that uses it, so the
+     * cost multiplied. That fallback is gone, so a view that renders
+     * CanvasBuilder without this prop can no longer add images at all.
+     *
+     * Templates are not partner-scoped, so they go under a venue-templates/
+     * prefix in the shared bucket rather than a partner id.
+     */
+    const handleUploadImageFile = useCallback(async (file: File): Promise<string | null> => {
+        try {
+            const supabase = createClient()
+            const ext = file.name.split('.').pop() || 'png'
+            const path = `venue-templates/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+            const { data, error } = await supabase.storage
+                .from('event-images')
+                .upload(path, file, { upsert: false })
+            if (error || !data) {
+                console.error('Floor plan upload failed:', error)
+                return null
+            }
+            const { data: { publicUrl } } = supabase.storage
+                .from('event-images')
+                .getPublicUrl(data.path)
+            return publicUrl
+        } catch (err) {
+            console.error('Floor plan upload failed:', err)
+            return null
+        }
+    }, [])
+
     // Called by canvas toolbar Save button (or triggered by header buttons)
     const handleSave = useCallback(
         async (canvasData: CanvasData) => {
@@ -250,6 +285,7 @@ export function TemplateBuilderClient({
                     initialData={initialData?.canvas_data}
                     onSave={handleSave}
                     mode="admin"
+                    onUploadImageFile={handleUploadImageFile}
                 />
             </div>
         </div>

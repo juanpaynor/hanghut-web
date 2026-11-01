@@ -1229,9 +1229,31 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, termsDo
                             <Separator />
 
                             <div className="space-y-2">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-muted-foreground">Tickets ({quantity}x)</span>
-                                    <span className="font-medium">₱{subtotal.toLocaleString()}</span>
+                                {/* WHICH ticket, not just how many.
+                                 *
+                                 * This line read "Tickets (2x)" and nothing else on
+                                 * the page named the tier, so a buyer had no way to
+                                 * confirm what they were about to pay for. On a
+                                 * multi-session event that is not cosmetic: tiers are
+                                 * where the showtime lives (there is no per-tier start
+                                 * time yet), so "7PM Show" IS the thing being bought,
+                                 * and its absence is how a room full of buyers on a
+                                 * two-show comedy night believed they held the 2PM
+                                 * ticket. It also matters when checkout is reached
+                                 * with no tierId at all, because the server quietly
+                                 * defaults to the first on-sale tier — a silent
+                                 * assignment the buyer should at least be able to see.
+                                 */}
+                                <div className="flex items-start justify-between gap-3 text-sm">
+                                    <span className="min-w-0">
+                                        <span className="block font-medium text-foreground break-words">
+                                            {tier.name || 'General Admission'}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                            ₱{tier.price.toLocaleString()} × {quantity}
+                                        </span>
+                                    </span>
+                                    <span className="font-medium shrink-0">₱{subtotal.toLocaleString()}</span>
                                 </div>
                                 {selectedSeatIds.length > 0 && (
                                     <div className="flex justify-between text-sm">
@@ -1286,6 +1308,17 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, termsDo
 
             {/* Mobile fixed pay bar — always reachable, mirrors the desktop CTA */}
             <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.08)]" style={themeStyle}>
+                {/* The tier is named here as well as in the Order Summary, because
+                    on mobile this grid is one column: the summary renders BELOW the
+                    entire form, so a buyer can complete and pay from this bar
+                    without ever scrolling to it. This is the last thing they see
+                    before committing, so it is where a wrong-session purchase
+                    actually gets caught. Truncated on purpose — a long tier name
+                    must never wrap and push the pay button off-screen. */}
+                <p className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <Ticket className="h-3 w-3 shrink-0 text-primary" />
+                    <span className="truncate">{tier.name || 'General Admission'} × {quantity}</span>
+                </p>
                 <div className="flex items-center gap-3">
                     <div className="flex flex-col leading-tight">
                         <span className="text-[11px] text-muted-foreground">Total</span>
