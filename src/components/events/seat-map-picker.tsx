@@ -25,6 +25,7 @@ import { useRouter } from 'next/navigation'
 import { Stage, Layer, Line, Circle, Text, Rect, Ellipse, Group, Image as KonvaImage } from 'react-konva'
 import type Konva from 'konva'
 import { createClient } from '@/lib/supabase/client'
+import { recogniseScale } from '@/lib/seat-map/camera'
 import { Button } from '@/components/ui/button'
 import { Loader2, Minus, Plus, RotateCcw, ArrowLeft, Armchair, Map as MapIcon, List, Sparkles, Shuffle, ArrowRight } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
@@ -842,9 +843,31 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
         if (!autoSheetRef.current && !gaSectionRef.current) setFocusSectionId(null)
     }, [mapData, stageSize, flyTo])
 
-    // Frame one section with room around it — the "I tapped this" camera. The
-    // section fills roughly half the stage so its neighbours stay in view for
-    // context; it never zooms OUT relative to the overview.
+    // Frame one section with room around it — the "I tapped this" camera.
+    //
+    // ── Why some sections are centred and NOT magnified ────────────────────
+    //
+    // The old target was "the section fills roughly half the stage", which is
+    // scale-invariant: it ignores how big the section actually is, so the
+    // SMALLER the thing you tap, the harder it zooms. On a theatre tier that is
+    // right — you are being taken in to read individual seats. On a bar it is
+    // backwards. A round table is 72 world units, so on a ~820px stage the
+    // target came out at 6.2x and slammed into the 4x ceiling on every single
+    // tap, throwing away the whole room to magnify one table.
+    //
+    // The rule that actually holds: zoom exists so the buyer can READ AND TAP
+    // individual seats. A section with one seat or none has nothing inside it
+    // to read — a unit sells whole, and its single seat IS the table. So those
+    // are centred at the current zoom and left alone.
+    //
+    // That covers two kinds at once: real units (unit_capacity set), and the
+    // plain one-seat sections that predate units — "Hanghut Launch Party X THC"
+    // has eleven, and they were being magnified 4x for nothing too.
+    //
+    // Multi-seat sections keep the old behaviour EXACTLY. 208 live sections
+    // have a median width of 142 units, which lands around 3.2x on a desktop
+    // stage — comfortably inside the ceiling it already used. Nothing that
+    // works today changes.
     const frameSection = useCallback((section: MapSection, animate = true) => {
         const pts = section.polygon_points
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -854,10 +877,18 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
         }
         if (!isFinite(minX)) return
         const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY)
-        const scale = Math.max(
-            viewRef.current.scale,
-            Math.min(stageSize.width * 0.55 / w, stageSize.height * 0.6 / h, 4),
-        )
+
+        // seat_count is authoritative from the geometry RPC; seats.length is 0
+        // until the section lazily loads, and this camera runs BEFORE that.
+        const seatsInside = section.seat_count ?? section.seats.length
+        const nothingToRead = isUnitSection(section) || seatsInside <= 1
+
+        const scale = nothingToRead
+            ? recogniseScale(w, h, viewRef.current.scale)
+            : Math.max(
+                viewRef.current.scale,
+                Math.min(stageSize.width * 0.55 / w, stageSize.height * 0.6 / h, 4),
+            )
         flyTo({
             scale,
             x: stageSize.width / 2 - (minX + w / 2) * scale,
@@ -917,6 +948,37 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
             for (let i = 0; i < pts.length; i += 2) extend(pts[i], pts[i + 1])
         }
         if (!isFinite(minX)) return
+
+        // This is the camera a UNIT tap actually reaches (handleSectionTap
+        // queues it through pendingSectionZoom), so the ceiling below used to
+        // decide what a bar felt like. A unit has exactly one seat, so the
+        // bounds above collapse to a single point and the pad alone became the
+        // frame: 96 units, which asks for ~8x and settles at the 6x cap. Every
+        // tap on a table blew it up to fill the screen.
+        //
+        // Measured on the polygon, not the collapsed seat bounds, so a table is
+        // sized by the table rather than by the dot in the middle of it.
+        const seatsInside = section.seat_count ?? section.seats.length
+        if (isUnitSection(section) || seatsInside <= 1) {
+            const pts = section.polygon_points
+            let pMinX = Infinity, pMinY = Infinity, pMaxX = -Infinity, pMaxY = -Infinity
+            for (let i = 0; i < pts.length; i += 2) {
+                pMinX = Math.min(pMinX, pts[i]); pMaxX = Math.max(pMaxX, pts[i])
+                pMinY = Math.min(pMinY, pts[i + 1]); pMaxY = Math.max(pMaxY, pts[i + 1])
+            }
+            if (isFinite(pMinX)) {
+                const pw = Math.max(1, pMaxX - pMinX), ph = Math.max(1, pMaxY - pMinY)
+                const unitScale = recogniseScale(pw, ph, viewRef.current.scale)
+                flyTo({
+                    scale: unitScale,
+                    x: stageSize.width / 2 - (pMinX + pw / 2) * unitScale,
+                    y: stageSize.height / 2 - (pMinY + ph / 2) * unitScale,
+                }, 480)
+                setActiveSection(section.id)
+                return
+            }
+        }
+
         // Pad by a few seat-widths so edge seats + their labels aren't clipped.
         const r = section.seats.length > 0 ? computeSeatRadius(section.seats) : 20
         const pad = r * 3 + 24
