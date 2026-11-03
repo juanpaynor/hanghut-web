@@ -14,6 +14,7 @@ import {
   ImagePlus,
 } from 'lucide-react'
 import type { CanvasTool } from './types'
+import type { SavedPiece } from '@/lib/seat-map/saved-piece'
 import { FurnitureList } from './furniture-palette'
 import { cn } from '@/lib/utils'
 
@@ -42,6 +43,9 @@ interface CanvasToolbarProps {
   /** Which furniture piece the next click will place. */
   furnitureId: string
   onPickFurniture: (id: string) => void
+  /** Shapes this venue saved, listed above the built-in catalogue. */
+  savedPieces?: SavedPiece[]
+  onDeleteSavedPiece?: (id: string) => void
   canUndo?: boolean
   canRedo?: boolean
   /** Unsaved edits exist — shows an amber dot on the Save button. */
@@ -74,6 +78,8 @@ export function CanvasToolbar({
   onUploadImage,
   furnitureId,
   onPickFurniture,
+  savedPieces = [],
+  onDeleteSavedPiece,
   canUndo = true,
   canRedo = true,
   dirty = false,
@@ -115,6 +121,8 @@ export function CanvasToolbar({
           activeId={furnitureId}
           armed={activeTool === 'draw-table'}
           onPick={onPickFurniture}
+          savedPieces={savedPieces}
+          onDeleteSavedPiece={onDeleteSavedPiece}
         />
         <div className="h-px bg-slate-800 mx-2 my-1" />
         <div className="px-1 pb-2">

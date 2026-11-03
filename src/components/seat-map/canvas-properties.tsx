@@ -6,6 +6,7 @@ import { SECTION_TYPE_COLORS, resolveSeatTier } from './types'
 import type { AlignMode } from './canvas-state'
 import { fillSectionRows, pathCurvature, pathFromCurvature, pathEndpoints, rowLabelAt } from '@/lib/seat-map/rows'
 import { pointInPolygon, flatToVertices } from './algorithms/point-in-polygon'
+import { checkSellWhole, sellWholeUpdates } from '@/lib/seat-map/make-unit'
 import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, XCircle, Circle, Square, Diamond, Lock, Unlock, Banknote, BoxSelect, Triangle, Minus, Type, Spline, Ruler, Plus, Users, AlertTriangle } from 'lucide-react'
 import { CapacitySummary } from './capacity-summary'
 import { createClient } from '@/lib/supabase/client'
@@ -43,6 +44,8 @@ interface CanvasPropertiesProps {
   onSetSeatStatus?: (seatIds: string[], status: 'available' | 'disabled') => void
   onScaleSeats?: (seatIds: string[], factor: number) => void
   onDuplicateSection?: (id: string, mirror?: boolean) => void
+  /** Save this piece's outline to the venue's library for reuse on other events. */
+  onSaveAsPiece?: (section: SectionData) => void
   onScaleSection?: (id: string, factor: number) => void
   /** Vertex handles are hidden on furniture; this reveals them for one piece. */
   editPoints?: boolean
@@ -320,6 +323,7 @@ export function CanvasProperties({
   onSetSeatStatus,
   onScaleSeats,
   onDuplicateSection,
+  onSaveAsPiece,
   onScaleSection,
   editPoints = false,
   onToggleEditPoints,
@@ -421,6 +425,32 @@ export function CanvasProperties({
       rowGap,
     })
   }, [selectedSection, fillRows, fillCols, fillCurve, fillSkipIO, fillStartNumber, labelScheme, gridRotation, numberingDir, numberingStyle, seatGap, rowGap, seatRadius, aisleInput, onUpdateSection])
+
+  // ─── Make this section sell whole ─────────────────────────────────
+  // The polygon tool already draws any shape an organizer wants; this is the
+  // step that was missing, which turns that drawing into one sellable piece.
+  // Destructive (it drops the other seats), so it confirms, and it refuses
+  // outright when a seat in here is sold.
+  const sellWhole = selectedSection ? checkSellWhole(selectedSection) : null
+  const handleSellWhole = useCallback(() => {
+    if (!selectedSection) return
+    const check = checkSellWhole(selectedSection)
+    if (!check.ok) {
+      if (check.reason) window.alert(check.reason)
+      return
+    }
+    if (
+      check.destroying > 0 &&
+      !window.confirm(
+        `Sell "${selectedSection.label}" as one piece?\n\n` +
+          `Its ${check.destroying + 1} seats become a single thing a buyer takes in one tap. ` +
+          `None of them are sold, so nothing is lost — and ⌘Z puts them back.`
+      )
+    ) {
+      return
+    }
+    onUpdateSection(selectedSection.id, sellWholeUpdates(selectedSection, check.suggestedPax))
+  }, [selectedSection, onUpdateSection])
 
   // Find the selected seat object
   const selectedSeat = selectedSection?.seats.find((s) => s.id === selectedSeatId) ?? null
@@ -1069,25 +1099,65 @@ export function CanvasProperties({
             />
             {selectedSection.unitCapacity ? (
               selectedSection.seats.length === 1 ? (
-                <p className="mt-1.5 text-[11px] text-slate-400">
-                  Sold as one unit for {selectedSection.unitCapacity} people. Buyers tap it once
-                  to take the whole thing.
-                </p>
+                <>
+                  <p className="mt-1.5 text-[11px] text-slate-400">
+                    Sold as one unit for {selectedSection.unitCapacity} people. Buyers tap it once
+                    to take the whole thing.
+                  </p>
+                  {/* Only a FINISHED unit is worth remembering: saving a shape
+                      that does not yet sell whole would store a stencil the
+                      organizer has to fix every time they place it. */}
+                  {onSaveAsPiece && (
+                    <button
+                      type="button"
+                      onClick={() => onSaveAsPiece(selectedSection)}
+                      title="Keep this shape in My pieces, so you can place it on your next event here"
+                      className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Save as piece
+                    </button>
+                  )}
+                </>
               ) : (
-                <p className="mt-1.5 text-[11px] text-amber-400 flex items-start gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
-                  <span>
-                    This section has {selectedSection.seats.length} seats, so it will still sell
-                    seat by seat and this number will be ignored. A table needs exactly one seat —
-                    that seat is the table.
-                  </span>
-                </p>
+                <>
+                  <p className="mt-1.5 text-[11px] text-amber-400 flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    <span>
+                      This section has {selectedSection.seats.length} seats, so it will still sell
+                      seat by seat and this number will be ignored. A table needs exactly one seat —
+                      that seat is the table.
+                    </span>
+                  </p>
+                  <button
+                  type="button"
+                  onClick={handleSellWhole}
+                  disabled={!sellWhole?.ok}
+                  title={sellWhole?.ok ? 'Collapse this to one sellable piece' : sellWhole?.reason}
+                  className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  Sell this whole
+                </button>
+                </>
               )
             ) : (
-              <p className="mt-1.5 text-[11px] text-slate-500">
-                For club tables, booths and boxes: give the section one seat, then say how many
-                people it holds.
-              </p>
+              <>
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  For club tables, booths and boxes — including a shape you drew yourself with the
+                  shape tool. One tap takes the whole thing.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleSellWhole}
+                  disabled={!sellWhole?.ok}
+                  title={sellWhole?.ok ? 'Collapse this to one sellable piece' : sellWhole?.reason}
+                  className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  Sell this whole
+                </button>
+              </>
             )}
           </div>
 

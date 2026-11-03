@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Calendar, MapPin, ArrowRight, ChevronLeft, ChevronRight, Ticket, BadgeCheck } from 'lucide-react'
+import { Calendar, MapPin, ArrowRight, ChevronLeft, ChevronRight, Ticket, BadgeCheck, ExternalLink } from 'lucide-react'
 import { formatEventDate, formatEventTime, formatEventDateWithEnd, isMultiDayEvent } from '@/lib/datetime'
-import { isSoldOut, itemHref, type DiscoveryEvent } from '@/lib/events/discovery'
+import { isExternal, isSoldOut, itemHref, type DiscoveryEvent } from '@/lib/events/discovery'
+import { headlineSize } from '@/lib/events/headline'
 
 const AUTOPLAY_MS = 7000
 
@@ -82,6 +83,18 @@ export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
     const activeOrganizer = organizerOf(active)
     const activeSoldOut = isSoldOut(active)
     const activeHref = itemHref(active)
+    // An external listing REDIRECTS to someone else's checkout — 20 of the 54
+    // live events are these. The cards below already badge them "Off-site",
+    // with a note that without it they are indistinguishable from the ones we
+    // own the checkout for. The hero did not, so a starred external would
+    // headline the page promising "Get tickets · ₱750" and "Tickets available
+    // now" for inventory that is not ours. Nothing is starred today, so this
+    // was one admin click from going live rather than already wrong.
+    //
+    // Fixed here rather than by filtering externals out of pickSpotlightSlides:
+    // an admin who stars something expects to see it, and a star that silently
+    // does nothing reads as a broken toggle. Show it, describe it honestly.
+    const activeExternal = isExternal(active)
 
     return (
         <section
@@ -146,11 +159,26 @@ export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
                         {/* On an indigo bed the chip and the active thumbnail are
                             white-tinted, not brand-tinted — indigo on indigo
                             reads as nothing. */}
-                        <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/35 bg-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white backdrop-blur-md">
-                            {active.kind === 'experience' ? 'Experience' : active.is_featured ? 'Featured' : 'Spotlight'}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/35 bg-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white backdrop-blur-md">
+                                {active.kind === 'experience' ? 'Experience' : active.is_featured ? 'Featured' : 'Spotlight'}
+                            </span>
+                            {activeExternal && (
+                                <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-white/25 bg-black/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/80 backdrop-blur-md">
+                                    <ExternalLink className="h-2.5 w-2.5" aria-hidden />
+                                    Off-site
+                                </span>
+                            )}
+                        </div>
 
-                        <h2 className="font-headline mt-5 text-4xl font-extrabold leading-[1.03] tracking-tight drop-shadow-xs md:text-5xl xl:text-6xl">
+                        {/* `break-words` is the guarantee, headlineSize is the
+                            taste: the size keeps a long title from needing to
+                            break mid-word, and the break keeps ANY title — a
+                            40-character brand name we have never seen — from
+                            escaping the column again. Neither alone is enough.
+                            `text-balance` evens out the ragged edge once a
+                            title does take two or three lines. */}
+                        <h2 className={`font-headline mt-5 font-extrabold leading-[1.03] tracking-tight text-balance break-words drop-shadow-xs ${headlineSize(active.title)}`}>
                             <Link href={activeHref} className="rounded-sm outline-hidden transition-colors hover:text-white/85 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-4 focus-visible:ring-offset-transparent">
                                 {active.title.trim()}
                             </Link>
@@ -162,10 +190,14 @@ export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
                                 <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-white/55" />
                                 <dd className="font-medium">{whenLabel(active)}</dd>
                             </div>
-                            <div className="flex items-start gap-2.5">
+                            <div className="flex min-w-0 items-start gap-2.5">
                                 <dt className="sr-only">Venue</dt>
                                 <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-white/55" />
-                                <dd>{whereLabel(active)}</dd>
+                                {/* Venue names are organizer-typed and arrive as
+                                    things like "The Koolpals Bar @ Cellar"; one
+                                    long token here would overflow the same way
+                                    the headline did. */}
+                                <dd className="min-w-0 break-words">{whereLabel(active)}</dd>
                             </div>
                         </dl>
 
@@ -196,16 +228,31 @@ export function EventHeroCarousel({ events }: { events: DiscoveryEvent[] }) {
                                 href={activeHref}
                                 className="font-headline inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-bold text-neutral-900 shadow-xl transition-transform hover:scale-[1.02] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#4f46e5] motion-reduce:transition-none motion-reduce:hover:scale-100"
                             >
-                                {activeSoldOut ? 'Join waitlist' : active.kind === 'experience' ? 'Book now' : 'Get tickets'}
-                                {!activeSoldOut && (
+                                {activeExternal
+                                    ? 'View event'
+                                    : activeSoldOut
+                                        ? 'Join waitlist'
+                                        : active.kind === 'experience' ? 'Book now' : 'Get tickets'}
+                                {/* No price on an off-site listing: ticket_price
+                                    is a figure we copied from someone else's
+                                    page and do not control, so quoting it next
+                                    to a button is a promise we cannot keep. */}
+                                {!activeSoldOut && !activeExternal && (
                                     <>
                                         <span className="opacity-30">·</span>
                                         <span>{priceLabel(active)}</span>
                                     </>
                                 )}
-                                <ArrowRight className="h-4 w-4" />
+                                {activeExternal
+                                    ? <ExternalLink className="h-4 w-4" />
+                                    : <ArrowRight className="h-4 w-4" />}
                             </Link>
-                            {!activeSoldOut && (
+                            {activeExternal ? (
+                                <span className="inline-flex items-center gap-1.5 text-xs text-white/60">
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                    Tickets sold on the organiser&rsquo;s own site
+                                </span>
+                            ) : !activeSoldOut && (
                                 <span className="inline-flex items-center gap-1.5 text-xs text-white/60">
                                     <Ticket className="h-3.5 w-3.5" />
                                     Tickets available now

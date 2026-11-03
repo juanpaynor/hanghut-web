@@ -21,7 +21,10 @@ import {
   findPiece,
   createFurnitureSection,
   createDecorShape,
+  savedToPiece,
 } from './furniture'
+import type { SavedPiece } from '@/lib/seat-map/saved-piece'
+import { getSavedPieces, saveSectionAsPiece, deleteSavedPiece } from '@/lib/seat-map/furniture-library-actions'
 import { CanvasProperties } from './canvas-properties'
 import type { CanvasData, SectionData, SeatData, BackgroundShape, SeatShape, TierInfo } from './types'
 import { SEAT_COLORS, resolveSeatTier } from './types'
@@ -1023,6 +1026,86 @@ export function CanvasBuilder({
   // or get serialised into canvas_data.
   const [furnitureId, setFurnitureId] = useState<string>('table-round')
 
+  // ─── The venue's own saved pieces ─────────────────────────────────────
+  // Loaded once, kept in component state alongside furnitureId for the same
+  // reason: a library of stencils is a tool setting, not part of the map, so it
+  // must never enter undo history or get serialised into canvas_data. Placing
+  // one COPIES its outline into a section, so the library is a stencil and not
+  // a live link — deleting a piece can never alter a published map or a ticket.
+  const [savedPieces, setSavedPieces] = useState<SavedPiece[]>([])
+  useEffect(() => {
+    let alive = true
+    // Failures are swallowed by the action and come back as []. The built-in
+    // catalogue must still work if this table is unreachable.
+    getSavedPieces().then((rows) => { if (alive) setSavedPieces(rows) })
+    return () => { alive = false }
+  }, [])
+
+  // Resolves either a built-in id or a `saved:<uuid>` one. Every call site that
+  // used `findPiece(furnitureId) ?? FURNITURE[0]` goes through here instead, so
+  // a saved piece places, sizes and sells exactly like a catalogue piece.
+  const resolvePiece = useCallback(
+    (id: string) => {
+      const builtIn = findPiece(id)
+      if (builtIn) return builtIn
+      const saved = savedPieces.find((sp) => `saved:${sp.id}` === id)
+      return saved ? savedToPiece(saved) : FURNITURE[0]
+    },
+    [savedPieces]
+  )
+
+  // Save the selected piece's outline to the venue's library.
+  const handleSaveAsPiece = useCallback(
+    async (section: SectionData) => {
+      const suggested = section.label.replace(/\s+\d+$/, '').trim() || 'My piece'
+      const name = window.prompt(
+        'Name this piece so you can find it next time (e.g. "Corner booth"):',
+        suggested
+      )
+      if (name === null) return
+      const res = await saveSectionAsPiece({
+        name,
+        polygonPoints: section.polygonPoints,
+        pax: section.unitCapacity ?? 1,
+        sectionType: section.sectionType,
+        color: section.color,
+      })
+      if (!res.ok || !res.piece) {
+        toast({ title: 'Could not save that piece', description: res.error, variant: 'destructive' })
+        return
+      }
+      setSavedPieces((prev) =>
+        [...prev, res.piece!].sort((a, b) => a.name.localeCompare(b.name))
+      )
+      toast({
+        title: `Saved “${res.piece.name}”`,
+        description: 'It is in My pieces now, on every event you run here.',
+      })
+    },
+    [toast]
+  )
+
+  const handleDeleteSavedPiece = useCallback(
+    async (id: string) => {
+      const piece = savedPieces.find((sp) => sp.id === id)
+      if (!piece) return
+      if (!window.confirm(
+        `Forget “${piece.name}”?\n\nIt is only removed from your library. ` +
+        `Any already placed on a map stay exactly where they are.`
+      )) return
+      const res = await deleteSavedPiece(id)
+      if (!res.ok) {
+        toast({ title: 'Could not remove that piece', description: res.error, variant: 'destructive' })
+        return
+      }
+      setSavedPieces((prev) => prev.filter((sp) => sp.id !== id))
+      // The armed piece just stopped existing; fall back so the next click on
+      // the canvas does not place the catalogue's first item by surprise.
+      setFurnitureId((cur) => (cur === `saved:${id}` ? 'table-round' : cur))
+    },
+    [savedPieces, toast]
+  )
+
   // ─── Mouse Up (finish rectangle drag) ───────────────────────────────
   const handleMouseUp = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -1161,7 +1244,7 @@ export function CanvasBuilder({
       if (state.tool === 'draw-table' && state.isDrawing && state.drawingPoints.length >= 2) {
         const pointer = stage.getPointerPosition()
         if (pointer) {
-          const piece = findPiece(furnitureId) ?? FURNITURE[0]
+          const piece = resolvePiece(furnitureId)
           const { x, y } = screenToCanvas(pointer)
           const [x1, y1] = state.drawingPoints
           const dragW = Math.abs(x - x1)
@@ -1239,7 +1322,7 @@ export function CanvasBuilder({
     // furnitureId is read in the table-tool branch above. It MUST be a dep:
     // without it the handler closes over the piece that was selected when it
     // was built, and the palette silently stops changing what gets dropped.
-    [readOnly, state, dispatch, dispatchWithHistory, screenToCanvas, furnitureId]
+    [readOnly, state, dispatch, dispatchWithHistory, screenToCanvas, furnitureId, resolvePiece]
   )
 
   // ─── Stage Click (polygon + select + seat drop) ──────────────────────
@@ -1907,7 +1990,7 @@ export function CanvasBuilder({
       return 'Release to finish'
     }
     if (state.tool === 'draw-table') {
-      const piece = findPiece(furnitureId) ?? FURNITURE[0]
+      const piece = resolvePiece(furnitureId)
       if (state.isDrawing) return `Release to place ${piece.name}`
       return piece.kind === 'decor'
         ? `${piece.name} • click to place • drag to size • not sold`
@@ -1930,7 +2013,7 @@ export function CanvasBuilder({
     // furnitureId: the hint names the armed piece, so it must recompute when the
     // palette changes. selectedSeatIds was already read above but missing here,
     // which left the multi-select hint stale.
-  }, [state.tool, state.drawingPoints, state.isDrawing, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, state.dropRow, state.dropSeatNumber, furnitureId])
+  }, [state.tool, state.drawingPoints, state.isDrawing, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, state.dropRow, state.dropSeatNumber, furnitureId, resolvePiece])
 
   return (
     <div className={`flex flex-col bg-slate-950 overflow-hidden border border-slate-800 ${isFullscreen ? 'fixed inset-0 z-[100] rounded-none' : 'h-full w-full rounded-xl'}`}>
@@ -1973,6 +2056,8 @@ export function CanvasBuilder({
           onZoomChange={handleToolbarZoom}
           onUploadImage={handleUploadClick}
           furnitureId={furnitureId}
+          savedPieces={savedPieces}
+          onDeleteSavedPiece={handleDeleteSavedPiece}
           onPickFurniture={(id) => {
             // Choosing a piece IS choosing the tool. The sofa tool used to be a
             // mode you had to find before any furniture appeared at all.
@@ -2539,6 +2624,7 @@ export function CanvasBuilder({
           onScaleSeats={(seatIds, factor) => {
             dispatchWithHistory({ type: 'SCALE_SEATS', seatIds, factor })
           }}
+          onSaveAsPiece={handleSaveAsPiece}
           onDuplicateSection={(id, mirror) => {
             dispatchWithHistory({ type: 'DUPLICATE_SECTION', id, mirror })
           }}
