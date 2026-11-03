@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { getEventEarnings } from '@/lib/organizer/event-earnings'
 
 export interface SeatInfo { section?: string; row?: string; seat?: number; label?: string }
 
@@ -441,10 +442,13 @@ export async function getEventTierSales(eventId: string): Promise<TierSales[]> {
 /** Top-of-page attendee stats (independent of the current filter/page). */
 export async function getAttendeeStats(eventId: string) {
     const supabase = await createClient()
-    const [attendeeRes, checkedInRes, paidRes] = await Promise.all([
+    const [attendeeRes, checkedInRes, paidRes, earnings] = await Promise.all([
         supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('event_id', eventId).in('status', ['valid', 'used']),
         supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('event_id', eventId).eq('status', 'used'),
         supabase.from('purchase_intents').select('total_amount, refunded_amount').eq('event_id', eventId).in('status', ['completed', 'refunded']),
+        // Shared with the event overview, so the two surfaces can never quote
+        // different net figures for the same event.
+        getEventEarnings(eventId),
     ])
     // Net revenue: refunds set refunded_amount on the intent but never flip its
     // status, so a plain sum of total_amount double-counts refunded orders. Subtract
@@ -457,6 +461,7 @@ export async function getAttendeeStats(eventId: string) {
         attendees: attendeeRes.count || 0,
         checkedIn: checkedInRes.count || 0,
         revenue,
+        earnings,
     }
 }
 

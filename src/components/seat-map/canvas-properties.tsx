@@ -3,9 +3,10 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import type { SectionData, CanvasTool, SectionType, SeatData, BackgroundShape, SeatShape, TierInfo, RowData } from './types'
 import { SECTION_TYPE_COLORS, resolveSeatTier } from './types'
+import type { AlignMode } from './canvas-state'
 import { fillSectionRows, pathCurvature, pathFromCurvature, pathEndpoints, rowLabelAt } from '@/lib/seat-map/rows'
 import { pointInPolygon, flatToVertices } from './algorithms/point-in-polygon'
-import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, XCircle, Circle, Square, Diamond, Lock, Unlock, Banknote, BoxSelect, Triangle, Minus, Type, Spline, Ruler, Plus } from 'lucide-react'
+import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, XCircle, Circle, Square, Diamond, Lock, Unlock, Banknote, BoxSelect, Triangle, Minus, Type, Spline, Ruler, Plus, Users, AlertTriangle } from 'lucide-react'
 import { CapacitySummary } from './capacity-summary'
 import { createClient } from '@/lib/supabase/client'
 
@@ -43,6 +44,13 @@ interface CanvasPropertiesProps {
   onScaleSeats?: (seatIds: string[], factor: number) => void
   onDuplicateSection?: (id: string, mirror?: boolean) => void
   onScaleSection?: (id: string, factor: number) => void
+  /** Vertex handles are hidden on furniture; this reveals them for one piece. */
+  editPoints?: boolean
+  onToggleEditPoints?: () => void
+  /** Rotate the selected section(s). One turns in place; several turn as a group. */
+  onRotateSections?: (ids: string[], degrees: number) => void
+  /** Line up or evenly space 2+ selected sections. */
+  onAlignSections?: (ids: string[], mode: AlignMode) => void
   seatRadius: number
   seatShape: SeatShape
   onSetSeatRadius: (r: number) => void
@@ -265,13 +273,11 @@ function BorderControls({
 
 type PresetShape = Partial<BackgroundShape> & { type: BackgroundShape['type'] }
 
-const ZONE_PRESETS: { label: string; shape: PresetShape }[] = [
-  { label: 'Stage', shape: { type: 'rect', width: 240, height: 70, fill: '#1e293b', label: 'STAGE', role: 'stage' } },
-  { label: 'Bar', shape: { type: 'rect', width: 140, height: 50, fill: '#422006', label: 'BAR' } },
-  { label: 'Entrance', shape: { type: 'rect', width: 120, height: 40, fill: '#14532d', label: 'ENTRANCE' } },
-  { label: 'Dance Floor', shape: { type: 'rect', width: 200, height: 140, fill: '#312e81', label: 'DANCE FLOOR' } },
-  { label: 'Round Table', shape: { type: 'circle', radius: 36, fill: '#334155', label: '' } },
-]
+// ZONE_PRESETS is gone. Stage, Bar, Entrance and Dance Floor all exist in the
+// furniture Insert list now, which puts them where you click rather than at the
+// centre of the canvas. Keeping both meant the same four landmarks appeared in
+// two different places behaving differently — the same fault as the duplicate
+// "Round Table", which was only the first one spotted.
 
 const BASIC_SHAPES: { label: string; icon: typeof Square; shape: PresetShape }[] = [
   { label: 'Box', icon: Square, shape: { type: 'rect', width: 120, height: 70, fill: '#334155' } },
@@ -315,6 +321,10 @@ export function CanvasProperties({
   onScaleSeats,
   onDuplicateSection,
   onScaleSection,
+  editPoints = false,
+  onToggleEditPoints,
+  onRotateSections,
+  onAlignSections,
   seatRadius,
   seatShape,
   onSetSeatRadius,
@@ -796,11 +806,11 @@ export function CanvasProperties({
           ) : (selectedShape.type === 'rect' || selectedShape.type === 'ellipse' || selectedShape.type === 'triangle') ? (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[11px] text-slate-500 flex justify-between mb-1"><span>Width</span><span className="text-slate-400">{selectedShape.width ?? 120}</span></label>
+                <label className="text-[11px] text-slate-500 flex justify-between mb-1"><span>Width</span><span className="text-slate-400">{Math.round(selectedShape.width ?? 120)}</span></label>
                 <input type="range" min="20" max="600" value={selectedShape.width ?? 120} onChange={(e) => onUpdateShape(selectedShape.id, { width: parseInt(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
               </div>
               <div>
-                <label className="text-[11px] text-slate-500 flex justify-between mb-1"><span>Height</span><span className="text-slate-400">{selectedShape.height ?? 70}</span></label>
+                <label className="text-[11px] text-slate-500 flex justify-between mb-1"><span>Height</span><span className="text-slate-400">{Math.round(selectedShape.height ?? 70)}</span></label>
                 <input type="range" min="20" max="600" value={selectedShape.height ?? 70} onChange={(e) => onUpdateShape(selectedShape.id, { height: parseInt(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
               </div>
             </div>
@@ -890,6 +900,67 @@ export function CanvasProperties({
                 </div>
               )}
 
+              {/* Arrange — the answer to "ten identical booths down a wall".
+                  Duplicate them, then line them up and space them here, rather
+                  than nudging each one by eye. */}
+              {onAlignSections && (
+                <div className="border-t border-slate-800 pt-4 space-y-2">
+                  <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Arrange</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {([
+                      ['left', '⇤ Left'], ['hcenter', '↔ Centre'], ['right', 'Right ⇥'],
+                      ['top', '⇡ Top'], ['vmiddle', '↕ Middle'], ['bottom', 'Bottom ⇣'],
+                    ] as [AlignMode, string][]).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        onClick={() => onAlignSections(ids, mode)}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium py-2 rounded-lg transition-all border border-slate-700"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      onClick={() => onAlignSections(ids, 'hdistribute')}
+                      className="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 text-[11px] font-medium py-2 rounded-lg transition-all border border-indigo-600/30"
+                      title="Equal gaps left to right"
+                    >
+                      ⇹ Space across
+                    </button>
+                    <button
+                      onClick={() => onAlignSections(ids, 'vdistribute')}
+                      className="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 text-[11px] font-medium py-2 rounded-lg transition-all border border-indigo-600/30"
+                      title="Equal gaps top to bottom"
+                    >
+                      ⇳ Space down
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Spacing equalises the gaps between pieces and never moves the two on the ends, so the run stays where you put it.
+                  </p>
+                </div>
+              )}
+
+              {/* Rotate all — about the centre of the selection, so a cluster
+                  keeps its arrangement instead of each piece spinning alone. */}
+              {onRotateSections && (
+                <div className="border-t border-slate-800 pt-4 space-y-2">
+                  <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Rotate together</label>
+                  <div className="flex gap-1.5">
+                    {([-90, -15, 15, 90] as const).map((deg) => (
+                      <button
+                        key={deg}
+                        onClick={() => onRotateSections(ids, deg)}
+                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-2 rounded-lg transition-all border border-slate-700 tabular-nums"
+                      >
+                        {deg > 0 ? '↻' : '↺'} {Math.abs(deg)}°
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Border for all */}
               <BorderControls
                 color={first.borderColor}
@@ -963,6 +1034,83 @@ export function CanvasProperties({
                   {t.label}
                 </option>
               ))}
+            </select>
+          </div>
+
+          {/* ─── Sell as one unit (club table / booth / box) ──────────── */}
+          {/* Capacity only takes effect on a section holding EXACTLY ONE seat,
+              because that seat is the sellable unit. Rather than let an
+              organizer type 8 into a ten-seat section and silently get nothing,
+              the mismatch is stated here. */}
+          <div>
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+              <Users className="w-3.5 h-3.5" />
+              Admits (people)
+            </label>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              placeholder="Leave blank for normal seats"
+              value={selectedSection.unitCapacity ?? ''}
+              onChange={(e) => {
+                const raw = e.target.value.trim()
+                if (raw === '') {
+                  onUpdateSection(selectedSection.id, { unitCapacity: undefined })
+                  return
+                }
+                const n = Math.floor(Number(raw))
+                // Reject anything the database would refuse, rather than saving
+                // it and failing the whole publish later.
+                if (!Number.isFinite(n) || n < 1) return
+                onUpdateSection(selectedSection.id, { unitCapacity: n })
+              }}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            {selectedSection.unitCapacity ? (
+              selectedSection.seats.length === 1 ? (
+                <p className="mt-1.5 text-[11px] text-slate-400">
+                  Sold as one unit for {selectedSection.unitCapacity} people. Buyers tap it once
+                  to take the whole thing.
+                </p>
+              ) : (
+                <p className="mt-1.5 text-[11px] text-amber-400 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                  <span>
+                    This section has {selectedSection.seats.length} seats, so it will still sell
+                    seat by seat and this number will be ignored. A table needs exactly one seat —
+                    that seat is the table.
+                  </span>
+                </p>
+              )
+            ) : (
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                For club tables, booths and boxes: give the section one seat, then say how many
+                people it holds.
+              </p>
+            )}
+          </div>
+
+          {/* ─── Seat shape override ──────────────────────────────────── */}
+          <div>
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+              <Circle className="w-3.5 h-3.5" />
+              Seat Shape
+            </label>
+            <select
+              value={selectedSection.seatShape ?? ''}
+              onChange={(e) => {
+                const v = e.target.value
+                onUpdateSection(selectedSection.id, {
+                  seatShape: v === '' ? undefined : (v as SeatShape),
+                })
+              }}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">Use map default</option>
+              <option value="circle">Circle</option>
+              <option value="square">Square</option>
+              <option value="diamond">Diamond</option>
             </select>
           </div>
 
@@ -1444,6 +1592,53 @@ export function CanvasProperties({
             )}
           </div>
 
+          {/* Rotate Section — bakes the angle into the points, so the buyer's
+              map and the organizer's preview need no idea rotation happened. */}
+          {onRotateSections && (
+            <div className="border-t border-slate-800 pt-4 space-y-2">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                Rotate
+              </label>
+              <div className="flex gap-1.5">
+                {([-90, -15, 15, 90] as const).map((deg) => (
+                  <button
+                    key={deg}
+                    onClick={() => onRotateSections([selectedSection.id], deg)}
+                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-2 rounded-lg transition-all border border-slate-700 tabular-nums"
+                    title={`Rotate ${deg > 0 ? 'clockwise' : 'anticlockwise'} ${Math.abs(deg)}°`}
+                  >
+                    {deg > 0 ? '↻' : '↺'} {Math.abs(deg)}°
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Drag the round handle above the piece on the canvas to turn it freely. Hold Shift for 15° steps. Seat names and numbers never change, so tickets already sold stay valid.
+              </p>
+            </div>
+          )}
+
+          {/* Point editing — only furniture hides its vertices, so only
+              furniture needs the way back in. */}
+          {onToggleEditPoints && (selectedSection.unitCapacity ?? 0) > 0 && (
+            <div className="border-t border-slate-800 pt-4 space-y-2">
+              <button
+                onClick={onToggleEditPoints}
+                className={`w-full flex items-center justify-center gap-1.5 text-[11px] font-medium py-2 rounded-lg transition-all border ${
+                  editPoints
+                    ? 'bg-amber-600/20 border-amber-600/40 text-amber-300 hover:bg-amber-600/30'
+                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                }`}
+              >
+                {editPoints ? '✓ Editing points' : '⬚ Edit points'}
+              </button>
+              <p className="text-[10px] text-slate-500">
+                {editPoints
+                  ? `Dragging any of this piece's ${selectedSection.polygonPoints.length / 2} corners reshapes it.`
+                  : 'Shows the corner handles so you can reshape this piece. Hidden by default: a curved booth has dozens of them and they cover the piece.'}
+              </p>
+            </div>
+          )}
+
           {/* Duplicate / Mirror Section */}
           {onDuplicateSection && (
             <div className="border-t border-slate-800 pt-4 space-y-2">
@@ -1589,40 +1784,6 @@ export function CanvasProperties({
             )}
           </div>
 
-          {/* Decor & Zones (stages, bars, tables, shapes) */}
-          {onAddShape && (
-            <div className="border-t border-slate-800 pt-4">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 block flex items-center gap-1.5">
-                <Plus className="w-3.5 h-3.5" />
-                Add Zone
-              </label>
-              <div className="grid grid-cols-2 gap-1.5 mb-3">
-                {ZONE_PRESETS.map((p) => (
-                  <button
-                    key={p.label}
-                    onClick={() => onAddShape(p.shape)}
-                    className="text-xs py-2 px-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:border-indigo-500 hover:text-white transition-all"
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-              <label className="text-[11px] text-slate-500 mb-1.5 block">Basic shapes</label>
-              <div className="grid grid-cols-5 gap-1.5">
-                {BASIC_SHAPES.map(({ label, icon: Icon, shape }) => (
-                  <button
-                    key={label}
-                    onClick={() => onAddShape(shape)}
-                    title={label}
-                    className="flex flex-col items-center gap-1 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-400 hover:border-indigo-500 hover:text-white transition-all"
-                  >
-                    <Icon className="w-4 h-4" />
-                  </button>
-                ))}
-              </div>
-              <p className="text-[10px] text-slate-600 mt-2">Drops at center • click to select &amp; edit • drag to move</p>
-            </div>
-          )}
 
           {/* Background Images */}
           {backgroundShapes.length > 0 && (
@@ -1688,6 +1849,29 @@ export function CanvasProperties({
                       }
                       className="w-full accent-indigo-500 cursor-pointer"
                     />
+
+                    {/* Publish to buyers. Off by default and off for every map
+                        saved before this existed, because these started life as
+                        tracing aids — an organizer's scaffolding, not something
+                        a customer should be shown without asking. */}
+                    <button
+                      onClick={() => onUpdateShape(shape.id, { showToBuyer: !shape.showToBuyer })}
+                      className={`w-full mt-3 flex items-center justify-center gap-1.5 text-[11px] font-medium py-2 rounded-lg transition-all border ${
+                        shape.showToBuyer
+                          ? 'bg-emerald-600/20 border-emerald-600/40 text-emerald-300 hover:bg-emerald-600/30'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                      }`}
+                      title={shape.showToBuyer
+                        ? 'Buyers can see this floor plan'
+                        : 'Tracing aid only — buyers never see this'}
+                    >
+                      {shape.showToBuyer ? '👁 Buyers see this' : '🚫 Tracing aid only'}
+                    </button>
+                    {shape.showToBuyer && (
+                      <p className="text-[10px] text-slate-500 mt-1.5">
+                        Shown underneath the seats on the customer&apos;s map, and kept in frame when the map zooms to fit.
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>

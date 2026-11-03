@@ -47,6 +47,7 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { TicketPrintModal } from './ticket-print-modal'
+import type { EventEarnings } from '@/lib/organizer/event-earnings'
 
 /** Rows per page. Shared by the fetch and the pager so the two can't drift. */
 const PAGE_SIZE = 20
@@ -130,7 +131,7 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
         (sort !== 'newest' ? 1 : 0)
 
     // Top-of-page stats (filter-independent)
-    const [stats, setStats] = useState<{ attendees: number; checkedIn: number; revenue: number } | null>(null)
+    const [stats, setStats] = useState<{ attendees: number; checkedIn: number; revenue: number; earnings?: EventEarnings } | null>(null)
     // Buyers whose ticket email hard-bounced. Nothing used to surface this —
     // the order looked delivered and the buyer simply never turned up with a
     // ticket. Reloaded after a correction so a fixed row leaves the list.
@@ -684,7 +685,7 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
             )}
 
             {/* Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="rounded-xl border bg-card p-4">
                     <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Attendees</p>
                     <p className="text-2xl font-bold mt-1">{stats?.attendees ?? '—'}</p>
@@ -695,9 +696,34 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                         {stats ? `${stats.checkedIn} / ${stats.attendees}` : '—'}
                     </p>
                 </div>
-                <div className="rounded-xl border bg-card p-4 col-span-2 sm:col-span-1">
-                    <p className="text-xs text-muted-foreground">Net sales <span className="opacity-60">(after refunds)</span></p>
+                {/* Renamed from "Net sales". It was only net of REFUNDS, with
+                    every fee still in it, so it read as take-home pay and was
+                    not. The tile beside it is the one that is. */}
+                <div className="rounded-xl border bg-card p-4">
+                    <p className="text-xs text-muted-foreground">Sales <span className="opacity-60">(after refunds)</span></p>
                     <p className="text-2xl font-bold mt-1">{stats ? `₱${stats.revenue.toLocaleString()}` : '—'}</p>
+                </div>
+                <div className="rounded-xl border bg-card p-4 col-span-2 sm:col-span-1">
+                    <p className="text-xs text-muted-foreground">Net earnings <span className="opacity-60">(after fees)</span></p>
+                    <p className="text-2xl font-bold mt-1">
+                        {stats?.earnings ? `₱${stats.earnings.net.toLocaleString()}` : '—'}
+                    </p>
+                    {stats?.earnings && stats.earnings.gross > 0 && (
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                            −₱{stats.earnings.fees.toLocaleString()} fees
+                            {' '}({((stats.earnings.fees / stats.earnings.gross) * 100).toFixed(1)}%)
+                        </p>
+                    )}
+                    {stats?.earnings && stats.earnings.cash > 0 && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                            incl. ₱{stats.earnings.cash.toLocaleString()} cash at the door
+                        </p>
+                    )}
+                    {stats?.earnings && stats.earnings.estimated > 0 && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-0.5">
+                            ₱{stats.earnings.estimated.toLocaleString()} estimated
+                        </p>
+                    )}
                 </div>
             </div>
 

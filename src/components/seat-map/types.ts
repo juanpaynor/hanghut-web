@@ -9,6 +9,9 @@ export type CanvasTool =
   | 'select'
   | 'draw-polygon'
   | 'draw-rect'
+  /** One click = one sellable TABLE: a section + a single seat + a pax count.
+   *  The club case. See createTableSection in canvas-builder.tsx. */
+  | 'draw-table'
   | 'draw-seat'
   | 'pan'
 
@@ -78,6 +81,25 @@ export interface SectionData {
   rows?: RowData[]
   /** Draw row labels at the ends of each row (editor + buyer picker). Default true. */
   showRowLabels?: boolean
+  /**
+   * How many PEOPLE one sold unit of this section admits — the club/table case
+   * ("VIP COUCH 1 · admits 8").
+   *
+   * Informational ONLY. It never takes part in availability, pricing or holds,
+   * so it cannot oversell: a table is still one seat row, protected by the same
+   * seat_holds machinery that already works. It exists so the buyer knows how
+   * many fit and the door knows how many to let in.
+   *
+   * Undefined means an ordinary seated section: one person per seat.
+   */
+  unitCapacity?: number
+  /**
+   * Per-section override of the map-wide CanvasData.seatShape.
+   *
+   * Undefined means inherit the global, which is what every section saved before
+   * this field did — so leaving it alone preserves today's rendering exactly.
+   */
+  seatShape?: SeatShape
   // Layout prefs (persisted in canvas_data JSONB so re-fills stay stable)
   seatGap?: number
   rowGap?: number
@@ -158,6 +180,18 @@ export interface BackgroundShape {
   locked?: boolean   // locked images can't be dragged (for tracing floor plans)
   /** Semantic role. 'stage' = every section's front row is the one nearest this shape. */
   role?: 'stage' | null
+  /**
+   * Show this piece on the BUYER's map.
+   *
+   * Only consulted for images. Every other shape has always been drawn for
+   * buyers; images alone were stripped, because they were introduced as
+   * tracing aids — an organizer drops the venue's own floor plan behind the
+   * canvas, draws on top of it, and the buyer has no business seeing the
+   * scaffolding. For a club that is exactly backwards: the plan IS the thing
+   * the buyer wants to look at. Undefined keeps the old behaviour, so no
+   * existing map starts showing a tracing aid to customers.
+   */
+  showToBuyer?: boolean
 }
 
 // ─── Seat Appearance ────────────────────────────────────────────────────────

@@ -9,11 +9,11 @@ import {
     Ticket, ExternalLink, Edit,
     MoreHorizontal,
     TrendingUp,
-    RefreshCw
-} from "lucide-react"
+    RefreshCw, Wallet } from "lucide-react"
 import Link from "next/link"
 import { Progress } from "@/components/ui/progress"
 import { formatInManila } from '@/lib/datetime'
+import type { EventEarnings } from '@/lib/organizer/event-earnings'
 
 interface DashboardOverviewProps {
     event: any
@@ -23,6 +23,8 @@ interface DashboardOverviewProps {
         totalCapacity: number
         checkedInCount: number
         refundedAmount?: number
+        /** Net of platform + gateway fees. See lib/organizer/event-earnings. */
+        earnings?: EventEarnings
     }
 }
 
@@ -92,6 +94,36 @@ export function EventDashboardOverview({ event, stats }: DashboardOverviewProps)
                         </p>
                     </CardContent>
                 </Card>
+
+                {/* Net of fees. Derived from the same column the wallet pays
+                    out on, so this and the payout cannot disagree. */}
+                {stats.earnings && (
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Net Earnings</CardTitle>
+                            <Wallet className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">₱{stats.earnings.net.toLocaleString()}</div>
+                            <p className="text-xs text-muted-foreground">
+                                After ₱{stats.earnings.fees.toLocaleString()} in fees
+                                {stats.earnings.gross > 0 && (
+                                    <> ({((stats.earnings.fees / stats.earnings.gross) * 100).toFixed(1)}%)</>
+                                )}
+                            </p>
+                            {stats.earnings.cash > 0 && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    Includes ₱{stats.earnings.cash.toLocaleString()} taken at the door, which you already hold
+                                </p>
+                            )}
+                            {stats.earnings.estimated > 0 && (
+                                <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
+                                    ₱{stats.earnings.estimated.toLocaleString()} of this is estimated — those orders have no fee record yet
+                                </p>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

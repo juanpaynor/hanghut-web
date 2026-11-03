@@ -2,6 +2,15 @@
 
 import { useReducer, useCallback, useRef, useEffect } from 'react'
 import { ensureRows, applyRowLayout, transformRows } from '@/lib/seat-map/rows'
+import {
+  sectionBounds,
+  groupBounds,
+  rotateSection,
+  translateSection,
+  alignSectionDeltas,
+} from '@/lib/seat-map/transform'
+import type { AlignMode } from '@/lib/seat-map/transform'
+export type { AlignMode }
 import type {
   RowData,
   CanvasState,
@@ -59,18 +68,6 @@ export function regenerateCanvasIds(canvas: CanvasData): CanvasData {
 // ─── Geometry helpers ─────────────────────────────────────────────────────────
 
 /** Bounding box of a section from its polygon points (falls back to seats). */
-function sectionBounds(section: SectionData) {
-  const xs: number[] = []
-  const ys: number[] = []
-  for (let i = 0; i < section.polygonPoints.length; i += 2) {
-    xs.push(section.polygonPoints[i]); ys.push(section.polygonPoints[i + 1])
-  }
-  for (const s of section.seats) { xs.push(s.x); ys.push(s.y) }
-  if (xs.length === 0) return { minX: 0, maxX: 0, minY: 0, maxY: 0, cx: 0, cy: 0, w: 0, h: 0 }
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys)
-  return { minX, maxX, minY, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, w: maxX - minX, h: maxY - minY }
-}
-
 /**
  * Clone a section with fresh UUIDs for the section and EVERY seat (canvas id = DB
  * id, so reused ids would collide on save). Offsets a plain duplicate to the
@@ -235,6 +232,11 @@ type Action =
   | { type: 'SCALE_SEATS'; seatIds: string[]; factor: number }
   | { type: 'ALIGN_SEATS'; seatIds: string[]; mode: 'straighten' | 'flat' }
   | { type: 'DUPLICATE_SECTION'; id: string; mirror?: boolean }
+  /** Rotate whole sections. One section turns about its own centre; several turn
+   *  together about the centre of the selection, which is what keeps a rotated
+   *  cluster of booths in the same arrangement. */
+  | { type: 'ROTATE_SECTIONS'; ids: string[]; degrees: number }
+  | { type: 'ALIGN_SECTIONS'; ids: string[]; mode: AlignMode }
   // ── Rows ──
   | { type: 'SELECT_ROW'; rowId: string | null }
   /** Replace a row's definition and re-lay its seats (ids preserved). */
@@ -274,7 +276,10 @@ const initialState: CanvasState = {
 
 // ─── Reducer ────────────────────────────────────────────────────────────────
 
-function canvasReducer(state: CanvasState, action: Action): CanvasState {
+// Exported for geometry tests: rotation and alignment move real seat
+// coordinates on live maps, so the transforms are verified through the exact
+// reducer the editor dispatches to, not a reimplementation of it.
+export function canvasReducer(state: CanvasState, action: Action): CanvasState {
   switch (action.type) {
     case 'SET_TOOL':
       return { ...state, tool: action.tool, isDrawing: false, drawingPoints: [], selectedSeatId: null, selectedSeatIds: [], dragSeatStart: null, selectedRowId: null }
@@ -684,6 +689,37 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
             return pos ? { ...seat, x: pos.x, y: pos.y } : seat
           }),
         })),
+      }
+    }
+
+    case 'ROTATE_SECTIONS': {
+      const ids = new Set(action.ids)
+      const targets = state.sections.filter((s) => ids.has(s.id))
+      if (targets.length === 0 || !action.degrees) return state
+      // One piece spins in place; a group turns as one rigid body.
+      const shared = targets.length > 1 ? groupBounds(targets) : null
+      return {
+        ...state,
+        sections: state.sections.map((s) => {
+          if (!ids.has(s.id)) return s
+          const b = shared ?? sectionBounds(s)
+          return rotateSection(s, action.degrees, { x: b.cx, y: b.cy })
+        }),
+      }
+    }
+
+    case 'ALIGN_SECTIONS': {
+      const ids = new Set(action.ids)
+      const targets = state.sections.filter((s) => ids.has(s.id))
+      if (targets.length < 2) return state
+      const deltas = alignSectionDeltas(targets, action.mode)
+      if (deltas.size === 0) return state
+      return {
+        ...state,
+        sections: state.sections.map((s) => {
+          const d = deltas.get(s.id)
+          return d && (d.dx || d.dy) ? translateSection(s, d.dx, d.dy) : s
+        }),
       }
     }
 

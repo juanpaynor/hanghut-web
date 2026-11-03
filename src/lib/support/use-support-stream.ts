@@ -52,10 +52,47 @@ export function useSupportStream(
         // An agent console with an empty queue still needs the doorbell — that is
         // exactly the console that is waiting for a first ticket.
         if (!key && !agent) return
+
         let cancelled = false
         let stream: EventSource | null = null
+        let retryTimer: ReturnType<typeof setTimeout> | null = null
+        let renewTimer: ReturnType<typeof setTimeout> | null = null
+        let attempt = 0
+        // One line per outage, not one per reconnect. EventSource retries on
+        // its own schedule, so logging in onerror produced hundreds of
+        // identical warnings a minute and buried everything else in the console.
+        let reportedDown = false
 
-        void (async () => {
+        const clearTimers = () => {
+            if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+            if (renewTimer) { clearTimeout(renewTimer); renewTimer = null }
+        }
+
+        const closeStream = () => {
+            try { stream?.close() } catch { /* noop */ }
+            stream = null
+        }
+
+        const warnOnce = (msg: string) => {
+            if (reportedDown || process.env.NODE_ENV === 'production') return
+            reportedDown = true
+            console.warn(`[support realtime] ${msg}`)
+        }
+
+        /** Backoff with jitter, capped at a minute. Jitter matters: every open
+         *  console loses its token at roughly the same time, and without it they
+         *  would all come back in lockstep. */
+        const scheduleRetry = () => {
+            if (cancelled) return
+            const base = Math.min(60_000, 1000 * 2 ** Math.min(attempt, 6))
+            attempt++
+            retryTimer = setTimeout(() => { void connect() }, base + Math.random() * 1000)
+        }
+
+        const connect = async () => {
+            if (cancelled) return
+            clearTimers()
+            closeStream()
             try {
                 // Ask for EVERY thread we are about to attach to. A token that
                 // covers fewer channels than the stream opens is refused by
@@ -67,36 +104,64 @@ export function useSupportStream(
                       + key.split(',').map((id) => `ticketId=${encodeURIComponent(id)}`).join('&')
                 const res = await fetch(url)
                 if (!res.ok) {
-                    // This transport swallows everything by design, which makes
-                    // "nothing arrives" indistinguishable from "nothing
-                    // happened". One line in dev is the difference between a
-                    // five-minute diagnosis and an afternoon.
-                    if (process.env.NODE_ENV !== 'production') {
-                        console.warn('[support realtime] token request failed:', res.status)
+                    // 401 logged out, 404 not ours to watch, 503 no Ably key
+                    // configured. None of these get better by asking again, and
+                    // retrying them forever is how a dev console ends up with a
+                    // thousand warnings. Transient failures still back off.
+                    if (res.status === 401 || res.status === 403 || res.status === 404 || res.status === 503) {
+                        warnOnce(`token refused (${res.status}); live updates off for this session`)
+                        return
                     }
+                    warnOnce(`token request failed (${res.status}); retrying`)
+                    scheduleRetry()
                     return
                 }
                 if (cancelled) return
-                const { token } = await res.json()
-                if (!token || cancelled) return
+                const { token, expires } = await res.json()
+                if (!token || cancelled) {
+                    warnOnce('token response had no token; retrying')
+                    scheduleRetry()
+                    return
+                }
 
                 const channels = [
                     ...(key ? key.split(',').map(supportChannel) : []),
                     ...(agent ? [supportQueueChannel()] : []),
                 ].join(',')
-                stream = new EventSource(
+                const es = new EventSource(
                     `https://realtime.ably.io/sse?v=1.2`
                     + `&channels=${encodeURIComponent(channels)}`
                     + `&accessToken=${encodeURIComponent(token)}`
                 )
+                stream = es
 
-                stream.onerror = () => {
-                    if (process.env.NODE_ENV !== 'production') {
-                        console.warn('[support realtime] stream error; EventSource will retry')
-                    }
+                // Renew BEFORE the credential dies. The token is good for an
+                // hour; without this the stream went silently dead at the hour
+                // mark and only a page reload brought it back, because the
+                // token was fetched once and never again.
+                if (typeof expires === 'number') {
+                    const lead = 60_000
+                    const delay = Math.max(30_000, expires - Date.now() - lead)
+                    renewTimer = setTimeout(() => { void connect() }, delay)
                 }
 
-                stream.onmessage = (ev: MessageEvent) => {
+                es.onopen = () => {
+                    attempt = 0
+                    reportedDown = false
+                }
+
+                es.onerror = () => {
+                    // EventSource reconnects on its own, but it reuses the token
+                    // it was constructed with — so once that token has expired
+                    // its retries can never succeed. Take the socket down and
+                    // come back with a fresh one.
+                    if (cancelled || stream !== es) return
+                    warnOnce('stream dropped; reconnecting with a fresh token')
+                    closeStream()
+                    scheduleRetry()
+                }
+
+                es.onmessage = (ev: MessageEvent) => {
                     try {
                         const envelope = JSON.parse(ev.data)
                         // Ably SSE wraps the message; `data` is the published
@@ -122,12 +187,17 @@ export function useSupportStream(
                 }
             } catch {
                 /* advisory transport: the thread refetches on open */
+                warnOnce('token request threw; retrying')
+                scheduleRetry()
             }
-        })()
+        }
+
+        void connect()
 
         return () => {
             cancelled = true
-            try { stream?.close() } catch { /* noop */ }
+            clearTimers()
+            closeStream()
         }
         // `ids` is derived from `key`, so `key` alone decides when to reconnect.
         // eslint-disable-next-line react-hooks/exhaustive-deps

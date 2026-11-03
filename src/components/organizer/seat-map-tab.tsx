@@ -32,7 +32,7 @@ const CanvasBuilder = dynamic(
     {
         ssr: false,
         loading: () => (
-            <div className="flex-1 flex items-center justify-center bg-slate-950 rounded-xl min-h-[600px]">
+            <div className="flex-1 flex items-center justify-center bg-slate-950 rounded-xl min-h-[520px]">
                 <div className="text-center">
                     <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto mb-2" />
                     <p className="text-slate-400 text-sm">Loading canvas...</p>
@@ -588,7 +588,12 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                     </div>
                 </div>
 
-                <div className="h-[calc(100vh-200px)] min-h-[700px]">
+                {/* min-h was 700px against a slot of calc(100vh-200px). On a
+                    laptop that calc is around 600px, so the minimum forced the
+                    editor 100px taller than the space it had and pushed its own
+                    bottom row — Save included — below the fold. 520px is still
+                    a comfortable editor and stops fighting the viewport. */}
+                <div className="h-[calc(100vh-200px)] min-h-[520px]">
                     <CanvasBuilder
                         key={builderKey}
                         initialData={canvasData}

@@ -13,6 +13,15 @@ import type Konva from 'konva'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import { useCanvasState } from './canvas-state'
 import { CanvasToolbar } from './canvas-toolbar'
+import { ContextBar } from './context-bar'
+import { snapDrag } from '@/lib/seat-map/snap'
+import { sectionBounds, rotateSection, scaleSection } from '@/lib/seat-map/transform'
+import {
+  FURNITURE,
+  findPiece,
+  createFurnitureSection,
+  createDecorShape,
+} from './furniture'
 import { CanvasProperties } from './canvas-properties'
 import type { CanvasData, SectionData, SeatData, BackgroundShape, SeatShape, TierInfo } from './types'
 import { SEAT_COLORS, resolveSeatTier } from './types'
@@ -265,6 +274,7 @@ const SectionGroup = memo(function SectionGroup({
   onClick,
   selectedSeatId,
   selectedSeatIds,
+  onDragMove,
   onSeatClick,
   onSeatDblClick,
   onSeatDragStart,
@@ -283,6 +293,9 @@ const SectionGroup = memo(function SectionGroup({
   isSelected: boolean
   draggable: boolean
   onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void
+  /** Fires continuously while the frame is dragged, so a section can be
+   *  snapped as it moves rather than jumping when it is dropped. */
+  onDragMove?: (e: Konva.KonvaEventObject<DragEvent>) => void
   onClick: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void
   selectedSeatId: string | null
   selectedSeatIds: string[]
@@ -309,6 +322,7 @@ const SectionGroup = memo(function SectionGroup({
     <Group
       draggable={draggable}
       onDragEnd={onDragEnd}
+      onDragMove={onDragMove}
       onClick={onClick}
       onTap={onClick}
       name="section-group"
@@ -354,7 +368,11 @@ const SectionGroup = memo(function SectionGroup({
             onClick={onSeatClick ? (e) => onSeatClick(seat.id, e) : undefined}
             onDblClick={onSeatDblClick ? (e) => onSeatDblClick(seat.id, e) : undefined}
             radius={seatRadius}
-            shape={seatShape}
+            // Section override wins over the map-wide default, matching the
+            // resolution order in the buyer's picker. If these two disagree the
+            // builder becomes a liar about what buyers will see, which is worse
+            // than not having the feature.
+            shape={section.seatShape ?? seatShape}
             tierColor={resolvedTier ? tierColorMap?.get(resolvedTier) : undefined}
             draggable={seatsDraggable}
             onDragStart={onSeatDragStart ? (node) => onSeatDragStart(seat.id, node) : undefined}
@@ -508,6 +526,89 @@ export function CanvasBuilder({
   const seatClipboardRef = useRef<{ sectionId: string; seat: SeatData }[]>([])
   // Live group-drag: the dragged seat's start + the other selected seats' nodes
   const dragGroupRef = useRef<{ startX: number; startY: number; others: { node: Konva.Node; x: number; y: number }[] } | null>(null)
+  /**
+   * Live state for a drag of the rotate handle.
+   *
+   * `original` is captured once at mousedown and every frame rotates THAT by the
+   * total angle so far. Rotating the previous frame's result instead would drift:
+   * a section turns about its bounding-box centre, and for an asymmetric piece
+   * like a U booth that centre moves as the box changes shape, so an incremental
+   * spin would slowly walk the booth across the map.
+   */
+  const rotateDragRef = useRef<{
+    sectionId: string
+    original: SectionData
+    origin: { x: number; y: number }
+    startAngle: number
+    committed: boolean
+  } | null>(null)
+
+  /** True once the current vertex drag has pushed its undo entry. One entry per
+   *  gesture, taken on the first move while the shape is still untouched. */
+  const vertexDragCommittedRef = useRef(false)
+
+  /**
+   * Baseline for a drag of a row's start/end/curve handle.
+   *
+   * The three reference points are captured ONCE at mousedown. Recomputing them
+   * from the live path each frame — which is what the old commit-on-release code
+   * did, harmlessly, because it only ever ran once — would feed each frame's
+   * result back in as the next frame's baseline, and a dragged arc would
+   * progressively deform instead of simply following the cursor.
+   */
+  /**
+   * Baseline for a drag of a furniture box handle. Captured once, for the same
+   * reason the rotate handle captures its own: scaling the previous frame's
+   * result compounds the factor, so a slow drag would shrink a booth to nothing
+   * while a fast one barely moved it.
+   */
+  const scaleDragRef = useRef<{
+    sectionId: string
+    original: SectionData
+    /** The corner being dragged, and the fixed corner opposite it. */
+    anchor: { x: number; y: number }
+    startW: number
+    startH: number
+    committed: boolean
+  } | null>(null)
+
+  const rowDragRef = useRef<{
+    rowId: string
+    s0: { x: number; y: number }
+    e0: { x: number; y: number }
+    m0: { x: number; y: number }
+    committed: boolean
+  } | null>(null)
+
+  // Furniture is a fixed shape you move, turn and resize whole. Its vertex
+  // handles are hidden unless this is on — a C booth is 42 points, and 42
+  // handles bury the piece they are meant to edit.
+  const [editPoints, setEditPoints] = useState(false)
+  // Details panel: closed by default. The bar carries the controls people reach
+  // for constantly; this holds the rest, and keeping it permanently open is
+  // what cost the map 320px and made the column scroll.
+  const [panelOpen, setPanelOpen] = useState(false)
+
+  /**
+   * How far the section being dragged has moved so far.
+   *
+   * The handles — vertices, box corners, the rotate knob — are drawn at the
+   * Layer level, AFTER the sections, so they sit on top and win the hit test.
+   * That also means Konva's native drag of the section's own group does not
+   * move them: they are positioned from polygonPoints, which do not change
+   * until the drag is released. So the shape slid away and its handles stayed
+   * behind until you let go.
+   *
+   * Rather than rewrite the points on every frame — which would double the
+   * movement, since the group node is already displaced by the same amount —
+   * the handles simply borrow the group's offset while the drag is running.
+   * Purely visual, and it ends the moment the real points are committed.
+   */
+  const [dragOffset, setDragOffset] = useState<{ id: string; dx: number; dy: number } | null>(null)
+  const selectedSectionId = state.selectedIds.length === 1 ? state.selectedIds[0] : null
+  // Per-piece, not sticky: switching selection puts point editing away again.
+  useEffect(() => { setEditPoints(false) }, [selectedSectionId])
+
   // Middle-mouse panning (works regardless of the active tool)
   const middlePanRef = useRef<{ startX: number; startY: number; offX: number; offY: number } | null>(null)
   /** Set when a marquee drag just finished, to swallow the `click` the browser
@@ -708,6 +809,9 @@ export function CanvasBuilder({
         case 'r':
           dispatch({ type: 'SET_TOOL', tool: 'draw-rect' })
           break
+        case 't':
+          dispatch({ type: 'SET_TOOL', tool: 'draw-table' })
+          break
         case 'd':
           dispatch({ type: 'SET_TOOL', tool: 'draw-seat' })
           break
@@ -879,6 +983,18 @@ export function CanvasBuilder({
         dispatch({ type: 'SET_IS_DRAWING', isDrawing: true })
       }
 
+      // Table tool: arm anywhere, INCLUDING on top of an uploaded floor plan or
+      // an existing zone — tracing a venue's own plan is the main way clubs lay
+      // their tables out, and a background image is a Konva node, not the stage,
+      // so the `e.target === stage` guard above would silently swallow every
+      // click that landed on the plan. Nothing is draggable while this tool is
+      // active (every draggable above is gated on 'select'), so arming broadly
+      // cannot start a drag of something else.
+      if (state.tool === 'draw-table') {
+        dispatch({ type: 'SET_DRAWING_POINTS', points: [x, y] })
+        dispatch({ type: 'SET_IS_DRAWING', isDrawing: true })
+      }
+
       // Seat tool: record start position for potential drag
       if (state.tool === 'draw-seat' && state.selectedIds.length > 0) {
         dispatch({ type: 'SET_DRAG_SEAT_START', point: { x, y } })
@@ -901,6 +1017,11 @@ export function CanvasBuilder({
     // toggle tools (which changes state.tool and rebuilds the callback).
     [readOnly, state.tool, state.panOffset, state.selectedIds, dispatch, screenToCanvas]
   )
+
+  // Which furniture piece the table tool drops. Deliberately component state,
+  // not canvas state: it is a tool setting, so it must not enter undo history
+  // or get serialised into canvas_data.
+  const [furnitureId, setFurnitureId] = useState<string>('table-round')
 
   // ─── Mouse Up (finish rectangle drag) ───────────────────────────────
   const handleMouseUp = useCallback(
@@ -1031,6 +1152,62 @@ export function CanvasBuilder({
         return
       }
 
+      // ── Table tool: one gesture = one piece of furniture ──────────────
+      // A click drops the selected piece at its natural size; a drag sizes it.
+      // A sellable piece becomes a section carrying exactly ONE seat plus a pax
+      // count, which is what makes the buyer's picker treat it as a single unit
+      // (isUnitSection in seat-map-picker.tsx: unit_capacity > 0 && 1 seat).
+      // A decor piece becomes a background shape and is never sold.
+      if (state.tool === 'draw-table' && state.isDrawing && state.drawingPoints.length >= 2) {
+        const pointer = stage.getPointerPosition()
+        if (pointer) {
+          const piece = findPiece(furnitureId) ?? FURNITURE[0]
+          const { x, y } = screenToCanvas(pointer)
+          const [x1, y1] = state.drawingPoints
+          const dragW = Math.abs(x - x1)
+          const dragH = Math.abs(y - y1)
+
+          // Below the threshold this was a click, not a drag: centre the piece
+          // at its natural size on the point, so one click is genuinely enough.
+          const isDrag = dragW > TABLE_MIN_SIZE || dragH > TABLE_MIN_SIZE
+          const w = isDrag ? Math.max(dragW, TABLE_MIN_SIZE) : piece.w
+          const h = isDrag ? Math.max(dragH, TABLE_MIN_SIZE) : piece.h
+          const minX = isDrag ? Math.min(x1, x) : x1 - w / 2
+          const minY = isDrag ? Math.min(y1, y) : y1 - h / 2
+
+          if (piece.kind === 'decor') {
+            const shape = createDecorShape(piece, minX, minY, { w, h })
+            // A stage is NOT decoration. On every save, sync-live reads the
+            // stage position and re-derives which row is "front" for
+            // best-available seating. Two of them means that answer depends on
+            // which one findStage happens to hit first, which is nobody's
+            // intent — so placing a stage demotes any previous one. Clearing
+            // `role` leaves the old shape on the map, just no longer load
+            // bearing.
+            if (shape.role === 'stage') {
+              for (const existing of state.backgroundShapes) {
+                if (existing.role === 'stage') {
+                  dispatch({ type: 'UPDATE_SHAPE', id: existing.id, updates: { role: null } })
+                }
+              }
+            }
+            dispatchWithHistory({ type: 'ADD_SHAPE', shape })
+            dispatch({ type: 'SELECT', ids: [shape.id] })
+          } else {
+            const newSection = createFurnitureSection(piece, minX, minY, state.sections, { w, h })
+            dispatchWithHistory({ type: 'ADD_SECTION', section: newSection })
+            dispatch({ type: 'SELECT', ids: [newSection.id] })
+          }
+          // The tool STAYS armed. A club lays out twenty-five tables in a
+          // sitting, and dropping back to Select after each one would double
+          // the clicks. The piece just dropped is selected, so the properties
+          // panel is live on it either way; Esc or V leaves the tool.
+        }
+        dispatch({ type: 'SET_DRAWING_POINTS', points: [] })
+        dispatch({ type: 'SET_IS_DRAWING', isDrawing: false })
+        return
+      }
+
       // Finish rectangle draw
       if (
         state.tool === 'draw-rect' &&
@@ -1059,7 +1236,10 @@ export function CanvasBuilder({
         dispatch({ type: 'SET_IS_DRAWING', isDrawing: false })
       }
     },
-    [readOnly, state, dispatch, dispatchWithHistory, screenToCanvas]
+    // furnitureId is read in the table-tool branch above. It MUST be a dep:
+    // without it the handler closes over the piece that was selected when it
+    // was built, and the palette silently stops changing what gets dropped.
+    [readOnly, state, dispatch, dispatchWithHistory, screenToCanvas, furnitureId]
   )
 
   // ─── Stage Click (polygon + select + seat drop) ──────────────────────
@@ -1252,8 +1432,206 @@ export function CanvasBuilder({
     [readOnly, state.tool, state.selectedSeatIds, state.sections, dispatchWithHistory]
   )
 
+  // Snapping happens DURING the drag, by moving the Konva node itself, so the
+  // piece visibly sticks to its neighbour. Snapping only on drop would make the
+  // map jump out from under the cursor at the moment of release.
+  const handleSectionDragMove = useCallback(
+    (sectionId: string, e: Konva.KonvaEventObject<DragEvent>) => {
+      if (readOnly || state.tool !== 'select') return
+      if (!e.target.hasName('section-group')) return
+
+      const section = state.sections.find((s) => s.id === sectionId)
+      if (!section) return
+
+      // Hold Alt to place freely — the escape hatch for the one piece that is
+      // deliberately off the line. Snapping is skipped, but the handles must
+      // still follow, so this no longer returns early.
+      const free = !!(e.evt as unknown as { altKey?: boolean })?.altKey
+      const others = state.sections.filter((s) => s.id !== sectionId)
+
+      if (!free && others.length > 0) {
+        const snapped = snapDrag(
+          section,
+          e.target.x(),
+          e.target.y(),
+          others,
+          SNAP_TOLERANCE_PX / Math.max(state.zoom, 0.01),
+        )
+        e.target.position({ x: snapped.dx, y: snapped.dy })
+      }
+
+      // Read the position back AFTER any snap, so the handles land where the
+      // section actually went rather than where the cursor is.
+      setDragOffset({ id: sectionId, dx: e.target.x(), dy: e.target.y() })
+    },
+    [readOnly, state.tool, state.sections, state.zoom]
+  )
+
+  // ─── Rotate handle ──────────────────────────────────────────────────
+  /** Angle of a point about an origin, in degrees. */
+  const angleFrom = useCallback((origin: { x: number; y: number }, x: number, y: number) =>
+    (Math.atan2(y - origin.y, x - origin.x) * 180) / Math.PI, [])
+
+  const handleRotateStart = useCallback(
+    (section: SectionData, e: Konva.KonvaEventObject<DragEvent>) => {
+      e.cancelBubble = true
+      const stage = stageRef.current
+      const pointer = stage?.getPointerPosition()
+      if (!pointer) return
+      const { x, y } = screenToCanvas(pointer)
+      const b = sectionBounds(section)
+      const origin = { x: b.cx, y: b.cy }
+      rotateDragRef.current = {
+        sectionId: section.id,
+        original: JSON.parse(JSON.stringify(section)) as SectionData,
+        origin,
+        startAngle: angleFrom(origin, x, y),
+        committed: false,
+      }
+    },
+    [screenToCanvas, angleFrom]
+  )
+
+  const handleRotateMove = useCallback(
+    (e: Konva.KonvaEventObject<DragEvent>) => {
+      e.cancelBubble = true
+      const drag = rotateDragRef.current
+      const stage = stageRef.current
+      const pointer = stage?.getPointerPosition()
+      if (!drag || !pointer) return
+      const { x, y } = screenToCanvas(pointer)
+
+      let delta = angleFrom(drag.origin, x, y) - drag.startAngle
+      // Shift clicks the turn to 15° steps, for squaring a booth to a wall.
+      if ((e.evt as unknown as { shiftKey?: boolean })?.shiftKey) {
+        delta = Math.round(delta / 15) * 15
+      }
+
+      const rotated = rotateSection(drag.original, delta, drag.origin)
+      const updates = {
+        polygonPoints: rotated.polygonPoints,
+        seats: rotated.seats,
+        rows: rotated.rows,
+        arcConfig: rotated.arcConfig,
+      }
+      // One undo entry for the whole gesture: the first frame goes through
+      // history while the state is still the pre-drag shape, every frame after
+      // it does not. Undo therefore lands back where the drag began, not one
+      // mouse-move earlier.
+      if (!drag.committed) {
+        drag.committed = true
+        dispatchWithHistory({ type: 'UPDATE_SECTION', id: drag.sectionId, updates })
+      } else {
+        dispatch({ type: 'UPDATE_SECTION', id: drag.sectionId, updates })
+      }
+
+      // Keep the knob under the cursor's direction rather than wherever Konva's
+      // own drag put it.
+      const r = Math.hypot(x - drag.origin.x, y - drag.origin.y)
+      const a = (angleFrom(drag.origin, x, y) * Math.PI) / 180
+      e.target.position({ x: drag.origin.x + Math.cos(a) * r, y: drag.origin.y + Math.sin(a) * r })
+    },
+    [screenToCanvas, angleFrom, dispatch, dispatchWithHistory]
+  )
+
+  const handleRotateEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true
+    rotateDragRef.current = null
+  }, [])
+
+  /** ±10% nudge. Shares scaleSection with the box handles, so a nudge and a
+   *  drag cannot disagree about what resizing a piece means. */
+  const handleScaleSection = useCallback((id: string, factor: number) => {
+    const section = state.sections.find((s) => s.id === id)
+    if (!section) return
+    const c = getSectionCenter(section.polygonPoints)
+    const scaled = scaleSection(section, factor, factor, c)
+    dispatchWithHistory({
+      type: 'UPDATE_SECTION',
+      id,
+      updates: {
+        polygonPoints: scaled.polygonPoints,
+        seats: scaled.seats,
+        arcConfig: scaled.arcConfig,
+        rows: scaled.rows,
+      },
+    })
+  }, [state.sections, dispatchWithHistory])
+
+  // ─── Box handles (furniture resize) ─────────────────────────────────
+  const handleScaleStart = useCallback(
+    (section: SectionData, corner: 'tl' | 'tr' | 'bl' | 'br', e: Konva.KonvaEventObject<DragEvent>) => {
+      e.cancelBubble = true
+      const b = sectionBounds(section)
+      // Scale away from the corner diagonally opposite the one you grabbed, so
+      // the two edges you are not touching stay exactly where they are.
+      const anchor = {
+        x: corner === 'tl' || corner === 'bl' ? b.maxX : b.minX,
+        y: corner === 'tl' || corner === 'tr' ? b.maxY : b.minY,
+      }
+      scaleDragRef.current = {
+        sectionId: section.id,
+        original: JSON.parse(JSON.stringify(section)) as SectionData,
+        anchor,
+        startW: b.w,
+        startH: b.h,
+        committed: false,
+      }
+    },
+    []
+  )
+
+  const handleScaleMove = useCallback(
+    (e: Konva.KonvaEventObject<DragEvent>) => {
+      e.cancelBubble = true
+      const drag = scaleDragRef.current
+      const stage = stageRef.current
+      const pointer = stage?.getPointerPosition()
+      if (!drag || !pointer) return
+      const { x, y } = screenToCanvas(pointer)
+
+      // A degenerate piece can never be grown back, so never let an axis reach
+      // zero; MIN_SCALE also keeps a stray flick from collapsing a booth.
+      const rawSx = drag.startW > 0 ? Math.abs(x - drag.anchor.x) / drag.startW : 1
+      const rawSy = drag.startH > 0 ? Math.abs(y - drag.anchor.y) / drag.startH : 1
+      let sx = Math.max(MIN_SCALE, rawSx)
+      let sy = Math.max(MIN_SCALE, rawSy)
+      // Shift keeps the proportions, which is what you want on a booth whose
+      // curve would otherwise go oval.
+      if ((e.evt as unknown as { shiftKey?: boolean })?.shiftKey) {
+        const u = Math.max(sx, sy)
+        sx = u; sy = u
+      }
+
+      const scaled = scaleSection(drag.original, sx, sy, drag.anchor)
+      const updates = {
+        polygonPoints: scaled.polygonPoints,
+        seats: scaled.seats,
+        rows: scaled.rows,
+        arcConfig: scaled.arcConfig,
+      }
+      if (!drag.committed) {
+        drag.committed = true
+        dispatchWithHistory({ type: 'UPDATE_SECTION', id: drag.sectionId, updates })
+      } else {
+        dispatch({ type: 'UPDATE_SECTION', id: drag.sectionId, updates })
+      }
+    },
+    [screenToCanvas, dispatch, dispatchWithHistory]
+  )
+
+  const handleScaleEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true
+    scaleDragRef.current = null
+  }, [])
+
   const handleSectionDragEnd = useCallback(
     (sectionId: string, e: Konva.KonvaEventObject<DragEvent>) => {
+      // Cleared FIRST, before any guard below can return early. A drag that
+      // ends through one of those — tool switched mid-drag, released over
+      // something unexpected — would otherwise leave the borrowed offset set,
+      // and the handles would sit one drag's distance from the piece for good.
+      setDragOffset(null)
       if (readOnly || state.tool !== 'select') return
       // Only handle drags of the section frame itself. A seat drag that bubbled
       // up here would otherwise be misread as a section move (e.target is the
@@ -1458,6 +1836,18 @@ export function CanvasBuilder({
     [stageSize, state.panOffset, state.zoom, dispatchWithHistory, dispatch]
   )
 
+  /**
+   * The offset every handle adds while its section is being dragged.
+   *
+   * Zero in every other case, including while a DIFFERENT section is dragged,
+   * so a stale offset can never shift the handles of a piece that is standing
+   * still.
+   */
+  const [handleDX, handleDY] = useMemo<[number, number]>(() => {
+    if (!dragOffset || !selectedSection || dragOffset.id !== selectedSection.id) return [0, 0]
+    return [dragOffset.dx, dragOffset.dy]
+  }, [dragOffset, selectedSection])
+
   // ─── Tier colors ────────────────────────────────────────────────────
   const tierColorMap = useMemo(
     () => new Map(tiers.map((t) => [t.id, t.color])),
@@ -1466,7 +1856,7 @@ export function CanvasBuilder({
 
   // ─── Live drawing preview ───────────────────────────────────────────
   const rectPreview = useMemo(() => {
-    if ((state.tool !== 'draw-rect' && state.tool !== 'select') || !state.isDrawing || !mousePos) return null
+    if ((state.tool !== 'draw-rect' && state.tool !== 'draw-table' && state.tool !== 'select') || !state.isDrawing || !mousePos) return null
     if (state.drawingPoints.length < 2) return null
 
     const [x1, y1] = state.drawingPoints
@@ -1490,6 +1880,7 @@ export function CanvasBuilder({
     switch (state.tool) {
       case 'draw-polygon':
       case 'draw-rect':
+      case 'draw-table':
         return 'crosshair'
       case 'draw-seat':
         return 'copy'
@@ -1515,6 +1906,13 @@ export function CanvasBuilder({
       if (!state.isDrawing) return 'Click and drag to draw a rectangle section'
       return 'Release to finish'
     }
+    if (state.tool === 'draw-table') {
+      const piece = findPiece(furnitureId) ?? FURNITURE[0]
+      if (state.isDrawing) return `Release to place ${piece.name}`
+      return piece.kind === 'decor'
+        ? `${piece.name} • click to place • drag to size • not sold`
+        : `${piece.name} • click to place • drag to size • admits ${piece.pax}, set its price category in the panel`
+    }
     if (state.tool === 'draw-seat') {
       if (!state.selectedIds.length) return '⚠ Select a section first, then click to drop seats'
       return `Row ${state.dropRow} Seat ${state.dropSeatNumber} • Click to place or drag to place a row`
@@ -1529,10 +1927,37 @@ export function CanvasBuilder({
       return 'Drag to move • Delete to remove section • Click seats to select, double-click to edit one'
     }
     return null
-  }, [state.tool, state.drawingPoints, state.isDrawing, state.selectedIds, state.selectedSeatId, state.dropRow, state.dropSeatNumber])
+    // furnitureId: the hint names the armed piece, so it must recompute when the
+    // palette changes. selectedSeatIds was already read above but missing here,
+    // which left the multi-select hint stale.
+  }, [state.tool, state.drawingPoints, state.isDrawing, state.selectedIds, state.selectedSeatId, state.selectedSeatIds, state.dropRow, state.dropSeatNumber, furnitureId])
 
   return (
-    <div className={`flex bg-slate-950 overflow-hidden border border-slate-800 ${isFullscreen ? 'fixed inset-0 z-[100] rounded-none' : 'h-full w-full rounded-xl'}`}>
+    <div className={`flex flex-col bg-slate-950 overflow-hidden border border-slate-800 ${isFullscreen ? 'fixed inset-0 z-[100] rounded-none' : 'h-full w-full rounded-xl'}`}>
+      {/* Contextual bar. Fixed zones, so what you can do with the selected piece
+          is always in the same place, instead of somewhere in a column that
+          rebuilt itself the moment you clicked. */}
+      {!readOnly && (
+        <ContextBar
+          selectedSection={selectedSection ?? null}
+          selectedSections={selectedSections}
+          selectedShape={selectedShape ?? null}
+          tiers={tiers}
+          onUpdateSection={(id, updates) => dispatchWithHistory({ type: 'UPDATE_SECTION', id, updates })}
+          onUpdateShape={(id, updates) => dispatchWithHistory({ type: 'UPDATE_SHAPE', id, updates })}
+          onRotateSections={(ids, degrees) => dispatchWithHistory({ type: 'ROTATE_SECTIONS', ids, degrees })}
+          onAlignSections={(ids, mode) => dispatchWithHistory({ type: 'ALIGN_SECTIONS', ids, mode })}
+          onDuplicateSection={(id, mirror) => dispatchWithHistory({ type: 'DUPLICATE_SECTION', id, mirror })}
+          onScaleSection={handleScaleSection}
+          onDeleteSection={(id) => dispatchWithHistory({ type: 'DELETE_SECTION', id })}
+          onDeleteSections={(ids) => dispatchWithHistory({ type: 'DELETE_SECTIONS', ids })}
+          onDeleteShape={(id) => dispatchWithHistory({ type: 'DELETE_SHAPE', id })}
+          panelOpen={panelOpen}
+          onTogglePanel={() => setPanelOpen((v) => !v)}
+        />
+      )}
+
+      <div className="flex flex-1 min-h-0">
       {/* Left Toolbar */}
       {!readOnly && (
         <CanvasToolbar
@@ -1547,6 +1972,13 @@ export function CanvasBuilder({
           zoom={state.zoom}
           onZoomChange={handleToolbarZoom}
           onUploadImage={handleUploadClick}
+          furnitureId={furnitureId}
+          onPickFurniture={(id) => {
+            // Choosing a piece IS choosing the tool. The sofa tool used to be a
+            // mode you had to find before any furniture appeared at all.
+            setFurnitureId(id)
+            dispatch({ type: 'SET_TOOL', tool: 'draw-table' })
+          }}
         />
       )}
 
@@ -1609,6 +2041,7 @@ export function CanvasBuilder({
                 isSelected={state.selectedIds.includes(section.id)}
                 draggable={!readOnly && state.tool === 'select' && !section.locked}
                 onDragEnd={(e) => handleSectionDragEnd(section.id, e)}
+                onDragMove={(e) => handleSectionDragMove(section.id, e)}
                 onClick={(e) => handleSectionClick(section.id, e)}
                 selectedSeatId={state.selectedSeatId}
                 selectedSeatIds={state.selectedSeatIds}
@@ -1634,21 +2067,47 @@ export function CanvasBuilder({
             ))}
             {/* Row editing handles for the selected row: the path itself, both
                 ends (drag to move/stretch) and a curve handle at the middle
-                (drag to bend). Committed on release like the vertex handles. */}
+                (drag to bend). Follows the cursor live, like the vertex handles,
+                off a baseline captured when the drag began. */}
             {!readOnly && state.tool === 'select' && selectedSection && state.selectedRowId && (() => {
               const row = selectedSection.rows?.find((r) => r.id === state.selectedRowId)
               if (!row) return null
               const samples = Array.from({ length: 25 }, (_, i) => pointOnPath(row.path, i / 24))
               const start = samples[0], end = samples[24], mid = samples[12]
               const hr = 7 / state.zoom
+              const isLine = row.path.kind === 'line'
+              const beginDrag = () => {
+                rowDragRef.current = {
+                  rowId: row.id,
+                  s0: { x: start.x, y: start.y },
+                  e0: { x: end.x, y: end.y },
+                  m0: { x: mid.x, y: mid.y },
+                  committed: false,
+                }
+              }
               const commit = (kind: 'start' | 'end' | 'curve', x: number, y: number) => {
-                const s0 = { x: start.x, y: start.y }, e0 = { x: end.x, y: end.y }, m0 = { x: mid.x, y: mid.y }
+                // Fall back to the live points if a drag somehow started without
+                // us (a synthetic event, a lost mousedown) rather than no-op.
+                const base = rowDragRef.current?.rowId === row.id
+                  ? rowDragRef.current
+                  : { s0: { x: start.x, y: start.y }, e0: { x: end.x, y: end.y }, m0: { x: mid.x, y: mid.y }, committed: false }
+                const { s0, e0, m0 } = base
                 const path = kind === 'curve'
                   ? arcThrough(s0, { x, y }, e0)
                   : kind === 'start'
-                    ? (row.path.kind === 'line' ? { kind: 'line' as const, x1: x, y1: y, x2: e0.x, y2: e0.y } : arcThrough({ x, y }, m0, e0))
-                    : (row.path.kind === 'line' ? { kind: 'line' as const, x1: s0.x, y1: s0.y, x2: x, y2: y } : arcThrough(s0, m0, { x, y }))
-                dispatchWithHistory({ type: 'UPDATE_ROW', sectionId: selectedSection.id, rowId: row.id, updates: { path } })
+                    ? (isLine ? { kind: 'line' as const, x1: x, y1: y, x2: e0.x, y2: e0.y } : arcThrough({ x, y }, m0, e0))
+                    : (isLine ? { kind: 'line' as const, x1: s0.x, y1: s0.y, x2: x, y2: y } : arcThrough(s0, m0, { x, y }))
+                const payload = { type: 'UPDATE_ROW' as const, sectionId: selectedSection.id, rowId: row.id, updates: { path } }
+                // One undo entry per gesture, taken on the first frame while the
+                // row is still the one you grabbed.
+                if (rowDragRef.current && !rowDragRef.current.committed) {
+                  rowDragRef.current.committed = true
+                  dispatchWithHistory(payload)
+                } else if (rowDragRef.current) {
+                  dispatch(payload)
+                } else {
+                  dispatchWithHistory(payload)
+                }
               }
               return (
                 <Group key={`row-handles-${row.id}`}>
@@ -1670,9 +2129,15 @@ export function CanvasBuilder({
                       stroke="#4f46e5"
                       strokeWidth={2 / state.zoom}
                       draggable
-                      onDragStart={(e) => { e.cancelBubble = true }}
-                      onDragMove={(e) => { e.cancelBubble = true }}
-                      onDragEnd={(e) => { e.cancelBubble = true; commit(kind, e.target.x(), e.target.y()) }}
+                      onDragStart={(e) => { e.cancelBubble = true; beginDrag() }}
+                      // Live, so the row redraws under the handle instead of
+                      // snapping into place once you let go.
+                      onDragMove={(e) => { e.cancelBubble = true; commit(kind, e.target.x(), e.target.y()) }}
+                      onDragEnd={(e) => {
+                        e.cancelBubble = true
+                        commit(kind, e.target.x(), e.target.y())
+                        rowDragRef.current = null
+                      }}
                       onMouseEnter={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = kind === 'curve' ? 'ns-resize' : 'move' }}
                       onMouseLeave={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = '' }}
                       perfectDrawEnabled={false}
@@ -1681,34 +2146,167 @@ export function CanvasBuilder({
                 </Group>
               )
             })()}
+            {/* Live offset borrowed from the group being dragged. Zero unless
+                this exact section is mid-drag, so nothing else is affected. */}
             {/* Vertex handles — reshape the selected section by dragging its
                 corners. Rendered AFTER sections so they sit on top and win the
-                hit test. Committed on release (state stays untouched during the
-                drag so undo restores the true pre-drag shape). */}
+                hit test. The outline follows the handle live; the undo entry is
+                taken on the first frame, while the shape is still the pre-drag
+                one, so one reshape is one undo step. */}
             {!readOnly && state.tool === 'select' && selectedSection && !selectedSection.locked && state.selectedSeatIds.length === 0 &&
+              // Furniture hides its vertices unless you ask for them. A booth is
+              // a fixed shape; a hand-drawn section is not, and reshaping those
+              // corner by corner is the whole point, so they always show.
+              ((selectedSection.unitCapacity ?? 0) === 0 || editPoints) &&
               Array.from({ length: selectedSection.polygonPoints.length / 2 }).map((_, i) => (
                 <Circle
-                  key={`vertex-${selectedSection.id}-${i}-${selectedSection.polygonPoints[i * 2]}-${selectedSection.polygonPoints[i * 2 + 1]}`}
-                  x={selectedSection.polygonPoints[i * 2]}
-                  y={selectedSection.polygonPoints[i * 2 + 1]}
+                  // Key must NOT contain the point's coordinates. It used to,
+                  // which was harmless while the shape only changed on release —
+                  // but now that the outline follows the drag, a coordinate in
+                  // the key changes on every frame, React remounts the handle
+                  // mid-gesture, and the drag dies under the cursor.
+                  key={`vertex-${selectedSection.id}-${i}`}
+                  x={selectedSection.polygonPoints[i * 2] + handleDX}
+                  y={selectedSection.polygonPoints[i * 2 + 1] + handleDY}
                   radius={6 / state.zoom}
                   fill="#ffffff"
                   stroke="#6366f1"
                   strokeWidth={2 / state.zoom}
                   draggable
-                  onDragStart={(e) => { e.cancelBubble = true }}
+                  onDragStart={(e) => {
+                    e.cancelBubble = true
+                    vertexDragCommittedRef.current = false
+                  }}
+                  onDragMove={(e) => {
+                    // The whole point of this handler: redraw the edge WITH the
+                    // handle. Without it Konva moves the dot and the outline sits
+                    // still until release, so the corner visibly lags the cursor.
+                    e.cancelBubble = true
+                    const pts = [...selectedSection.polygonPoints]
+                    pts[i * 2] = e.target.x() - handleDX
+                    pts[i * 2 + 1] = e.target.y() - handleDY
+                    const updates = { polygonPoints: pts }
+                    // First frame carries the undo entry, while the shape is
+                    // still the pre-drag one; the rest must not, or a single
+                    // reshape would leave one undo step per mouse-move.
+                    if (!vertexDragCommittedRef.current) {
+                      vertexDragCommittedRef.current = true
+                      dispatchWithHistory({ type: 'UPDATE_SECTION', id: selectedSection.id, updates })
+                    } else {
+                      dispatch({ type: 'UPDATE_SECTION', id: selectedSection.id, updates })
+                    }
+                  }}
                   onDragEnd={(e) => {
                     e.cancelBubble = true
                     const pts = [...selectedSection.polygonPoints]
-                    pts[i * 2] = e.target.x()
-                    pts[i * 2 + 1] = e.target.y()
-                    dispatchWithHistory({ type: 'UPDATE_SECTION', id: selectedSection.id, updates: { polygonPoints: pts } })
+                    pts[i * 2] = e.target.x() - handleDX
+                    pts[i * 2 + 1] = e.target.y() - handleDY
+                    const updates = { polygonPoints: pts }
+                    // A click with no movement fires start+end and no move at
+                    // all, so this still has to be able to take the undo entry.
+                    if (!vertexDragCommittedRef.current) {
+                      vertexDragCommittedRef.current = true
+                      dispatchWithHistory({ type: 'UPDATE_SECTION', id: selectedSection.id, updates })
+                    } else {
+                      dispatch({ type: 'UPDATE_SECTION', id: selectedSection.id, updates })
+                    }
                   }}
                   onMouseEnter={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = 'move' }}
                   onMouseLeave={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = '' }}
                   perfectDrawEnabled={false}
                 />
               ))}
+
+            {/* Box handles — resize a furniture piece by dragging a corner.
+                Furniture hides its vertices (a curved booth has dozens), which
+                left it with no way to be resized by hand at all; these are the
+                replacement. Hand-drawn sections keep their vertex handles and
+                do not get these, so no section ever shows both. */}
+            {!readOnly && state.tool === 'select' && selectedSection && !selectedSection.locked &&
+              state.selectedSeatIds.length === 0 && (selectedSection.unitCapacity ?? 0) > 0 && !editPoints && (() => {
+                const raw = sectionBounds(selectedSection)
+                const b = {
+                  minX: raw.minX + handleDX, maxX: raw.maxX + handleDX,
+                  minY: raw.minY + handleDY, maxY: raw.maxY + handleDY,
+                  cx: raw.cx + handleDX, cy: raw.cy + handleDY,
+                }
+                const hs = 6 / state.zoom
+                const corners: { key: 'tl' | 'tr' | 'bl' | 'br'; x: number; y: number; cursor: string }[] = [
+                  { key: 'tl', x: b.minX, y: b.minY, cursor: 'nwse-resize' },
+                  { key: 'tr', x: b.maxX, y: b.minY, cursor: 'nesw-resize' },
+                  { key: 'bl', x: b.minX, y: b.maxY, cursor: 'nesw-resize' },
+                  { key: 'br', x: b.maxX, y: b.maxY, cursor: 'nwse-resize' },
+                ]
+                return (
+                  <Group key={`box-${selectedSection.id}`}>
+                    <Line
+                      points={[b.minX, b.minY, b.maxX, b.minY, b.maxX, b.maxY, b.minX, b.maxY]}
+                      closed
+                      stroke="#6366f1"
+                      strokeWidth={1 / state.zoom}
+                      dash={[5 / state.zoom, 4 / state.zoom]}
+                      listening={false}
+                      perfectDrawEnabled={false}
+                    />
+                    {corners.map((c) => (
+                      <Rect
+                        key={c.key}
+                        x={c.x - hs}
+                        y={c.y - hs}
+                        width={hs * 2}
+                        height={hs * 2}
+                        fill="#ffffff"
+                        stroke="#6366f1"
+                        strokeWidth={2 / state.zoom}
+                        draggable
+                        onDragStart={(e) => handleScaleStart(selectedSection, c.key, e)}
+                        onDragMove={handleScaleMove}
+                        onDragEnd={handleScaleEnd}
+                        onMouseEnter={(e) => { const el = e.target.getStage()?.container(); if (el) el.style.cursor = c.cursor }}
+                        onMouseLeave={(e) => { const el = e.target.getStage()?.container(); if (el) el.style.cursor = '' }}
+                        perfectDrawEnabled={false}
+                      />
+                    ))}
+                  </Group>
+                )
+              })()}
+
+            {/* Rotate handle — one knob on a stalk above the selection. Drag to
+                spin the piece about its centre; hold Shift for 15° steps. */}
+            {!readOnly && state.tool === 'select' && selectedSection && !selectedSection.locked &&
+              state.selectedSeatIds.length === 0 && (() => {
+                const raw = sectionBounds(selectedSection)
+                const b = { cx: raw.cx + handleDX, minY: raw.minY + handleDY }
+                const gap = 30 / state.zoom
+                const hx = b.cx
+                const hy = b.minY - gap
+                return (
+                  <Group key={`rot-${selectedSection.id}`}>
+                    <Line
+                      points={[b.cx, b.minY, hx, hy]}
+                      stroke="#6366f1"
+                      strokeWidth={1.5 / state.zoom}
+                      listening={false}
+                      perfectDrawEnabled={false}
+                    />
+                    <Circle
+                      x={hx}
+                      y={hy}
+                      radius={7 / state.zoom}
+                      fill="#6366f1"
+                      stroke="#ffffff"
+                      strokeWidth={2 / state.zoom}
+                      draggable
+                      onDragStart={(e) => handleRotateStart(selectedSection, e)}
+                      onDragMove={handleRotateMove}
+                      onDragEnd={handleRotateEnd}
+                      onMouseEnter={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = 'grab' }}
+                      onMouseLeave={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = '' }}
+                      perfectDrawEnabled={false}
+                    />
+                  </Group>
+                )
+              })()}
           </Layer>
 
           {/* Drawing Preview Layer */}
@@ -1815,10 +2413,9 @@ export function CanvasBuilder({
           </Layer>
         </Stage>
 
-        {/* Zoom indicator */}
-        <div className="absolute bottom-4 left-4 bg-slate-800/80 backdrop-blur-xs text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 select-none">
-          {Math.round(state.zoom * 100)}%
-        </div>
+        {/* No zoom readout here. The sidebar's zoom control shows the same
+            number a few pixels away and clicking it resets to 100%, so this
+            badge was a second copy that could not be used. */}
 
         {/* Full-screen / large-screen toggle */}
         <button
@@ -1852,8 +2449,8 @@ export function CanvasBuilder({
         </div>
       </div>
 
-      {/* Right Properties Panel */}
-      {!readOnly && (
+      {/* Right Properties Panel — on demand, via Details in the bar */}
+      {!readOnly && panelOpen && (
         <CanvasProperties
           selectedRowId={state.selectedRowId}
           onSelectRow2={(rowId) => dispatch({ type: 'SELECT_ROW', rowId })}
@@ -1945,32 +2542,22 @@ export function CanvasBuilder({
           onDuplicateSection={(id, mirror) => {
             dispatchWithHistory({ type: 'DUPLICATE_SECTION', id, mirror })
           }}
-          onScaleSection={(id, factor) => {
-            const section = state.sections.find((s) => s.id === id)
-            if (!section) return
-            const c = getSectionCenter(section.polygonPoints)
-            const scalePt = (x: number, y: number) => ({ x: c.x + (x - c.x) * factor, y: c.y + (y - c.y) * factor })
-            const polygonPoints = section.polygonPoints.map((v, i) =>
-              i % 2 === 0 ? c.x + (v - c.x) * factor : c.y + (v - c.y) * factor
-            )
-            const seats = section.seats.map((seat) => ({ ...seat, ...scalePt(seat.x, seat.y) }))
-            const arcConfig = section.arcConfig
-              ? {
-                  ...section.arcConfig,
-                  ...(() => { const p = scalePt(section.arcConfig.cx, section.arcConfig.cy); return { cx: p.x, cy: p.y } })(),
-                  rInner: section.arcConfig.rInner * factor,
-                  rOuter: section.arcConfig.rOuter * factor,
-                }
-              : section.arcConfig
-            const rows = transformRows(section.rows, (p) => scalePt(p.x, p.y))
-            dispatchWithHistory({ type: 'UPDATE_SECTION', id, updates: { polygonPoints, seats, arcConfig, rows } })
+          editPoints={editPoints}
+          onToggleEditPoints={() => setEditPoints((v) => !v)}
+          onRotateSections={(ids, degrees) => {
+            dispatchWithHistory({ type: 'ROTATE_SECTIONS', ids, degrees })
           }}
+          onAlignSections={(ids, mode) => {
+            dispatchWithHistory({ type: 'ALIGN_SECTIONS', ids, mode })
+          }}
+          onScaleSection={handleScaleSection}
           seatRadius={state.seatRadius}
           seatShape={state.seatShape}
           onSetSeatRadius={(r) => dispatch({ type: 'SET_SEAT_RADIUS', radius: r })}
           onSetSeatShape={(s) => dispatch({ type: 'SET_SEAT_SHAPE', shape: s })}
         />
       )}
+      </div>
     </div>
   )
 }
@@ -1995,6 +2582,15 @@ function createEmptySection(points: number[], sectionsCount: number): SectionDat
     sortOrder: sectionsCount,
   }
 }
+
+/** Below this, a table-tool drag is treated as a click. Also the floor on a drag. */
+const TABLE_MIN_SIZE = 24
+
+/** How close, in SCREEN pixels, a piece must come before it snaps to another. */
+const SNAP_TOLERANCE_PX = 7
+
+/** Floor on a box-handle drag. A piece scaled to 0 has no size left to grab. */
+const MIN_SCALE = 0.05
 
 function getSectionCenter(points: number[]): { x: number; y: number } {
   let sumX = 0

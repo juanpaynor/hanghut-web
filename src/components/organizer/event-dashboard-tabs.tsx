@@ -26,6 +26,7 @@ import { RegistrationsManager } from '@/components/organizer/registrations-manag
 import { RegistrationsPage, AnswerStats } from '@/lib/organizer/registration-management-actions'
 import { type SubscriptionTierBasic, type ExistingDiscount } from '@/components/organizer/subscriber-discounts-section'
 import { formatInManila } from '@/lib/datetime'
+import type { EventEarnings } from '@/lib/organizer/event-earnings'
 
 interface EventDashboardTabsProps {
     partnerId: string
@@ -43,6 +44,8 @@ interface EventDashboardTabsProps {
         totalCapacity: number
         checkedInCount: number
         refundedAmount?: number
+        /** Net of platform + gateway fees. See lib/organizer/event-earnings. */
+        earnings?: EventEarnings
     }
     passFixedToCustomer: boolean
     passPercentageToCustomer: boolean

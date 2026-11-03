@@ -128,6 +128,23 @@ export async function syncLiveSeatMap(
     show_row_labels: section.showRowLabels !== false,
     is_active: section.isActive,
     sort_order: section.sortOrder,
+    // Phase 2. Both are CHECK-constrained in the database (capacity > 0, shape
+    // from a fixed vocabulary), and a rejected row fails the whole upsert --
+    // which would mean the organizer loses an entire save over one stray value.
+    // So normalise to NULL rather than trusting the canvas: an empty input, a 0,
+    // a negative, a non-integer or an unknown shape all mean "not set".
+    unit_capacity:
+      typeof section.unitCapacity === 'number' &&
+      Number.isFinite(section.unitCapacity) &&
+      section.unitCapacity > 0
+        ? Math.floor(section.unitCapacity)
+        : null,
+    seat_shape:
+      section.seatShape === 'circle' ||
+      section.seatShape === 'square' ||
+      section.seatShape === 'diamond'
+        ? section.seatShape
+        : null,
   }))
 
   if (sectionRecords.length > 0) {

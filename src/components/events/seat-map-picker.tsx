@@ -22,7 +22,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Stage, Layer, Line, Circle, Text, Rect, Ellipse, Group } from 'react-konva'
+import { Stage, Layer, Line, Circle, Text, Rect, Ellipse, Group, Image as KonvaImage } from 'react-konva'
 import type Konva from 'konva'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -80,6 +80,14 @@ interface MapSection {
     /** Row definitions (paths + labels) from the published map; empty on older maps → derived from seats. */
     rows?: RowData[]
     show_row_labels?: boolean
+    /**
+     * How many people one sold unit of this section admits — a club table, booth
+     * or box. Informational: availability still comes from the seat rows, so this
+     * never affects what can be bought. Null/absent on every ordinary section.
+     */
+    unit_capacity?: number | null
+    /** Per-section seat shape override; null/absent → inherit the map-wide shape. */
+    seat_shape?: string | null
 }
 
 interface MapBackgroundShape {
@@ -101,6 +109,9 @@ interface MapBackgroundShape {
     imageUrl?: string
     opacity?: number
     scale?: number
+    /** Images only. Opt-in: an image the organizer has not ticked stays a
+     *  tracing aid and is never drawn here. */
+    showToBuyer?: boolean
 }
 
 interface SeatMapData {
@@ -150,6 +161,35 @@ function isGASection(section: MapSection): boolean {
         || ((section.seat_count ?? section.seats.length) === 0 && !!section.tier_id)
 }
 
+/**
+ * A UNIT section: one thing you buy whole, which admits several people. A club
+ * table, a booth, a box, a VIP couch.
+ *
+ * Both conditions are required, deliberately.
+ *
+ *  - `unit_capacity` set is the organizer's EXPLICIT opt-in. Every section that
+ *    exists today has it null, so no published map changes behaviour until
+ *    someone sets it on purpose. Keying off seat count alone would silently
+ *    convert existing one-seat sections — "Hanghut Launch Party X THC" has
+ *    eleven of them, already sold — and changing a live map's behaviour without
+ *    anyone asking is exactly the bug worth avoiding here.
+ *
+ *  - exactly one seat, because that seat IS the inventory. The whole safety
+ *    property of this feature is that a unit is an ordinary single seat wearing
+ *    a label, so holds, oversell protection and the money path are the ones
+ *    already proven in production. A capacity set on a multi-seat section is a
+ *    misconfiguration, and the safe reading of it is "ignore it and behave
+ *    normally" rather than "guess what they meant".
+ *
+ * Uses seat_count (authoritative from the geometry RPC) rather than
+ * seats.length, which is 0 until the section is lazily loaded.
+ */
+function isUnitSection(section: MapSection): boolean {
+    return !!section.unit_capacity
+        && section.unit_capacity > 0
+        && (section.seat_count ?? section.seats.length) === 1
+}
+
 const TIER_PALETTE = [
     '#f59e0b', '#6366f1', '#22c55e', '#ec4899',
     '#06b6d4', '#8b5cf6', '#f97316', '#14b8a6',
@@ -176,6 +216,8 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
     const [loading, setLoading] = useState(true)
     const [stageSize, setStageSize] = useState({ width: 100, height: 480 })
     const [activeSection, setActiveSection] = useState<string | null>(null)
+    /** Section id whose single unit should be selected once its seat has loaded. */
+    const [pendingUnitSelect, setPendingUnitSelect] = useState<string | null>(null)
     const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([])
     const [view, setView] = useState({ scale: 1, x: 0, y: 0 })
     // ── Camera ───────────────────────────────────────────────────────────
@@ -636,6 +678,15 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
     // What the overview pill says for this section at the current party size.
     const sectionPill = useCallback((section: MapSection): { price: number; split: boolean } | null => {
         const offers = sectionOffers(section)
+        // A unit sells whole, so the price to show is just the cheapest tier
+        // that still has it. The two party-size tests below are seated
+        // questions — asked of a table, whose availability is one seat and
+        // whose largest block is one, they both answered "no" for every party
+        // above 1, so a club map showed no prices at all by default.
+        if (isUnitSection(section)) {
+            const open = offers.find(o => o.available >= 1)
+            return open ? { price: Number(open.tier.price), split: false } : null
+        }
         const together = offers.find(o => o.largestBlock >= partySize)
         if (together) return { price: Number(together.tier.price), split: false }
         const anyFit = offers.find(o => o.available >= partySize)
@@ -668,9 +719,14 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
      * the editor had a shape picker renders exactly as it does today.
      */
     const activeSeatShape = useMemo<'circle' | 'square' | 'diamond'>(() => {
-        const s = mapData?.seat_shape
-        return s === 'square' || s === 'diamond' ? s : 'circle'
-    }, [mapData])
+        // Resolution order, narrowest first: this section's override, then the
+        // map-wide default, then a circle. One normaliser for both levels so an
+        // unknown value can never mean different things at different levels.
+        const norm = (v: unknown): 'circle' | 'square' | 'diamond' | null =>
+            v === 'square' || v === 'diamond' || v === 'circle' ? v : null
+        const sec = activeSection ? mapData?.sections.find(s => s.id === activeSection) : undefined
+        return norm(sec?.seat_shape) ?? norm(mapData?.seat_shape) ?? 'circle'
+    }, [mapData, activeSection])
 
     // Row labels for the open section. Published-with-rows maps carry them;
     // older maps get the same derivation the editor uses, from the seats.
@@ -712,6 +768,37 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
     const selectedTier = selectedTierId ? tierById.get(selectedTierId) : null
     const totalPrice = selectedTier ? Number(selectedTier.price) * selectedSeats.length : 0
 
+    /**
+     * seatId → the unit it represents, for seats that ARE a whole table/booth/box.
+     *
+     * MapSeat carries no section reference, and the buyer needs the section's
+     * name: the seat inside "VIP COUCH 1" is labelled "A1", which tells them
+     * nothing about what they are buying. This is the lookup that lets the
+     * selection read "VIP COUCH 1 · admits 8" instead of "A1".
+     *
+     * Only unit sections are walked, and a unit holds exactly one seat, so this
+     * map has at most one entry per table and is empty for an ordinary seated
+     * map — no cost on a 2,414-seat venue.
+     */
+    const unitBySeatId = useMemo(() => {
+        const m = new Map<string, { label: string; capacity: number }>()
+        if (!mapData) return m
+        for (const s of mapData.sections) {
+            if (!isUnitSection(s)) continue
+            for (const st of s.seats) m.set(st.id, { label: s.label, capacity: s.unit_capacity! })
+        }
+        return m
+    }, [mapData])
+
+    /** Set only when EVERY selected seat is a unit, so mixed selections keep seat wording. */
+    const selectedUnits = useMemo(() => {
+        if (selectedSeats.length === 0) return null
+        const units = selectedSeats.map(s => unitBySeatId.get(s.id))
+        if (units.some(u => !u)) return null
+        const list = units as { label: string; capacity: number }[]
+        return { list, admits: list.reduce((n, u) => n + u.capacity, 0) }
+    }, [selectedSeats, unitBySeatId])
+
     // Fit-to-content view for the overview. Fits the bounding box of the actual
     // sections (not the full canvas) — sections rarely fill the canvas, so fitting
     // canvas_width/height would render them as a tiny cluster in one corner.
@@ -728,9 +815,11 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
             for (let i = 0; i < pts.length; i += 2) extend(pts[i], pts[i + 1])
         }
         // Include decor zones (stage, entrance, bars…) so they stay in frame.
-        // Images are intentionally excluded — they're organizer tracing aids.
+        // A tracing image is still excluded — it is usually far larger than the
+        // seating and would zoom the whole map out to nothing — but a floor plan
+        // the organizer published IS the picture, so it has to fit.
         for (const shape of mapData.background_shapes ?? []) {
-            if (shape.type === 'image') continue
+            if (shape.type === 'image' && !shape.showToBuyer) continue
             const b = shapeBounds(shape)
             extend(b.minX, b.minY); extend(b.maxX, b.maxY)
         }
@@ -884,6 +973,11 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
     }, [fitOverview])
 
     const handleSectionTap = useCallback(async (section: MapSection) => {
+        // Drop any unit selection still waiting on a lazy load. Without this, a
+        // section whose seats were slow (or never arrived) stays queued, and if
+        // they land after the buyer has moved on to another section the effect
+        // below would select a table they are no longer looking at.
+        setPendingUnitSelect(null)
         if (isGASection(section)) {
             setPendingSectionZoom(null)
             setAutoSheet(null)
@@ -891,6 +985,23 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
             setGaQty(1)
             setFocusSectionId(section.id)
             frameSection(section)
+            return
+        }
+        // A unit (table/booth/box) is ONE thing, so tapping it selects it —
+        // no zoom-in-and-hunt-for-a-single-dot, which is what the eleven
+        // one-seat sections on Launch Party put buyers through. This has to come
+        // before the best-available branch below: "find me the best seat" is
+        // meaningless for a section that contains exactly one.
+        //
+        // The seats load lazily, so the actual selection is deferred to an effect
+        // that runs once they arrive. It cannot call handleSeatTap from here —
+        // that is declared further down, and naming it in this callback's deps
+        // would read it before initialisation.
+        if (isUnitSection(section)) {
+            await loadSection(section.id)
+            const loadedUnit = geometryRef.current?.sections.find((s: any) => s.id === section.id)
+            setPendingSectionZoom(loadedUnit ?? section)
+            setPendingUnitSelect(section.id)
             return
         }
         if (selectionMode !== 'pick' && !isPreview) {
@@ -1046,6 +1157,38 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
             }
         })()
     }, [selectedSeatIds, pendingSeatIds, allSeats, toast, maxPerOrder, refreshStatus, remerge, isPreview])
+
+    /**
+     * Completes a unit tap (club table / booth / box) once its seat has loaded.
+     *
+     * Deliberately routed through handleSeatTap rather than reimplementing the
+     * selection: that function owns deselect-before-guard ordering, the hold
+     * request, the single-price-category rule and the per-order limit. A second
+     * copy of that logic for tables is how units and seats would drift apart and
+     * how a hold would get leaked.
+     *
+     * Waits rather than giving up while seats.length is 0, because the section's
+     * seats arrive asynchronously. If the section disappears (a republish
+     * between tap and load) the request is dropped. Nothing retries, so a
+     * permanently failed load simply does nothing rather than looping.
+     */
+    useEffect(() => {
+        if (!pendingUnitSelect) return
+        const sec = mapData?.sections.find(s => s.id === pendingUnitSelect)
+        if (!sec) {
+            setPendingUnitSelect(null)
+            return
+        }
+        if (sec.seats.length === 0) return  // still loading — try again on the next render
+        setPendingUnitSelect(null)
+        const unitSeat = sec.seats[0]
+        // Already selected (a double tap) must not toggle it straight back off:
+        // handleSeatTap treats a tap on a selected seat as "deselect", which here
+        // would release the table the buyer just claimed.
+        if (unitSeat && !selectedSeatIds.includes(unitSeat.id)) {
+            handleSeatTap(unitSeat)
+        }
+    }, [pendingUnitSelect, mapData, handleSeatTap, selectedSeatIds])
 
     const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
         e.evt.preventDefault()
@@ -1368,19 +1511,36 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                 short screens; the ResizeObserver feeds the real px height to the
                 Konva stage. */}
             {viewMode === 'list' && selectionMode !== 'pick' && (() => {
-                type Row = { section: MapSection; offer: Offer; together: boolean }
+                type Row = { section: MapSection; offer: Offer; together: boolean; unit: boolean }
                 const rows: Row[] = []
                 for (const section of mapData.sections) {
                     if (isGASection(section)) continue
+                    const unit = isUnitSection(section)
                     for (const offer of sectionOffers(section)) {
-                        if (offer.available < partySize) continue
-                        rows.push({ section, offer, together: offer.largestBlock >= partySize })
+                        if (unit) {
+                            // A table is ONE sellable unit: its availability is a
+                            // single seat however many people it admits. Measuring
+                            // it against partySize — as the seated branch below
+                            // does — hid every table in the venue the moment a
+                            // buyer asked for 2 tickets, which is the normal case.
+                            // What "fits the party" means for a table is its pax.
+                            if (offer.available < 1) continue
+                            rows.push({ section, offer, together: (section.unit_capacity ?? 0) >= partySize, unit: true })
+                        } else {
+                            if (offer.available < partySize) continue
+                            rows.push({ section, offer, together: offer.largestBlock >= partySize, unit: false })
+                        }
                     }
                 }
                 rows.sort((a, b) => Number(a.together) !== Number(b.together)
                     ? Number(b.together) - Number(a.together)
                     : Number(a.offer.tier.price) - Number(b.offer.tier.price))
                 const firstSplit = rows.findIndex(r => !r.together)
+                // "Split seats" is true of a seated section that can't seat the
+                // party side by side, and false of a table that simply admits
+                // fewer people than the party. When both are in that group, say
+                // the one thing that's true of both.
+                const splitHasUnit = firstSplit >= 0 && rows.slice(firstSplit).some(r => r.unit)
                 return (
                     <div className="flex-1 min-h-[240px] overflow-y-auto rounded-2xl border bg-background divide-y">
                         {rows.length === 0 && (
@@ -1391,9 +1551,24 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                         {rows.map((r, i) => (
                             <div key={`${r.section.id}:${r.offer.tier.id}`}>
                                 {i === firstSplit && firstSplit > 0 && (
-                                    <div className="px-4 py-1.5 text-[11px] uppercase tracking-wide text-muted-foreground bg-muted/40">Split seats only</div>
+                                    <div className="px-4 py-1.5 text-[11px] uppercase tracking-wide text-muted-foreground bg-muted/40">
+                                        {splitHasUnit ? `Won't fit all ${partySize} together` : 'Split seats only'}
+                                    </div>
                                 )}
-                                <button type="button" onClick={() => openAutoSheet(r.section, r.offer.tier.id)}
+                                <button type="button"
+                                    onClick={() => {
+                                        // Tables select whole, exactly as tapping them
+                                        // on the map does. The best-available sheet is
+                                        // meaningless for a section holding one seat.
+                                        // Switch to the map too: for a club, WHERE the
+                                        // table sits is most of the decision.
+                                        if (r.unit) {
+                                            setViewMode('map')
+                                            void handleSectionTap(r.section)
+                                            return
+                                        }
+                                        openAutoSheet(r.section, r.offer.tier.id)
+                                    }}
                                     className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/40">
                                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: tierColors.get(r.offer.tier.id) }} />
                                     <span className="flex-1 min-w-0">
@@ -1401,12 +1576,14 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                                             {sectionOffers(r.section).length > 1 && <span className="font-normal text-muted-foreground"> · {r.offer.tier.name}</span>}
                                         </span>
                                         <span className="block text-xs text-muted-foreground">
-                                            {r.together ? `${partySize} together` : `split only`} · {r.offer.available} left
+                                            {r.unit
+                                                ? `Whole table · admits ${r.section.unit_capacity}`
+                                                : `${r.together ? `${partySize} together` : 'split only'} · ${r.offer.available} left`}
                                         </span>
                                     </span>
                                     <span className="text-right shrink-0">
                                         <span className="block font-bold tabular-nums">₱{Number(r.offer.tier.price).toLocaleString()}</span>
-                                        <span className="block text-[11px] text-muted-foreground">each</span>
+                                        <span className="block text-[11px] text-muted-foreground">{r.unit ? 'per table' : 'each'}</span>
                                     </span>
                                     <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
                                 </button>
@@ -1437,8 +1614,14 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                     onDragEnd={(e) => setView(v => ({ ...v, x: e.target.x(), y: e.target.y() }))}
                 >
                     <Layer>
-                        {/* Decor zones (stage, entrance, bars…) — behind sections.
-                            Images are skipped: they're organizer-only tracing aids. */}
+                        {/* Floor plans the organizer chose to publish, underneath
+                            everything. An image without showToBuyer is still a
+                            tracing aid and still skipped. */}
+                        {mapData.background_shapes?.filter(s => s.type === 'image' && s.showToBuyer).map(shape => (
+                            <BuyerFloorPlan key={shape.id} shape={shape} />
+                        ))}
+
+                        {/* Decor zones (stage, entrance, bars…) — behind sections. */}
                         {mapData.background_shapes?.filter(s => s.type !== 'image').map(shape => (
                             <BuyerBackgroundShape key={shape.id} shape={shape} />
                         ))}
@@ -1453,7 +1636,16 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                             const center = sectionCenter(section.polygon_points)
                             const ga = isGASection(section)
                             const pill = !ga && selectionMode !== 'pick' ? sectionPill(section) : null
-                            const cantSeatParty = !ga && selectionMode !== 'pick' && !soldOut && availableCount < partySize
+                            // What "won't fit the party" means depends on what is
+                            // being sold. For a table it is the pax it admits, not
+                            // its one seat of inventory — otherwise every table on
+                            // the map greyed out the moment the party hit 2, which
+                            // is where the counter starts.
+                            const cantSeatParty = !ga && selectionMode !== 'pick' && !soldOut && (
+                                isUnitSection(section)
+                                    ? (section.unit_capacity ?? 0) < partySize
+                                    : availableCount < partySize
+                            )
                             return (
                                 <SectionShape
                                     key={section.id}
@@ -1892,13 +2084,29 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                                         className="px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:opacity-80 transition-opacity"
                                         title="Tap to remove"
                                     >
-                                        {seat.label} ✕
+                                        {unitBySeatId.get(seat.id)?.label ?? seat.label} ✕
                                     </button>
                                 ))}
                         </div>
                         <div className="flex items-center justify-between gap-3">
                             <div className="text-sm">
-                                <span className="font-semibold">{selectedSeats.length} seat{selectedSeats.length !== 1 ? 's' : ''}</span>
+                                {/* Units are counted as tables and described by how
+                                    many people they hold. Only when EVERY selected
+                                    seat is a unit — a mixed selection keeps seat
+                                    wording, because calling two chairs and a booth
+                                    "3 tables" would be a lie. */}
+                                {selectedUnits ? (
+                                    <span className="font-semibold">
+                                        {selectedUnits.list.length === 1
+                                            ? selectedUnits.list[0].label
+                                            : `${selectedUnits.list.length} tables`}
+                                        <span className="font-normal text-muted-foreground">
+                                            {' '}· admits {selectedUnits.admits}
+                                        </span>
+                                    </span>
+                                ) : (
+                                    <span className="font-semibold">{selectedSeats.length} seat{selectedSeats.length !== 1 ? 's' : ''}</span>
+                                )}
                                 {selectedTier && (
                                     <span className="text-muted-foreground"> · {selectedTier.name}</span>
                                 )}
@@ -2004,7 +2212,17 @@ function SectionShape({
                         y={center.y + 4 * labelScale}
                         width={140 * labelScale}
                         align="center"
-                        text={soldOut ? (section.on_sale === false ? 'Not on sale' : 'Sold out') : `${availableCount} left`}
+                        // "1 left" is a true but useless thing to tell someone
+                        // looking at a table — one WHAT? For a unit the number
+                        // that matters is how many people it holds, which is the
+                        // only reason the buyer is comparing tables at all.
+                        text={
+                            soldOut
+                                ? (section.on_sale === false ? 'Not on sale' : 'Sold out')
+                                : isUnitSection(section)
+                                    ? `Admits ${section.unit_capacity}`
+                                    : `${availableCount} left`
+                        }
                         fontSize={11 * labelScale}
                         fill="#64748b"
                         listening={false}
@@ -2066,6 +2284,48 @@ function shapeBounds(shape: MapBackgroundShape): { minX: number; minY: number; m
 
 /** Non-interactive render of a decorative zone (stage, entrance, bar, table, label…).
  *  Images are not rendered on the buyer side — they're organizer tracing aids. */
+/**
+ * A published floor plan. Drawn first and never interactive, so it reads as the
+ * paper under the map rather than something to tap.
+ *
+ * Loaded with a plain Image element rather than next/image: the bitmap has to
+ * reach a Konva canvas, which needs the decoded HTMLImageElement itself, and the
+ * source may be a storage URL or (on maps saved before uploads moved to the
+ * bucket) an inline data URI.
+ */
+function BuyerFloorPlan({ shape }: { shape: MapBackgroundShape }) {
+    const [img, setImg] = useState<HTMLImageElement | null>(null)
+
+    useEffect(() => {
+        if (!shape.imageUrl) return
+        let cancelled = false
+        const el = new window.Image()
+        // Anonymous so a storage-hosted plan does not taint the canvas; a data
+        // URI ignores it. A plan that fails to load simply never draws — the
+        // seats, which are the part that matters, are unaffected.
+        el.crossOrigin = 'anonymous'
+        el.onload = () => { if (!cancelled) setImg(el) }
+        el.src = shape.imageUrl
+        return () => { cancelled = true }
+    }, [shape.imageUrl])
+
+    if (!img) return null
+    const sc = shape.scale ?? 1
+    return (
+        <KonvaImage
+            image={img}
+            x={shape.x}
+            y={shape.y}
+            width={(shape.width ?? img.naturalWidth) * sc}
+            height={(shape.height ?? img.naturalHeight) * sc}
+            opacity={shape.opacity ?? 1}
+            rotation={shape.rotation || 0}
+            listening={false}
+            perfectDrawEnabled={false}
+        />
+    )
+}
+
 function BuyerBackgroundShape({ shape }: { shape: MapBackgroundShape }) {
     if (shape.type === 'image') return null
 

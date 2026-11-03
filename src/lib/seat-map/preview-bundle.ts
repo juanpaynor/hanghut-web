@@ -27,6 +27,8 @@ export interface PreviewBundle {
       polygon_points: number[]; tier_id: string | null; row_tier_overrides: Record<string, string>
       rows: unknown[]; show_row_labels: boolean
       sales_mode: 'ga' | 'seated'; seat_count: number
+      /** Phase 2 — mirrors event_sections.unit_capacity / .seat_shape. */
+      unit_capacity: number | null; seat_shape: string | null
     }[]
   }
   /** sectionId → seats, as /api/seat-map/section returns them. */
@@ -118,6 +120,17 @@ export function buildPreviewBundle(
         show_row_labels: s.showRowLabels !== false,
         sales_mode: s.tierId && (s.seats?.length ?? 0) === 0 ? 'ga' : 'seated',
         seat_count: s.seats?.length ?? 0,
+        // Normalised the same way sync-live.ts normalises them on the way to the
+        // database, so the preview shows what a published map would actually
+        // hold — not what the canvas happens to be carrying mid-edit.
+        unit_capacity:
+          typeof s.unitCapacity === 'number' && Number.isFinite(s.unitCapacity) && s.unitCapacity > 0
+            ? Math.floor(s.unitCapacity)
+            : null,
+        seat_shape:
+          s.seatShape === 'circle' || s.seatShape === 'square' || s.seatShape === 'diamond'
+            ? s.seatShape
+            : null,
       })),
     },
     sectionSeats,

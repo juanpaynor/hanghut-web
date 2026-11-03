@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { UserCheck } from 'lucide-react'
 import { EventDashboardTabs } from '@/components/organizer/event-dashboard-tabs'
 import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
+import { getEventEarnings } from '@/lib/organizer/event-earnings'
 import { getAuthUser, getPartner } from '@/lib/auth/cached'
 
 export const dynamic = 'force-dynamic'
@@ -68,6 +69,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         { data: rawExistingDiscounts },
         { data: onlineAccess },
         statusLinksResult,
+        earnings,
     ] = await Promise.all([
         // Partner pricing (fields not already on the cached partner)
         supabase
@@ -136,6 +138,10 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         // Shared read-only status links. Cheap (one indexed read) and it keeps the
         // Overview tab a single server round trip rather than a client fetch.
         getStatusLinks(id),
+
+        // Net of fees, from the same column the wallet pays out on. Here rather
+        // than in the client so the overview stays one server round trip.
+        getEventEarnings(id),
     ])
 
     const stats = statsRows?.[0] ?? { sold_count: 0, checked_in_count: 0, gross_revenue: 0, refunded_amount: 0 }
@@ -210,7 +216,8 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                     refundedAmount,
                     ticketsSold: ticketsSold || 0,
                     totalCapacity: event.capacity || 0,
-                    checkedInCount
+                    checkedInCount,
+                    earnings,
                 }}
                 passFixedToCustomer={partnerPricing?.pass_fixed_to_customer ?? true}
                 passPercentageToCustomer={partnerPricing?.pass_percentage_to_customer ?? false}

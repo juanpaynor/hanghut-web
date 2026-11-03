@@ -107,7 +107,11 @@ export async function GET(req: Request) {
             capability,
             ttl: 60 * 60 * 1000, // 1 hour
         })) as TokenDetails
-        return NextResponse.json({ token: token.token }, {
+        // `expires` ships so the client can renew BEFORE the token dies rather
+        // than discovering it by being disconnected. Without it the browser has
+        // no idea this credential has an expiry at all, and an EventSource will
+        // happily retry a dead token forever.
+        return NextResponse.json({ token: token.token, expires: token.expires }, {
             headers: { 'Cache-Control': 'no-store' },
         })
     } catch (e) {
