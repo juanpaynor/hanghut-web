@@ -6,8 +6,8 @@ import { SECTION_TYPE_COLORS, resolveSeatTier } from './types'
 import type { AlignMode } from './canvas-state'
 import { fillSectionRows, pathCurvature, pathFromCurvature, pathEndpoints, rowLabelAt } from '@/lib/seat-map/rows'
 import { pointInPolygon, flatToVertices } from './algorithms/point-in-polygon'
-import { checkSellWhole, sellWholeUpdates } from '@/lib/seat-map/make-unit'
-import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, XCircle, Circle, Square, Diamond, Lock, Unlock, Banknote, BoxSelect, Triangle, Minus, Type, Spline, Ruler, Plus, Users, AlertTriangle } from 'lucide-react'
+import { checkSellWhole, sellWholeUpdates, checkSeatIndividually, seatIndividuallyUpdates } from '@/lib/seat-map/make-unit'
+import { Trash2, Grid3X3, Palette, Tag, Layers, Image as ImageIcon, XCircle, Circle, Square, Diamond, Armchair, RotateCw, Lock, Unlock, Banknote, BoxSelect, Triangle, Minus, Type, Spline, Ruler, Plus, Users, AlertTriangle } from 'lucide-react'
 import { CapacitySummary } from './capacity-summary'
 import { createClient } from '@/lib/supabase/client'
 
@@ -43,6 +43,8 @@ interface CanvasPropertiesProps {
   onDeleteSelectedSeats: () => void
   onSetSeatStatus?: (seatIds: string[], status: 'available' | 'disabled') => void
   onScaleSeats?: (seatIds: string[], factor: number) => void
+  onRotateSeats?: (seatIds: string[], degrees: number) => void
+  onResetSeatFacing?: (seatIds: string[]) => void
   onDuplicateSection?: (id: string, mirror?: boolean) => void
   /** Save this piece's outline to the venue's library for reuse on other events. */
   onSaveAsPiece?: (section: SectionData) => void
@@ -322,6 +324,8 @@ export function CanvasProperties({
   onDeleteSelectedSeats,
   onSetSeatStatus,
   onScaleSeats,
+  onRotateSeats,
+  onResetSeatFacing,
   onDuplicateSection,
   onSaveAsPiece,
   onScaleSection,
@@ -451,6 +455,32 @@ export function CanvasProperties({
     }
     onUpdateSection(selectedSection.id, sellWholeUpdates(selectedSection, check.suggestedPax))
   }, [selectedSection, onUpdateSection])
+
+  // ─── The other direction: seat the piece chair by chair ───────────────
+  // A table sells BOTH ways and the organizer picks per table, so this has to
+  // be as reachable as "Sell this whole" and just as reversible. It refuses on
+  // a sold table for the same reason the other direction does: the one seat IS
+  // the sold table, and splitting it would strand the buyer's ticket and put
+  // the chairs back on sale underneath them.
+  const seatEach = selectedSection ? checkSeatIndividually(selectedSection, seatRadius) : null
+  const handleSeatIndividually = useCallback(() => {
+    if (!selectedSection) return
+    const check = checkSeatIndividually(selectedSection, seatRadius)
+    if (!check.ok) {
+      if (check.reason) window.alert(check.reason)
+      return
+    }
+    if (
+      !window.confirm(
+        `Seat "${selectedSection.label}" chair by chair?\n\n` +
+          `It becomes ${check.creating} separate chairs around the outline, each bought on its own. ` +
+          `Nothing is sold yet, so nothing is lost — and \u2318Z puts the single table back.`
+      )
+    ) {
+      return
+    }
+    onUpdateSection(selectedSection.id, seatIndividuallyUpdates(selectedSection, seatRadius))
+  }, [selectedSection, seatRadius, onUpdateSection])
 
   // Find the selected seat object
   const selectedSeat = selectedSection?.seats.find((s) => s.id === selectedSeatId) ?? null
@@ -744,6 +774,41 @@ export function CanvasProperties({
                   + Spread
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Turn the selection as one body */}
+          {onRotateSeats && (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <RotateCw className="w-3.5 h-3.5" />
+                Turn
+              </label>
+              <div className="flex gap-1.5">
+                {([-90, -15, 15, 90] as const).map((deg) => (
+                  <button
+                    key={deg}
+                    onClick={() => onRotateSeats(selectedSeatIds, deg)}
+                    title={`Turn the ${selectedSeatIds.length} selected seats ${deg > 0 ? 'clockwise' : 'anticlockwise'} ${Math.abs(deg)}\u00b0 about the middle of the selection`}
+                    className="flex-1 flex items-center justify-center gap-1 bg-slate-700/40 hover:bg-slate-700 text-slate-300 text-sm font-medium py-2 rounded-lg transition-all border border-slate-600/40 tabular-nums"
+                  >
+                    {deg > 0 ? '\u21bb' : '\u21ba'}{Math.abs(deg)}
+                  </button>
+                ))}
+              </div>
+              {onResetSeatFacing && (
+                <button
+                  onClick={() => onResetSeatFacing(selectedSeatIds)}
+                  title="Stop these seats pointing where you put them, and go back to following the stage"
+                  className="w-full flex items-center justify-center gap-1.5 bg-slate-800/60 hover:bg-slate-700 text-slate-400 text-xs font-medium py-1.5 rounded-lg transition-all border border-slate-700/50"
+                >
+                  Follow the stage again
+                </button>
+              )}
+              <p className="text-[10px] text-slate-600">
+                Turns the chairs on the spot — nothing moves. Only the Chair seat shape shows
+                a direction; the other shapes look the same whichever way they point.
+              </p>
             </div>
           )}
 
@@ -1118,6 +1183,24 @@ export function CanvasProperties({
                       Save as piece
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={handleSeatIndividually}
+                    disabled={!seatEach?.ok}
+                    title={
+                      seatEach?.ok
+                        ? `Put ${seatEach.creating} separate chairs around this, each bought on its own`
+                        : seatEach?.reason
+                    }
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:text-slate-600 disabled:cursor-not-allowed"
+                  >
+                    <Armchair className="w-3.5 h-3.5" />
+                    Seat it chair by chair
+                  </button>
+                  <p className="mt-1.5 text-[11px] text-slate-500">
+                    Switches this to {selectedSection.unitCapacity} chairs around the outline, sold
+                    one at a time. &#8984;Z puts the single table back.
+                  </p>
                 </>
               ) : (
                 <>
@@ -1181,7 +1264,14 @@ export function CanvasProperties({
               <option value="circle">Circle</option>
               <option value="square">Square</option>
               <option value="diamond">Diamond</option>
+              <option value="chair">Chair</option>
             </select>
+            {(selectedSection.seatShape ?? '') === 'chair' && (
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                Chairs turn to face the shape marked as the stage. With no stage on the
+                map they all face up.
+              </p>
+            )}
           </div>
 
           {/* Color */}
@@ -1973,16 +2063,19 @@ export function CanvasProperties({
             {/* Shape Picker */}
             <div>
               <label className="text-[11px] text-slate-500 mb-1.5 block">Shape</label>
-              <div className="flex gap-2">
+              {/* A 2x2 grid, not a row: at four options the buttons were too narrow
+                  for their labels in the side panel. */}
+              <div className="grid grid-cols-2 gap-2">
                 {[
                   { value: 'circle' as SeatShape, icon: Circle, label: 'Circle' },
                   { value: 'square' as SeatShape, icon: Square, label: 'Square' },
                   { value: 'diamond' as SeatShape, icon: Diamond, label: 'Diamond' },
+                  { value: 'chair' as SeatShape, icon: Armchair, label: 'Chair' },
                 ].map(({ value, icon: Icon, label }) => (
                   <button
                     key={value}
                     onClick={() => onSetSeatShape(value)}
-                    className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-lg border text-xs transition-all ${
+                    className={`flex flex-col items-center gap-1 py-2 rounded-lg border text-xs transition-all ${
                       seatShape === value
                         ? 'bg-indigo-600 border-indigo-500 text-white'
                         : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'
@@ -1993,6 +2086,12 @@ export function CanvasProperties({
                   </button>
                 ))}
               </div>
+              {seatShape === 'chair' && (
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Chairs turn to face the shape marked as the stage. With no stage on
+                  the map they all face up.
+                </p>
+              )}
             </div>
           </div>
 

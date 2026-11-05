@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { executeXenditPayout } from '@/lib/payment/xendit-payouts'
 import { BankCode } from '@/lib/constants/banks'
-import { getAuthUser } from '@/lib/auth/cached'
+import { getAuthUser, getPartnerId } from '@/lib/auth/cached'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { PAYOUT_OTP_THRESHOLD } from './payout-constants'
 
@@ -29,6 +29,42 @@ function maskEmail(email: string): string {
 }
 
 /**
+ * A managed-platform partner (partners.use_main_wallet) has no wallet of their
+ * own — their sales settle into the HangHut platform account. Releasing that
+ * money is a manual step on our side, so self-serve payout is not available to
+ * them and the UI shows an explanation instead of the amount field.
+ *
+ * This guard exists because hiding a button is not a rule. A server action is a
+ * public endpoint: anything that can reach the dashboard can call it directly
+ * with any arguments. Without this, the request would still be created, sit in
+ * the queue looking legitimate, and land on an admin to notice and reject.
+ *
+ * Returns null when the partner may proceed, or the refusal to return as-is.
+ */
+async function managedPlatformRefusal(partnerId: string) {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+        .from('partners')
+        .select('use_main_wallet')
+        .eq('id', partnerId)
+        .single()
+
+    // Fail CLOSED on a read error. Money moves here; "we could not check" must
+    // not resolve to "allowed".
+    if (error || !data) {
+        return { success: false as const, message: 'Could not verify your account settings. Please try again.' }
+    }
+    if (data.use_main_wallet === true) {
+        return {
+            success: false as const,
+            code: 'MANAGED_PLATFORM' as const,
+            message: 'Your account is managed by HangHut. Contact the HangHut team to release your funds.',
+        }
+    }
+    return null
+}
+
+/**
  * Step 1 of a payout: email the organizer a 6-digit code bound to this amount.
  * Confirm via requestPayout(partnerId, amount, code) within 5 minutes.
  * Reuses the generic send-otp-code edge function (same as admin login MFA).
@@ -38,6 +74,14 @@ export async function sendPayoutOtp(amount: number) {
 
     const { user } = await getAuthUser()
     if (!user) return { success: false, message: 'Unauthorized' }
+
+    // Refuse before sending anything. A managed partner who somehow reaches this
+    // should not receive a code for a payout that can never be submitted.
+    const partnerId = await getPartnerId(user.id)
+    if (partnerId) {
+        const refusal = await managedPlatformRefusal(partnerId)
+        if (refusal) return refusal
+    }
 
     const admin = otpAdminClient()
 
@@ -94,6 +138,11 @@ export async function requestPayout(partnerId: string, amount: number, otpCode: 
     if (!session) {
         return { success: false, message: 'Unauthorized: No active session' }
     }
+
+    // 1a. Managed-platform accounts cannot withdraw here. Checked BEFORE the OTP
+    // block below so a refusal never consumes the organizer's single-use code.
+    const managed = await managedPlatformRefusal(partnerId)
+    if (managed) return managed
 
     // 1b. Payouts above the threshold require an email OTP (bound to this exact
     // amount) before any funds move. Smaller payouts skip verification.

@@ -181,6 +181,25 @@ async function handleTicketValidation(ticket: any, activeEventId: string | undef
     // Check Status
     const status = ticket.status
 
+    // A table ticket admits a whole party and is counted through one person at
+    // a time, which only scan_ticket knows how to do. This legacy path is the
+    // fallback for when that RPC is unreachable, and it cannot do the counting
+    // without duplicating the logic in a second place that would then drift.
+    //
+    // It must not guess. The check below refuses anything already carrying a
+    // checked_in_at, and scan_ticket stamps that on the FIRST of several
+    // arrivals — so without this guard a half-arrived party of eight would be
+    // told ALREADY SCANNED and turned away at the door. Saying "retry" is
+    // recoverable; turning six people away is not.
+    if ((ticket.admits ?? 1) > 1) {
+        return {
+            success: false,
+            message: 'Scanner unavailable',
+            details: 'This is a table ticket and the scanner service is not responding. Try again in a moment.',
+            ticket: formatTicket(ticket)
+        }
+    }
+
     if (status === 'used' || status === 'redeemed' || ticket.checked_in_at) {
         const checkedInDate = ticket.checked_in_at ? new Date(ticket.checked_in_at) : null
         const timeStr = checkedInDate ? checkedInDate.toLocaleTimeString() : 'Previously'

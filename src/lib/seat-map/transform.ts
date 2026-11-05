@@ -6,7 +6,7 @@
  * directly to preview a drag of the rotate handle — one implementation, so the
  * live preview and the committed result can never disagree.
  */
-import type { SectionData } from '@/components/seat-map/types'
+import type { BackgroundShape, SectionData } from '@/components/seat-map/types'
 import { transformRows } from '@/lib/seat-map/rows'
 
 export function sectionBounds(section: SectionData) {
@@ -199,3 +199,61 @@ export function alignSectionDeltas(sections: SectionData[], mode: AlignMode): Ma
   return out
 }
 
+
+/**
+ * Rotate a background shape rigidly about a pivot.
+ *
+ * Sections are rotated by rewriting their coordinates, because a section has no
+ * stored angle. A background shape DOES have one (`rotation`), and both the
+ * editor and the buyer picker already pass it straight to Konva — two live maps
+ * rely on that today — so a shape is turned by moving it and bumping its angle
+ * rather than by baking anything.
+ *
+ * The subtlety is Konva's pivot: a node's `rotation` turns its content about
+ * the node's OWN x/y, which for a Rect is the top-left corner, not the centre.
+ * That makes the rigid transform simple and exact rather than fiddly: a body
+ * rotated by φ about P has its origin mapped to rotate(origin, P, φ) and its
+ * own orientation advanced by φ. Rotating the CENTRE instead — the intuitive
+ * move — would be wrong, because the renderer would then spin the shape about
+ * its corner a second time and walk it off position.
+ *
+ * A Circle's x/y is already its centre and it is rotationally symmetric, so the
+ * same formula degenerates correctly: the centre moves, the angle is irrelevant.
+ */
+export function rotateShape(
+  shape: BackgroundShape,
+  degrees: number,
+  origin: { x: number; y: number }
+): BackgroundShape {
+  if (!degrees) return shape
+  const rad = (degrees * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const dx = shape.x - origin.x
+  const dy = shape.y - origin.y
+  return {
+    ...shape,
+    x: origin.x + dx * cos - dy * sin,
+    y: origin.y + dx * sin + dy * cos,
+    rotation: (shape.rotation ?? 0) + degrees,
+  }
+}
+
+/**
+ * Bounds of a background shape, in the same shape as sectionBounds, so a mixed
+ * selection of sections and decor can share one pivot. A rotated shape is
+ * measured by its UNROTATED box — good enough for a pivot, and it avoids
+ * pretending to a precision the group centre does not need.
+ */
+export function shapeBoundsForGroup(shape: BackgroundShape) {
+  const r = shape.radius ?? 0
+  const w = shape.width ?? r * 2
+  const h = shape.height ?? r * 2
+  // Circles are centred on x/y; everything else hangs off its top-left.
+  const left = shape.type === 'circle' ? shape.x - r : shape.x
+  const top = shape.type === 'circle' ? shape.y - r : shape.y
+  return {
+    minX: left, minY: top, maxX: left + w, maxY: top + h,
+    cx: left + w / 2, cy: top + h / 2,
+  }
+}

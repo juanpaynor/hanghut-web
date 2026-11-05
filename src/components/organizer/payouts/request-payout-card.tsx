@@ -8,7 +8,8 @@ import { Label } from '@/components/ui/label'
 import { requestPayout, sendPayoutOtp } from '@/lib/organizer/payout-actions'
 import { PAYOUT_OTP_THRESHOLD, DISBURSEMENT_FEE_PHP, DISBURSEMENT_FEE_TOTAL, DISBURSEMENT_VAT_AMOUNT } from '@/lib/organizer/payout-constants'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Building2, ShieldCheck, ArrowLeft } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Loader2, Building2, ShieldCheck, ArrowLeft, Lock } from 'lucide-react'
 
 interface RequestPayoutCardProps {
     balance: number
@@ -25,6 +26,7 @@ export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet =
     const [step, setStep] = useState<'amount' | 'otp'>('amount')
     const [code, setCode] = useState('')
     const [maskedEmail, setMaskedEmail] = useState('')
+    const [managedOpen, setManagedOpen] = useState(false)
 
     // Xendit charges a flat ₱11.20 (₱10 + 12% VAT) transfer fee per payout, on top of
     // the requested amount, debited from the wallet — so the max requestable is the
@@ -131,6 +133,82 @@ export function RequestPayoutCard({ balance, partnerId, hasBank, useMainWallet =
         } finally {
             setIsLoading(false)
         }
+    }
+
+    // A managed account cannot withdraw on its own: the money sits in the HangHut
+    // platform wallet, not a sub-wallet of their own, and releasing it is a manual
+    // step on our side. Showing the amount field and letting the request fail at the
+    // edge function produced a bare red "Payouts are temporarily unavailable" toast,
+    // which reads as a fault rather than as how the account is configured.
+    //
+    // This branch comes BEFORE the no-bank and zero-balance branches on purpose.
+    // Telling a managed partner to "set up a bank account" sends them to fix
+    // something that would not unblock them.
+    if (useMainWallet) {
+        return (
+            <>
+                <Card className="border-primary/30 bg-primary/5">
+                    <CardHeader>
+                        <div className="flex items-center gap-2">
+                            <Lock className="h-4 w-4 shrink-0 text-primary" />
+                            <CardTitle>Payouts are released by HangHut</CardTitle>
+                        </div>
+                        <CardDescription>
+                            Your account is set to <span className="font-medium text-foreground">managed platform</span>,
+                            so withdrawals are handled by our team rather than requested here.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="rounded-lg border bg-background p-3">
+                            <div className="text-xs text-muted-foreground">Your balance</div>
+                            <div className="text-2xl font-bold tabular-nums">
+                                ₱{balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Held in the HangHut platform account. Still yours — it is not withdrawable from this page.
+                            </p>
+                        </div>
+                    </CardContent>
+                    <CardFooter>
+                        <Button variant="outline" className="w-full" onClick={() => setManagedOpen(true)}>
+                            What does this mean?
+                        </Button>
+                    </CardFooter>
+                </Card>
+
+                <Dialog open={managedOpen} onOpenChange={setManagedOpen}>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <div className="flex items-center gap-2">
+                                <Building2 className="h-5 w-5 shrink-0 text-primary" />
+                                <DialogTitle>Your account is managed by HangHut</DialogTitle>
+                            </div>
+                            <DialogDescription asChild>
+                                <div className="space-y-3 pt-2 text-left">
+                                    <p>
+                                        Most organisers have their own payment wallet and can withdraw whenever
+                                        they like. Your account is set up differently: your sales settle into the
+                                        HangHut platform account, so there is no separate wallet for this page to
+                                        withdraw from.
+                                    </p>
+                                    <p>
+                                        <span className="font-medium text-foreground">
+                                            ₱{balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        </span>{' '}
+                                        is recorded as yours. Nothing has gone missing and nothing has failed — this
+                                        is how your account is configured.
+                                    </p>
+                                    <p>
+                                        To receive it, get in touch with the HangHut team and we will release the
+                                        funds to your bank account for you.
+                                    </p>
+                                </div>
+                            </DialogDescription>
+                        </DialogHeader>
+                    </DialogContent>
+                </Dialog>
+            </>
+        )
     }
 
     if (!hasBank) {

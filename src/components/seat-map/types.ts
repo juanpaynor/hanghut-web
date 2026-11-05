@@ -1,3 +1,5 @@
+import type { SeatShapeName } from '@/lib/seat-map/seat-shape'
+
 /**
  * Shared types for the seat map system.
  * Used across canvas builder, seat picker, and server actions.
@@ -128,6 +130,15 @@ export interface SeatData {
   tierId?: string | null   // per-seat price override; resolution: seat → row → section
   /** The row that generated this seat (RowData.id). Hand-placed seats have none. */
   rowId?: string | null
+  /**
+   * Which way this seat FACES, in degrees clockwise, 0 = up.
+   *
+   * Only the 'chair' seat shape draws it. NULL/undefined means "work it out" —
+   * face the table if the seat rings one, the room if it stands on the stage,
+   * otherwise the stage. A number here is the organizer overriding that by
+   * hand, and it stops following the stage from then on.
+   */
+  facing?: number | null
 }
 
 // ─── Price Categories (ticket tiers projected into the builder) ─────────────
@@ -196,7 +207,13 @@ export interface BackgroundShape {
 
 // ─── Seat Appearance ────────────────────────────────────────────────────────
 
-export type SeatShape = 'circle' | 'square' | 'diamond'
+/**
+ * 'chair' is a little top-down armchair rather than a dot, and it is the one
+ * shape with a DIRECTION: each chair turns to face the shape whose role is
+ * 'stage'. Geometry and facing live in src/lib/seat-map/chair.ts, shared by the
+ * builder and the buyer's picker so the two cannot draw different chairs.
+ */
+export type SeatShape = SeatShapeName
 
 // ─── Canvas Data (serialized JSON) ──────────────────────────────────────────
 

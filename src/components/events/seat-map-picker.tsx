@@ -35,6 +35,8 @@ import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-t
 import type { PreviewBundle } from '@/lib/seat-map/preview-bundle'
 import type { RowData } from '@/components/seat-map/types'
 import { deriveRows, rowLabelAnchors } from '@/lib/seat-map/rows'
+import { CHAIR, chairBox, chairTarget, seatFacing, stageCenter, stagePolygon, audienceCenter } from '@/lib/seat-map/chair'
+import { normaliseSeatShape, type SeatShapeName } from '@/lib/seat-map/seat-shape'
 
 // ─── RPC payload types (shared contract with the Flutter app) ───────────────
 
@@ -54,6 +56,11 @@ interface MapSeat {
     y: number
     tier_id: string | null
     status: 'available' | 'held' | 'booked' | 'disabled'
+    /** Degrees clockwise, 0 = up. Only the 'chair' shape draws it, and only
+     *  when the organizer turned this seat by hand; null means work it out
+     *  from the stage or the table it rings. Needs seats.facing on the wire —
+     *  see chair-facing-DEPLOY.sql. */
+    facing?: number | null
 }
 
 interface MapSection {
@@ -113,6 +120,10 @@ interface MapBackgroundShape {
     /** Images only. Opt-in: an image the organizer has not ticked stays a
      *  tracing aid and is never drawn here. */
     showToBuyer?: boolean
+    /** 'stage' marks the shape every 'chair' seat turns to face. Already on the
+     *  wire -- get_event_seat_geometry returns canvas_data->'backgroundShapes'
+     *  verbatim -- it was just missing from this type. */
+    role?: 'stage' | null
 }
 
 interface SeatMapData {
@@ -719,15 +730,50 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
      * Unknown or absent values fall back to a circle, so every map saved before
      * the editor had a shape picker renders exactly as it does today.
      */
-    const activeSeatShape = useMemo<'circle' | 'square' | 'diamond'>(() => {
+    const activeSeatShape = useMemo<SeatShapeName>(() => {
         // Resolution order, narrowest first: this section's override, then the
         // map-wide default, then a circle. One normaliser for both levels so an
         // unknown value can never mean different things at different levels.
-        const norm = (v: unknown): 'circle' | 'square' | 'diamond' | null =>
-            v === 'square' || v === 'diamond' || v === 'circle' ? v : null
         const sec = activeSection ? mapData?.sections.find(s => s.id === activeSection) : undefined
-        return norm(sec?.seat_shape) ?? norm(mapData?.seat_shape) ?? 'circle'
+        return normaliseSeatShape(sec?.seat_shape)
+            ?? normaliseSeatShape(mapData?.seat_shape)
+            ?? 'circle'
     }, [mapData, activeSection])
+
+    /**
+     * Where the chairs look. Only the 'chair' shape uses it; the others ignore
+     * it entirely. Null when the map has no stage, and then every chair faces
+     * up -- the convention theatre plans already use.
+     *
+     * The same stageCenter() the builder calls, so the organizer's preview and
+     * the buyer's map cannot disagree about which way a chair points. That is
+     * the exact failure this file already carries a comment about for the seat
+     * SHAPE itself.
+     */
+    const stagePoint = useMemo(
+        () => stageCenter(mapData?.background_shapes),
+        [mapData]
+    )
+
+    /**
+     * What the open section's chairs look at: the table they ring, or the
+     * stage. The same chairTarget() the builder calls, on the same inputs, so
+     * the organizer's preview and the buyer's map cannot point chairs in
+     * different directions.
+     */
+    const chairLookAt = useMemo(() => {
+        const sec = activeSection ? mapData?.sections.find(s => s.id === activeSection) : undefined
+        if (!sec) return stagePoint
+        const stagePoly = stagePolygon(mapData?.background_shapes)
+        return chairTarget(sec.polygon_points, sec.seats, stagePoint, {
+            stagePoly,
+            // Outlines, not seats: seats are lazily loaded one section at a
+            // time, so the full seat list is never available here. Outlines
+            // arrive for every section up front, which is also what the
+            // builder measures, so the two agree.
+            audience: audienceCenter((mapData?.sections ?? []).map(x => x.polygon_points), stagePoly),
+        })
+    }, [mapData, activeSection, stagePoint])
 
     // Row labels for the open section. Published-with-rows maps carry them;
     // older maps get the same derivation the editor uses, from the seats.
@@ -1780,7 +1826,16 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                                         own centre. Keep these in step with
                                         canvas-builder.tsx or the preview and the
                                         buyer's view stop agreeing. */}
-                                    {activeSeatShape === 'square' ? (
+                                    {activeSeatShape === 'chair' ? (
+                                        // Nested Group so ONLY the chair turns. The seat
+                                        // number below is a sibling of this, not a child:
+                                        // rotating it too would print the number upside
+                                        // down for every seat behind the stage.
+                                        <Group rotation={seatFacing(seat, chairLookAt)}>
+                                            <Rect {...chairBox(CHAIR.back, r)} {...seatProps} />
+                                            <Rect {...chairBox(CHAIR.pad, r)} {...seatProps} />
+                                        </Group>
+                                    ) : activeSeatShape === 'square' ? (
                                         <Rect x={-r} y={-r} width={r * 2} height={r * 2} cornerRadius={2} {...seatProps} />
                                     ) : activeSeatShape === 'diamond' ? (
                                         <Rect width={r * 2} height={r * 2} rotation={45} offsetX={r} offsetY={r} {...seatProps} />

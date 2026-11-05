@@ -15,6 +15,7 @@ import { useCanvasState } from './canvas-state'
 import { CanvasToolbar } from './canvas-toolbar'
 import { ContextBar } from './context-bar'
 import { snapDrag } from '@/lib/seat-map/snap'
+import { CHAIR, chairBox, chairTarget, seatFacing, stageCenter, stagePolygon, audienceCenter } from '@/lib/seat-map/chair'
 import { sectionBounds, rotateSection, scaleSection } from '@/lib/seat-map/transform'
 import {
   FURNITURE,
@@ -46,6 +47,7 @@ const SeatDot = memo(function SeatDot({
   onDblClick,
   radius,
   shape,
+  facing = 0,
   tierColor,
   draggable,
   onDragStart,
@@ -62,6 +64,8 @@ const SeatDot = memo(function SeatDot({
   onDblClick?: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void
   radius: number
   shape: SeatShape
+  /** Degrees clockwise, for 'chair' only. Ignored by the other shapes. */
+  facing?: number
   tierColor?: string
   draggable?: boolean
   onDragStart?: (node: Konva.Node) => void
@@ -137,6 +141,58 @@ const SeatDot = memo(function SeatDot({
         onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
       />
+    )
+  }
+
+  if (shape === 'chair') {
+    const back = chairBox(CHAIR.back, r)
+    const pad = chairBox(CHAIR.pad, r)
+    // A Group, not a single shape, because a chair is two rectangles. Everything
+    // the other branches put on their Rect goes on the Group instead: it carries
+    // the id (so the multi-seat drag's stage.findOne('#'+id) still resolves to
+    // one node), it is what Konva drags, and its x/y IS the seat centre -- the
+    // same convention as circle and diamond, which is why handleDragEnd needs no
+    // special case here.
+    //
+    // The children listen so the Group gets a hit area at all (a Group has no
+    // shape of its own). Clicks therefore arrive with e.target set to a child,
+    // which is fine: every handler uses the captured seat id, never e.target.
+    // Drags are different -- Konva fires those on the dragged node -- so
+    // e.target there is the Group, as the handlers expect.
+    return (
+      <Group
+        x={x}
+        y={y}
+        rotation={facing}
+        listening={listenProp}
+        onClick={handleClick}
+        onTap={handleClick}
+        onDblClick={handleDblClick}
+        onDblTap={handleDblClick}
+        name="seat"
+        id={nodeId}
+        draggable={draggable}
+        onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
+        onDragEnd={handleDragEnd}
+      >
+        <Rect
+          {...back}
+          fill={fill}
+          stroke={stroke}
+          strokeWidth={strokeW}
+          perfectDrawEnabled={false}
+          hitStrokeWidth={6}
+        />
+        <Rect
+          {...pad}
+          fill={fill}
+          stroke={stroke}
+          strokeWidth={strokeW}
+          perfectDrawEnabled={false}
+          hitStrokeWidth={6}
+        />
+      </Group>
     )
   }
 
@@ -285,6 +341,8 @@ const SectionGroup = memo(function SectionGroup({
   onSeatDragEnd,
   seatRadius,
   seatShape,
+  stagePoint,
+  onStageCtx,
   tierColorMap,
   seatsDraggable,
   selectedRowId,
@@ -309,6 +367,12 @@ const SectionGroup = memo(function SectionGroup({
   onSeatDragEnd?: (seatId: string, cx: number, cy: number) => void
   seatRadius: number
   seatShape: SeatShape
+  /** Centre of the shape whose role is 'stage', or null when the map has none.
+   *  Only the 'chair' shape uses it; every chair turns to face this point. */
+  stagePoint?: { x: number; y: number } | null
+  /** The stage's outline plus where the room is, so a section standing ON the
+   *  stage faces out instead of at its own middle. */
+  onStageCtx?: { stagePoly: number[] | null; audience: { x: number; y: number } | null }
   tierColorMap?: Map<string, string>
   seatsDraggable?: boolean
   selectedRowId?: string | null
@@ -316,6 +380,15 @@ const SectionGroup = memo(function SectionGroup({
   onRowLabelClick?: (rowId: string) => void
   onRowLabelDragEnd?: (rowId: string, end: 'start' | 'end', dx: number, dy: number) => void
 }) {
+  // Chairs at a TABLE face the table; seats in an audience block face the
+  // stage. Worked out from where the seats sit relative to the outline, so the
+  // builder and the buyer's picker reach the same answer with no stored flag.
+  // Once per section: the verdict is the same for every seat in it.
+  const facingTarget = useMemo(
+    () => chairTarget(section.polygonPoints, section.seats, stagePoint ?? null, onStageCtx),
+    [section.polygonPoints, section.seats, stagePoint, onStageCtx]
+  )
+
   const center = useMemo(
     () => getSectionCenter(section.polygonPoints),
     [section.polygonPoints]
@@ -376,6 +449,17 @@ const SectionGroup = memo(function SectionGroup({
             // builder becomes a liar about what buyers will see, which is worse
             // than not having the feature.
             shape={section.seatShape ?? seatShape}
+            // Per SEAT, not per section: a block curved around a stage has its
+            // end seats genuinely angled differently from its middle ones, and
+            // chairs around a table each face a different way by definition.
+            // Only 'chair' reads this, and chairFacing is a single atan2.
+            // seatFacing, not chairFacing: a seat the organizer has turned by
+            // hand carries its own angle and stops following the stage.
+            facing={
+              (section.seatShape ?? seatShape) === 'chair'
+                ? seatFacing(seat, facingTarget)
+                : 0
+            }
             tierColor={resolvedTier ? tierColorMap?.get(resolvedTier) : undefined}
             draggable={seatsDraggable}
             onDragStart={onSeatDragStart ? (node) => onSeatDragStart(seat.id, node) : undefined}
@@ -541,6 +625,21 @@ export function CanvasBuilder({
   const rotateDragRef = useRef<{
     sectionId: string
     original: SectionData
+    origin: { x: number; y: number }
+    startAngle: number
+    committed: boolean
+  } | null>(null)
+
+  /**
+   * The seat-selection rotate knob. Same strategy as rotateDragRef above and
+   * for the same reason: hold the positions the seats had when the gesture
+   * began, and frame rotate THOSE by the total angle. Turning the current
+   * state by each frame's small delta accumulates rounding and walks the block
+   * out from under the cursor.
+   */
+  const seatRotateDragRef = useRef<{
+    /** Each seat's facing when the gesture began, so the drag adds to it. */
+    original: { id: string; facing: number }[]
     origin: { x: number; y: number }
     startAngle: number
     committed: boolean
@@ -777,6 +876,14 @@ export function CanvasBuilder({
         if (e.key === 's') {
           e.preventDefault()
           handleExport()
+        }
+        // Select everything unlocked. Rotate-all already existed in the bar and
+        // the panel; this was the missing half of "select all, then rotate all"
+        // — there was no way to get everything selected short of dragging a
+        // marquee across the whole canvas and hoping.
+        if (e.key === 'a') {
+          e.preventDefault()
+          dispatch({ type: 'SELECT_ALL' })
         }
         // Copy selected seats
         if (e.key === 'c' && state.selectedSeatIds.length > 0) {
@@ -1622,6 +1729,107 @@ export function CanvasBuilder({
     rotateDragRef.current = null
   }, [])
 
+  // ─── Rotate handle for a SEAT selection ─────────────────────────────
+  /**
+   * Where the seat rotate knob hangs, and the point the DRAG measures its
+   * angle from.
+   *
+   * ONE seat is enough. The knob turns which way the chairs face, on the spot,
+   * and a single chair has a direction just as much as twenty do. (That is the
+   * difference from swinging a block around a pivot, which genuinely needs two
+   * — a point has nothing to swing around.)
+   *
+   * The centre is the selection's centroid, and minY is only where the stalk
+   * is anchored; a knob floating inside the selection would be unreachable.
+   */
+  const seatSelectionPivot = useMemo(() => {
+    const ids = new Set(state.selectedSeatIds)
+    const pts = state.sections.flatMap((s) => s.seats.filter((seat) => ids.has(seat.id)))
+    if (pts.length === 0) return null
+    const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length
+    const cy = pts.reduce((a, p) => a + p.y, 0) / pts.length
+    return { cx, cy, minY: Math.min(...pts.map((p) => p.y)) }
+  }, [state.selectedSeatIds, state.sections])
+
+  const handleSeatRotateStart = useCallback(
+    (e: Konva.KonvaEventObject<DragEvent>) => {
+      e.cancelBubble = true
+      const stage = stageRef.current
+      const pointer = stage?.getPointerPosition()
+      if (!pointer || !seatSelectionPivot) return
+      const { x, y } = screenToCanvas(pointer)
+      const ids = new Set(state.selectedSeatIds)
+      const origin = { x: seatSelectionPivot.cx, y: seatSelectionPivot.cy }
+      // Resolve each seat's CURRENT angle now, derived one included, so the
+      // drag has a number to add to. Per section, because what a chair faces
+      // belongs to its section.
+      const stagePt = stageCenter(state.backgroundShapes)
+      const sPoly = stagePolygon(state.backgroundShapes)
+      const aud = audienceCenter(state.sections.map((sec) => sec.polygonPoints), sPoly)
+      const original: { id: string; facing: number }[] = []
+      for (const sec of state.sections) {
+        if (!sec.seats.some((seat) => ids.has(seat.id))) continue
+        const look = chairTarget(sec.polygonPoints, sec.seats, stagePt, { stagePoly: sPoly, audience: aud })
+        for (const seat of sec.seats) {
+          if (ids.has(seat.id)) original.push({ id: seat.id, facing: seatFacing(seat, look) })
+        }
+      }
+      seatRotateDragRef.current = {
+        original,
+        origin,
+        startAngle: angleFrom(origin, x, y),
+        committed: false,
+      }
+    },
+    [screenToCanvas, angleFrom, seatSelectionPivot, state.selectedSeatIds, state.sections]
+  )
+
+  const handleSeatRotateMove = useCallback(
+    (e: Konva.KonvaEventObject<DragEvent>) => {
+      e.cancelBubble = true
+      const drag = seatRotateDragRef.current
+      const stage = stageRef.current
+      const pointer = stage?.getPointerPosition()
+      if (!drag || !pointer) return
+      const { x, y } = screenToCanvas(pointer)
+
+      let delta = angleFrom(drag.origin, x, y) - drag.startAngle
+      // Shift clicks the turn to 15° steps, exactly as the section knob does.
+      if ((e.evt as unknown as { shiftKey?: boolean })?.shiftKey) {
+        delta = Math.round(delta / 15) * 15
+      }
+
+      // ORIENTATION, not position. The seats stay exactly where they are and
+      // the chairs swing to face a new direction. Each seat's own starting
+      // angle is captured in `original`, so a chair that already pointed a
+      // different way keeps that difference through the drag instead of every
+      // chair snapping to one shared angle.
+      const facings = drag.original.map((p) => ({ id: p.id, facing: p.facing + delta }))
+
+      // One undo entry for the whole gesture: the first frame goes through
+      // history while the seats are still as the drag began, every frame after
+      // it does not.
+      if (!drag.committed) {
+        drag.committed = true
+        dispatchWithHistory({ type: 'SET_SEAT_FACINGS', facings })
+      } else {
+        dispatch({ type: 'SET_SEAT_FACINGS', facings })
+      }
+
+      // Keep the knob on the cursor's bearing rather than wherever Konva's own
+      // drag left it.
+      const r = Math.hypot(x - drag.origin.x, y - drag.origin.y)
+      const a = (angleFrom(drag.origin, x, y) * Math.PI) / 180
+      e.target.position({ x: drag.origin.x + Math.cos(a) * r, y: drag.origin.y + Math.sin(a) * r })
+    },
+    [screenToCanvas, angleFrom, dispatch, dispatchWithHistory]
+  )
+
+  const handleSeatRotateEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true
+    seatRotateDragRef.current = null
+  }, [])
+
   /** ±10% nudge. Shares scaleSection with the box handles, so a nudge and a
    *  drag cannot disagree about what resizing a piece means. */
   const handleScaleSection = useCallback((id: string, factor: number) => {
@@ -1937,6 +2145,26 @@ export function CanvasBuilder({
     [tiers]
   )
 
+  // Where the chairs look. Computed once per shape change rather than per seat,
+  // because a map can carry thousands of seats and the answer is the same for
+  // all of them. Null when the map has no stage — then every chair faces up.
+  const stagePoint = useMemo(
+    () => stageCenter(state.backgroundShapes),
+    [state.backgroundShapes]
+  )
+
+  // Where the ROOM is, for a section standing ON the stage — a choir, an
+  // orchestra, on-stage VIP. Measured from section OUTLINES rather than seats
+  // so the builder matches the buyer's picker, which only ever has outlines
+  // for the sections it has not opened yet.
+  const onStageCtx = useMemo(() => {
+    const stagePoly = stagePolygon(state.backgroundShapes)
+    return {
+      stagePoly,
+      audience: audienceCenter(state.sections.map((x) => x.polygonPoints), stagePoly),
+    }
+  }, [state.backgroundShapes, state.sections])
+
   // ─── Live drawing preview ───────────────────────────────────────────
   const rectPreview = useMemo(() => {
     if ((state.tool !== 'draw-rect' && state.tool !== 'draw-table' && state.tool !== 'select') || !state.isDrawing || !mousePos) return null
@@ -2029,6 +2257,8 @@ export function CanvasBuilder({
           onUpdateSection={(id, updates) => dispatchWithHistory({ type: 'UPDATE_SECTION', id, updates })}
           onUpdateShape={(id, updates) => dispatchWithHistory({ type: 'UPDATE_SHAPE', id, updates })}
           onRotateSections={(ids, degrees) => dispatchWithHistory({ type: 'ROTATE_SECTIONS', ids, degrees })}
+          selectedSeatIds={state.selectedSeatIds}
+          onRotateSeats={(seatIds, degrees) => dispatchWithHistory({ type: 'ROTATE_SEATS', seatIds, degrees })}
           onAlignSections={(ids, mode) => dispatchWithHistory({ type: 'ALIGN_SECTIONS', ids, mode })}
           onDuplicateSection={(id, mirror) => dispatchWithHistory({ type: 'DUPLICATE_SECTION', id, mirror })}
           onScaleSection={handleScaleSection}
@@ -2138,6 +2368,8 @@ export function CanvasBuilder({
                 seatsDraggable={!readOnly && state.tool === 'select'}
                 seatRadius={state.seatRadius}
                 seatShape={state.seatShape}
+                stagePoint={stagePoint}
+                onStageCtx={onStageCtx}
                 tierColorMap={tierColorMap}
                 selectedRowId={state.selectedRowId}
                 rowLabelsEditable={!readOnly && state.tool === 'select'}
@@ -2392,6 +2624,53 @@ export function CanvasBuilder({
                   </Group>
                 )
               })()}
+
+            {/* Rotate handle for a SEAT selection. Amber, like the seat
+                highlight, so it is obvious this turns the seats and not the
+                section they sit in. Shown only at two or more seats: one seat
+                is a point and has nothing to turn. The section knob above is
+                hidden whenever any seat is selected, so the two never collide. */}
+            {!readOnly && state.tool === 'select' && seatSelectionPivot && (() => {
+              const gap = 30 / state.zoom
+              const hx = seatSelectionPivot.cx
+              const hy = seatSelectionPivot.minY - gap
+              return (
+                <Group key="rot-seats">
+                  <Line
+                    points={[seatSelectionPivot.cx, seatSelectionPivot.minY, hx, hy]}
+                    stroke="#f59e0b"
+                    strokeWidth={1.5 / state.zoom}
+                    listening={false}
+                    perfectDrawEnabled={false}
+                  />
+                  {/* The pivot, drawn so the organizer can see what it turns
+                      about before they commit to a drag. */}
+                  <Circle
+                    x={seatSelectionPivot.cx}
+                    y={seatSelectionPivot.cy}
+                    radius={2.5 / state.zoom}
+                    fill="#f59e0b"
+                    listening={false}
+                    perfectDrawEnabled={false}
+                  />
+                  <Circle
+                    x={hx}
+                    y={hy}
+                    radius={7 / state.zoom}
+                    fill="#f59e0b"
+                    stroke="#ffffff"
+                    strokeWidth={2 / state.zoom}
+                    draggable
+                    onDragStart={handleSeatRotateStart}
+                    onDragMove={handleSeatRotateMove}
+                    onDragEnd={handleSeatRotateEnd}
+                    onMouseEnter={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = 'grab' }}
+                    onMouseLeave={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = '' }}
+                    perfectDrawEnabled={false}
+                  />
+                </Group>
+              )
+            })()}
           </Layer>
 
           {/* Drawing Preview Layer */}
@@ -2623,6 +2902,12 @@ export function CanvasBuilder({
           }}
           onScaleSeats={(seatIds, factor) => {
             dispatchWithHistory({ type: 'SCALE_SEATS', seatIds, factor })
+          }}
+          onRotateSeats={(seatIds, degrees) => {
+            dispatchWithHistory({ type: 'ROTATE_SEATS', seatIds, degrees })
+          }}
+          onResetSeatFacing={(seatIds) => {
+            dispatchWithHistory({ type: 'SET_SEAT_FACING', seatIds, facing: null })
           }}
           onSaveAsPiece={handleSaveAsPiece}
           onDuplicateSection={(id, mirror) => {

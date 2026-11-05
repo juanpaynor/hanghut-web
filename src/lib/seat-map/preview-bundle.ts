@@ -1,4 +1,5 @@
 import type { CanvasData } from '@/components/seat-map/types'
+import { normaliseSeatShape } from './seat-shape'
 import { resolveSeatTier } from '@/components/seat-map/types'
 
 /**
@@ -32,7 +33,7 @@ export interface PreviewBundle {
     }[]
   }
   /** sectionId → seats, as /api/seat-map/section returns them. */
-  sectionSeats: Record<string, { id: string; row: string; seat: number; label: string; x: number; y: number; tier_id: string | null }[]>
+  sectionSeats: Record<string, { id: string; row: string; seat: number; label: string; x: number; y: number; tier_id: string | null; facing: number | null }[]>
   status: {
     version: number
     selection_mode: 'best_available' | 'pick' | 'both'
@@ -59,7 +60,14 @@ export function buildPreviewBundle(
       .sort((a, b) => a.rowLabel.localeCompare(b.rowLabel, undefined, { numeric: true }) || a.seatNumber - b.seatNumber)
     sectionSeats[s.id] = seats.map((seat) => {
       const t = resolveSeatTier(seat, s)
-      return { id: seat.id, row: seat.rowLabel, seat: seat.seatNumber, label: seat.label, x: seat.x, y: seat.y, tier_id: t && tierIds.has(t) ? t : null }
+      return {
+        id: seat.id, row: seat.rowLabel, seat: seat.seatNumber, label: seat.label,
+        x: seat.x, y: seat.y, tier_id: t && tierIds.has(t) ? t : null,
+        // Mirrors get_event_section_seats. Without it the organizer's preview
+        // would draw hand-turned chairs facing the stage while the live map
+        // drew them turned -- the exact drift this file exists to prevent.
+        facing: typeof seat.facing === 'number' && Number.isFinite(seat.facing) ? seat.facing : null,
+      }
     })
 
     // Availability the way the status RPC counts it: non-blocked seats with an
@@ -127,10 +135,7 @@ export function buildPreviewBundle(
           typeof s.unitCapacity === 'number' && Number.isFinite(s.unitCapacity) && s.unitCapacity > 0
             ? Math.floor(s.unitCapacity)
             : null,
-        seat_shape:
-          s.seatShape === 'circle' || s.seatShape === 'square' || s.seatShape === 'diamond'
-            ? s.seatShape
-            : null,
+        seat_shape: normaliseSeatShape(s.seatShape),
       })),
     },
     sectionSeats,

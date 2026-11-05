@@ -88,13 +88,17 @@ export function WalletCard({
                 <div className="p-4 rounded-lg bg-background/60 border border-border/50">
                     <div className="flex items-center gap-1.5 mb-1">
                         <Wallet className="h-3.5 w-3.5 text-green-500" />
-                        <p className="text-xs text-muted-foreground font-medium">Available to Withdraw</p>
+                        {/* NOT "Available to Withdraw". A platform-managed partner cannot
+                            withdraw from this page -- the request card right below says so --
+                            and the two labels contradicting each other is worse than either
+                            one alone. The money IS theirs; it is released by us, not by them. */}
+                        <p className="text-xs text-muted-foreground font-medium">Your Balance</p>
                     </div>
                     <p className="text-3xl font-bold text-green-600">
                         ₱{ledgerBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <p className="text-[10px] text-muted-foreground mt-1">
-                        Settled sales, minus previous payouts
+                        Settled sales, minus previous payouts · released by HangHut
                     </p>
                 </div>
                 {pendingSettlement > 0 && (

@@ -2,6 +2,7 @@ import { revalidatePath } from 'next/cache'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CanvasData } from '@/components/seat-map/types'
 import { findStage, shapeCenter, rowOrderFromStage, ensureRows } from './rows'
+import { normaliseSeatShape } from './seat-shape'
 
 /**
  * The live-map writer behind both the legacy direct save and Publish
@@ -139,12 +140,7 @@ export async function syncLiveSeatMap(
       section.unitCapacity > 0
         ? Math.floor(section.unitCapacity)
         : null,
-    seat_shape:
-      section.seatShape === 'circle' ||
-      section.seatShape === 'square' ||
-      section.seatShape === 'diamond'
-        ? section.seatShape
-        : null,
+    seat_shape: normaliseSeatShape(section.seatShape),
   }))
 
   if (sectionRecords.length > 0) {
@@ -167,6 +163,10 @@ export async function syncLiveSeatMap(
       y: seat.y,
       custom_price: seat.customPrice || null,
       tier_id: seat.tierId || null,
+      // A hand-turned chair. null means "work it out from the stage or the
+      // table it rings", which is every seat on every map saved before this
+      // column existed — so nothing changes for them.
+      facing: typeof seat.facing === 'number' && Number.isFinite(seat.facing) ? seat.facing : null,
       // DB 'booked'/'held' always win (protect sold/in-flight seats); otherwise
       // honor the editor's status so 'disabled' (blocked) ↔ 'available' persists.
       status: (() => {

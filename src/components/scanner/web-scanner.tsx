@@ -174,9 +174,20 @@ export function WebScanner({ events }: WebScannerProps) {
             isResultDisplayedRef.current = true // Pause!
 
             if (result.success) {
+                const party = (result.ticket?.admits ?? 1) > 1
                 toast({
-                    title: isMerch ? "Merch handed over!" : "Valid Ticket!",
-                    description: result.ticket?.guestName ? `${isMerch ? 'For' : 'Welcome,'} ${result.ticket.guestName}` : (isMerch ? "Fulfilled" : "Entry Approved"),
+                    // On a table the count IS the headline — "Valid Ticket!" tells
+                    // door staff nothing about whether the other six may follow.
+                    title: isMerch
+                        ? "Merch handed over!"
+                        : party
+                            ? `${result.ticket.admitted} of ${result.ticket.admits} in`
+                            : "Valid Ticket!",
+                    description: party
+                        ? (result.ticket.remaining > 0
+                            ? `${result.ticket.remaining} more on this table`
+                            : 'Whole table is in')
+                        : (result.ticket?.guestName ? `${isMerch ? 'For' : 'Welcome,'} ${result.ticket.guestName}` : (isMerch ? "Fulfilled" : "Entry Approved")),
                     className: "bg-green-500 text-white border-none"
                 })
                 // Refresh stats after successful scan (ticket mode only)
@@ -329,7 +340,15 @@ export function WebScanner({ events }: WebScannerProps) {
                                 <CheckCircle className="w-8 h-8" />
                             </div>
                             <div>
-                                <h2 className="text-2xl font-bold text-green-700">VALID TICKET</h2>
+                                {/* A table admits a whole party, so the headline
+                                    has to say how many are IN, not just that the
+                                    ticket is good. Door staff read this and
+                                    nothing else before waving people through. */}
+                                <h2 className="text-2xl font-bold text-green-700">
+                                    {(lastResult.ticket?.admits ?? 1) > 1
+                                        ? `${lastResult.ticket.admitted} OF ${lastResult.ticket.admits} IN`
+                                        : 'VALID TICKET'}
+                                </h2>
                                 {lastResult.ticket && (
                                     <>
                                         <p className="text-green-800/80 font-medium mt-1">{lastResult.ticket.tier_name || lastResult.ticket.ticket_tiers?.name}</p>
@@ -341,6 +360,26 @@ export function WebScanner({ events }: WebScannerProps) {
                                             <div className="bg-white/80 p-3 rounded-lg mt-3 border border-green-600/20">
                                                 <p className="text-muted-foreground uppercase text-xs tracking-wider mb-1">Seat</p>
                                                 <p className="font-bold text-2xl text-slate-900">{formatSeat(lastResult.ticket)}</p>
+                                            </div>
+                                        )}
+                                        {(lastResult.ticket?.admits ?? 1) > 1 && (
+                                            <div className="bg-white/80 p-3 rounded-lg mt-3 border border-green-600/20">
+                                                <p className="text-muted-foreground uppercase text-xs tracking-wider mb-1">
+                                                    {lastResult.ticket.remaining > 0 ? 'Still to come' : 'Whole party in'}
+                                                </p>
+                                                <p className="font-bold text-2xl text-slate-900 tabular-nums">
+                                                    {lastResult.ticket.remaining > 0
+                                                        ? `${lastResult.ticket.remaining} more`
+                                                        : `All ${lastResult.ticket.admits}`}
+                                                </p>
+                                                {/* The same ticket is scanned again for the rest of
+                                                    the party, which is not obvious: every other ticket
+                                                    here is one scan and done. */}
+                                                {lastResult.ticket.remaining > 0 && (
+                                                    <p className="text-[11px] text-muted-foreground mt-1">
+                                                        Scan this same ticket again as they arrive
+                                                    </p>
+                                                )}
                                             </div>
                                         )}
                                     </>

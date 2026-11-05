@@ -6,10 +6,15 @@ import {
   sectionBounds,
   groupBounds,
   rotateSection,
+  rotateShape,
+  shapeBoundsForGroup,
   translateSection,
   alignSectionDeltas,
 } from '@/lib/seat-map/transform'
 import type { AlignMode } from '@/lib/seat-map/transform'
+import {
+  chairTarget, stageCenter, stagePolygon, audienceCenter, seatFacing, normaliseDegrees,
+} from '@/lib/seat-map/chair'
 export type { AlignMode }
 import type {
   RowData,
@@ -212,6 +217,8 @@ type Action =
   | { type: 'SELECT_SEATS'; seatIds: string[] }
   | { type: 'TOGGLE_SELECT_SEAT'; seatId: string }
   | { type: 'DESELECT_ALL' }
+  /** Everything unlocked on the map — sections and decor both. */
+  | { type: 'SELECT_ALL' }
   | { type: 'SET_DRAWING_POINTS'; points: number[] }
   | { type: 'ADD_DRAWING_POINT'; x: number; y: number }
   | { type: 'SET_IS_DRAWING'; isDrawing: boolean }
@@ -230,6 +237,11 @@ type Action =
   | { type: 'MOVE_SEATS'; seatIds: string[]; dx: number; dy: number }
   | { type: 'SET_SEAT_STATUS'; seatIds: string[]; status: SeatStatus }
   | { type: 'SCALE_SEATS'; seatIds: string[]; factor: number }
+  | { type: 'ROTATE_SEATS'; seatIds: string[]; degrees: number }
+  | { type: 'SET_SEAT_FACING'; seatIds: string[]; facing: number | null }
+  | { type: 'SET_SEAT_FACINGS'; facings: { id: string; facing: number }[] }
+  | { type: 'ORBIT_SEATS'; seatIds: string[]; degrees: number }
+  | { type: 'SET_SEAT_POSITIONS'; positions: { id: string; x: number; y: number }[] }
   | { type: 'ALIGN_SEATS'; seatIds: string[]; mode: 'straighten' | 'flat' }
   | { type: 'DUPLICATE_SECTION'; id: string; mirror?: boolean }
   /** Rotate whole sections. One section turns about its own centre; several turn
@@ -441,6 +453,19 @@ export function canvasReducer(state: CanvasState, action: Action): CanvasState {
         ? state.selectedSeatIds.filter(id => id !== action.seatId)
         : [...state.selectedSeatIds, action.seatId]
       return { ...state, selectedIds: [], selectedSeatIds: newIds, selectedSeatId: newIds[newIds.length - 1] ?? null }
+    }
+
+    case 'SELECT_ALL': {
+      // Locked things are deliberately skipped. Lock exists so a traced floor
+      // plan or a placed stage stops moving while you work around it, and a
+      // select-all that swept them up would make the next rotate undo exactly
+      // the thing the lock was protecting.
+      const ids = [
+        ...state.sections.filter((s2) => !s2.locked).map((s2) => s2.id),
+        ...state.backgroundShapes.filter((b) => !b.locked).map((b) => b.id),
+      ]
+      if (ids.length === 0) return state
+      return { ...state, selectedIds: ids, selectedSeatId: null, selectedSeatIds: [], selectedRowId: null }
     }
 
     case 'DESELECT_ALL':
@@ -659,6 +684,146 @@ export function canvasReducer(state: CanvasState, action: Action): CanvasState {
       }
     }
 
+    case 'SET_SEAT_POSITIONS': {
+      // Exact coordinates, not a delta.
+      //
+      // The rotate KNOB needs this. A live drag recomputes from the positions
+      // the seats had when the gesture STARTED, every frame, and sets them
+      // outright.
+      //
+      // Not mainly for accuracy: measured over 2000 frames, turning the
+      // current state by each frame's small delta drifts about 9e-12, because
+      // the centroid of a rigid set does not move when you rotate it. (That is
+      // NOT true of the section handle, whose pivot is the bounding-box centre
+      // — see rotateDragRef on why a U booth would walk across the map.)
+      //
+      // The real reason is SHIFT-SNAPPING. Snapping has to apply to the total
+      // angle of the gesture. Snap each frame's delta instead and every delta
+      // under 7.5° rounds to zero, so a slow drag never moves at all.
+      if (action.positions.length === 0) return state
+      const next = new Map(action.positions.map((p) => [p.id, p]))
+      return {
+        ...state,
+        sections: state.sections.map((s) => ({
+          ...s,
+          seats: s.seats.map((seat) => {
+            const p = next.get(seat.id)
+            return p ? { ...seat, x: p.x, y: p.y } : seat
+          }),
+        })),
+      }
+    }
+
+    case 'ROTATE_SEATS': {
+      // Turn each selected seat ON THE SPOT: change which way the chair faces.
+      // Nothing moves.
+      //
+      // A seat's facing is normally DERIVED — face the table you ring, the room
+      // if you stand on the stage, otherwise the stage. Turning one by hand has
+      // to write that answer down first, or the nudge would be measured against
+      // a number the seat does not have. From then on the seat keeps its own
+      // angle and stops following the stage, which is what overriding means.
+      // SET_SEAT_FACING with null hands it back.
+      const targets = new Set(action.seatIds)
+      if (targets.size === 0 || !action.degrees) return state
+
+      const stage = stageCenter(state.backgroundShapes)
+      const stagePoly = stagePolygon(state.backgroundShapes)
+      const audience = audienceCenter(state.sections.map((s) => s.polygonPoints), stagePoly)
+
+      let touched = false
+      const sections = state.sections.map((s) => {
+        if (!s.seats.some((seat) => targets.has(seat.id))) return s
+        // Per section, because the thing a chair faces is a property of the
+        // section it belongs to, not of the selection.
+        const look = chairTarget(s.polygonPoints, s.seats, stage, { stagePoly, audience })
+        return {
+          ...s,
+          seats: s.seats.map((seat) => {
+            if (!targets.has(seat.id)) return seat
+            touched = true
+            return { ...seat, facing: normaliseDegrees(seatFacing(seat, look) + action.degrees) }
+          }),
+        }
+      })
+      return touched ? { ...state, sections } : state
+    }
+
+    case 'SET_SEAT_FACINGS': {
+      // Per-seat absolute angles. What the rotate KNOB sends every frame: it
+      // captures each seat's starting angle once and adds the gesture's total,
+      // so a chair that already pointed somewhere different keeps that
+      // difference instead of every chair snapping to one shared angle.
+      if (action.facings.length === 0) return state
+      const next = new Map(action.facings.map((f) => [f.id, normaliseDegrees(f.facing)]))
+      return {
+        ...state,
+        sections: state.sections.map((s) => ({
+          ...s,
+          seats: s.seats.map((seat) =>
+            next.has(seat.id) ? { ...seat, facing: next.get(seat.id)! } : seat
+          ),
+        })),
+      }
+    }
+
+    case 'SET_SEAT_FACING': {
+      // An absolute angle, or null to go back to following the stage.
+      const targets = new Set(action.seatIds)
+      if (targets.size === 0) return state
+      const facing = action.facing === null ? null : normaliseDegrees(action.facing)
+      return {
+        ...state,
+        sections: state.sections.map((s) => ({
+          ...s,
+          seats: s.seats.map((seat) => (targets.has(seat.id) ? { ...seat, facing } : seat)),
+        })),
+      }
+    }
+
+    case 'ORBIT_SEATS': {
+      // Swing the selected seats AROUND a pivot — their positions change, the
+      // way they face does not. This is the other meaning of "rotate a block of
+      // seats": angling a whole bank against a wall rather than turning the
+      // chairs in place. ROTATE_SEATS above is the one the Turn controls use.
+      //
+      // Turn the selected seats as one rigid body.
+      //
+      // The pivot is the selection's CENTROID, not its bounding-box centre --
+      // deliberately the same pivot SCALE_SEATS uses. Spread, compress and
+      // rotate are the three transforms that act on a loose group of seats, and
+      // if rotate span about a different point than spread, alternating them
+      // would walk the selection across the map a little at a time. (Sections
+      // use the bbox centre, but a section is a shape with an outline; a bag of
+      // seats has no box of its own that the organizer can see.)
+      //
+      // Positions only. Numbering, row labels, status and tier all stay put --
+      // turning a block of seats is not renumbering it.
+      const targets = new Set(action.seatIds)
+      const pts = state.sections.flatMap((s) => s.seats.filter((seat) => targets.has(seat.id)))
+      // One seat is a point, and a point has no orientation to change. The
+      // chair SHAPE does face a direction, but that is derived from the stage
+      // or the table it rings, so there is nothing here to turn either.
+      if (pts.length < 2 || !action.degrees) return state
+
+      const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length
+      const cy = pts.reduce((a, p) => a + p.y, 0) / pts.length
+      const rad = (action.degrees * Math.PI) / 180
+      const cos = Math.cos(rad), sin = Math.sin(rad)
+
+      return {
+        ...state,
+        sections: state.sections.map((s) => ({
+          ...s,
+          seats: s.seats.map((seat) => {
+            if (!targets.has(seat.id)) return seat
+            const dx = seat.x - cx, dy = seat.y - cy
+            return { ...seat, x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }
+          }),
+        })),
+      }
+    }
+
     case 'ALIGN_SEATS': {
       const targets = new Set(action.seatIds)
       // Group selected seats by section + row so that aligning a selection that
@@ -695,15 +860,39 @@ export function canvasReducer(state: CanvasState, action: Action): CanvasState {
     case 'ROTATE_SECTIONS': {
       const ids = new Set(action.ids)
       const targets = state.sections.filter((s) => ids.has(s.id))
-      if (targets.length === 0 || !action.degrees) return state
-      // One piece spins in place; a group turns as one rigid body.
-      const shared = targets.length > 1 ? groupBounds(targets) : null
+      // Decor is part of the body being turned. Rotating a venue 90 degrees and
+      // leaving the stage, the bar and the dance floor behind is not a rotation
+      // of the venue — it is a rotation of half of it.
+      const shapeTargets = state.backgroundShapes.filter((b) => ids.has(b.id))
+      if ((targets.length + shapeTargets.length) === 0 || !action.degrees) return state
+
+      // One piece spins in place; a group turns as one rigid body about a pivot
+      // that spans BOTH kinds, or the two halves would turn about different
+      // centres and come apart.
+      const many = targets.length + shapeTargets.length > 1
+      let shared: { cx: number; cy: number } | null = null
+      if (many) {
+        const boxes = [
+          ...targets.map(sectionBounds),
+          ...shapeTargets.map(shapeBoundsForGroup),
+        ]
+        const minX = Math.min(...boxes.map((b) => b.minX))
+        const minY = Math.min(...boxes.map((b) => b.minY))
+        const maxX = Math.max(...boxes.map((b) => b.maxX))
+        const maxY = Math.max(...boxes.map((b) => b.maxY))
+        shared = { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 }
+      }
       return {
         ...state,
         sections: state.sections.map((s) => {
           if (!ids.has(s.id)) return s
           const b = shared ?? sectionBounds(s)
           return rotateSection(s, action.degrees, { x: b.cx, y: b.cy })
+        }),
+        backgroundShapes: state.backgroundShapes.map((b) => {
+          if (!ids.has(b.id)) return b
+          const box = shared ?? shapeBoundsForGroup(b)
+          return rotateShape(b, action.degrees, { x: box.cx, y: box.cy })
         }),
       }
     }

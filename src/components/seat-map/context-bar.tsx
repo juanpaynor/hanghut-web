@@ -75,6 +75,12 @@ export interface ContextBarProps {
   onUpdateSection: (id: string, updates: Partial<SectionData>) => void
   onUpdateShape: (id: string, updates: Partial<BackgroundShape>) => void
   onRotateSections: (ids: string[], degrees: number) => void
+  /** Seats selected on the map. Selecting seats clears the section selection,
+   *  so without these the bar read "Nothing selected" while the organizer was
+   *  plainly looking at a highlighted block of seats — and the group labelled
+   *  TURN did nothing. */
+  selectedSeatIds?: string[]
+  onRotateSeats?: (seatIds: string[], degrees: number) => void
   onAlignSections: (ids: string[], mode: AlignMode) => void
   onDuplicateSection: (id: string, mirror?: boolean) => void
   onScaleSection: (id: string, factor: number) => void
@@ -94,6 +100,8 @@ export function ContextBar({
   onUpdateSection,
   onUpdateShape,
   onRotateSections,
+  selectedSeatIds = [],
+  onRotateSeats,
   onAlignSections,
   onDuplicateSection,
   onScaleSection,
@@ -109,21 +117,32 @@ export function ContextBar({
   const shape = selectedShape
   // A piece from the furniture palette: sells whole, has no rows to build.
   const isUnit = !!sec && (sec.unitCapacity ?? 0) > 0
-  const nothing = !sec && !shape && !multi
+  // A seat selection is its own thing: picking seats clears selectedIds, so
+  // sec, shape and multi are all empty while a block of seats is highlighted.
+  // Turning needs two seats, because one seat is a point.
+  const seatSel = selectedSeatIds.length
+  // One seat is fine here: turning a chair on the spot is meaningful for a
+  // single chair, unlike swinging a block around a pivot.
+  const canTurnSeats = !!onRotateSeats && seatSel > 0
+  const nothing = !sec && !shape && !multi && seatSel === 0
 
   const title = multi
     ? `${selectedSections.length} selected`
-    : sec?.label || (shape ? shape.label || 'Landmark' : 'Nothing selected')
+    : seatSel > 0
+      ? `${seatSel} seat${seatSel === 1 ? '' : 's'} selected`
+      : sec?.label || (shape ? shape.label || 'Landmark' : 'Nothing selected')
 
   const subtitle = multi
     ? 'Rotate and arrange apply to all'
-    : sec
-      ? isUnit
-        ? `Sells whole · admits ${sec.unitCapacity}`
-        : `${sec.seats.length} seat${sec.seats.length === 1 ? '' : 's'}`
-      : shape
-        ? 'Decoration · never sold'
-        : 'Click something on the map'
+    : seatSel > 0
+      ? 'Turn faces the chairs a new way — they do not move'
+      : sec
+        ? isUnit
+          ? `Sells whole · admits ${sec.unitCapacity}`
+          : `${sec.seats.length} seat${sec.seats.length === 1 ? '' : 's'}`
+        : shape
+          ? 'Decoration · never sold'
+          : 'Click something on the map'
 
   return (
     <div className="h-14 shrink-0 bg-slate-900 border-b border-slate-800 flex items-stretch">
@@ -226,10 +245,23 @@ export function ContextBar({
         {([-90, -15, 15, 90] as const).map((deg) => (
           <button
             key={deg}
-            disabled={!sec && !multi}
-            onClick={() => onRotateSections(multi ? ids : sec ? [sec.id] : [], deg)}
+            // Seats first: selecting seats clears the section selection, so the
+            // two can never both be live, and the organizer's last click is the
+            // one they mean.
+            disabled={seatSel > 0 ? !canTurnSeats : (!sec && !multi)}
+            onClick={() =>
+              seatSel > 0
+                ? onRotateSeats?.(selectedSeatIds, deg)
+                : onRotateSections(multi ? ids : sec ? [sec.id] : [], deg)
+            }
             className={cn(btn, 'tabular-nums')}
-            title={`Rotate ${deg > 0 ? 'clockwise' : 'anticlockwise'} ${Math.abs(deg)}°`}
+            title={
+              seatSel > 1
+                ? `Turn ${seatSel} chairs to face ${Math.abs(deg)}° ${deg > 0 ? 'clockwise' : 'anticlockwise'} — the seats do not move`
+                : seatSel === 1
+                  ? 'Turns which way the chairs face'
+                  : `Rotate ${deg > 0 ? 'clockwise' : 'anticlockwise'} ${Math.abs(deg)}°`
+            }
           >
             {deg > 0 ? '↻' : '↺'}{Math.abs(deg)}
           </button>
