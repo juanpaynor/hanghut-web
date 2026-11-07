@@ -656,8 +656,18 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
 
             {/* Publish */}
             <Dialog open={publishState.open} onOpenChange={(o) => { if (!o && !publishState.busy) setPublishState((p) => ({ ...p, open: false })) }}>
-                <DialogContent className="max-w-lg">
-                    <DialogHeader>
+                {/* Capped and scrollable.
+                    The body had no max height and no overflow, so a long
+                    warning list pushed the footer — and the Publish button —
+                    off the bottom of the screen with no way to reach it. A
+                    numbered set of tables could produce forty warnings.
+                    `svh` is the SMALL viewport: on mobile `vh` resolves
+                    against the large one (browser chrome hidden), so a 85vh
+                    dialog is routinely taller than the screen actually is and
+                    the scroll chains out to the page behind. Same fix, same
+                    reason, as the register modal. */}
+                <DialogContent className="max-w-lg max-h-[85svh] flex flex-col">
+                    <DialogHeader className="shrink-0">
                         <DialogTitle>{pv ? `Publish v${pv.nextVersion}` : 'Publish seat map'}</DialogTitle>
                         <DialogDescription>
                             {workspace?.live ? 'Replaces the map buyers see right now. Sold seats are never touched.' : 'Makes this map visible to buyers for the first time.'}
@@ -668,7 +678,10 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                     ) : publishState.error && !pv ? (
                         <p className="text-sm text-destructive">{publishState.error}</p>
                     ) : pv ? (
-                        <div className="space-y-4 text-sm">
+                        // min-h-0 is load-bearing inside a flex column: without
+                        // it the child refuses to shrink and overflow-y-auto
+                        // never engages.
+                        <div className="space-y-4 text-sm overflow-y-auto min-h-0 flex-1 pr-1">
                             <div className="rounded-lg border p-3">
                                 <p className="font-medium mb-1">{pv.diff.totalBefore.toLocaleString()} → {pv.diff.totalAfter.toLocaleString()} seats</p>
                                 {changeLines.length > 0 ? (
@@ -704,7 +717,7 @@ export function SeatMapTab({ eventId, event }: SeatMapTabProps) {
                             {publishState.error && <p className="text-sm text-destructive">{publishState.error}</p>}
                         </div>
                     ) : null}
-                    <DialogFooter>
+                    <DialogFooter className="shrink-0">
                         <Button variant="outline" onClick={() => setPublishState((p) => ({ ...p, open: false }))} disabled={publishState.busy}>Cancel</Button>
                         <Button onClick={confirmPublish} disabled={!pv || pv.blockers.length > 0 || publishState.busy}>
                             {publishState.busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Upload className="w-4 h-4 mr-1.5" />}

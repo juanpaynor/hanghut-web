@@ -95,6 +95,15 @@ export interface SectionData {
    * Undefined means an ordinary seated section: one person per seat.
    */
   unitCapacity?: number
+  /** Decorative chairs round a whole-sell piece. undefined = default size,
+   *  0 = none, 0.1-3 = multiplier on the map seat radius. Picture only —
+   *  unitCapacity is still what gets sold. */
+  chairScale?: number | null
+  /** Nudge for the section's name, from the middle of its shape. null/absent
+   *  = centred, which is every section that exists today. */
+  labelOffset?: { dx: number; dy: number } | null
+  /** Section name size in px. null/absent = SECTION_LABEL_SIZE. 8-48. */
+  labelFontSize?: number | null
   /**
    * Per-section override of the map-wide CanvasData.seatShape.
    *
@@ -169,6 +178,16 @@ export function resolveSeatTier(
 
 export type ShapeType = 'rect' | 'circle' | 'ellipse' | 'triangle' | 'line' | 'polygon' | 'text' | 'image'
 
+/**
+ * Default size of a section's NAME on the map.
+ *
+ * One constant because the editor used to draw it at 14 and the buyer's map at
+ * 15, so what an organizer laid out was never quite what a buyer saw. The
+ * buyer's value wins: changing the editor shifts a preview, changing the buyer
+ * shifts a published map.
+ */
+export const SECTION_LABEL_SIZE = 15
+
 export interface BackgroundShape {
   id: string
   type: ShapeType
@@ -184,6 +203,18 @@ export interface BackgroundShape {
   label?: string
   fontSize?: number
   fontColor?: string   // label text color (zones); defaults to white
+  /**
+   * Nudge for the label, away from the middle of the shape.
+   *
+   * Needs NO migration and no change to the map RPC: background shapes are
+   * returned to buyers straight out of canvas_data->'backgroundShapes',
+   * verbatim, so a new key on a shape is already on the wire. That is the same
+   * reason the stage's `role` needed nothing. Section labels are the opposite
+   * — every field there is listed out one by one — which is why those needed
+   * a column.
+   */
+  labelDX?: number
+  labelDY?: number
   rotation?: number
   imageUrl?: string
   opacity?: number
@@ -224,6 +255,17 @@ export interface CanvasData {
   sections: SectionData[]
   seatRadius?: number
   seatShape?: SeatShape
+  /**
+   * Backdrop behind the map, for both the editor and the buyer.
+   *
+   * A hex string, or absent for the default white. Venues trace a dark
+   * photographed floor plan and the white panel around it reads as a mistake.
+   *
+   * Map-wide and lives in canvas_data, so this needed NO table migration —
+   * only one line in the geometry RPC to put it on the wire, the same way
+   * seatRadius and seatShape already travel.
+   */
+  canvasBackground?: string | null
 }
 
 // ─── Seat Hold ──────────────────────────────────────────────────────────────
@@ -255,6 +297,8 @@ export interface CanvasState {
   dropRow: string
   dropSeatNumber: number
   seatRadius: number            // global seat dot size (3-12)
+  /** Backdrop behind the map. null = the default white. See CanvasData. */
+  canvasBackground: string | null
   seatShape: SeatShape          // global seat dot shape
   dragSeatStart: { x: number; y: number } | null  // start point for click-drag seat row
 }

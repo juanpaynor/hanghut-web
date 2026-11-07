@@ -222,11 +222,12 @@ type Action =
   | { type: 'SET_DRAWING_POINTS'; points: number[] }
   | { type: 'ADD_DRAWING_POINT'; x: number; y: number }
   | { type: 'SET_IS_DRAWING'; isDrawing: boolean }
-  | { type: 'LOAD_CANVAS'; sections: SectionData[]; backgroundShapes: BackgroundShape[]; width?: number; height?: number; seatRadius?: number; seatShape?: SeatShape }
+  | { type: 'LOAD_CANVAS'; sections: SectionData[]; backgroundShapes: BackgroundShape[]; width?: number; height?: number; seatRadius?: number; seatShape?: SeatShape; canvasBackground?: string | null }
   | { type: 'SET_DROP_ROW'; row: string }
   | { type: 'SET_DROP_SEAT_NUMBER'; num: number }
   | { type: 'DELETE_SEAT'; sectionId: string; seatId: string }
   | { type: 'SET_SEAT_RADIUS'; radius: number }
+  | { type: 'SET_CANVAS_BACKGROUND'; color: string | null }
   | { type: 'SET_SEAT_SHAPE'; shape: SeatShape }
   | { type: 'SET_DRAG_SEAT_START'; point: { x: number; y: number } | null }
   | { type: 'DELETE_SEATS'; seatIds: string[] }
@@ -281,6 +282,7 @@ const initialState: CanvasState = {
   dropRow: 'A',
   dropSeatNumber: 1,
   seatRadius: 6,
+  canvasBackground: null,
   seatShape: 'circle',
   dragSeatStart: null,
   selectedRowId: null,
@@ -558,11 +560,26 @@ export function canvasReducer(state: CanvasState, action: Action): CanvasState {
         canvasWidth: action.width ?? state.canvasWidth,
         canvasHeight: action.height ?? state.canvasHeight,
         seatRadius: action.seatRadius ?? state.seatRadius,
+        // `?? state.canvasBackground`, NOT `?? null`: undo and redo replay
+        // LOAD_CANVAS carrying only sections and shapes, so a `?? null` here
+        // wiped the backdrop on every undo. Clearing it back to the default is
+        // SET_CANVAS_BACKGROUND's job, with an explicit null.
+        canvasBackground: action.canvasBackground ?? state.canvasBackground,
         seatShape: action.seatShape ?? state.seatShape,
       }
 
     case 'SET_SEAT_RADIUS':
       return { ...state, seatRadius: Math.max(2, Math.min(14, action.radius)) }
+    case 'SET_CANVAS_BACKGROUND':
+      // Only a 3- or 6-digit hex is kept. Anything else becomes null (the
+      // default white) rather than being handed to CSS, where a bad value is
+      // silently ignored and the organizer sees nothing happen.
+      return {
+        ...state,
+        canvasBackground: action.color && /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(action.color)
+          ? action.color
+          : null,
+      }
 
     case 'SET_SEAT_SHAPE':
       return { ...state, seatShape: action.shape }

@@ -141,6 +141,31 @@ export async function syncLiveSeatMap(
         ? Math.floor(section.unitCapacity)
         : null,
     seat_shape: normaliseSeatShape(section.seatShape),
+    // Same posture as unit_capacity above: a rejected row fails the whole
+    // upsert, so anything outside the CHECK becomes NULL rather than taking
+    // the organizer's entire save down with it. 0 is MEANINGFUL (no chairs)
+    // and must survive, which is why this is not a truthiness test.
+    chair_scale:
+      typeof section.chairScale === 'number' &&
+      Number.isFinite(section.chairScale) &&
+      section.chairScale >= 0 &&
+      section.chairScale <= 3
+        ? section.chairScale
+        : null,
+    // Shape-checked rather than trusted: a malformed value fails the CHECK and
+    // takes the organizer's whole save down with it, same as chair_scale above.
+    label_offset:
+      section.labelOffset
+      && typeof section.labelOffset.dx === 'number' && Number.isFinite(section.labelOffset.dx)
+      && typeof section.labelOffset.dy === 'number' && Number.isFinite(section.labelOffset.dy)
+        ? { dx: section.labelOffset.dx, dy: section.labelOffset.dy }
+        : null,
+    // Integer and in range, or NULL. A rejected row fails the whole upsert.
+    label_font_size:
+      typeof section.labelFontSize === 'number' && Number.isInteger(section.labelFontSize)
+      && section.labelFontSize >= 8 && section.labelFontSize <= 48
+        ? section.labelFontSize
+        : null,
   }))
 
   if (sectionRecords.length > 0) {

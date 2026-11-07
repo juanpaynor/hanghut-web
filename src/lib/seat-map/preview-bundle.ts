@@ -30,6 +30,9 @@ export interface PreviewBundle {
       sales_mode: 'ga' | 'seated'; seat_count: number
       /** Phase 2 — mirrors event_sections.unit_capacity / .seat_shape. */
       unit_capacity: number | null; seat_shape: string | null
+      chair_scale: number | null
+      label_offset: { dx: number; dy: number } | null
+      label_font_size: number | null
     }[]
   }
   /** sectionId → seats, as /api/seat-map/section returns them. */
@@ -136,6 +139,31 @@ export function buildPreviewBundle(
             ? Math.floor(s.unitCapacity)
             : null,
         seat_shape: normaliseSeatShape(s.seatShape),
+    // Same posture as unit_capacity above: a rejected row fails the whole
+        // upsert, so anything outside the CHECK becomes NULL rather than taking
+        // the organizer's entire save down with it. 0 is MEANINGFUL (no chairs)
+        // and must survive, which is why this is not a truthiness test.
+        chair_scale:
+          typeof s.chairScale === 'number' &&
+          Number.isFinite(s.chairScale) &&
+          s.chairScale >= 0 &&
+          s.chairScale <= 3
+            ? s.chairScale
+            : null,
+    // Shape-checked rather than trusted: a malformed value fails the CHECK and
+        // takes the organizer's whole save down with it, same as chair_scale above.
+        label_offset:
+          s.labelOffset
+          && typeof s.labelOffset.dx === 'number' && Number.isFinite(s.labelOffset.dx)
+          && typeof s.labelOffset.dy === 'number' && Number.isFinite(s.labelOffset.dy)
+            ? { dx: s.labelOffset.dx, dy: s.labelOffset.dy }
+            : null,
+    // Integer and in range, or NULL. A rejected row fails the whole upsert.
+        label_font_size:
+          typeof s.labelFontSize === 'number' && Number.isInteger(s.labelFontSize)
+          && s.labelFontSize >= 8 && s.labelFontSize <= 48
+            ? s.labelFontSize
+            : null,
       })),
     },
     sectionSeats,

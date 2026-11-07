@@ -16,6 +16,7 @@ import { CanvasToolbar } from './canvas-toolbar'
 import { ContextBar } from './context-bar'
 import { snapDrag } from '@/lib/seat-map/snap'
 import { CHAIR, chairBox, chairTarget, seatFacing, stageCenter, stagePolygon, audienceCenter } from '@/lib/seat-map/chair'
+import { isWholeSellSection, unitChairPositions } from '@/lib/seat-map/table-seats'
 import { sectionBounds, rotateSection, scaleSection } from '@/lib/seat-map/transform'
 import {
   FURNITURE,
@@ -28,7 +29,7 @@ import type { SavedPiece } from '@/lib/seat-map/saved-piece'
 import { getSavedPieces, saveSectionAsPiece, deleteSavedPiece } from '@/lib/seat-map/furniture-library-actions'
 import { CanvasProperties } from './canvas-properties'
 import type { CanvasData, SectionData, SeatData, BackgroundShape, SeatShape, TierInfo } from './types'
-import { SEAT_COLORS, resolveSeatTier } from './types'
+import { SEAT_COLORS, SECTION_LABEL_SIZE, resolveSeatTier } from './types'
 import { useToast } from '@/hooks/use-toast'
 import { downscaleImage } from '@/lib/images/downscale'
 import { pointInPolygon, flatToVertices } from './algorithms/point-in-polygon'
@@ -349,6 +350,7 @@ const SectionGroup = memo(function SectionGroup({
   rowLabelsEditable,
   onRowLabelClick,
   onRowLabelDragEnd,
+  onLabelDragEnd,
 }: {
   section: SectionData
   isSelected: boolean
@@ -379,6 +381,8 @@ const SectionGroup = memo(function SectionGroup({
   rowLabelsEditable?: boolean
   onRowLabelClick?: (rowId: string) => void
   onRowLabelDragEnd?: (rowId: string, end: 'start' | 'end', dx: number, dy: number) => void
+  /** Nudge the section's own name off the middle of the shape. */
+  onLabelDragEnd?: (dx: number, dy: number) => void
 }) {
   // Chairs at a TABLE face the table; seats in an audience block face the
   // stage. Worked out from where the seats sit relative to the outline, so the
@@ -392,6 +396,36 @@ const SectionGroup = memo(function SectionGroup({
   const center = useMemo(
     () => getSectionCenter(section.polygonPoints),
     [section.polygonPoints]
+  )
+
+  /**
+   * A piece that sells WHOLE, e.g. a table for six bought as one thing.
+   *
+   * `sellWholeUpdates` leaves exactly one seat at the centre of the outline,
+   * because that seat IS the inventory — it becomes the ticket. Drawing it
+   * with the ordinary seat loop below is what put a lone chair in the middle
+   * of a table. Here the one seat stops being drawn as a chair and the TABLE
+   * carries its status instead, which is truer anyway: the whole table is
+   * what is available or taken, not a dot inside it.
+   */
+  const unitSeat = isWholeSellSection(section.unitCapacity, section.seats.length)
+    ? section.seats[0]
+    : null
+
+  /** Chairs round the outline: picture only, never clickable, never sold.
+   *  Derived from unitCapacity so the builder and the buyer's picker reach the
+   *  same answer with no stored flag — see table-seats.ts. */
+  /** Scaled once: the positions AND the drawn boxes must use the same radius,
+   *  or the chairs sit at default spacing while being drawn a different size. */
+  const unitChairR = seatRadius * (
+    typeof section.chairScale === 'number' && Number.isFinite(section.chairScale) && section.chairScale > 0
+      ? Math.min(section.chairScale, 3) : 1
+  )
+  const unitChairs = useMemo(
+    () => (unitSeat
+      ? unitChairPositions(section.polygonPoints, section.unitCapacity, seatRadius, section.chairScale)
+      : []),
+    [unitSeat, section.polygonPoints, section.unitCapacity, seatRadius, section.chairScale]
   )
 
   return (
@@ -409,7 +443,16 @@ const SectionGroup = memo(function SectionGroup({
         closed
         // Keep the body visible even when the border is 0 — otherwise a faint
         // fill + no outline makes the section look like it vanished in the editor.
-        fill={isSelected ? section.color + '66' : section.color + '40'}
+        //
+        // A whole-sell piece takes its one seat's STATUS colour instead of the
+        // section colour, because the table is the thing that is available or
+        // taken. That also replaces what the centre dot used to communicate,
+        // which is the only thing it was good for.
+        fill={
+          unitSeat && unitSeat.status !== 'available'
+            ? SEAT_COLORS[unitSeat.status as keyof typeof SEAT_COLORS] + (isSelected ? 'aa' : '88')
+            : isSelected ? section.color + '66' : section.color + '40'
+        }
         stroke={isSelected ? '#ffffff' : (section.borderColor || section.color)}
         strokeWidth={isSelected ? 3 : (section.borderWidth ?? 1.5)}
         dash={!isSelected && section.borderStyle === 'dashed' ? [8, 4] : undefined}
@@ -417,20 +460,71 @@ const SectionGroup = memo(function SectionGroup({
         perfectDrawEnabled={false}
       />
       {/* Label */}
-      <Text
-        x={center.x - 40}
-        y={center.y - 8}
-        text={section.locked ? `🔒 ${section.label}` : section.label}
-        fill="#ffffff"
-        fontSize={14}
-        fontStyle="bold"
-        width={80}
-        align="center"
-        listening={false}
-        perfectDrawEnabled={false}
-      />
-      {/* Seats */}
+      {(() => {
+        // The name sits at the middle of the shape, plus whatever the organizer
+        // has nudged it by. On a small table the centred text covers the piece
+        // and the artwork underneath it, which is the whole reason this moves.
+        //
+        // Draggable only while the section is SELECTED, the same rule the row
+        // labels use — leaving every name draggable turns the whole canvas
+        // into drag targets and you can no longer click through to a seat.
+        const labelSize = section.labelFontSize ?? SECTION_LABEL_SIZE
+        const baseX = center.x - 40
+        // Hangs off the font size so a 40px name is not left sitting on the
+        // same baseline a 15px one used, half-off the shape.
+        const baseY = center.y - labelSize * 0.55
+        const movable = !!onLabelDragEnd && isSelected && !section.locked
+        return (
+          <Text
+            x={baseX + (section.labelOffset?.dx ?? 0)}
+            y={baseY + (section.labelOffset?.dy ?? 0)}
+            text={section.locked ? `🔒 ${section.label}` : section.label}
+            fill="#ffffff"
+            fontSize={labelSize}
+            fontStyle="bold"
+            width={80}
+            align="center"
+            draggable={movable}
+            listening={movable}
+            // cancelBubble on all three, or the drag reaches the section Group
+            // behind it and moves the entire table along with the word.
+            onDragStart={(e) => { e.cancelBubble = true }}
+            onDragMove={(e) => { e.cancelBubble = true }}
+            onDragEnd={(e) => {
+              e.cancelBubble = true
+              onLabelDragEnd?.(e.target.x() - baseX, e.target.y() - baseY)
+            }}
+            onMouseEnter={(e) => { if (movable) { const c = e.target.getStage()?.container(); if (c) c.style.cursor = 'move' } }}
+            onMouseLeave={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = '' }}
+            perfectDrawEnabled={false}
+          />
+        )
+      })()}
+      {/* Chairs round a whole-sell piece. Picture only: `listening={false}`
+          so they never take a click, and nothing downstream knows they exist.
+          Drawn before the label so the text stays on top. */}
+      {unitChairs.map((c, i) => {
+        // c.facing is square to the edge the chair sits on. Aiming at the
+        // table's centre instead splayed the four chairs of a rectangle out
+        // like a pinwheel, because a chair a quarter of the way along a long
+        // edge is diagonal from the middle.
+        const rot = c.facing
+        const col = unitSeat && unitSeat.status !== 'available'
+          ? SEAT_COLORS[unitSeat.status as keyof typeof SEAT_COLORS]
+          : '#e2e8f0'
+        return (
+          <Group key={`unit-chair-${i}`} x={c.x} y={c.y} rotation={rot} listening={false}>
+            <Rect {...chairBox(CHAIR.back, unitChairR)} fill={col} opacity={0.55} perfectDrawEnabled={false} />
+            <Rect {...chairBox(CHAIR.pad, unitChairR)} fill={col} opacity={0.85} perfectDrawEnabled={false} />
+          </Group>
+        )
+      })}
+
+      {/* Seats. The single seat of a whole-sell piece is INVENTORY, not
+          furniture — it is skipped here and the outline above shows its
+          status. Drawing it put a lone chair in the middle of every table. */}
       {section.seats.map((seat) => {
+        if (unitSeat && seat.id === unitSeat.id) return null
         const resolvedTier = resolveSeatTier(seat, section)
         return (
           <SeatDot
@@ -600,6 +694,22 @@ export function CanvasBuilder({
   }, [rawDispatchWithHistory])
   const undo = useCallback(() => { setDirty(true); rawUndo() }, [rawUndo])
   const redo = useCallback(() => { setDirty(true); rawRedo() }, [rawRedo])
+  /**
+   * A MAP-WIDE SETTING IS STILL AN UNSAVED CHANGE.
+   *
+   * Seat size, seat shape and the backdrop are not in the undo history — a
+   * snapshot only carries sections and backgroundShapes — so they were
+   * dispatched with the plain `dispatch`, which skips setDirty entirely. The
+   * result is a setting that changes on screen, never autosaves, and leaves the
+   * Save button looking like there is nothing to save. Pick a backdrop, reload,
+   * and it is gone; the DB still reads null.
+   *
+   * Not undoable and not dirty are two different things. These are the second.
+   */
+  const dispatchSetting = useCallback((action: Parameters<typeof dispatch>[0]) => {
+    setDirty(true)
+    dispatch(action)
+  }, [dispatch])
   useEffect(() => {
     if (!dirty) return
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
@@ -756,6 +866,9 @@ export function CanvasBuilder({
         height: initialData.canvasHeight,
         seatRadius: initialData.seatRadius,
         seatShape: initialData.seatShape,
+        // Without this the saved backdrop is dropped on open, and the first
+        // save writes null back over it.
+        canvasBackground: initialData.canvasBackground,
       })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1971,6 +2084,7 @@ export function CanvasBuilder({
       sections: state.sections,
       seatRadius: state.seatRadius,
       seatShape: state.seatShape,
+      canvasBackground: state.canvasBackground,
     }
     onSave?.(data, opts?.auto ? { auto: true } : undefined)
     setDirty(false)
@@ -2305,8 +2419,16 @@ export function CanvasBuilder({
         className="hidden"
       />
 
-      {/* Canvas Area */}
-      <div ref={containerRef} className="flex-1 relative overflow-hidden">
+      {/* Canvas Area.
+          The backdrop is applied HERE as well as on the buyer's map, or the
+          organizer picks a colour and cannot see it until they publish —
+          which is the same WYSIWYG gap that let the seat shape drift for
+          months. Falls back to the editor's own slate when unset. */}
+      <div
+        ref={containerRef}
+        className="flex-1 relative overflow-hidden"
+        style={state.canvasBackground ? { backgroundColor: state.canvasBackground } : undefined}
+      >
         <Stage
           ref={stageRef}
           width={stageSize.width}
@@ -2346,6 +2468,9 @@ export function CanvasBuilder({
                 onDragEnd={(newX, newY) => {
                   dispatchWithHistory({ type: 'UPDATE_SHAPE', id: shape.id, updates: { x: newX, y: newY } })
                 }}
+                onLabelDragEnd={(dx, dy) => {
+                  dispatchWithHistory({ type: 'UPDATE_SHAPE', id: shape.id, updates: { labelDX: dx, labelDY: dy } })
+                }}
               />
             ))}
             {/* Sections + Seats */}
@@ -2377,6 +2502,14 @@ export function CanvasBuilder({
                   if (!state.selectedIds.includes(section.id)) dispatch({ type: 'SELECT', ids: [section.id] })
                   dispatch({ type: 'SELECT_ROW', rowId })
                 }}
+                onLabelDragEnd={(dx, dy) => dispatchWithHistory({
+                  type: 'UPDATE_SECTION',
+                  id: section.id,
+                  // Snap a near-centre nudge back to exactly centred, so a
+                  // label that was dragged and then put back does not sit two
+                  // pixels off forever.
+                  updates: { labelOffset: Math.abs(dx) < 3 && Math.abs(dy) < 3 ? null : { dx, dy } },
+                })}
                 onRowLabelDragEnd={(rowId, end, dx, dy) => {
                   dispatchWithHistory({ type: 'MOVE_ROW_LABEL', sectionId: section.id, rowId, end, dx, dy })
                 }}
@@ -2924,8 +3057,10 @@ export function CanvasBuilder({
           onScaleSection={handleScaleSection}
           seatRadius={state.seatRadius}
           seatShape={state.seatShape}
-          onSetSeatRadius={(r) => dispatch({ type: 'SET_SEAT_RADIUS', radius: r })}
-          onSetSeatShape={(s) => dispatch({ type: 'SET_SEAT_SHAPE', shape: s })}
+          onSetSeatRadius={(r) => dispatchSetting({ type: 'SET_SEAT_RADIUS', radius: r })}
+          canvasBackground={state.canvasBackground}
+          onSetCanvasBackground={(c) => dispatchSetting({ type: 'SET_CANVAS_BACKGROUND', color: c })}
+          onSetSeatShape={(s) => dispatchSetting({ type: 'SET_SEAT_SHAPE', shape: s })}
         />
       )}
       </div>
@@ -2980,12 +3115,15 @@ const RenderBackgroundShape = memo(function RenderBackgroundShape({
   isSelected,
   onDragEnd,
   onSelect,
+  onLabelDragEnd,
 }: {
   shape: BackgroundShape
   draggable?: boolean
   isSelected?: boolean
   onDragEnd?: (newX: number, newY: number) => void
   onSelect?: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void
+  /** Nudge this shape's label away from the middle of the shape. */
+  onLabelDragEnd?: (dx: number, dy: number) => void
 }) {
   const handleDragEnd = useCallback(
     (e: Konva.KonvaEventObject<DragEvent>) => {
@@ -3008,20 +3146,55 @@ const RenderBackgroundShape = memo(function RenderBackgroundShape({
   }
 
   // Centered label for a zone of the given box size (local coords inside a Group)
-  const zoneLabel = (boxW: number, boxH: number) =>
-    shape.label ? (
+  // One helper for every zone shape, so the offset and the drag cannot be
+  // added to the rectangle and quietly missed on the circle.
+  const labelMovable = !!onLabelDragEnd && !!isSelected && !shape.locked
+  const labelDragProps = labelMovable ? {
+    draggable: true,
+    listening: true,
+    // Without cancelBubble the drag reaches the shape Group behind it and
+    // moves the whole DJ booth along with the word.
+    onDragStart: (e: Konva.KonvaEventObject<DragEvent>) => { e.cancelBubble = true },
+    onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => { e.cancelBubble = true },
+    onMouseEnter: (e: Konva.KonvaEventObject<MouseEvent>) => {
+      const c = e.target.getStage()?.container(); if (c) c.style.cursor = 'move'
+    },
+    onMouseLeave: (e: Konva.KonvaEventObject<MouseEvent>) => {
+      const c = e.target.getStage()?.container(); if (c) c.style.cursor = ''
+    },
+  } : { listening: false as const }
+
+  const labelDrop = (baseX: number, baseY: number) =>
+    labelMovable ? {
+      onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
+        e.cancelBubble = true
+        const dx = e.target.x() - baseX
+        const dy = e.target.y() - baseY
+        // Snap a near-centre nudge back to centred, so a label put back does
+        // not sit two pixels off forever.
+        onLabelDragEnd?.(Math.abs(dx) < 3 ? 0 : dx, Math.abs(dy) < 3 ? 0 : dy)
+      },
+    } : {}
+
+  const zoneLabel = (boxW: number, boxH: number) => {
+    if (!shape.label) return null
+    const baseY = boxH / 2 - (shape.fontSize || 14) / 2
+    return (
       <Text
         text={shape.label}
         fill={shape.fontColor || '#ffffff'}
         fontSize={shape.fontSize || 14}
         fontStyle="bold"
         width={boxW}
-        y={boxH / 2 - (shape.fontSize || 14) / 2}
+        x={shape.labelDX ?? 0}
+        y={baseY + (shape.labelDY ?? 0)}
         align="center"
-        listening={false}
+        {...labelDragProps}
+        {...labelDrop(0, baseY)}
         perfectDrawEnabled={false}
       />
-    ) : null
+    )
+  }
 
   if (shape.type === 'rect') {
     const w = shape.width || 100, h = shape.height || 60
@@ -3038,7 +3211,7 @@ const RenderBackgroundShape = memo(function RenderBackgroundShape({
       <Group x={shape.x} y={shape.y} {...common}>
         <Circle radius={r} fill={shape.fill} stroke={stroke} strokeWidth={strokeWidth} dash={dash} perfectDrawEnabled={false} />
         {shape.label ? (
-          <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={r * 2} x={-r} y={-(shape.fontSize || 14) / 2} align="center" listening={false} perfectDrawEnabled={false} />
+          <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={r * 2} x={-r + (shape.labelDX ?? 0)} y={-(shape.fontSize || 14) / 2 + (shape.labelDY ?? 0)} align="center" {...labelDragProps} {...labelDrop(-r, -(shape.fontSize || 14) / 2)} perfectDrawEnabled={false} />
         ) : null}
       </Group>
     )
@@ -3058,7 +3231,7 @@ const RenderBackgroundShape = memo(function RenderBackgroundShape({
       <Group x={shape.x} y={shape.y} {...common}>
         <Line points={[w / 2, 0, w, h, 0, h]} closed fill={shape.fill} stroke={stroke} strokeWidth={strokeWidth} dash={dash} perfectDrawEnabled={false} />
         {shape.label ? (
-          <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={w} y={h * 0.55} align="center" listening={false} perfectDrawEnabled={false} />
+          <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={w} x={shape.labelDX ?? 0} y={h * 0.55 + (shape.labelDY ?? 0)} align="center" {...labelDragProps} {...labelDrop(0, h * 0.55)} perfectDrawEnabled={false} />
         ) : null}
       </Group>
     )

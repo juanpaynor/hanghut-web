@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import type { SectionData, CanvasTool, SectionType, SeatData, BackgroundShape, SeatShape, TierInfo, RowData } from './types'
-import { SECTION_TYPE_COLORS, resolveSeatTier } from './types'
+import { SECTION_TYPE_COLORS, SECTION_LABEL_SIZE, resolveSeatTier } from './types'
 import type { AlignMode } from './canvas-state'
 import { fillSectionRows, pathCurvature, pathFromCurvature, pathEndpoints, rowLabelAt } from '@/lib/seat-map/rows'
 import { pointInPolygon, flatToVertices } from './algorithms/point-in-polygon'
@@ -60,6 +60,9 @@ interface CanvasPropertiesProps {
   seatShape: SeatShape
   onSetSeatRadius: (r: number) => void
   onSetSeatShape: (s: SeatShape) => void
+  /** Backdrop behind the whole map. null = the default white. */
+  canvasBackground?: string | null
+  onSetCanvasBackground?: (color: string | null) => void
   // ── Rows ──
   selectedRowId?: string | null
   onSelectRow2?: (rowId: string | null) => void
@@ -334,6 +337,8 @@ export function CanvasProperties({
   onRotateSections,
   onAlignSections,
   seatRadius,
+  canvasBackground,
+  onSetCanvasBackground,
   seatShape,
   onSetSeatRadius,
   onSetSeatShape,
@@ -1106,6 +1111,43 @@ export function CanvasProperties({
               }
               className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
+            {/* Size of that name on the map.
+                It belongs HERE, under the name it sizes. It first went in
+                beside "Admits (people)", where it read as something to do with
+                capacity — a control filed under the wrong heading is a control
+                nobody finds.
+                Decor labels have had this slider for a while; section names
+                were hardcoded, and hardcoded DIFFERENTLY in the two renderers
+                (14 in the editor, 15 on the buyer's map), so what an organizer
+                laid out was never quite what a buyer saw. Both are 15 now. */}
+            <div className="mt-2">
+              <label className="text-[11px] text-slate-500 flex justify-between mb-1">
+                <span>Size on the map</span>
+                <span className="text-slate-400">
+                  {selectedSection.labelFontSize ?? SECTION_LABEL_SIZE}px
+                  {selectedSection.labelFontSize == null && ' · default'}
+                </span>
+              </label>
+              <input
+                type="range"
+                min="8"
+                max="48"
+                value={selectedSection.labelFontSize ?? SECTION_LABEL_SIZE}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10)
+                  // Back at the default means "follow the default", not
+                  // "pinned at 15" — so a later change to the house size
+                  // still moves it.
+                  onUpdateSection(selectedSection.id, {
+                    labelFontSize: v === SECTION_LABEL_SIZE ? null : v,
+                  })
+                }}
+                className="w-full accent-indigo-500 cursor-pointer"
+              />
+              <p className="text-[11px] text-slate-500">
+                Drag the name on the map to move it off the artwork.
+              </p>
+            </div>
           </div>
 
           {/* Section Type */}
@@ -1241,6 +1283,75 @@ export function CanvasProperties({
                   Sell this whole
                 </button>
               </>
+            )}
+            {/* Chairs round the piece. PICTURE ONLY — the number of people it
+                admits is the field above, and that is what gets sold. A table
+                set to "None" still admits whatever unitCapacity says. */}
+            {(selectedSection.unitCapacity ?? 0) > 0 && selectedSection.seats.length === 1 && (
+              <div className="mt-3">
+                <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  Chairs around it
+                </label>
+                <div className="mt-1.5 grid grid-cols-4 gap-1">
+                  {([
+                    ['None', 0],
+                    ['S', 0.7],
+                    ['M', null],
+                    ['L', 1.6],
+                  ] as [string, number | null][]).map(([lbl, val]) => {
+                    // null is the DEFAULT, which is not the same as 1: it means
+                    // "follow the map's seat size", so a map-wide size change
+                    // still moves these. Matching on === keeps 0 selectable,
+                    // which a truthiness test would swallow.
+                    const active = (selectedSection.chairScale ?? null) === val
+                    return (
+                      <button
+                        key={lbl}
+                        type="button"
+                        onClick={() => onUpdateSection(selectedSection.id, { chairScale: val })}
+                        className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                          active
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        {lbl}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Decoration only. This piece still admits {selectedSection.unitCapacity}.
+                </p>
+              </div>
+            )}
+
+            {/* Blocking a whole-sell piece.
+                Its single seat is the inventory and the canvas no longer draws
+                it as a dot — the dot sat in the middle of every table and was
+                the thing it looked like, a chair. That dot was also the ONLY
+                way to reach this seat's status, so the control moves here,
+                where it reads better anyway: you are blocking the table, not a
+                dot inside it. */}
+            {onSetSeatStatus
+              && (selectedSection.unitCapacity ?? 0) > 0
+              && selectedSection.seats.length === 1 && (
+              <button
+                type="button"
+                onClick={() => onSetSeatStatus(
+                  [selectedSection.seats[0].id],
+                  selectedSection.seats[0].status === 'disabled' ? 'available' : 'disabled',
+                )}
+                className={`mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                  selectedSection.seats[0].status === 'disabled'
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                {selectedSection.seats[0].status === 'disabled'
+                  ? '✓ Put this back on sale'
+                  : '⊘ Take this off sale'}
+              </button>
             )}
           </div>
 
@@ -2035,6 +2146,50 @@ export function CanvasProperties({
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Map backdrop (global).
+              Venues trace a dark photographed floor plan, and the white panel
+              the buyer's picker draws around it reads as a mistake. Applied in
+              the editor too, so what is chosen here is what ships. */}
+          {onSetCanvasBackground && (
+            <div className="border-t border-slate-800 pt-4">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3 block">
+                Map Backdrop
+              </label>
+              <div className="flex items-center gap-2">
+                {([
+                  ['Default', null],
+                  ['Paper', '#f1f5f9'],
+                  ['Slate', '#334155'],
+                  ['Charcoal', '#1e1e1e'],
+                  ['Black', '#000000'],
+                ] as [string, string | null][]).map(([name, hex]) => (
+                  <button
+                    key={name}
+                    type="button"
+                    title={name}
+                    onClick={() => onSetCanvasBackground(hex)}
+                    className="w-8 h-8 rounded-lg border-2 transition-all hover:scale-110"
+                    style={{
+                      backgroundColor: hex ?? '#ffffff',
+                      borderColor: (canvasBackground ?? null) === hex ? '#818cf8' : 'transparent',
+                    }}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={canvasBackground ?? '#ffffff'}
+                  onChange={(e) => onSetCanvasBackground(e.target.value)}
+                  title="Pick any colour"
+                  className="w-8 h-8 rounded-lg bg-transparent border border-slate-700 cursor-pointer"
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                Behind the whole map, for you and for buyers. Match a dark floor
+                plan so the edges do not stand out.
+              </p>
             </div>
           )}
 

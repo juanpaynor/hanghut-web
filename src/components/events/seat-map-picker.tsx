@@ -36,6 +36,8 @@ import type { PreviewBundle } from '@/lib/seat-map/preview-bundle'
 import type { RowData } from '@/components/seat-map/types'
 import { deriveRows, rowLabelAnchors } from '@/lib/seat-map/rows'
 import { CHAIR, chairBox, chairTarget, seatFacing, stageCenter, stagePolygon, audienceCenter } from '@/lib/seat-map/chair'
+import { unitChairPositions } from '@/lib/seat-map/table-seats'
+import { SECTION_LABEL_SIZE } from '@/components/seat-map/types'
 import { normaliseSeatShape, type SeatShapeName } from '@/lib/seat-map/seat-shape'
 
 // ─── RPC payload types (shared contract with the Flutter app) ───────────────
@@ -94,6 +96,12 @@ interface MapSection {
      * never affects what can be bought. Null/absent on every ordinary section.
      */
     unit_capacity?: number | null
+    /** Decorative chair size. null = default, 0 = no chairs, else a multiplier. */
+    chair_scale?: number | null
+    /** Nudge for the section's name, from the middle of its shape. */
+    label_offset?: { dx: number; dy: number } | null
+    /** Section name size in px. null = the 15px default. */
+    label_font_size?: number | null
     /** Per-section seat shape override; null/absent → inherit the map-wide shape. */
     seat_shape?: string | null
 }
@@ -113,6 +121,10 @@ interface MapBackgroundShape {
     label?: string
     fontSize?: number
     fontColor?: string
+    /** Label nudge set in the editor. Rides along inside canvas_data, so it
+     *  needed no migration and no change to the geometry RPC. */
+    labelDX?: number
+    labelDY?: number
     rotation?: number
     imageUrl?: string
     opacity?: number
@@ -135,6 +147,8 @@ interface SeatMapData {
     background_shapes: MapBackgroundShape[]
     /** Organizer's chosen seat dot size (world units) from the editor. */
     seat_radius?: number | null
+    /** Backdrop behind the whole map, from canvas_data. null = white. */
+    canvas_background?: string | null
     seat_shape?: string | null
     /** Organizer's choice: best-available sheet, hand-pick only, or both (default). */
     selection_mode?: 'best_available' | 'pick' | 'both'
@@ -716,6 +730,20 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
         const sec = mapData.sections.find(s => s.id === activeSection)
         return sec ? computeSeatRadius(sec.seats) : 6
     }, [activeSection, mapData])
+
+    /**
+     * Radius for the chairs drawn round a whole-table piece.
+     *
+     * NOT activeSeatRadius: that returns a flat 6 whenever no section is open,
+     * which is precisely the all-sections overview where tables are drawn — so
+     * reusing it would ignore the organizer's chosen seat size and make the
+     * chairs disagree with the builder on every map that set one. This falls
+     * back only when canvas_data never stored a radius.
+     */
+    const unitChairRadius = useMemo(() => {
+        if (mapData?.seat_radius && mapData.seat_radius > 0) return Number(mapData.seat_radius)
+        return 6
+    }, [mapData])
 
     /**
      * Seat dot SHAPE, from the same canvas_data the editor writes.
@@ -1538,11 +1566,28 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
     // deselect their assigned seats and pick their own, straight past the
     // setting the organizer turned off.
     const seatsPickable = selectionMode !== 'best_available'
-    const visibleSeats = seatsPickable
-        ? (activeSectionData?.seats ?? [])
-        : (activeSectionData?.seats ?? []).filter(
-            seat => selectedSeatIds.includes(seat.id) || pendingSeatIds.includes(seat.id)
-        )
+    /**
+     * Seats drawn on the open section.
+     *
+     * A WHOLE-TABLE piece is excluded entirely. Its single seat is the
+     * inventory row, not a chair, and `sellWholeUpdates` parks it at the
+     * centre of the outline — so drawing it put a dot, and with labels on a
+     * numbered "1", in the middle of every table. The chairs the buyer should
+     * see are the decorative ones SectionShape derives from unit_capacity;
+     * the table itself is the tap target, as isUnitSection already arranges
+     * everywhere else in this file.
+     *
+     * The builder skips the same seat for the same reason. If you change one,
+     * change the other — the seat SHAPE has already drifted between these two
+     * renderers once.
+     */
+    const visibleSeats = (activeSectionData && isUnitSection(activeSectionData))
+        ? []
+        : seatsPickable
+            ? (activeSectionData?.seats ?? [])
+            : (activeSectionData?.seats ?? []).filter(
+                seat => selectedSeatIds.includes(seat.id) || pendingSeatIds.includes(seat.id)
+            )
     // A section sheet (best-available or GA) is open below the map.
     const sheetOpen = !!autoSheet || !!gaSection
 
@@ -1703,7 +1748,13 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
 
             <div
                 ref={containerRef}
-                className={cn('relative w-full flex-1 min-h-[240px] rounded-2xl border bg-white dark:bg-slate-100 overflow-hidden touch-none',
+                // The backdrop was hardcoded white (and slate-100 even in dark
+                // mode). Venues trace a dark photographed floor plan, and a
+                // white panel round it reads as a mistake. The organizer's
+                // choice wins; unset keeps exactly the old classes.
+                style={mapData?.canvas_background ? { backgroundColor: mapData.canvas_background } : undefined}
+                className={cn('relative w-full flex-1 min-h-[240px] rounded-2xl border overflow-hidden touch-none',
+                    !mapData?.canvas_background && 'bg-white dark:bg-slate-100',
                     !mapVisible && 'hidden')}
             >
                 <Stage
@@ -1768,6 +1819,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                                     dimmed={cantSeatParty || (!!pill && pill.split)}
                                     focused={focusSectionId === section.id && (sheetOpen || isActive)}
                                     faded={sheetOpen && !!focusSectionId && focusSectionId !== section.id && !activeSection}
+                                    seatRadius={unitChairRadius}
                                     onTap={() => !soldOut && handleSectionTap(section)}
                                 />
                             )
@@ -2256,6 +2308,7 @@ function SectionShape({
     dimmed = false,
     focused = false,
     faded = false,
+    seatRadius,
     onTap,
 }: {
     section: MapSection
@@ -2275,6 +2328,9 @@ function SectionShape({
     focused?: boolean
     /** Another section has the focus — recede so the focused one reads. */
     faded?: boolean
+    /** Seat dot size, so the chairs drawn round a whole-table piece match the
+     *  ones the builder drew. */
+    seatRadius: number
     onTap: () => void
 }) {
     return (
@@ -2294,6 +2350,34 @@ function SectionShape({
                 hitStrokeWidth={8}
                 perfectDrawEnabled={false}
             />
+            {/* Chairs round a whole-table piece.
+                A table that sells as one unit holds exactly ONE seat — the
+                inventory row — so without this it drew as a bare rectangle and
+                a six-top looked identical to a two-top. The count comes from
+                unit_capacity and the positions from polygon_points, both of
+                which the geometry RPC already sends, so this needs no new
+                field and cannot disagree with the builder, which derives the
+                same chairs from the same two values.
+                listening={false}: the SECTION is the tap target, as it already
+                was. These are picture. */}
+            {isUnitSection(section) && unitChairPositions(
+                section.polygon_points, section.unit_capacity, seatRadius, section.chair_scale,
+            ).map((c, i) => {
+                // Square to its own edge — see PlacedChair in table-seats.ts.
+                const rot = c.facing
+                // Same scaling the positions used — see canvas-builder.
+                const chairR = seatRadius * (
+                    typeof section.chair_scale === 'number' && Number.isFinite(section.chair_scale) && section.chair_scale > 0
+                        ? Math.min(section.chair_scale, 3) : 1
+                )
+                const col = soldOut ? '#9ca3af' : fill
+                return (
+                    <Group key={`uc-${i}`} x={c.x} y={c.y} rotation={rot} listening={false}>
+                        <Rect {...chairBox(CHAIR.back, chairR)} fill={col} opacity={0.5} perfectDrawEnabled={false} />
+                        <Rect {...chairBox(CHAIR.pad, chairR)} fill={col} opacity={0.8} perfectDrawEnabled={false} />
+                    </Group>
+                )
+            })}
             {/* Every section keeps its name while one is open.
                 Only the OPEN section drops its label, because its name is
                 already in the header above the map and the text would sit on
@@ -2310,23 +2394,28 @@ function SectionShape({
                 scaled above 1x to hold a steady on screen size. Below 1x it is
                 left alone, which keeps the all sections view identical to
                 before. */}
-            {!isActive && (
+            {!isActive && (() => {
+              const nameSize = section.label_font_size ?? SECTION_LABEL_SIZE
+              return (
                 <>
                     <Text
-                        x={center.x - 70 * labelScale}
-                        y={center.y - 14 * labelScale}
+                        // The organizer's nudge. Scaled with the label so a
+                        // name moved clear of a small table stays clear at
+                        // every zoom level instead of drifting back over it.
+                        x={center.x - 70 * labelScale + (section.label_offset?.dx ?? 0) * labelScale}
+                        y={center.y - (nameSize * 0.93) * labelScale + (section.label_offset?.dy ?? 0) * labelScale}
                         width={140 * labelScale}
                         align="center"
                         text={section.label}
-                        fontSize={15 * labelScale}
+                        fontSize={nameSize * labelScale}
                         fontStyle="bold"
                         fill={soldOut ? '#6b7280' : '#1e293b'}
                         listening={false}
                         perfectDrawEnabled={false}
                     />
                     <Text
-                        x={center.x - 70 * labelScale}
-                        y={center.y + 4 * labelScale}
+                        x={center.x - 70 * labelScale + (section.label_offset?.dx ?? 0) * labelScale}
+                        y={center.y + (nameSize * 0.27) * labelScale + (section.label_offset?.dy ?? 0) * labelScale}
                         width={140 * labelScale}
                         align="center"
                         // "1 left" is a true but useless thing to tell someone
@@ -2340,7 +2429,9 @@ function SectionShape({
                                     ? `Admits ${section.unit_capacity}`
                                     : `${availableCount} left`
                         }
-                        fontSize={11 * labelScale}
+                        // Kept in proportion to the name rather than pinned at
+                        // 11, or a 40px title sits above a subtitle you cannot read.
+                        fontSize={Math.max(8, nameSize * (11 / SECTION_LABEL_SIZE)) * labelScale}
                         fill="#64748b"
                         listening={false}
                         perfectDrawEnabled={false}
@@ -2360,7 +2451,8 @@ function SectionShape({
                         />
                     )}
                 </>
-            )}
+              )
+            })()}
         </Group>
     )
 }
@@ -2452,7 +2544,7 @@ function BuyerBackgroundShape({ shape }: { shape: MapBackgroundShape }) {
     const strokeWidth = shape.strokeWidth || 0
     const centeredLabel = (boxW: number, boxH: number) =>
         shape.label ? (
-            <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={boxW} y={boxH / 2 - (shape.fontSize || 14) / 2} align="center" listening={false} perfectDrawEnabled={false} />
+            <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={boxW} x={shape.labelDX ?? 0} y={boxH / 2 - (shape.fontSize || 14) / 2 + (shape.labelDY ?? 0)} align="center" listening={false} perfectDrawEnabled={false} />
         ) : null
 
     if (shape.type === 'rect' || shape.type === 'polygon') {
@@ -2469,7 +2561,7 @@ function BuyerBackgroundShape({ shape }: { shape: MapBackgroundShape }) {
         return (
             <Group x={shape.x} y={shape.y} {...common}>
                 <Circle radius={r} fill={fill} stroke={stroke} strokeWidth={strokeWidth} listening={false} perfectDrawEnabled={false} />
-                {shape.label ? <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={r * 2} x={-r} y={-(shape.fontSize || 14) / 2} align="center" listening={false} perfectDrawEnabled={false} /> : null}
+                {shape.label ? <Text text={shape.label} fill={shape.fontColor || '#ffffff'} fontSize={shape.fontSize || 14} fontStyle="bold" width={r * 2} x={-r + (shape.labelDX ?? 0)} y={-(shape.fontSize || 14) / 2 + (shape.labelDY ?? 0)} align="center" listening={false} perfectDrawEnabled={false} /> : null}
             </Group>
         )
     }

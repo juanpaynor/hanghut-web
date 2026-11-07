@@ -39,6 +39,29 @@ function editDistance(a: string, b: string, max: number): number {
     return prev[b.length]
 }
 
+/**
+ * A NUMBERED SERIES IS NOT A TYPO.
+ *
+ * "Table 3" and "Table 12" are two edits apart, and 2/8 = 0.25 slips under
+ * MAX_RATIO by a hair — so every numbered table warned about every other
+ * numbered table. Five tables produced TEN warnings, ten tables produced
+ * FORTY-FIVE, all of them false, in a dialog you could not scroll past to
+ * reach Publish. Numbering is the commonest naming scheme there is.
+ *
+ * The real signature of a typo is a difference in LETTERS. If removing the
+ * digits makes two labels identical, the only thing that differs is the
+ * number, and the organizer meant it. "Regular Cockail Table" vs "Regular
+ * Cocktail Table" has no digits to remove and is still caught.
+ */
+function differsOnlyByNumber(a: string, b: string): boolean {
+    const strip = (v: string) => v.replace(/\d+/g, '')
+    return strip(a) === strip(b)
+}
+
+/** At most this many warnings; the rest are summarised. A list longer than a
+ *  dialog is a list nobody reads, and it hides the Publish button. */
+const MAX_WARNINGS = 5
+
 const MIN_LENGTH = 6   // "A1" vs "A2" is one edit apart and entirely deliberate
 const MAX_EDITS = 2
 const MAX_RATIO = 0.25 // one or two edits must be small RELATIVE to the label
@@ -71,6 +94,7 @@ export function nearDuplicateSectionLabels(canvas: CanvasData): string[] {
             for (let j = i + 1; j < distinct.length; j++) {
                 const a = distinct[i]
                 const b = distinct[j]
+                if (differsOnlyByNumber(a.toLowerCase(), b.toLowerCase())) continue
                 const d = editDistance(a.toLowerCase(), b.toLowerCase(), MAX_EDITS)
                 if (d === 0 || d > MAX_EDITS) continue
                 if (d / Math.max(a.length, b.length) > MAX_RATIO) continue
@@ -86,6 +110,18 @@ export function nearDuplicateSectionLabels(canvas: CanvasData): string[] {
                 )
             }
         }
+    }
+
+    // Trim rather than return forty. The organizer fixes the named ones, hits
+    // Publish again, and sees the next batch — which is a working loop, unlike
+    // a wall of text with the button underneath it.
+    if (out.length > MAX_WARNINGS) {
+        const hidden = out.length - MAX_WARNINGS
+        return [
+            ...out.slice(0, MAX_WARNINGS),
+            `…and ${hidden} more pair${hidden === 1 ? '' : 's'} of similar names. ` +
+            `Fix these first and publish again to see the rest.`,
+        ]
     }
 
     return out
