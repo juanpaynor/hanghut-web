@@ -1,8 +1,112 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { getActingPartnerId } from '@/lib/auth/cached'
+
+/**
+ * May this caller change this event's settings?
+ *
+ * ── Why this exists ─────────────────────────────────────────────────────────
+ *
+ * Every setter in this file used to do `.eq('organizer_id', await
+ * getActingPartnerId(user.id))` and give up if no row came back. That reads
+ * like an ownership check and is not one: getActingPartnerId returns the
+ * partner the caller OWNS, and only falls through to a platform-support seat
+ * when they own nothing. A platform admin who also owns a partner of their own
+ * therefore resolves to their OWN partner on every event in the system, so the
+ * lookup failed on every event belonging to anyone else — silently, because the
+ * error read "Event not found or unauthorized" and could just as easily have
+ * meant a bad id.
+ *
+ * It was wrong in the strict direction, too: `events` already carries an
+ * "Admins can update all events" RLS policy, so the database would have allowed
+ * exactly what the app refused.
+ *
+ * ── The four ways in ───────────────────────────────────────────────────────
+ *
+ *   owner / platform-support seat  (getActingPartnerId, as before)
+ *   any team member of the owning partner
+ *   platform admin (users.is_admin — the COLUMN, never user_metadata, which
+ *                   callers can set on themselves)
+ *
+ * Read with the admin client on purpose: the point is to make the decision
+ * HERE, explicitly, rather than let an RLS predicate quietly return no rows and
+ * leave the caller unable to tell "not allowed" from "does not exist".
+ */
+async function authorizeEventSettings(eventId: string): Promise<
+    { event: Record<string, any> } | { error: string }
+> {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const admin = createAdminClient()
+    const { data: event } = await admin
+        .from('events')
+        .select('id, organizer_id, layout_config, require_approval, invite_only, ticket_price')
+        .eq('id', eventId)
+        .maybeSingle()
+    if (!event) return { error: 'Event not found' }
+
+    const actingPartnerId = await getActingPartnerId(user.id)
+    if (actingPartnerId && event.organizer_id === actingPartnerId) return { event }
+
+    const { data: member } = await admin
+        .from('partner_team_members')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('partner_id', event.organizer_id)
+        .maybeSingle()
+    if (member) return { event }
+
+    const { data: me } = await admin
+        .from('users')
+        .select('is_admin')
+        .eq('id', user.id)
+        .maybeSingle()
+    if (me?.is_admin === true) return { event }
+
+    return { error: 'You do not have access to this event.' }
+}
+
+/**
+ * Write a merged layout_config, and REPORT whether a row actually changed.
+ *
+ * The `.select('id')` is load-bearing and not a formality: a Supabase update
+ * that matches nothing returns `error === null`, so without it the action hands
+ * back success having written nothing, and the organizer watches a setting flip
+ * in the UI and revert on the next page load with no explanation. See the same
+ * trap in the event settings save.
+ */
+async function writeRegistrationConfig(
+    eventId: string,
+    current: Record<string, unknown>,
+    patch: Record<string, unknown>,
+): Promise<{ success?: boolean; error?: string }> {
+    const admin = createAdminClient()
+    const { data, error } = await admin
+        .from('events')
+        .update({
+            layout_config: {
+                ...current,
+                registration: { ...(current.registration as object ?? {}), ...patch },
+            },
+        })
+        .eq('id', eventId)
+        .select('id')
+        .maybeSingle()
+
+    if (error) {
+        console.error('writeRegistrationConfig failed', error)
+        return { error: 'Could not save the setting.' }
+    }
+    if (!data) return { error: 'Could not save the setting — nothing was updated.' }
+
+    revalidatePath(`/organizer/events/${eventId}`)
+    return { success: true }
+}
 
 export type RegistrationFormLayout = 'stepper' | 'single'
 
@@ -23,42 +127,14 @@ export async function setRegistrationFormLayout(
 ): Promise<{ success?: boolean; error?: string }> {
     if (layout !== 'stepper' && layout !== 'single') return { error: 'Unknown layout' }
 
-    const supabase = await createClient()
+    const auth = await authorizeEventSettings(eventId)
+    if ('error' in auth) return { error: auth.error }
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { error: 'Not authenticated' }
-
-    const actingPartnerId = await getActingPartnerId(user.id)
-    if (!actingPartnerId) return { error: 'Partner account not found' }
-
-    const { data: event } = await supabase
-        .from('events')
-        .select('id, layout_config')
-        .eq('id', eventId)
-        .eq('organizer_id', actingPartnerId)
-        .maybeSingle()
-
-    if (!event) return { error: 'Event not found or unauthorized' }
-
-    // Merge, never replace — layout_config also carries the tier display config.
-    const current = (event.layout_config ?? {}) as Record<string, unknown>
-    const next = { ...current, registration: { ...(current.registration as object ?? {}), layout } }
-
-    const { error } = await supabase
-        .from('events')
-        .update({ layout_config: next })
-        .eq('id', eventId)
-        .eq('organizer_id', actingPartnerId)
-
-    if (error) {
-        console.error('setRegistrationFormLayout failed', error)
-        return { error: 'Could not save the layout.' }
-    }
-
-    // Only the organizer page: the public event page is force-dynamic, so
-    // revalidating it would be a no-op that implies caching it doesn't have.
-    revalidatePath(`/organizer/events/${eventId}`)
-    return { success: true }
+    return writeRegistrationConfig(
+        eventId,
+        (auth.event.layout_config ?? {}) as Record<string, unknown>,
+        { layout },
+    )
 }
 
 /**
@@ -90,24 +166,18 @@ export async function setAbandonUnpaidAfterHours(
         return { error: 'Choose between 1 and 720 hours, or turn it off.' }
     }
 
-    const supabase = await createClient()
+    const auth = await authorizeEventSettings(eventId)
+    if ('error' in auth) return { error: auth.error }
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { error: 'Not authenticated' }
-
-    const actingPartnerId = await getActingPartnerId(user.id)
-    if (!actingPartnerId) return { error: 'Partner account not found' }
-
-    // `.select()` is load-bearing, not habit. A Supabase update that RLS or an
-    // ownership mismatch filters out returns error === null and zero rows, so
-    // without reading something back this would report success having written
-    // nothing -- the bug that made the settings form silently discard Anti
-    // Burnout Club's edits.
-    const { data, error } = await supabase
+    // `.select()` is load-bearing, not habit. A Supabase update that matches
+    // nothing returns error === null and zero rows, so without reading
+    // something back this would report success having written nothing -- the
+    // bug that made the settings form silently discard Anti Burnout Club's
+    // edits.
+    const { data, error } = await createAdminClient()
         .from('events')
         .update({ abandon_unpaid_after_hours: hours })
         .eq('id', eventId)
-        .eq('organizer_id', actingPartnerId)
         .select('id')
         .maybeSingle()
 
@@ -115,7 +185,7 @@ export async function setAbandonUnpaidAfterHours(
         console.error('setAbandonUnpaidAfterHours failed', error)
         return { error: 'Could not save the setting.' }
     }
-    if (!data) return { error: 'Event not found or unauthorized' }
+    if (!data) return { error: 'Could not save the setting — nothing was updated.' }
 
     revalidatePath(`/organizer/events/${eventId}`)
     return { success: true }
@@ -168,22 +238,9 @@ export async function setRegistrationFlowOrder(
         return { error: 'Unknown order' }
     }
 
-    const supabase = await createClient()
-
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { error: 'Not authenticated' }
-
-    const actingPartnerId = await getActingPartnerId(user.id)
-    if (!actingPartnerId) return { error: 'Partner account not found' }
-
-    const { data: event } = await supabase
-        .from('events')
-        .select('id, layout_config, require_approval, invite_only, ticket_price')
-        .eq('id', eventId)
-        .eq('organizer_id', actingPartnerId)
-        .maybeSingle()
-
-    if (!event) return { error: 'Event not found or unauthorized' }
+    const auth = await authorizeEventSettings(eventId)
+    if ('error' in auth) return { error: auth.error }
+    const event = auth.event
 
     if (order === 'ticket_first') {
         if (event.require_approval || event.invite_only) {
@@ -194,7 +251,8 @@ export async function setRegistrationFlowOrder(
         }
         // Cheapest reliable free test: no priced tier AND no event price. The
         // two capacity models never sync, so neither one alone is the answer.
-        const { data: tiers } = await supabase
+        const admin = createAdminClient()
+        const { data: tiers } = await admin
             .from('ticket_tiers')
             .select('price')
             .eq('event_id', eventId)
@@ -204,25 +262,9 @@ export async function setRegistrationFlowOrder(
         }
     }
 
-    // Merge, never replace — layout_config also carries the tier display config
-    // and the question layout.
-    const current = (event.layout_config ?? {}) as Record<string, unknown>
-    const next = {
-        ...current,
-        registration: { ...(current.registration as object ?? {}), order },
-    }
-
-    const { error } = await supabase
-        .from('events')
-        .update({ layout_config: next })
-        .eq('id', eventId)
-        .eq('organizer_id', actingPartnerId)
-
-    if (error) {
-        console.error('setRegistrationFlowOrder failed', error)
-        return { error: 'Could not save the order.' }
-    }
-
-    revalidatePath(`/organizer/events/${eventId}`)
-    return { success: true }
+    return writeRegistrationConfig(
+        eventId,
+        (event.layout_config ?? {}) as Record<string, unknown>,
+        { order },
+    )
 }
