@@ -21,6 +21,9 @@ export interface PreviewBundle {
     canvas_height: number
     seat_radius: number | null
     seat_shape: string | null
+    /** Mirrors get_event_seat_geometry's canvas_background. Verbatim, as the
+     *  RPC passes it, so the preview and the published map cannot disagree. */
+    canvas_background: string | null
     background_shapes: unknown[]
     tiers: { id: string; name: string; price: number; sort_order: number }[]
     sections: {
@@ -117,6 +120,7 @@ export function buildPreviewBundle(
       canvas_height: canvas.canvasHeight,
       seat_radius: canvas.seatRadius ?? null,
       seat_shape: canvas.seatShape ?? null,
+      canvas_background: canvas.canvasBackground ?? null,
       background_shapes: canvas.backgroundShapes ?? [],
       tiers,
       sections: sections.map((s) => ({

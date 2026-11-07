@@ -2022,8 +2022,106 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
             </div>
 
             {/* Panel rail: sheets + selection bar. A column on phones (below the
-                map), a fixed-width scrolling rail beside it on desktop. */}
-            <div className="flex flex-col gap-3 min-w-0 shrink-0 lg:w-[380px] lg:min-h-0 lg:overflow-y-auto lg:shrink-0">
+                map), a fixed-width scrolling rail beside it on desktop.
+                Its resting state is the browse list directly below — before
+                that existed, the rail opened on 380px holding only the words
+                "No seats selected yet".
+                The `hidden` case is the one state where it genuinely holds
+                nothing: the full-screen LIST view, where the browse list would
+                be a duplicate and nothing is selected yet. Reserving 380px of
+                blank there is the exact thing this rail was just fixed for. */}
+            <div className={cn(
+                'flex flex-col gap-3 min-w-0 shrink-0 lg:w-[380px] lg:min-h-0 lg:overflow-y-auto lg:shrink-0',
+                !mapVisible && !autoSheet && !gaSection && !activeSection
+                    && selectedSeats.length === 0 && 'hidden'
+            )}>
+            {/* ── Browse list: the rail's resting state ───────────────────────
+                Every section, with its price and what is left, beside the map
+                rather than instead of it. The rail used to sit empty here.
+
+                Two deliberate differences from the full-screen list view above:
+
+                1. It does NOT filter by party size. That list's job is "what
+                   can I buy for N people", so it hides anything that cannot
+                   seat them. Sitting NEXT to the map, hiding rows would mean
+                   the map shows a table the list denies exists. Everything is
+                   listed; sold out is shown as sold out.
+                2. Tapping a row calls handleSectionTap — the SAME function the
+                   map calls. Tables select whole, GA zones open the quantity
+                   sheet, seated sections zoom or open best-available, exactly
+                   as they do on the map. Reimplementing that routing here is
+                   how the two surfaces would quietly start disagreeing.
+
+                Hidden once the rail has a real job (a sheet, or a section being
+                picked), and in list view, where it would be the second copy of
+                the same list on screen. */}
+            {mapVisible && !autoSheet && !gaSection && !activeSection && (() => {
+                const rows: { section: MapSection; offer: Offer }[] = []
+                for (const section of mapData.sections) {
+                    for (const offer of sectionOffers(section)) rows.push({ section, offer })
+                }
+                if (rows.length === 0) return null
+                // Sold out sinks; then cheapest first; then by name, numerically
+                // so "Table 2" precedes "Table 12".
+                rows.sort((a, b) =>
+                    (a.offer.available < 1 ? 1 : 0) - (b.offer.available < 1 ? 1 : 0)
+                    || Number(a.offer.tier.price) - Number(b.offer.tier.price)
+                    || a.section.label.localeCompare(b.section.label, undefined, { numeric: true }))
+                return (
+                    <div className="rounded-2xl border bg-background overflow-hidden shrink-0">
+                        <div className="px-4 py-2.5 border-b bg-muted/30">
+                            <p className="text-sm font-semibold">Pick a spot</p>
+                            <p className="text-xs text-muted-foreground">Tap one here, or straight on the map.</p>
+                        </div>
+                        <div className="divide-y max-h-[48vh] overflow-y-auto">
+                            {rows.map(({ section, offer }) => {
+                                const soldOut = offer.available < 1
+                                const unit = isUnitSection(section)
+                                const ga = isGASection(section)
+                                return (
+                                    <button
+                                        key={`${section.id}:${offer.tier.id}`}
+                                        type="button"
+                                        disabled={soldOut}
+                                        onClick={() => void handleSectionTap(section)}
+                                        className={cn(
+                                            'w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors',
+                                            soldOut ? 'opacity-45 cursor-not-allowed' : 'hover:bg-muted/40'
+                                        )}
+                                    >
+                                        <span className="w-2.5 h-2.5 rounded-full shrink-0"
+                                            style={{ backgroundColor: soldOut ? TAKEN_COLOR : tierColors.get(offer.tier.id) }} />
+                                        <span className="flex-1 min-w-0">
+                                            <span className="block font-semibold text-sm truncate">
+                                                {section.label}
+                                                {sectionOffers(section).length > 1 && (
+                                                    <span className="font-normal text-muted-foreground"> · {offer.tier.name}</span>
+                                                )}
+                                            </span>
+                                            <span className="block text-xs text-muted-foreground">
+                                                {soldOut ? 'Sold out'
+                                                    : unit ? `Whole table · admits ${section.unit_capacity}`
+                                                    : ga ? `${offer.available} left`
+                                                    : `${offer.available} seats left`}
+                                            </span>
+                                        </span>
+                                        <span className="text-right shrink-0">
+                                            <span className="block font-bold text-sm tabular-nums">
+                                                ₱{Number(offer.tier.price).toLocaleString()}
+                                            </span>
+                                            <span className="block text-[11px] text-muted-foreground">
+                                                {unit ? 'per table' : 'each'}
+                                            </span>
+                                        </span>
+                                        {!soldOut && <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </div>
+                )
+            })()}
+
             {/* Best-available sheet — tap a seated section, choose how many, we pick */}
             {autoSheet && (() => {
                 const sh = autoSheet
@@ -2231,7 +2329,12 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
             {/* Selection bar — pinned (shrink-0) at the bottom of the flex column
                 so "Continue" is always in view; no scrolling to reach it. Hidden
                 while the best-available sheet is open — it carries its own. */}
-            {!autoSheet && <div className={cn(
+            {/* `|| activeSection`: the empty "No seats selected yet" state is
+                worth showing while the buyer is INSIDE a section, where it
+                marks where their picks will land. In the overview the browse
+                list above is already doing that job, and the placeholder was
+                just a second box saying nothing. */}
+            {!autoSheet && (selectedSeats.length > 0 || activeSection) && <div className={cn(
                 'rounded-2xl border p-4 transition-colors shrink-0',
                 selectedSeats.length > 0 ? 'bg-primary/5 border-primary/30' : 'bg-muted/20'
             )}>

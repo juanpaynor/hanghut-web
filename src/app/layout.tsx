@@ -73,8 +73,20 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // suppressHydrationWarning below is REQUIRED, not cosmetic.
+  //
+  // The dashboard inlines ORGANIZER_THEME_SCRIPT, which toggles `dark` onto
+  // <html> before React hydrates — on purpose, so an organizer on dark mode
+  // never sees a white flash on a full page load. React then hydrates this
+  // element, finds class="!scroll-smooth dark" where it rendered
+  // class="!scroll-smooth", and logs a mismatch. The DOM is correct and the
+  // render is correct; what differs is one class deliberately written by a
+  // script that has to run first.
+  //
+  // It covers THIS element's attributes only, not the tree below, so a genuine
+  // mismatch anywhere inside the app is still reported.
   return (
-    <html lang="en" className="!scroll-smooth" data-scroll-behavior="smooth">
+    <html lang="en" className="!scroll-smooth" data-scroll-behavior="smooth" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
