@@ -10,6 +10,14 @@ import { createClient } from '@/lib/supabase/client'
 import { ClipboardList, Clock, CheckCircle2, Loader2, Ticket, Lock } from 'lucide-react'
 import type { QuestionForForm } from '@/components/events/registration-questions-form'
 import { isTierOnSale, tierSaleState } from '@/lib/tickets/tier-availability'
+import {
+    answersToFormState,
+    fetchResumableRegistration,
+    rememberRegistration,
+    rememberedRegistrationId,
+    stillMissingQuestions,
+    type ResumedRegistration,
+} from '@/lib/events/resume-registration'
 
 interface RegistrationGateProps {
     eventId: string
@@ -44,6 +52,15 @@ interface RegistrationGateProps {
     tierDisplay?: TierDisplayConfig
     /** How the registration questions are presented (event.layout_config.registration.layout). */
     formLayout?: 'stepper' | 'single'
+    /**
+     * Which comes first (event.layout_config.registration.order).
+     *
+     * 'ticket_first' hands the attendee straight to the ticket selector and
+     * lets CHECKOUT ask the questions — it already asks the full tier-aware set
+     * and collects guest identity for anyone arriving without a registration.
+     * Default and fallback is the original 'questions_first'.
+     */
+    flowOrder?: 'questions_first' | 'ticket_first'
 }
 
 /**
@@ -78,6 +95,7 @@ export function RegistrationGate({
     ctaLabel,
     tierDisplay,
     formLayout,
+    flowOrder,
 }: RegistrationGateProps) {
     const activeTiers = (tiers || []).filter((t: any) => isTierOnSale(t))
     // A tiered event with nothing on sale is CLOSED — it must not fall through to
@@ -106,6 +124,13 @@ export function RegistrationGate({
     const [claimedToken, setClaimedToken] = useState<string | null>(null)
     const [rsvpSubmitting, setRsvpSubmitting] = useState(false)
     const claimStartedRef = useRef(false)
+    /** What this registrant told us last time, for the modal to prefill. */
+    const [resumePrefill, setResumePrefill] = useState<{
+        name?: string | null
+        email?: string | null
+        answers?: Record<string, any>
+    } | null>(null)
+    const resumeTriedRef = useRef(false)
 
     const registered = !!regId
 
@@ -116,12 +141,77 @@ export function RegistrationGate({
         })
     }, [])
 
-    // Mirror a server-resolved approval into sessionStorage so checkout agrees.
+    // Mirror a server-resolved approval into storage so checkout agrees.
     useEffect(() => {
-        if (initialApprovedRegistrationId && typeof window !== 'undefined') {
-            sessionStorage.setItem(`approved_reg_${eventId}`, initialApprovedRegistrationId)
+        if (initialApprovedRegistrationId) {
+            rememberRegistration(eventId, initialApprovedRegistrationId)
         }
     }, [initialApprovedRegistrationId, eventId])
+
+    /**
+     * "Save responses so a returning registrant goes straight to payment."
+     *
+     * The id was already being kept, but in sessionStorage, which dies with the
+     * tab — and the measured gap before someone comes back averages 173 hours.
+     * It now lives in localStorage, and this asks the server what that
+     * registration already holds.
+     *
+     * Two deliberate limits:
+     *
+     * 1. SKIPPING the form outright is for PAID events only. On a free event,
+     *    setting regId is what arms the auto-claim effect below, so resuming
+     *    into it would mint a real scannable ticket on page load with no click.
+     *    A free event has no payment to go straight to, so there is nothing to
+     *    gain by it either. Free events get the answers prefilled instead.
+     *
+     * 2. A registration that already produced an order is prefilled but NOT
+     *    reused. They may well be buying a second ticket, and that purchase
+     *    needs its own row — submit_event_request refuses to reuse a
+     *    consummated one anyway, so claiming it here would only make checkout
+     *    skip questions whose answers then had nowhere to go.
+     */
+    useEffect(() => {
+        if (resumeTriedRef.current) return
+        if (questions.length === 0 || hasTicket || regId) return
+        const remembered = rememberedRegistrationId(eventId)
+        if (!remembered) return
+        resumeTriedRef.current = true
+
+        let cancelled = false
+        void (async () => {
+            const resumed = await fetchResumableRegistration(createClient(), eventId, remembered)
+            if (cancelled || !resumed) return
+
+            const answers = answersToFormState(resumed)
+            setResumePrefill({
+                name: resumed.guest_name,
+                email: resumed.guest_email,
+                answers,
+            })
+            if (resumed.guest_email) {
+                setGuest({ name: resumed.guest_name ?? '', email: resumed.guest_email })
+            }
+
+            // No tier is chosen at this point, so tier-scoped questions are not
+            // part of this decision — checkout asks those once a ticket is picked.
+            const missing = stillMissingQuestions(questions, answers, null)
+            // Only a LIVE registration may be reused. A 'cancelled' one is
+            // resumable for its answers and nothing else: it was released by
+            // expire_stale_registrations(), and reusing it would carry that
+            // status through payment, leaving a real paying attendee filed as
+            // cancelled and therefore invisible on the organizer's roster —
+            // the clutter complaint this all started from, inverted. 161 rows
+            // are in that state right now and the job adds more every 15
+            // minutes. Prefilled and tapped through instead, so
+            // submit_event_request opens a correctly-statused row.
+            const reusable = resumed.status === 'approved' || resumed.status === 'auto_approved'
+            if (!isFree && reusable && !resumed.consummated && missing.length === 0) {
+                setRegId(resumed.registration_id)
+            }
+        })()
+        return () => { cancelled = true }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [eventId, questions, hasTicket, regId, isFree])
 
     // Free events: once registered/approved, claim the ticket in one step
     // (skip the redundant "Get Tickets" → checkout dance for $0 RSVPs).
@@ -318,8 +408,9 @@ export function RegistrationGate({
                     dark={dark}
                     pageTheme={pageTheme}
                     formLayout={formLayout}
+                    prefill={resumePrefill}
                     onApproved={(rid, g) => {
-                        if (typeof window !== 'undefined') sessionStorage.setItem(`approved_reg_${eventId}`, rid)
+                        rememberRegistration(eventId, rid)
                         setModalOpen(false)
                         setGuest(g ?? null)
                         setRegId(rid)
@@ -332,6 +423,32 @@ export function RegistrationGate({
 
     // ── No registration questions → normal ticket flow ───────────────────────
     if (questions.length === 0) return ticketUI(false)
+
+    /**
+     * ── Ticket first → the same normal ticket flow ────────────────────────────
+     *
+     * Checkout asks the questions instead, which it already does for anyone who
+     * reaches it without a registration. The win is WHEN the row is written:
+     * questions-first writes it before the attendee has seen a price (314 rows
+     * with no payment on one event, 185 of which never reached the payment
+     * screen), ticket-first writes it when they press Pay.
+     *
+     * The three refusals are repeated here rather than trusted to the setter.
+     * An organizer can switch approval on, or drop every paid tier, AFTER
+     * saving this — and a stored value that strands a buyer mid-flow is not
+     * something to find out from a support message:
+     *
+     *   FREE — nothing to pay, and on the free path it is setting regId that
+     *   arms the auto-claim which mints the ticket.
+     *   APPROVAL / INVITE-ONLY — they must be cleared before paying, so this
+     *   would let them choose a ticket and answer everything, then be told to
+     *   wait or that they were never invited.
+     *
+     * nothingOnSale is left to ticketUI, which already says "closed" properly.
+     */
+    const ticketFirst =
+        flowOrder === 'ticket_first' && !isFree && !requireApproval && !inviteOnly
+    if (ticketFirst) return ticketUI(false)
 
     // ── Not registered yet → Register CTA + modal ────────────────────────────
     const cta = isSoldOut ? 'Sold Out' : requireApproval || inviteOnly ? 'Request to Register' : 'Register'
@@ -358,8 +475,9 @@ export function RegistrationGate({
                 dark={dark}
                 pageTheme={pageTheme}
                 formLayout={formLayout}
+                prefill={resumePrefill}
                 onApproved={(rid, g) => {
-                    if (typeof window !== 'undefined') sessionStorage.setItem(`approved_reg_${eventId}`, rid)
+                    rememberRegistration(eventId, rid)
                     setModalOpen(false)
                     setGuest(g ?? null)
                     setRegId(rid)

@@ -9,12 +9,12 @@ import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
     Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Loader2,
-    Settings2, ImagePlus, X, GitBranch, Ticket, Rows3, Layers,
+    Settings2, ImagePlus, X, GitBranch, Ticket, Rows3, Layers, ClipboardList,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { Switch } from '@/components/ui/switch'
 import { saveRegistrationQuestions, uploadQuestionHelpImage } from '@/lib/organizer/registration-actions'
-import { setRegistrationFormLayout } from '@/lib/organizer/registration-layout-actions'
+import { setRegistrationFlowOrder, setRegistrationFormLayout } from '@/lib/organizer/registration-layout-actions'
 import { cn } from '@/lib/utils'
 
 export type QuestionType =
@@ -81,6 +81,26 @@ interface Props {
     tiers?: Tier[]
     /** 'stepper' asks one question per screen; 'single' shows the whole form at once. */
     initialFormLayout?: 'stepper' | 'single'
+    /** 'ticket_first' lets checkout ask these instead of the event page. */
+    initialFlowOrder?: 'questions_first' | 'ticket_first'
+    /**
+     * Whether ticket-first is even offered.
+     *
+     * A free event has no payment to put first, and an approval or invite-only
+     * event has to clear the person before they can pay. The card is hidden
+     * rather than shown-and-disabled: a control that cannot be used is worse
+     * than no control, and the server action refuses these anyway.
+     */
+    canOrderTicketFirst?: boolean
+    /**
+     * Create wizard only: the event does not exist yet, so there is nothing to
+     * save against. The parent holds the value and sends it with the form, the
+     * same way `onChange` already handles the questions themselves.
+     *
+     * Passing `onOrderChange` is what makes the card render without an eventId.
+     */
+    orderValue?: 'questions_first' | 'ticket_first'
+    onOrderChange?: (order: 'questions_first' | 'ticket_first') => void
     saveFn?: (questions: RegistrationQuestion[]) => Promise<{ error?: string; success?: boolean; questions?: RegistrationQuestion[] }>
     heading?: string
     subheading?: string
@@ -94,7 +114,8 @@ interface Props {
 }
 
 export function RegistrationQuestionsManager({
-    eventId, initialQuestions, tiers, initialFormLayout,
+    eventId, initialQuestions, tiers, initialFormLayout, initialFlowOrder, canOrderTicketFirst,
+    orderValue, onOrderChange,
     saveFn, heading, subheading, onChange, hideSave, advanced = true,
 }: Props) {
     const { toast } = useToast()
@@ -105,6 +126,11 @@ export function RegistrationQuestionsManager({
     // undefined = follow the auto rule below; true/false = the organizer decided.
     const [openAdvanced, setOpenAdvanced] = useState<Record<string, boolean | undefined>>({})
     const [layout, setLayout] = useState<'stepper' | 'single'>(initialFormLayout ?? 'stepper')
+    const [savedOrder, setSavedOrder] = useState<'questions_first' | 'ticket_first'>(
+        initialFlowOrder ?? 'questions_first'
+    )
+    // Controlled by the parent during create, self-managed on the dashboard.
+    const order = onOrderChange ? (orderValue ?? 'questions_first') : savedOrder
 
     useEffect(() => {
         if (onChange) onChange(questions)
@@ -242,6 +268,19 @@ export function RegistrationQuestionsManager({
         }
     }
 
+    async function changeOrder(next: 'questions_first' | 'ticket_first') {
+        // Create wizard: hand it up, it travels with the form.
+        if (onOrderChange) { onOrderChange(next); return }
+        if (!eventId) return
+        const previous = savedOrder
+        setSavedOrder(next)
+        const res = await setRegistrationFlowOrder(eventId, next)
+        if (res?.error) {
+            setSavedOrder(previous)
+            toast({ title: 'Could not change the order', description: res.error, variant: 'destructive' })
+        }
+    }
+
     const needsOptions = (type: QuestionType) =>
         type === 'single_choice' || type === 'dropdown' || type === 'multi_choice'
 
@@ -306,6 +345,57 @@ export function RegistrationQuestionsManager({
                             </span>
                         </button>
                     </div>
+                </Card>
+            )}
+
+            {/* WHEN they are asked, not how. Deliberately after the presentation
+                card: that one is a styling choice, this one changes where a
+                registration row comes from and is worth reading second rather
+                than skimmed past first. */}
+            {(eventId || onOrderChange) && questions.length > 0 && canOrderTicketFirst && (
+                <Card className="p-4">
+                    <Label className="text-sm font-medium">When attendees answer</Label>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <button
+                            type="button"
+                            onClick={() => changeOrder('questions_first')}
+                            className={cn(
+                                'flex items-start gap-3 rounded-lg border-2 p-3 text-left transition-colors',
+                                order === 'questions_first' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'
+                            )}
+                        >
+                            <ClipboardList className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                            <span>
+                                <span className="block text-sm font-medium">Before picking a ticket</span>
+                                <span className="block text-xs text-muted-foreground">
+                                    You collect names and answers from everyone who starts, even
+                                    if they never pay.
+                                </span>
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => changeOrder('ticket_first')}
+                            className={cn(
+                                'flex items-start gap-3 rounded-lg border-2 p-3 text-left transition-colors',
+                                order === 'ticket_first' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'
+                            )}
+                        >
+                            <Ticket className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                            <span>
+                                <span className="block text-sm font-medium">After picking a ticket</span>
+                                <span className="block text-xs text-muted-foreground">
+                                    Asked at checkout. Nobody lands on your list until they pay,
+                                    so there is nothing to tidy up afterwards.
+                                </span>
+                            </span>
+                        </button>
+                    </div>
+                    <p className="mt-3 text-xs text-muted-foreground">
+                        {order === 'ticket_first'
+                            ? 'Fewer contact details, a cleaner list.'
+                            : 'More contact details, including people who never paid.'}
+                    </p>
                 </Card>
             )}
 

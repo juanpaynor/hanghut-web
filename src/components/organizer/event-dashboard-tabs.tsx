@@ -286,6 +286,17 @@ export function EventDashboardTabs({
                     initialQuestions={initialQuestions}
                     tiers={tiers}
                     initialFormLayout={event?.layout_config?.registration?.layout}
+                    initialFlowOrder={event?.layout_config?.registration?.order}
+                    // Free, approval and invite-only events cannot put the
+                    // ticket first — see setRegistrationFlowOrder. Mirrored
+                    // here only to hide the card; the gate and the server
+                    // action each refuse on their own.
+                    canOrderTicketFirst={
+                        !event?.require_approval
+                        && !event?.invite_only
+                        && ((tiers ?? []).some((t: any) => Number(t?.price) > 0)
+                            || Number(event?.ticket_price ?? 0) > 0)
+                    }
                 />
             </TabsContent>
 
@@ -305,6 +316,7 @@ export function EventDashboardTabs({
                         initialPage={initialRegistrations}
                         initialStats={initialAnswerStats}
                         approvalMode={!!event.require_approval}
+                        abandonUnpaidAfterHours={event.abandon_unpaid_after_hours ?? null}
                     />
                 </TabsContent>
             )}

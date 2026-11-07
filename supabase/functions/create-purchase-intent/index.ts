@@ -603,6 +603,10 @@ serve(async (req) => {
                 .single()
 
             useMainWallet = partner?.use_main_wallet === true
+            // DELIBERATELY UNUSED since 2026-11-06. Kept only so the column
+            // and its intent stay visible here. It must NOT become a gate
+            // again until the KYC capability flow actually sets it -- see the
+            // allowed_payment_channels comment below.
             organizerCardsGcashLive = partner?.xendit_cards_gcash_live === true
             passFixedToCustomer = partner?.pass_fixed_to_customer === true
             passPercentageToCustomer = partner?.pass_percentage_to_customer === true
@@ -1086,14 +1090,37 @@ serve(async (req) => {
             // not activated is fatal to the entire session, so the real fix is
             // to source this list from the account's live channels rather than
             // hard-coding it.
-            allowed_payment_channels: [
-                ...(useMainWallet || organizerCardsGcashLive ? ['CARDS', 'GCASH'] : []),
-                'PAYMAYA',
-                'GRABPAY',
-                'BPI_DIRECT_DEBIT',
-                'UBP_DIRECT_DEBIT',
-                'RCBC_DIRECT_DEBIT',
-            ],
+            //
+            // ── 2026-11-06: SUB-MERCHANTS NOW SEND NO LIST AT ALL ──────────
+            //
+            // The note directly above is the fix, finally applied. The list is
+            // sent ONLY for the main wallet, which is HangHut's own Xendit
+            // account where we know these eight channels are live (PHP 2.8M
+            // moved through them in the last 30 days).
+            //
+            // For a sub-merchant the field is OMITTED. Xendit's documented
+            // behaviour is "by default, all payment channels will be available
+            // if you leave this field empty", meaning all channels THAT
+            // ACCOUNT has activated. Sending nothing asserts nothing, so
+            // INVALID_PAYMENT_CHANNEL becomes structurally impossible instead
+            // of merely unlikely -- and that error does not degrade the
+            // checkout, it kills it: no payment link is created at all.
+            //
+            // Why not gate on partners.xendit_cards_gcash_live, which exists
+            // for exactly this: because it is FALSE for all 68 partners and
+            // always has been (the protect_partner_status_fields trigger was
+            // reverting kyc_status, so the capability flow never once set it).
+            // Upper Room Worship is a live sub-merchant taking PHP 239k on its
+            // own sub-account while that flag reads false. Gating on it would
+            // switch cards off for people who have them. A flag that has never
+            // been true is not a gate, it is a guess.
+            //
+            // The trade-off, stated: for sub-merchants we no longer control
+            // which channels appear or in what order. That is strictly better
+            // than controlling a list that can refuse to create a payment link.
+            ...(useMainWallet ? {
+                allowed_payment_channels: ['CARDS', 'GCASH', 'QRPH', 'PAYMAYA', 'GRABPAY', 'BPI_DIRECT_DEBIT', 'UBP_DIRECT_DEBIT', 'RCBC_DIRECT_DEBIT'],
+            } : {}),
             ...(organizerId && hanghutTake > 0 && !useMainWallet ? {
                 fees: [{ type: 'PLATFORM', value: hanghutTake }]
             } : {}),

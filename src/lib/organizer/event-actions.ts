@@ -387,6 +387,47 @@ export async function createEvent(formData: FormData) {
             console.error('Question payload parse error:', e)
         }
 
+        // 7. Whether checkout asks the questions instead of the event page.
+        //    Only written when the wizard actually chose ticket-first, so the
+        //    column keeps its default shape for every other event. Non-fatal
+        //    for the same reason as the questions above: the organizer can set
+        //    this from the dashboard, and losing it must not sink the event.
+        try {
+            if (formData.get('registration_flow_order') === 'ticket_first') {
+                // Ask the tiers that were actually WRITTEN rather than
+                // re-parsing the payload. Step 5 filters, clamps and falls back
+                // to a default "General Admission" row, so a second parse here
+                // would be a copy of that logic free to drift from it — and
+                // `tierRows` is scoped inside its own block.
+                const { data: madeTiers } = await adminSupabase
+                    .from('ticket_tiers')
+                    .select('price')
+                    .eq('event_id', event.id)
+                const paidTier = (madeTiers ?? []).some(t => Number(t.price) > 0)
+                const paidEvent = Number(eventData.ticket_price ?? 0) > 0
+                // Mirrors setRegistrationFlowOrder's refusals. A free event has
+                // no payment to put first, and an approval or invite-only event
+                // has to clear the person before they can pay.
+                if ((paidTier || paidEvent) && !eventData.require_approval && !eventData.invite_only) {
+                    const existing = (event.layout_config ?? {}) as Record<string, unknown>
+                    await adminSupabase
+                        .from('events')
+                        .update({
+                            layout_config: {
+                                ...existing,
+                                registration: {
+                                    ...(existing.registration as object ?? {}),
+                                    order: 'ticket_first',
+                                },
+                            },
+                        })
+                        .eq('id', event.id)
+                }
+            }
+        } catch (e) {
+            console.error('Registration flow order save error:', e)
+        }
+
         await saveTermsDocuments(adminSupabase, event.id, formData.get('terms_documents') as string | null)
 
         revalidatePath('/organizer/events')

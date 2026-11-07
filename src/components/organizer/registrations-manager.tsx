@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { setAbandonUnpaidAfterHours } from '@/lib/organizer/registration-layout-actions'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
@@ -40,6 +41,12 @@ interface Props {
     /** Approval-gated event: show the pending/approved/rejected queue. Off = a
      *  flat list of responses (auto-approve has nothing to review). */
     approvalMode?: boolean
+    /**
+     * events.abandon_unpaid_after_hours. null means the release is off for this
+     * event and the roster keeps abandoned rows forever, which is how 482
+     * events behaved until a default existed.
+     */
+    abandonUnpaidAfterHours?: number | null
 }
 
 const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -219,7 +226,7 @@ function RegistrationCard({
 const exportSlug = (title?: string | null) =>
     (title || 'event').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()
 
-export function RegistrationsManager({ eventId, eventTitle, initialPage, initialStats = null, approvalMode = true }: Props) {
+export function RegistrationsManager({ eventId, eventTitle, initialPage, initialStats = null, approvalMode = true, abandonUnpaidAfterHours = null }: Props) {
     const { toast } = useToast()
     const [data, setData] = useState<RegistrationsPage>(initialPage)
     const [statusGroup, setStatusGroup] = useState<RegistrationStatusGroup | undefined>(
@@ -229,9 +236,24 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const [search, setSearch] = useState('')
     const [loading, setLoading] = useState(false)
     const [exporting, setExporting] = useState<'csv' | 'pdf' | 'xlsx' | null>(null)
-    // Defaults ON. An abandoned checkout still writes a registration row, so the
-    // unfiltered file is the one that needs justifying, not this one.
-    const [paidOnly, setPaidOnly] = useState(true)
+    /**
+     * Hide people who never went through with it. ONE control, for the screen
+     * AND the files.
+     *
+     * Default ON, which is the whole point of the partner request: an abandoned
+     * checkout still writes a registration -- it has to, that is where the
+     * answers live -- so the roster showed 1,157 rows for an event with 831
+     * real attendees.
+     *
+     * This replaced a SECOND default-on checkbox ("Paid only") that sat beside
+     * the export buttons and filtered the files by its own slightly different
+     * definition. Two near-identical checkboxes that could be set to contradict
+     * each other is not a feature, and "a tidy screen with a full export" is
+     * served perfectly well by unticking this, exporting, and ticking it again.
+     */
+    const [confirmedOnly, setConfirmedOnly] = useState(true)
+    const [releaseHours, setReleaseHours] = useState<number | null>(abandonUnpaidAfterHours)
+    const [savingHours, setSavingHours] = useState(false)
     const [stats, setStats] = useState<AnswerStats | null>(initialStats)
     // Signed URLs for the uploads on the CURRENT page only. They expire, so
     // they are fetched per page rather than held for the whole event.
@@ -262,20 +284,27 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     )
 
     const load = useCallback(
-        async (opts: { page?: number; statusGroup?: RegistrationStatusGroup; search?: string }) => {
+        async (opts: {
+            page?: number
+            statusGroup?: RegistrationStatusGroup
+            search?: string
+            confirmedOnly?: boolean
+        }) => {
             setLoading(true)
             try {
                 const next = await getEventRegistrations(eventId, {
                     page: opts.page ?? page,
                     statusGroup: opts.statusGroup !== undefined ? opts.statusGroup : statusGroup,
                     search: opts.search !== undefined ? opts.search : search,
+                    confirmedOnly:
+                        opts.confirmedOnly !== undefined ? opts.confirmedOnly : confirmedOnly,
                 })
                 setData(next)
             } finally {
                 setLoading(false)
             }
         },
-        [eventId, page, statusGroup, search]
+        [eventId, page, statusGroup, search, confirmedOnly]
     )
 
     // Debounced server-side search. Filtering in the browser would mean fetching
@@ -293,6 +322,40 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const goToPage = (p: number) => {
         setPage(p)
         void load({ page: p })
+    }
+
+    // Page 1 on purpose: page 4 of 1,157 rows is usually past the end of 831.
+    const toggleConfirmedOnly = (next: boolean) => {
+        setConfirmedOnly(next)
+        setPage(1)
+        void load({ page: 1, confirmedOnly: next })
+    }
+
+    /**
+     * Optimistic, then corrected on failure. The alternative is a control that
+     * sits on the old value for a round trip, which reads as "did that work?"
+     * on a setting whose whole problem was being invisible.
+     */
+    const saveReleaseHours = async (next: number | null) => {
+        const previous = releaseHours
+        setReleaseHours(next)
+        setSavingHours(true)
+        try {
+            const res = await setAbandonUnpaidAfterHours(eventId, next)
+            if (res.error) {
+                setReleaseHours(previous)
+                toast({ title: 'Could not save', description: res.error, variant: 'destructive' })
+                return
+            }
+            toast({
+                title: next === null ? 'Automatic clean-up off' : `Releasing after ${next}h`,
+                description: next === null
+                    ? 'Abandoned registrations will stay on the roster.'
+                    : 'Unpaid registrations older than this drop off the roster. Their answers are kept.',
+            })
+        } finally {
+            setSavingHours(false)
+        }
     }
 
     const switchTab = (group: RegistrationStatusGroup) => {
@@ -313,7 +376,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const exportCsv = async () => {
         setExporting('csv')
         try {
-            const res = await exportEventRegistrationsCsv(eventId, { paidOnly })
+            const res = await exportEventRegistrationsCsv(eventId, { paidOnly: confirmedOnly })
             if (res.error || !res.csv) {
                 toast({ title: 'Export failed', description: res.error, variant: 'destructive' })
                 return
@@ -363,7 +426,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const exportPdf = async () => {
         setExporting('pdf')
         try {
-            const res = await getEventResponsesExport(eventId, { paidOnly })
+            const res = await getEventResponsesExport(eventId, { paidOnly: confirmedOnly })
             if (res.error || !res.bundle) {
                 toast({ title: 'Export failed', description: res.error, variant: 'destructive' })
                 return
@@ -513,7 +576,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
                 }
             }
 
-            doc.save(`${exportSlug(eventTitle)}-responses${paidOnly ? '-paid' : ''}.pdf`)
+            doc.save(`${exportSlug(eventTitle)}-responses${confirmedOnly ? '-paid' : ''}.pdf`)
             toast({
                 title: 'PDF ready',
                 description: b.truncated
@@ -541,7 +604,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
     const exportXlsx = async () => {
         setExporting('xlsx')
         try {
-            const res = await getEventResponsesExport(eventId, { paidOnly })
+            const res = await getEventResponsesExport(eventId, { paidOnly: confirmedOnly })
             if (res.error || !res.bundle) {
                 toast({ title: 'Export failed', description: res.error, variant: 'destructive' })
                 return
@@ -588,7 +651,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
                 new Blob([buf], {
                     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 }),
-                `${exportSlug(eventTitle)}-responses${paidOnly ? '-paid' : ''}.xlsx`,
+                `${exportSlug(eventTitle)}-responses${confirmedOnly ? '-paid' : ''}.xlsx`,
             )
             toast({
                 title: 'Excel file ready',
@@ -613,18 +676,6 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
 
     const exportButton = (
         <div className="flex items-center gap-2">
-            {/* One switch, all three formats — rather than a paid/all pair per
-                format, which would have been six buttons and a standing invitation
-                for the PDF and the CSV to be filtered differently. */}
-            <label className="flex cursor-pointer select-none items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium">
-                <Checkbox
-                    checked={paidOnly}
-                    onCheckedChange={v => setPaidOnly(v === true)}
-                    disabled={!!exporting}
-                    aria-label="Export only people who paid"
-                />
-                Paid only
-            </label>
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={!!exporting} className="gap-1.5">
                 {exporting === 'csv' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                 CSV
@@ -710,16 +761,98 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
         </>
     )
 
+    // Rendered in BOTH branches below. The auto-approve branch has no tabs at
+    // all, and it is 58 of the 63 events that have responses — wiring this into
+    // the tabbed branch only is what made it invisible to almost everyone.
+    //
+    // It sits above the list rather than beside the CSV button because it
+    // changes what is on screen, and next to an export it would read as another
+    // export option.
+    const controls = (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-muted/30 px-3 py-2">
+            <label className="flex cursor-pointer select-none items-center gap-2 text-sm font-medium">
+                <Checkbox
+                    checked={confirmedOnly}
+                    onCheckedChange={v => toggleConfirmedOnly(v === true)}
+                    disabled={loading}
+                    aria-label="Hide people who never completed their registration, on screen and in exports"
+                />
+                Confirmed only
+            </label>
+            <p className="text-xs text-muted-foreground">
+                {confirmedOnly
+                    ? counts.unfiltered > counts.total
+                        ? `Hiding ${counts.unfiltered - counts.total} with no ticket and no completed payment, here and in exports. Their answers are kept.`
+                        : 'Everyone here has a ticket or a completed payment.'
+                    : 'Showing everyone who opened the form, including abandoned checkouts. Exports match.'}
+            </p>
+
+            {/* The checkbox above hides them from THIS screen. This drops
+                them off the roster for good, which is what keeps a future
+                event tidy without anyone remembering to tick a box. */}
+            <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+                Drop unpaid after
+                <select
+                    className="rounded-md border bg-background px-2 py-1 text-xs font-medium text-foreground disabled:opacity-50"
+                    value={releaseHours === null ? 'off' : String(releaseHours)}
+                    disabled={savingHours || loading}
+                    onChange={e => {
+                        const v = e.target.value
+                        void saveReleaseHours(v === 'off' ? null : Number(v))
+                    }}
+                >
+                    <option value="off">never</option>
+                    <option value="6">6 hours</option>
+                    <option value="12">12 hours</option>
+                    <option value="24">24 hours</option>
+                    <option value="48">2 days</option>
+                    <option value="72">3 days</option>
+                </select>
+                {savingHours && <Loader2 className="h-3 w-3 animate-spin" />}
+            </label>
+        </div>
+    )
+
+    // An event can be empty for two different reasons, and conflating them is a
+    // dead end: counts.total obeys the Confirmed-only filter, so an event where
+    // everyone abandoned checkout reads as zero. Ten live events are in exactly
+    // that state. Saying "no registrations yet" there is a lie the organizer has
+    // no way to argue with, because the filter's own checkbox is in the branches
+    // below. So: if the filter is what emptied it, say so and offer the way out.
     if (counts.total === 0 && !search) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground border-2 border-dashed rounded-xl">
                 <Users className="h-10 w-10 mb-3 opacity-40" />
-                <p className="font-semibold text-foreground">No registrations yet</p>
-                <p className="text-sm mt-1 max-w-xs">
-                    {approvalMode
-                        ? "Once people submit registration requests for this event, they'll appear here."
-                        : "Once people register for this event, their answers will appear here."}
-                </p>
+                {confirmedOnly && counts.unfiltered > 0 ? (
+                    <>
+                        <p className="font-semibold text-foreground">Nobody has completed a registration</p>
+                        <p className="text-sm mt-1 max-w-sm">
+                            {counts.unfiltered === 1
+                                ? 'One person filled in the form'
+                                : `${counts.unfiltered} people filled in the form`}
+                            , but none of them have a ticket or a completed
+                            payment yet. Their answers are kept.
+                        </p>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-4"
+                            disabled={loading}
+                            onClick={() => toggleConfirmedOnly(false)}
+                        >
+                            Show everyone who registered
+                        </Button>
+                    </>
+                ) : (
+                    <>
+                        <p className="font-semibold text-foreground">No registrations yet</p>
+                        <p className="text-sm mt-1 max-w-xs">
+                            {approvalMode
+                                ? "Once people submit registration requests for this event, they'll appear here."
+                                : "Once people register for this event, their answers will appear here."}
+                        </p>
+                    </>
+                )}
             </div>
         )
     }
@@ -741,6 +874,7 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
                     </div>
                 </div>
                 <AnswerInsights eventId={eventId} stats={stats} onRefresh={refreshStats} />
+                {controls}
                 {list}
             </div>
         )
@@ -769,6 +903,8 @@ export function RegistrationsManager({ eventId, eventTitle, initialPage, initial
             </div>
 
             <AnswerInsights eventId={eventId} stats={stats} onRefresh={refreshStats} />
+
+            {controls}
 
             <Tabs value={statusGroup} onValueChange={v => switchTab(v as RegistrationStatusGroup)}>
                 <TabsList>

@@ -27,6 +27,13 @@ import { CheckCircle2, ClipboardList, Armchair } from 'lucide-react'
 import { formatEventShortWithEnd } from '@/lib/datetime'
 import { useSeatHoldTimer, SeatHoldTimer } from '@/components/events/seat-hold-timer'
 import { visibleQuestions, tierOnlyQuestions, isSectionBlock } from '@/lib/events/question-visibility'
+import {
+    answersToFormState,
+    fetchResumableRegistration,
+    forgetRegistration,
+    rememberRegistration,
+    rememberedRegistrationId,
+} from '@/lib/events/resume-registration'
 import type { TermsDocument } from '@/lib/legal/terms-documents'
 import { PLATFORM_TERMS_VERSION } from '@/lib/legal/terms-version'
 
@@ -108,12 +115,45 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, termsDo
     )
     const [regAnswers, setRegAnswers] = useState<Record<string, any>>({})
     const [registrationPending, setRegistrationPending] = useState(false)
+    // Only the SERVER-resolved value is trusted on first render.
+    //
+    // The remembered id now lives in localStorage rather than sessionStorage, so
+    // it survives the tab closing — and that means it can be days old and have
+    // been released to 'cancelled' by expire_stale_registrations() in the
+    // meantime (161 such rows exist right now). Trusting it outright would skip
+    // the question step AND carry a cancelled registration through payment,
+    // filing a real paying attendee as cancelled, where the organizer's roster
+    // hides them.
+    //
+    // So the unsafe default is inverted: questions are shown until the server
+    // confirms the id is reusable. Confirmation is one fast call and the
+    // answers are prefilled either way, so the worst case is the behaviour
+    // this page already had.
     const [approvedRegistrationId, setApprovedRegistrationId] = useState<string | null>(
-        // Server-resolved approval wins (returning user/new device); otherwise fall
-        // back to the in-session value stashed during the pre-checkout Register step.
         serverApprovedRegistrationId
-        ?? (typeof window !== 'undefined' ? sessionStorage.getItem(`approved_reg_${event.id}`) : null)
     )
+
+    useEffect(() => {
+        if (serverApprovedRegistrationId) return
+        const remembered = rememberedRegistrationId(event.id)
+        if (!remembered) return
+        let cancelled = false
+        void (async () => {
+            const resumed = await fetchResumableRegistration(createClient(), event.id, remembered)
+            if (cancelled || !resumed) return
+            // Prefill regardless of whether the row itself can be reused —
+            // saving the typing is the point, and a fresh row will hold them.
+            // `prev` wins so nothing the buyer has already typed is clobbered.
+            setRegAnswers(prev => ({ ...answersToFormState(resumed), ...prev }))
+            const reusable =
+                (resumed.status === 'approved' || resumed.status === 'auto_approved')
+                && !resumed.consummated
+            if (reusable) setApprovedRegistrationId(resumed.registration_id)
+            else forgetRegistration(event.id)
+        })()
+        return () => { cancelled = true }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [event.id, serverApprovedRegistrationId])
 
     /**
      * The questions THIS page asks.
@@ -540,6 +580,11 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, termsDo
 
                 // auto_approved — proceed to checkout with the registration_id
                 registrationId = regResult?.registration_id || null
+                // Remember it durably. A buyer who registers HERE (direct
+                // checkout link, new tab, cleared storage) and then drops out
+                // at the payment screen was previously forgotten the moment
+                // the tab closed, and got the whole form again on return.
+                if (registrationId) rememberRegistration(event.id, registrationId)
             }
 
             // ── STEP 1b: Attach the tier's own answers ──

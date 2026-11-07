@@ -266,6 +266,11 @@ export function EventForm({
     // Attendee questions collected in the create wizard (optional). Persisted by
     // createEvent once the event id exists. Editing keeps using the dashboard tab.
     const [questions, setQuestions] = useState<RegistrationQuestion[]>([])
+    // When attendees answer: before picking a ticket (the original) or at
+    // checkout. Held here rather than inside the questions editor because the
+    // event does not exist yet, so there is nothing to save it against until
+    // createEvent runs.
+    const [flowOrder, setFlowOrder] = useState<'questions_first' | 'ticket_first'>('questions_first')
     // Additional, separately-accepted T&C documents. Persisted by the form's own
     // Save in both create and edit, so the card has one obvious save action.
     const [termsDocs, setTermsDocs] = useState<TermsDocument[]>([])
@@ -750,6 +755,13 @@ export function EventForm({
                     .filter(q => !['single_choice', 'multi_choice'].includes(q.question_type) || q.options.length >= 2)
                 if (questionPayload.length > 0) {
                     formDataToSend.append('registration_questions', JSON.stringify(questionPayload))
+                    // Only sent when it is not the default, and only alongside
+                    // real questions — with no questions there is no order for
+                    // it to describe. createEvent re-checks that the event is
+                    // paid and ungated before storing it.
+                    if (flowOrder === 'ticket_first') {
+                        formDataToSend.append('registration_flow_order', 'ticket_first')
+                    }
                 }
             }
 
@@ -2074,6 +2086,9 @@ export function EventForm({
                                     hideSave
                                     heading="Attendee questions (optional)"
                                     subheading="Ask attendees for extra details when they register — dietary needs, t-shirt size, company, emergency contact, anything you need. Leave this blank to skip it; you can always add or edit questions later from the event's dashboard."
+                                    orderValue={flowOrder}
+                                    onOrderChange={setFlowOrder}
+                                    canOrderTicketFirst={isPaidEvent && !formData.require_approval && !formData.invite_only}
                                 />
                             )}
                         </Card>

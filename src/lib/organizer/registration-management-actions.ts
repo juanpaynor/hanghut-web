@@ -22,6 +22,14 @@ export interface EventRegistration {
     reviewed_by: string | null
     reviewed_at: string | null
     created_at: string
+    /**
+     * Did this person actually go through with it -- a completed intent or a
+     * live ticket, matched by user_id or lowered email. Computed in SQL by
+     * `is_confirmed(event_registrations)`, deliberately the SAME test
+     * expire_stale_registrations() uses so the roster and the release job
+     * cannot disagree about who abandoned.
+     */
+    is_confirmed?: boolean
     user?: { full_name: string | null; email: string | null } | null
     tier?: { name: string } | null
     /**
@@ -54,8 +62,19 @@ export interface RegistrationsPage {
      * releases abandoned unpaid checkouts to that status: an organizer asked for
      * their roster to show paid attendees only, and a released row reappearing as
      * "cancelled" is the exact noise the release was meant to remove.
+     *
+     * `unfiltered` ignores the Confirmed-only filter on purpose, so the screen
+     * can tell "nobody has registered" apart from "everyone who registered
+     * abandoned checkout". Without it the empty state has to guess, and on the
+     * 400-odd events with no registrations at all it would guess wrong.
      */
-    counts: { pending: number; approved: number; rejected: number; total: number }
+    counts: {
+        pending: number
+        approved: number
+        rejected: number
+        total: number
+        unfiltered: number
+    }
     page: number
     per_page: number
     total_pages: number
@@ -127,12 +146,23 @@ export async function getEventRegistrations(
         page?: number
         perPage?: number
         search?: string
+        /**
+         * Hide anyone who never went through with it.
+         *
+         * `is_confirmed` is a PostgREST COMPUTED FIELD -- a SQL function whose
+         * single argument is an event_registrations row -- so it filters in the
+         * database and the existing embeds, ordering and counts below carry on
+         * working untouched. See responses-confirmed-filter-DEPLOY.sql for why
+         * it matches on user_id/email rather than this registration's own
+         * ticket: the narrow test would have hidden 61 people who really paid.
+         */
+        confirmedOnly?: boolean
     } = {}
 ): Promise<RegistrationsPage> {
     const empty: RegistrationsPage = {
         registrations: [],
         questions: [],
-        counts: { pending: 0, approved: 0, rejected: 0, total: 0 },
+        counts: { pending: 0, approved: 0, rejected: 0, total: 0, unfiltered: 0 },
         page: 1,
         per_page: opts.perPage ?? REGISTRATIONS_PER_PAGE,
         total_pages: 0,
@@ -149,6 +179,7 @@ export async function getEventRegistrations(
     const matchedUserIds = search ? await searchMatchedUserIds(search) : []
 
     const applyFilters = (q: any) => {
+        if (opts.confirmedOnly) q = q.eq('is_confirmed', true)
         if (opts.statusGroup) q = q.in('status', STATUS_GROUPS[opts.statusGroup] as unknown as string[])
         if (search) {
             const clauses = [
@@ -162,12 +193,20 @@ export async function getEventRegistrations(
     }
 
     // Counts, questions and the page itself are independent — fetch together.
-    const countFor = (group: RegistrationStatusGroup) =>
-        adminClient
+    // The bucket counts take the SAME confirmed filter as the list. Without it
+    // the Approved tab would read 1,157 above a list showing 831 -- the exact
+    // disagreement the comment on RegistrationsPage.counts warns about. Search
+    // and statusGroup stay out of these on purpose: they are whole-event bucket
+    // totals, and that is what the tabs are for.
+    const countFor = (group: RegistrationStatusGroup) => {
+        let q = adminClient
             .from('event_registrations')
             .select('id', { count: 'exact', head: true })
             .eq('event_id', eventId)
             .in('status', STATUS_GROUPS[group] as unknown as string[])
+        if (opts.confirmedOnly) q = q.eq('is_confirmed', true)
+        return q
+    }
 
     const from = (page - 1) * perPage
     const to = from + perPage - 1
@@ -187,6 +226,7 @@ export async function getEventRegistrations(
             reviewed_by,
             reviewed_at,
             created_at,
+            is_confirmed,
             user:users!event_registrations_user_id_fkey ( display_name, email ),
             registration_answers ( question_id, answer )
         `,
@@ -206,6 +246,7 @@ export async function getEventRegistrations(
         { count: approvedCount },
         { count: rejectedCount },
         { count: allCount },
+        { count: unfilteredCount },
     ] = await Promise.all([
         rowsQuery,
         adminClient
@@ -219,6 +260,18 @@ export async function getEventRegistrations(
         countFor('pending'),
         countFor('approved'),
         countFor('rejected'),
+        (() => {
+            let q = adminClient
+                .from('event_registrations')
+                .select('id', { count: 'exact', head: true })
+                .eq('event_id', eventId)
+                .neq('status', 'cancelled')
+            if (opts.confirmedOnly) q = q.eq('is_confirmed', true)
+            return q
+        })(),
+        // Deliberately NOT filtered. One extra head-only count against an
+        // indexed event_id, which is cheaper than the alternative: an empty
+        // screen that cannot say why it is empty.
         adminClient
             .from('event_registrations')
             .select('id', { count: 'exact', head: true })
@@ -243,6 +296,7 @@ export async function getEventRegistrations(
         reviewed_by: r.reviewed_by,
         reviewed_at: r.reviewed_at,
         created_at: r.created_at,
+        is_confirmed: r.is_confirmed === true,
         user: r.user ? { full_name: r.user.display_name, email: r.user.email } : null,
         tier: null,
         answers: (r.registration_answers || []).map((a: any) => ({
@@ -259,6 +313,7 @@ export async function getEventRegistrations(
             approved: approvedCount ?? 0,
             rejected: rejectedCount ?? 0,
             total: allCount ?? 0,
+            unfiltered: unfilteredCount ?? 0,
         },
         page,
         per_page: perPage,
@@ -366,6 +421,22 @@ interface ExportBundle {
          * file and reconciling them by hand, name by name.
          */
         payment: PaymentState
+        /**
+         * The SAME test the Responses screen filters on — the `is_confirmed`
+         * computed field, not the `payment` label beside it.
+         *
+         * They are not interchangeable and the file has to use this one, or an
+         * organizer exporting a tidy screen gets a file that disagrees with it.
+         * `payment` is built from `tickets.registration_id` plus a completed
+         * intent matched on email, which between them miss a box-office,
+         * offline or comp ticket that carries neither. `is_confirmed` matches
+         * tickets by user_id or email as well, so it catches those. One live
+         * row differs today; the point is that it can differ at all.
+         *
+         * `payment` stays as the COLUMN, because 'Paid - no ticket issued' is a
+         * real distinction worth seeing inside a filtered file.
+         */
+        confirmed: boolean
         submitted: string
         /** Display form — a file answer is its filename. Used by the PDF. */
         answers: string[]
@@ -468,7 +539,7 @@ async function loadExportBundle(
             .from('event_registrations')
             .select(
                 `
-                id, guest_email, guest_name, status, created_at,
+                id, guest_email, guest_name, status, created_at, is_confirmed,
                 tier:ticket_tiers ( name ),
                 user:users!event_registrations_user_id_fkey ( display_name, email ),
                 registration_answers ( question_id, answer )
@@ -612,6 +683,7 @@ async function loadExportBundle(
                     name: r.user?.display_name || r.guest_name || '',
                     email,
                     payment: paymentFor(r.id, email),
+                    confirmed: r.is_confirmed === true,
                     // Falls back to the registration's own tier_id for the 4.4%
                     // that have one but never produced a ticket row.
                     ticket: tiersByRegistration.get(r.id) || r.tier?.name || '',
@@ -644,8 +716,13 @@ function exportSlug(title: string): string {
  * the organizer was reconciling them against a second export by hand.
  */
 /**
- * 'Paid - no ticket issued' counts as paid: they paid. It keeps its own label in
- * the Payment column so the gap stays visible inside the filtered file.
+ * Drop the people the screen is hiding.
+ *
+ * This used to have its own definition of "paid" and its own checkbox next to
+ * the export buttons, which meant the Responses tab shipped TWO near-identical
+ * default-on checkboxes — "Confirmed only" for the screen and "Paid only" for
+ * the file — that an organizer could set to disagree with each other. There is
+ * now one checkbox and one definition, and the file matches the list.
  *
  * Not exported — a "use server" module may only export async functions — which
  * is also why it lives here rather than in the component: CSV filters here, and
@@ -653,7 +730,7 @@ function exportSlug(title: string): string {
  */
 function keepPaid(rows: ExportBundle['rows'], paidOnly?: boolean) {
     if (!paidOnly) return rows
-    return rows.filter(r => r.payment === 'Paid' || r.payment === 'Paid - no ticket issued')
+    return rows.filter(r => r.confirmed)
 }
 
 export async function exportEventRegistrationsCsv(

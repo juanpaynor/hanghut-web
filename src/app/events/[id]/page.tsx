@@ -306,19 +306,22 @@ export default async function PublicEventPage({
         viewerEmail = user?.email ?? null
         if (user) {
             const admin = createAdminClient()
-            const gated = event.require_approval || event.invite_only
             const [regRes, tkRes, discountRes, subRes] = await Promise.all([
-                // Returning approved users skip the question step (only when gated).
-                gated
-                    ? admin.from('event_registrations')
-                        .select('id')
-                        .eq('event_id', event.id)
-                        .eq('user_id', user.id)
-                        .in('status', ['approved', 'auto_approved'])
-                        .order('created_at', { ascending: false })
-                        .limit(1)
-                        .maybeSingle()
-                    : Promise.resolve({ data: null }),
+                // A returning registrant skips the question step.
+                //
+                // This used to run only on approval or invite-only events, which
+                // is 7 of 482 — so on every ordinary ticketed event a signed-in
+                // registrant on a new device was asked everything again. The
+                // condition is gone; the guard that replaces it is below, where
+                // viewerHasTicket is already known.
+                admin.from('event_registrations')
+                    .select('id')
+                    .eq('event_id', event.id)
+                    .eq('user_id', user.id)
+                    .in('status', ['approved', 'auto_approved'])
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle(),
                 // Held ticket → drives both "You're going" AND venue reveal
                 // (a confirmed ticket is exactly the venue-gating condition, so
                 //  this single query covers both — no separate venue lookup).
@@ -339,8 +342,17 @@ export default async function PublicEventPage({
                     : Promise.resolve({ data: null }),
             ])
 
-            approvedRegistrationId = (regRes.data as any)?.id ?? null
             const tk = tkRes.data as any
+            // Hold the resume back from anyone who ALREADY holds a ticket.
+            //
+            // On an approval event that case could not arise — one ticket per
+            // person is enforced in submit_event_request. Off that gate it
+            // arises constantly: a repeat buyer coming back for a second ticket
+            // would have had the question step skipped and their answers
+            // attached to the finished first order, where the organizer would
+            // never see them. The ticket is the signal, and it is already being
+            // fetched alongside this, so no extra query pays for it.
+            approvedRegistrationId = tk ? null : ((regRes.data as any)?.id ?? null)
             if (tk) {
                 viewerHasTicket = true
                 viewerTicketToken = tk.purchase_intents?.access_token ?? null
@@ -1261,6 +1273,7 @@ export default async function PublicEventPage({
                                     ctaLabel={customCtaLabel || undefined}
                                     tierDisplay={event.layout_config?.tiers}
                                     formLayout={event.layout_config?.registration?.layout}
+                                    flowOrder={event.layout_config?.registration?.order}
                                 />
                             ) : undefined}
                             seatSlot={seatedGroupOpen ? (
@@ -1335,6 +1348,7 @@ export default async function PublicEventPage({
                             ctaLabel={customCtaLabel || undefined}
                             tierDisplay={event.layout_config?.tiers}
                             formLayout={event.layout_config?.registration?.layout}
+                            flowOrder={event.layout_config?.registration?.order}
                         />
                         {!isLoggedIn && (
                             <LoginNudge

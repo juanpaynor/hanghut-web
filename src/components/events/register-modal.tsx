@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { normalizeEmail, isEmailUsable, suggestEmail } from '@/lib/email/validate'
 import { motion, AnimatePresence } from 'motion/react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -36,6 +36,20 @@ interface RegisterModalProps {
     /** 'single' puts every question on one scrolling form; 'stepper' (default)
      *  walks them one screen at a time. Organizer's choice per event. */
     formLayout?: 'stepper' | 'single'
+    /**
+     * What this registrant told us last time, from get_registration_for_resume.
+     *
+     * Applied once per opening rather than as initial state: the modal is
+     * mounted with the page and the resume lookup is a round trip, so initial
+     * state would always be empty and the answers would arrive too late to be
+     * seen. Only blank fields are filled, so a registrant who has started
+     * retyping is never overwritten mid-edit.
+     */
+    prefill?: {
+        name?: string | null
+        email?: string | null
+        answers?: Record<string, string | string[] | boolean | number | null | undefined>
+    } | null
 }
 
 type Phase = 'form' | 'submitting' | 'pending'
@@ -46,7 +60,7 @@ const slide = {
     exit: (dir: number) => ({ x: dir > 0 ? -48 : 48, opacity: 0 }),
 }
 
-export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn, onApproved, onPending, themeColor, dark, pageTheme, formLayout }: RegisterModalProps) {
+export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn, onApproved, onPending, themeColor, dark, pageTheme, formLayout, prefill = null }: RegisterModalProps) {
     // Mirror the event page's theme inside the portal: a `dark` class flips the
     // shadcn tokens to their dark values, and the brand hue overrides --primary.
     const brandHsl = themeColor ? hexToHsl(themeColor) : null
@@ -106,6 +120,40 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
     useEffect(() => {
         if (!singlePage && step > steps.length - 1) setStep(Math.max(steps.length - 1, 0))
     }, [steps.length, step, singlePage])
+
+    // Apply what they told us last time, once per opening.
+    //
+    // Only blank fields are touched. Overwriting wholesale would undo edits a
+    // registrant had already started making — the lookup is a round trip, so it
+    // can land after they have begun typing.
+    const prefilledForRef = useRef<string | null>(null)
+    useEffect(() => {
+        if (!open || !prefill) return
+        // One application per distinct payload, not per render: this effect
+        // depends on an object literal built by the parent, which is a new
+        // reference every render and would otherwise re-apply forever.
+        const stamp = JSON.stringify(prefill)
+        if (prefilledForRef.current === stamp) return
+        prefilledForRef.current = stamp
+
+        if (prefill.name) setName(prev => (prev.trim() ? prev : prefill.name as string))
+        if (prefill.email) setEmail(prev => (prev.trim() ? prev : prefill.email as string))
+        if (prefill.answers) {
+            setAnswers(prev => {
+                const next = { ...prev }
+                for (const [qid, v] of Object.entries(prefill.answers ?? {})) {
+                    if (v == null) continue
+                    const existing = next[qid]
+                    const alreadyFilled = Array.isArray(existing)
+                        ? existing.length > 0
+                        : String(existing ?? '').trim() !== ''
+                    if (alreadyFilled) continue
+                    next[qid] = Array.isArray(v) ? v.map(String) : String(v)
+                }
+                return next
+            })
+        }
+    }, [open, prefill])
 
     // Nothing to fill in (logged-in registrant, no questions) → register
     // immediately instead of rendering an empty step.
