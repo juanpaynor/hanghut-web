@@ -2061,11 +2061,22 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                     for (const offer of sectionOffers(section)) rows.push({ section, offer })
                 }
                 if (rows.length === 0) return null
-                // Sold out sinks; then cheapest first; then by name, numerically
-                // so "Table 2" precedes "Table 12".
+                // ⚠ ORDER FOLLOWS THE LEGEND, NOT THE PRICE.
+                //
+                // This sorted cheapest-first and sank every sold-out row to the
+                // bottom. On a theatre map that put SVIP — the ₱2,500 tier, four
+                // sections — last, below the fold of a list that was also
+                // clipped, so the most expensive thing in the venue did not
+                // appear at all. Meanwhile the legend three inches away listed
+                // SVIP first.
+                //
+                // mapData.tiers is the order the legend walks, so walking it
+                // here means the two can never disagree about which tier comes
+                // first. Sold out sinks WITHIN its tier, never out of it.
+                const tierOrder = new Map(mapData.tiers.map((t, i) => [t.id, i]))
                 rows.sort((a, b) =>
-                    (a.offer.available < 1 ? 1 : 0) - (b.offer.available < 1 ? 1 : 0)
-                    || Number(a.offer.tier.price) - Number(b.offer.tier.price)
+                    (tierOrder.get(a.offer.tier.id) ?? 99) - (tierOrder.get(b.offer.tier.id) ?? 99)
+                    || (a.offer.available < 1 ? 1 : 0) - (b.offer.available < 1 ? 1 : 0)
                     || a.section.label.localeCompare(b.section.label, undefined, { numeric: true }))
                 return (
                     <div className="rounded-2xl border bg-background overflow-hidden shrink-0">
@@ -2073,7 +2084,11 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                             <p className="text-sm font-semibold">Pick a spot</p>
                             <p className="text-xs text-muted-foreground">Tap one here, or straight on the map.</p>
                         </div>
-                        <div className="divide-y max-h-[48vh] overflow-y-auto">
+                        {/* No max-height and no scroller of its own. The rail
+                            around this already scrolls (lg:overflow-y-auto), and
+                            a scroller inside a scroller clipped the list at 6 of
+                            11 sections with nothing on screen to say so. */}
+                        <div className="divide-y">
                             {rows.map(({ section, offer }) => {
                                 const soldOut = offer.available < 1
                                 const unit = isUnitSection(section)
