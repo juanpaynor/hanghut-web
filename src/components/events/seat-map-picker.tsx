@@ -242,6 +242,21 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
     const [loading, setLoading] = useState(true)
     const [stageSize, setStageSize] = useState({ width: 100, height: 480 })
     const [activeSection, setActiveSection] = useState<string | null>(null)
+    /**
+     * Is the browse list scrolled to its end?
+     *
+     * Drives the fade at the bottom of the "Pick a spot" rail. A list that
+     * simply stops at the panel edge looks finished — which is how five of
+     * eleven sections, including the whole top tier, went unnoticed. The fade
+     * is the only thing on screen saying "there is more below", because macOS
+     * hides the scrollbar until you are already scrolling.
+     */
+    const [browseAtEnd, setBrowseAtEnd] = useState(true)
+    /** Measures on mount (ref callback) and on every scroll. */
+    const measureBrowseScroll = useCallback((el: HTMLDivElement | null) => {
+        if (!el) return
+        setBrowseAtEnd(el.scrollHeight - el.scrollTop - el.clientHeight < 8)
+    }, [])
     /** Section id whose single unit should be selected once its seat has loaded. */
     const [pendingUnitSelect, setPendingUnitSelect] = useState<string | null>(null)
     const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([])
@@ -2079,16 +2094,31 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                     || (a.offer.available < 1 ? 1 : 0) - (b.offer.available < 1 ? 1 : 0)
                     || a.section.label.localeCompare(b.section.label, undefined, { numeric: true }))
                 return (
-                    <div className="rounded-2xl border bg-background overflow-hidden shrink-0">
-                        <div className="px-4 py-2.5 border-b bg-muted/30">
-                            <p className="text-sm font-semibold">Pick a spot</p>
-                            <p className="text-xs text-muted-foreground">Tap one here, or straight on the map.</p>
+                    /* `lg:flex-1 min-h-0`: the card STRETCHES to the bottom of
+                       the rail instead of hugging its rows, so the list uses
+                       the height that was sitting empty under it. Below lg the
+                       rail is page flow, where a stretched card means nothing,
+                       so it stays auto there. */
+                    <div className="rounded-2xl border bg-background overflow-hidden shrink-0 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+                        <div className="px-4 py-2.5 border-b bg-muted/30 shrink-0 flex items-baseline justify-between gap-2">
+                            <div className="min-w-0">
+                                <p className="text-sm font-semibold">Pick a spot</p>
+                                <p className="text-xs text-muted-foreground">Tap one here, or straight on the map.</p>
+                            </div>
+                            {/* The count is the other half of the scroll cue: it
+                                says how many there are before you find out the
+                                hard way. */}
+                            <span className="text-xs text-muted-foreground tabular-nums shrink-0">{rows.length}</span>
                         </div>
-                        {/* No max-height and no scroller of its own. The rail
-                            around this already scrolls (lg:overflow-y-auto), and
-                            a scroller inside a scroller clipped the list at 6 of
-                            11 sections with nothing on screen to say so. */}
-                        <div className="divide-y">
+                        {/* The list scrolls HERE, inside the stretched card —
+                            not in a fixed 48vh box that clipped 5 of 11 rows
+                            with nothing on screen to say so. The fade below is
+                            the visible proof there is more. */}
+                        <div className="relative lg:flex-1 lg:min-h-0">
+                            <div
+                                ref={measureBrowseScroll}
+                                onScroll={(e) => measureBrowseScroll(e.currentTarget)}
+                                className="divide-y h-full overflow-y-auto">
                             {rows.map(({ section, offer }) => {
                                 const soldOut = offer.available < 1
                                 const unit = isUnitSection(section)
@@ -2132,6 +2162,15 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                                     </button>
                                 )
                             })}
+                            </div>
+                            {/* Scroll cue. macOS hides the scrollbar until the
+                                moment you are already scrolling, so a clipped
+                                list looks like a finished one — exactly how the
+                                ₱2,500 tier went missing. pointer-events-none so
+                                it never swallows a tap on the row underneath. */}
+                            {!browseAtEnd && (
+                                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-background to-transparent" />
+                            )}
                         </div>
                     </div>
                 )
