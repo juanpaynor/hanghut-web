@@ -3,73 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-import { getActingPartnerId } from '@/lib/auth/cached'
+import { authorizeEventSettings } from '@/lib/organizer/authorize-event-settings'
 
-/**
- * May this caller change this event's settings?
- *
- * ── Why this exists ─────────────────────────────────────────────────────────
- *
- * Every setter in this file used to do `.eq('organizer_id', await
- * getActingPartnerId(user.id))` and give up if no row came back. That reads
- * like an ownership check and is not one: getActingPartnerId returns the
- * partner the caller OWNS, and only falls through to a platform-support seat
- * when they own nothing. A platform admin who also owns a partner of their own
- * therefore resolves to their OWN partner on every event in the system, so the
- * lookup failed on every event belonging to anyone else — silently, because the
- * error read "Event not found or unauthorized" and could just as easily have
- * meant a bad id.
- *
- * It was wrong in the strict direction, too: `events` already carries an
- * "Admins can update all events" RLS policy, so the database would have allowed
- * exactly what the app refused.
- *
- * ── The four ways in ───────────────────────────────────────────────────────
- *
- *   owner / platform-support seat  (getActingPartnerId, as before)
- *   any team member of the owning partner
- *   platform admin (users.is_admin — the COLUMN, never user_metadata, which
- *                   callers can set on themselves)
- *
- * Read with the admin client on purpose: the point is to make the decision
- * HERE, explicitly, rather than let an RLS predicate quietly return no rows and
- * leave the caller unable to tell "not allowed" from "does not exist".
- */
-async function authorizeEventSettings(eventId: string): Promise<
-    { event: Record<string, any> } | { error: string }
-> {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { error: 'Not authenticated' }
-
-    const admin = createAdminClient()
-    const { data: event } = await admin
-        .from('events')
-        .select('id, organizer_id, layout_config, require_approval, invite_only, ticket_price')
-        .eq('id', eventId)
-        .maybeSingle()
-    if (!event) return { error: 'Event not found' }
-
-    const actingPartnerId = await getActingPartnerId(user.id)
-    if (actingPartnerId && event.organizer_id === actingPartnerId) return { event }
-
-    const { data: member } = await admin
-        .from('partner_team_members')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('partner_id', event.organizer_id)
-        .maybeSingle()
-    if (member) return { event }
-
-    const { data: me } = await admin
-        .from('users')
-        .select('is_admin')
-        .eq('id', user.id)
-        .maybeSingle()
-    if (me?.is_admin === true) return { event }
-
-    return { error: 'You do not have access to this event.' }
-}
 
 /**
  * Write a merged layout_config, and REPORT whether a row actually changed.

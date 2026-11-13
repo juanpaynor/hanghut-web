@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getPresaleEmailCopy } from '@/lib/organizer/presale-announce-actions'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { UserCheck } from 'lucide-react'
@@ -144,6 +145,27 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         getEventEarnings(id),
     ])
 
+    // Pre-registration head count, for the presale panel on the Tickets tab.
+    // Deliberately NOT folded into the Promise.all above: that array and its
+    // destructuring have to stay index-aligned by hand, and getting that wrong
+    // silently hands one query's result to another variable. Two head-only
+    // counts cost nothing. `pending` is only ever non-zero when the event also
+    // requires approval, and it is shown because an unreviewed pre-registrant
+    // is a dead link at the exact moment they try to buy.
+    const [presaleCleared, presalePending, presaleConv, presaleCopy] = await Promise.all([
+        supabase.from('event_registrations').select('id', { count: 'exact', head: true })
+            .eq('event_id', id).in('status', ['approved', 'auto_approved']),
+        supabase.from('event_registrations').select('id', { count: 'exact', head: true })
+            .eq('event_id', id).eq('status', 'pending'),
+        // How many of the list actually bought, and whether there are enough
+        // tickets for them. Counts PEOPLE, not registration rows, so the
+        // denominator is not inflated by anyone who registered twice.
+        supabase.rpc('presale_conversion', { p_event_id: id }),
+        // The two presale emails with the defaults already resolved, so the
+        // editor opens on exactly what would be sent rather than empty boxes.
+        getPresaleEmailCopy(id),
+    ])
+
     const stats = statsRows?.[0] ?? { sold_count: 0, checked_in_count: 0, gross_revenue: 0, refunded_amount: 0 }
     const ticketsSold = Number(stats.sold_count) || 0
     const checkedInCount = Number(stats.checked_in_count) || 0
@@ -210,6 +232,11 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                 tiers={tiers || []}
                 initialAttendees={attendees}
                 initialAttendeeTotal={attendeeTotal}
+                presaleCleared={presaleCleared.count ?? 0}
+                presalePending={presalePending.count ?? 0}
+                presaleConversion={(presaleConv.data as any) ?? null}
+                presaleEmailCopy={'error' in presaleCopy ? null : presaleCopy}
+                organizerEmail={user.email ?? ''}
                 promoCodes={promoCodes || []}
                 stats={{
                     totalRevenue,

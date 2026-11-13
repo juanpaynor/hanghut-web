@@ -33,6 +33,7 @@ import {
     forgetRegistration,
     rememberRegistration,
     rememberedRegistrationId,
+    rememberedPresaleToken,
 } from '@/lib/events/resume-registration'
 import type { TermsDocument } from '@/lib/legal/terms-documents'
 import { PLATFORM_TERMS_VERSION } from '@/lib/legal/terms-version'
@@ -562,6 +563,12 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, termsDo
                     const msg = regError.message || ''
                     if (msg.includes('already registered')) {
                         toast({ title: "Already Registered", description: "You have already submitted a registration for this event.", variant: "destructive" })
+                    } else if (msg.includes('has closed')) {
+                        // P0006 — the pre-registration list is shut. The generic
+                        // branch below would have titled this "Registration
+                        // Failed", which reads like our bug rather than the
+                        // organizer's deadline.
+                        toast({ title: "Registration closed", description: "The organizer has closed the list for this event.", variant: "destructive" })
                     } else if (msg.includes('Required questions not answered')) {
                         toast({ title: "Required Fields Missing", description: "Please answer all required questions.", variant: "destructive" })
                     } else {
@@ -648,6 +655,13 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, termsDo
                 promo_code: appliedPromo ? appliedPromo.code : undefined,
                 subscribed_to_newsletter: newsletterSubscribed,
                 registration_id: registrationId || undefined,
+                // Presale early-access link, stashed by the event page when the
+                // buyer arrived from the on-sale email. Undefined on every
+                // ordinary sale, and ignored by the server unless the event
+                // actually has a presale. Most pre-registrants never need it —
+                // they are matched on the email they signed up with — this is
+                // for the one who checks out under a different address.
+                presale_token: rememberedPresaleToken(event.id) || undefined,
                 // First-touch acquisition attribution → stored on the intent, then
                 // copied to the transaction on payment (revenue-by-channel).
                 attribution: getStoredAttribution() || undefined,

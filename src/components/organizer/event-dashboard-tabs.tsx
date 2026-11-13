@@ -9,6 +9,7 @@ import { TicketTiersManager } from '@/components/organizer/ticket-tiers-manager'
 import { AttendeeManager } from '@/components/organizer/attendee-manager'
 import { MissingDetailsPanel } from '@/components/organizer/missing-details-panel'
 import { PromoCodeManager } from '@/components/organizer/promo-code-manager'
+import { PresaleManager } from '@/components/organizer/presale-manager'
 import { CheckInStats } from '@/components/organizer/check-in-stats'
 import { EventDashboardOverview } from '@/components/organizer/event-dashboard-overview'
 import { StatusLinksManager } from '@/components/organizer/status-links-manager'
@@ -37,6 +38,14 @@ interface EventDashboardTabsProps {
     initialAttendees: Attendee[]
     /** Unpaginated attendee count — drives the pager. NOT initialAttendees.length. */
     initialAttendeeTotal: number
+    /** Pre-registrants cleared to buy, and (approval events only) still unreviewed. */
+    presaleCleared: number
+    presalePending: number
+    /** {on_list, bought, tickets_left, capped} from presale_conversion. */
+    presaleConversion: { on_list: number; bought: number; tickets_left: number; capped: boolean } | null
+    /** The presale emails with defaults filled in, and where a test send goes. */
+    presaleEmailCopy: { reminder: { subject: string; html: string }; announcement: { subject: string; html: string }; customised: boolean } | null
+    organizerEmail: string
     promoCodes: PromoCode[]
     stats: {
         totalRevenue: number
@@ -69,6 +78,11 @@ export function EventDashboardTabs({
     tiers,
     initialAttendees,
     initialAttendeeTotal,
+    presaleCleared,
+    presalePending,
+    presaleConversion,
+    presaleEmailCopy,
+    organizerEmail,
     promoCodes,
     stats,
     passFixedToCustomer,
@@ -227,7 +241,30 @@ export function EventDashboardTabs({
                     </div>
                 ) : (
                     <div className="grid gap-8">
-                        <div>
+                        {/* Above the tiers on purpose. The per-tier sale windows
+                            below answer "when does THIS ticket type open"; this
+                            answers "when does the event open, and to whom", which
+                            is the question an organizer asks first. Putting them
+                            on separate screens is how someone sets one and
+                            wonders why the other still blocks them. */}
+                        <PresaleManager
+                            eventId={eventId}
+                            presaleStartsAt={event?.presale_starts_at ?? null}
+                            publicSaleStartsAt={event?.public_sale_starts_at ?? null}
+                            registrationClosesAt={event?.presale_registration_closes_at ?? null}
+                            clearedCount={presaleCleared}
+                            pendingCount={presalePending}
+                            /* The panel greys itself out; setPresaleWindow is the
+                               authority and checks for a real event_seat_maps row,
+                               so the two can disagree only in the harmless
+                               direction (typed, then refused with a reason). */
+                            hasSeatMap={usesSeatMap}
+                            notifiedAt={event?.presale_notified_at ?? null}
+                            conversion={presaleConversion}
+                            emailCopy={presaleEmailCopy}
+                            testTo={organizerEmail}
+                        />
+                        <div className="border-t pt-8">
                             <h3 className="text-xl font-semibold mb-4">Ticket Tiers</h3>
                             <TicketTiersManager
                                 eventId={eventId}

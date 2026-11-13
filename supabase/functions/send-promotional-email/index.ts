@@ -33,6 +33,10 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")
 const MARKETING_FROM_DOMAIN = Deno.env.get("MARKETING_FROM_DOMAIN") || "hanghut.com"
+// Two names are already in use across the functions for the same thing --
+// process-payment-queue reads APP_URL, send-event-invite reads SITE_URL -- so
+// accept either rather than add a third and a secret nobody set.
+const PUBLIC_SITE_URL = (Deno.env.get("APP_URL") || Deno.env.get("SITE_URL") || "https://hanghut.com").replace(/\/+$/, "")
 const UNSUBSCRIBE_SECRET = Deno.env.get("UNSUBSCRIBE_SECRET") || SUPABASE_SERVICE_ROLE_KEY || ""
 
 const corsHeaders = {
@@ -143,7 +147,7 @@ serve(async (req) => {
         }
 
         // 1. Resolve recipients (each carries first_name where known)
-        let recipients: { email: string; unsubscribe_token?: string | null; first_name?: string | null }[] = []
+        let recipients: { email: string; unsubscribe_token?: string | null; first_name?: string | null; tokens?: Record<string, string> }[] = []
 
         if (test_mode) {
             console.log('🧪 Test Mode: queuing to delivered@resend.dev')
@@ -161,6 +165,38 @@ serve(async (req) => {
                 .eq('is_active', true)
             if (error) throw error
             recipients = (subs ?? []).map(s => ({ email: s.email, unsubscribe_token: s.unsubscribe_token, first_name: (s.full_name || '').trim().split(/\s+/)[0] || null }))
+        } else if (segment === 'pre_registrants' && event_id) {
+            // The on-sale announcement.
+            //
+            // Resolved HERE, at SEND time, and never snapshotted at schedule
+            // time the way a manual campaign's recipients are: the list keeps
+            // growing right up to the moment the presale opens, and a snapshot
+            // taken when the date was set would silently drop everyone who
+            // joined afterwards -- which is most of them.
+            //
+            // presale_announcement_list also MINTS each person's access token,
+            // so the link and the recipient row are created together. One row
+            // per person, not per registration.
+            console.log(`🎟️ Pre-registrants mode: event ${event_id}`)
+            const { data: list, error } = await supabase
+                .rpc('presale_announcement_list', { p_event_id: event_id })
+            if (error) throw error
+
+            // The slug makes a human-readable link; the id always works. Either
+            // resolves on the event page, which reads ?pt= off whichever it gets.
+            const { data: ev } = await supabase
+                .from('events').select('slug').eq('id', event_id).maybeSingle()
+            const path = ev?.slug || event_id
+
+            recipients = (list ?? []).map((r: { email: string; first_name: string | null; token: string }) => ({
+                email: r.email,
+                unsubscribe_token: null,
+                first_name: r.first_name,
+                // Per-recipient, so {{presale_link}} in the organizer's copy
+                // becomes THIS person's link. A shared link cannot identify a
+                // guest when they land, and guests are most buyers.
+                tokens: { presale_link: `${PUBLIC_SITE_URL}/events/${path}?pt=${r.token}` },
+            }))
         } else if (target_emails && target_emails.length > 0) {
             console.log(`🎯 Targeted send: ${target_emails.length} emails`)
             recipients = target_emails.map(email => ({ email, unsubscribe_token: null }))

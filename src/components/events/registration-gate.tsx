@@ -10,8 +10,10 @@ import { createClient } from '@/lib/supabase/client'
 import { ClipboardList, Clock, CheckCircle2, Loader2, Ticket, Lock } from 'lucide-react'
 import type { QuestionForForm } from '@/components/events/registration-questions-form'
 import { isTierOnSale, tierSaleState } from '@/lib/tickets/tier-availability'
+import { formatInManila } from '@/lib/datetime'
 import {
     answersToFormState,
+    rememberPresaleToken,
     fetchResumableRegistration,
     rememberRegistration,
     rememberedRegistrationId,
@@ -61,6 +63,26 @@ interface RegistrationGateProps {
      * Default and fallback is the original 'questions_first'.
      */
     flowOrder?: 'questions_first' | 'ticket_first'
+    /**
+     * Where this event is in its presale, resolved ON THE SERVER.
+     *
+     * Deliberately not a timestamp compared in the browser. The page already
+     * decides `isEventSalesClosed` server-side, and doing the same here keeps
+     * the first paint identical to the markup — a `new Date()` comparison in
+     * render is a hydration mismatch waiting for the second the clock ticks
+     * between the two.
+     *
+     * null/undefined = this event has no presale, which is every event today.
+     */
+    presaleState?: 'before' | 'presale' | 'public' | null
+    /** When the presale opens, for the copy. */
+    presaleOpensAt?: string | null
+    /** Has this viewer already pre-registered (or arrived with a valid link)? */
+    onPresaleList?: boolean
+    /** The list has stopped taking new people. */
+    presaleListClosed?: boolean
+    /** ?pt= from the on-sale email, stashed so checkout can still send it. */
+    presaleToken?: string | null
 }
 
 /**
@@ -96,6 +118,11 @@ export function RegistrationGate({
     tierDisplay,
     formLayout,
     flowOrder,
+    presaleState,
+    presaleOpensAt,
+    onPresaleList,
+    presaleListClosed,
+    presaleToken,
 }: RegistrationGateProps) {
     const activeTiers = (tiers || []).filter((t: any) => isTierOnSale(t))
     // A tiered event with nothing on sale is CLOSED — it must not fall through to
@@ -115,6 +142,16 @@ export function RegistrationGate({
     const [pending, setPending] = useState(false)
     const [claimed, setClaimed] = useState(false)
     const [claimFailed, setClaimFailed] = useState(false)
+    /**
+     * The organizer shut the pre-registration list (P0006 from
+     * submit_event_request).
+     *
+     * Separate from claimFailed because the two need opposite advice: a failed
+     * claim is worth retrying, a closed list never is. Sharing claimFailed's
+     * "Something went wrong. Please try again." would have people hammering a
+     * button that cannot ever succeed.
+     */
+    const [listClosed, setListClosed] = useState(false)
     const [isLoggedIn, setIsLoggedIn] = useState(false)
     const [viewerEmail, setViewerEmail] = useState<string | null>(null)
     /** Token for the ticket we just issued. The page was server-rendered before
@@ -133,6 +170,21 @@ export function RegistrationGate({
     const resumeTriedRef = useRef(false)
 
     const registered = !!regId
+    // ── Presale ──────────────────────────────────────────────────────────────
+    // `registered ||` matters: onPresaleList was resolved when the page was
+    // rendered, so the moment someone pre-registers in the modal it is stale
+    // and would still say "you are not on the list" to the person who just
+    // joined it.
+    const presaleOn = presaleState != null
+    const onList = (onPresaleList ?? false) || registered
+    const presaleBlocked = presaleState === 'before'
+        || (presaleState === 'presale' && !onList)
+
+    // The token arrives once, in the URL. Checkout is several screens away and
+    // nothing carries a query param that far, so stash it the moment we see it.
+    useEffect(() => {
+        if (presaleToken) rememberPresaleToken(eventId, presaleToken)
+    }, [eventId, presaleToken])
 
     useEffect(() => {
         createClient().auth.getUser().then(({ data }) => {
@@ -217,6 +269,15 @@ export function RegistrationGate({
     // (skip the redundant "Get Tickets" → checkout dance for $0 RSVPs).
     useEffect(() => {
         if (!registered || !isFree || hasTicket || claimed || claimFailed) return
+        // ⚠ A FREE EVENT MINTS A TICKET THE INSTANT SOMEONE REGISTERS.
+        // During a shut presale this call reaches the gate and comes back
+        // EVENT_NOT_YET_ON_SALE, which sets claimFailed and shows an error to
+        // somebody who has just successfully joined the list. Worse, it would
+        // be the one path where "pre-register now, get in later" silently
+        // became "get your ticket now", defeating the whole feature on exactly
+        // the events most likely to need it (free, capacity-limited). They
+        // claim when they come back after it opens.
+        if (presaleBlocked) return
         if (claimStartedRef.current) return
         claimStartedRef.current = true
         ;(async () => {
@@ -239,7 +300,7 @@ export function RegistrationGate({
                 setClaimFailed(true)
             }
         })()
-    }, [registered, isFree, hasTicket, claimed, claimFailed, eventId, freeTierId, regId, guest])
+    }, [registered, isFree, hasTicket, claimed, claimFailed, eventId, freeTierId, regId, guest, presaleBlocked])
 
     const selector = (autoOpen: boolean) => (
         <TicketSelector
@@ -277,6 +338,32 @@ export function RegistrationGate({
             selector(autoOpenModal)
         )
 
+    // Hoisted so the presale branch below and the ordinary Register CTA at the
+    // bottom open the SAME modal with the same handlers. A second copy would
+    // drift — and it is the copy that remembers the registration id, which is
+    // the thing a returning pre-registrant depends on.
+    const registerModal = (
+        <RegisterModal
+            open={modalOpen}
+            onOpenChange={setModalOpen}
+            event={{ id: eventId, title: eventTitle, require_approval: requireApproval, invite_only: inviteOnly }}
+            questions={questions}
+            isLoggedIn={isLoggedIn}
+            themeColor={themeColor}
+            dark={dark}
+            pageTheme={pageTheme}
+            formLayout={formLayout}
+            prefill={resumePrefill}
+            onApproved={(rid, g) => {
+                rememberRegistration(eventId, rid)
+                setModalOpen(false)
+                setGuest(g ?? null)
+                setRegId(rid)
+            }}
+            onPending={() => setPending(true)}
+        />
+    )
+
     // ── Already going (has a ticket, or just claimed a free one) ──────────────
     if (hasTicket || claimed) {
         // Prefer the token from the ticket we just issued, then the one the page
@@ -300,6 +387,67 @@ export function RegistrationGate({
                     </p>
                 )}
             </div>
+        )
+    }
+
+    // ── Presale ──────────────────────────────────────────────────────────────
+    // AFTER "already going", so a pre-registrant who has bought still sees
+    // their ticket rather than being told to wait for a sale they already made.
+    // BEFORE "nothing on sale", because when a presale is set the tiers are
+    // usually scheduled too, and "Tickets aren't on sale yet. Check back soon."
+    // is the strictly worse version of what this says — it has no date, no way
+    // to join, and no idea the buyer is already on the list.
+    //
+    // Only the BLOCKING states return here. Anyone allowed to buy falls through
+    // to the ordinary flow, so the tier windows still get the last word.
+    if (presaleOn && presaleBlocked) {
+        const opensCopy = formatInManila(presaleOpensAt, {
+            weekday: 'long', day: 'numeric', month: 'long',
+            hour: 'numeric', minute: '2-digit',
+        })
+
+        // On the list, waiting. The one job of this screen is to stop them
+        // checking back blind — give them the date.
+        if (onList) {
+            return (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-5 text-center">
+                    <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-primary" />
+                    <p className="font-semibold">You&apos;re on the list</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        {opensCopy
+                            ? <>Tickets open to you on <strong className="text-foreground">{opensCopy}</strong>. We&apos;ll email you.</>
+                            : <>We&apos;ll email you the moment tickets open.</>}
+                    </p>
+                </div>
+            )
+        }
+
+        // Not on the list. Two different situations, and the difference matters:
+        // the list may still be open to them, or it may have shut.
+        const listShut = presaleListClosed === true
+        return (
+            <>
+                <div className="rounded-xl border p-5 text-center">
+                    <Lock className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
+                    <p className="font-semibold">
+                        {presaleState === 'before' ? 'Early access' : 'Pre-registered buyers only'}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        {listShut
+                            ? 'Tickets are being sold to people who registered in advance. Registration for this one has closed.'
+                            : presaleState === 'before'
+                                ? <>Register now and you can buy{opensCopy ? <> from <strong className="text-foreground">{opensCopy}</strong></> : ' first'}, before anyone else.</>
+                                : 'Tickets are open to people who registered in advance. Register now to buy.'}
+                    </p>
+                    {!listShut && !isSoldOut && (
+                        <Button size="lg" className="mt-3" onClick={() => setModalOpen(true)}>
+                            <ClipboardList className="mr-2 h-5 w-5" />
+                            Pre-register
+                        </Button>
+                    )}
+                </div>
+                {registerModal}
+            </>
         )
     }
 
@@ -379,7 +527,12 @@ export function RegistrationGate({
                 const { data, error } = await createClient().rpc('submit_event_request', {
                     p_event_id: eventId, p_answers: [], p_guest_email: null, p_guest_name: null,
                 })
-                if (error) { setClaimFailed(true); setRsvpSubmitting(false); return }
+                if (error) {
+                    // claimFailed is still set either way: it is what stops the
+                    // auto-claim effect retrying a call that already refused.
+                    if ((error.message || '').includes('has closed')) setListClosed(true)
+                    setClaimFailed(true); setRsvpSubmitting(false); return
+                }
                 if ((data as any)?.status === 'pending') { setPending(true); setRsvpSubmitting(false) }
                 else setRegId((data as any)?.registration_id ?? null) // → registered spinner → claim
             } catch { setClaimFailed(true); setRsvpSubmitting(false) }
@@ -387,7 +540,11 @@ export function RegistrationGate({
         return (
             <>
                 {claimFailed && (
-                    <p className="mb-3 text-sm text-red-600 text-center">Something went wrong. Please try again.</p>
+                    <p className="mb-3 text-sm text-red-600 text-center">
+                        {listClosed
+                            ? 'Registration for this event has closed.'
+                            : 'Something went wrong. Please try again.'}
+                    </p>
                 )}
                 <Button
                     size="lg"
@@ -465,25 +622,7 @@ export function RegistrationGate({
                 {cta}
             </Button>
 
-            <RegisterModal
-                open={modalOpen}
-                onOpenChange={setModalOpen}
-                event={{ id: eventId, title: eventTitle, require_approval: requireApproval, invite_only: inviteOnly }}
-                questions={questions}
-                isLoggedIn={isLoggedIn}
-                themeColor={themeColor}
-                dark={dark}
-                pageTheme={pageTheme}
-                formLayout={formLayout}
-                prefill={resumePrefill}
-                onApproved={(rid, g) => {
-                    rememberRegistration(eventId, rid)
-                    setModalOpen(false)
-                    setGuest(g ?? null)
-                    setRegId(rid)
-                }}
-                onPending={() => setPending(true)}
-            />
+            {registerModal}
         </>
     )
 }

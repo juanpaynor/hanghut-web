@@ -35,7 +35,22 @@ const VISIBILITY_TIMEOUT = 120   // seconds a claimed message is hidden from oth
 const MAX_RETRIES = 3            // dead-letter a batch after this many failed Resend attempts
 const RESEND_SPACING_MS = 700    // gap between Resend calls to respect rate limits
 
-interface Recipient { email: string; unsubscribe_token?: string | null; first_name?: string | null }
+interface Recipient {
+    email: string
+    unsubscribe_token?: string | null
+    first_name?: string | null
+    /**
+     * Extra {{placeholders}} for THIS recipient only, merged over the
+     * campaign-level ones.
+     *
+     * first_name used to be the only thing that could differ per person, which
+     * made a per-person LINK impossible — and a presale announcement whose
+     * link is identical for everybody cannot tell a guest apart from a
+     * stranger when they land on the page. Additive: every existing caller
+     * omits it and behaves exactly as before.
+     */
+    tokens?: Record<string, string> | null
+}
 
 // Resend's batch endpoint rejects the WHOLE batch with 422 if a single `to` is
 // malformed. Buyer-typed checkout emails routinely contain junk ("hs",
@@ -200,7 +215,14 @@ serve(async () => {
                     </div>
                 `
                 // Per-recipient token set (first_name) merged over campaign-level tokens.
-                const merged = { ...tokens, first_name: sub.first_name || tokens.first_name || "" }
+                // Campaign-level first, then this recipient's own — the
+                // per-person values must win, or a shared default would
+                // overwrite the link that identifies them.
+                const merged = {
+                    ...tokens,
+                    ...(sub.tokens ?? {}),
+                    first_name: sub.first_name || tokens.first_name || "",
+                }
                 return {
                     from: fromAddress,
                     to: sub.email.trim(),

@@ -204,6 +204,9 @@ export default async function PublicEventPage({
         hh_panel?: string
         /** Why checkout sent them back: 'locked' | 'scheduled' | 'closed'. */
         tier?: string
+        /** Presale access token from the on-sale email. Deliberately NOT the
+         *  registration id, which resume exposes every answer for. */
+        pt?: string
     }>
 }) {
     const { id } = await params
@@ -405,6 +408,71 @@ export default async function PublicEventPage({
             // Non-blocking — fail closed to 'uninvited' (request-to-join wall)
         }
     }
+
+    // ── Presale resolution ──────────────────────────────────────────────────
+    //
+    // Resolved HERE, on the server, for the same reason isEventSalesClosed is:
+    // a `new Date()` comparison inside the client component is a hydration
+    // mismatch waiting for the second the clock ticks between server render
+    // and hydration.
+    //
+    // ⚠ THIS IS NOT THE GATE. check_presale_access inside create-purchase-intent
+    // decides who may actually buy. Everything below only picks which card the
+    // buyer is shown. If the two ever disagree the till wins — which is the
+    // right way round, and the opposite of subscriber_early_access_hours a few
+    // lines down, which is enforced in this file and nowhere else.
+    let presaleState: 'before' | 'presale' | 'public' | null = null
+    let onPresaleList = false
+    let presaleListClosed = false
+    if (event.presale_starts_at) {
+        const nowMs = Date.now()
+        const presaleMs = new Date(event.presale_starts_at).getTime()
+        const publicMs = event.public_sale_starts_at
+            ? new Date(event.public_sale_starts_at).getTime() : null
+        presaleState = Number.isNaN(presaleMs) ? null
+            : nowMs < presaleMs ? 'before'
+            : (publicMs !== null && !Number.isNaN(publicMs) && nowMs >= publicMs) ? 'public'
+            : 'presale'
+
+        const closesMs = event.presale_registration_closes_at
+            ? new Date(event.presale_registration_closes_at).getTime() : null
+        presaleListClosed = closesMs !== null && !Number.isNaN(closesMs) && nowMs >= closesMs
+
+        if (presaleState !== null && presaleState !== 'public') {
+            // is_on_presale_list, not a second copy of the matching rule written
+            // here in TypeScript. check_presale_access calls the same function,
+            // so the page and the till cannot disagree about who is on the list.
+            // It cannot be check_presale_access itself: that returns
+            // "not on sale yet" for everybody before the presale opens, which is
+            // exactly the state where this page most needs to tell a member
+            // from a stranger.
+            try {
+                const { data } = await createAdminClient().rpc('is_on_presale_list', {
+                    p_event_id: event.id,
+                    // Email alone is enough for a signed-in viewer: the
+                    // function's third match arm compares the account's own
+                    // users.email, so passing the uuid as well would add
+                    // nothing. The uuid is not in scope out here anyway.
+                    p_user_id: null,
+                    p_email: viewerEmail,
+                    p_access_token: sp.pt ?? null,
+                })
+                onPresaleList = data === true
+            } catch {
+                // Fail to "not on the list": the worst outcome is showing a
+                // member the pre-register card, and submit_event_request reuses
+                // their existing row rather than duplicating it. Claiming
+                // somebody is on a list they are not is the worse mistake.
+            }
+        }
+    }
+
+    // Mirrors the same test inside RegistrationGate. Needed out here because the
+    // SEATED branch has to decide whether to open the map at all — and opening
+    // it to someone who cannot buy lets them hold seats in front of someone who
+    // can. Kept to one expression so the two cannot drift.
+    const presaleBlocked = presaleState === 'before'
+        || (presaleState === 'presale' && !onPresaleList)
 
     // Early access window check
     const earlyAccessHours: number | null = event.subscriber_early_access_hours ?? null
@@ -1256,6 +1324,11 @@ export default async function PublicEventPage({
                                     maxTickets={event.max_tickets_per_purchase}
                                     isSoldOut={false}
                                     tiers={gaTiersOnSale}
+                                    presaleState={presaleState}
+                                    presaleOpensAt={event.presale_starts_at ?? null}
+                                    onPresaleList={onPresaleList}
+                                    presaleListClosed={presaleListClosed}
+                                    presaleToken={sp.pt ?? null}
                                     fullWidth
                                     subscriberDiscount={subscriberDiscount}
                                     questions={(event.registration_questions || []) as QuestionForForm[]}
@@ -1305,6 +1378,42 @@ export default async function PublicEventPage({
                             <div className="text-center py-4 text-muted-foreground font-medium">
                                 Tickets are no longer available
                             </div>
+                        ) : presaleBlocked ? (
+                            /* ⚠ THE MAP MUST NOT OPEN HERE.
+                               Every tap on a seat map takes a real hold. A buyer
+                               who cannot buy during a shut presale could still
+                               lock seats for the whole hold window, in front of
+                               the people who can — so the presale card replaces
+                               the picker rather than sitting above it.
+                               The organizer action refuses seated presales
+                               outright for this same reason; this is the second
+                               line, for a date set by any other route.
+                               RegistrationGate is reused rather than a second
+                               copy of the card: it owns the Pre-register modal
+                               and the id-remembering a returning buyer needs. */
+                            <RegistrationGate
+                                eventId={event.id}
+                                eventTitle={event.title}
+                                ticketPrice={event.ticket_price}
+                                isSoldOut={false}
+                                tiers={event.ticket_tiers}
+                                fullWidth
+                                questions={(event.registration_questions || []) as QuestionForForm[]}
+                                requireApproval={event.require_approval}
+                                inviteOnly={event.invite_only}
+                                themeColor={event.theme_color}
+                                dark={isDarkBg}
+                                pageTheme={pageTheme}
+                                initialApprovedRegistrationId={approvedRegistrationId}
+                                hasTicket={viewerHasTicket}
+                                ticketToken={viewerTicketToken}
+                                formLayout={event.layout_config?.registration?.layout}
+                                presaleState={presaleState}
+                                presaleOpensAt={event.presale_starts_at ?? null}
+                                onPresaleList={onPresaleList}
+                                presaleListClosed={presaleListClosed}
+                                presaleToken={sp.pt ?? null}
+                            />
                         ) : (
                             <SeatPickerLauncher eventId={event.id} fullWidth maxPerOrder={event.max_seats_per_order ?? undefined} />
                         )}
@@ -1332,6 +1441,11 @@ export default async function PublicEventPage({
                             maxTickets={event.max_tickets_per_purchase}
                             isSoldOut={isSoldOut}
                             tiers={event.ticket_tiers}
+                            presaleState={presaleState}
+                            presaleOpensAt={event.presale_starts_at ?? null}
+                            onPresaleList={onPresaleList}
+                            presaleListClosed={presaleListClosed}
+                            presaleToken={sp.pt ?? null}
                             fullWidth
                             subscriberDiscount={subscriberDiscount}
                             questions={(event.registration_questions || []) as QuestionForForm[]}

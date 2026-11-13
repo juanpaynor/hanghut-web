@@ -230,6 +230,12 @@ export function RegisterModal({ open, onOpenChange, event, questions, isLoggedIn
                 setError(
                     msg.includes('already registered')
                         ? 'You have already registered for this event.'
+                        // P0006 — the organizer closed the pre-registration
+                        // list. Checked BEFORE the generic fallback because
+                        // "please try again" is actively wrong advice here:
+                        // retrying can never succeed.
+                        : msg.includes('has closed')
+                        ? 'Registration for this event has closed.'
                         : msg.includes('Required questions')
                         ? 'Please answer all required questions.'
                         : 'Something went wrong. Please try again.'

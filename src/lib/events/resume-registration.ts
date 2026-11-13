@@ -98,6 +98,46 @@ export function rememberedRegistrationId(eventId: string): string | null {
     return null
 }
 
+/**
+ * ── THE PRESALE ACCESS TOKEN ────────────────────────────────────────────────
+ *
+ * Arrives once, as ?pt= on the link in the on-sale email, and is needed again
+ * several screens later when the buyer presses Pay. Nothing carries a query
+ * param that far, so it is stashed the moment the event page sees it.
+ *
+ * It lives here rather than in the gate or in checkout because this module is
+ * already the single owner of this feature's storage — the gate, the modal and
+ * checkout each grew their own copy once, and they drifted.
+ *
+ * ⚠ It is NOT the registration id and must never be confused with one. The
+ * registration id unlocks get_registration_for_resume, which returns the
+ * person's name, email and every answer. This token unlocks the purchase gate
+ * and returns nothing.
+ *
+ * Email match covers most people without it — is_on_presale_list matches the
+ * address they pre-registered with. The token is what saves the buyer who
+ * checks out under a different address from the one on the list.
+ */
+const PT_KEY = (eventId: string) => `presale_token_${eventId}`
+
+export function rememberPresaleToken(eventId: string, token: string): void {
+    if (typeof window === 'undefined' || !token) return
+    try {
+        window.localStorage.setItem(PT_KEY(eventId), token)
+    } catch {
+        // Storage blocked. The email match still gets most buyers in.
+    }
+}
+
+export function rememberedPresaleToken(eventId: string): string | null {
+    if (typeof window === 'undefined') return null
+    try {
+        return window.localStorage.getItem(PT_KEY(eventId))
+    } catch {
+        return null
+    }
+}
+
 /** Drop it — the server said this id is no longer resumable. */
 export function forgetRegistration(eventId: string): void {
     if (typeof window === 'undefined') return

@@ -98,6 +98,38 @@ serve(async (req) => {
           break
         }
 
+        case 'send_simple_email': {
+          // A deliberately DUMB forwarder: SQL composed the whole message and
+          // this just posts it.
+          //
+          // Why it exists: a pre-registrant used to get NOTHING. Only two
+          // triggers sit on event_registrations — one stamps updated_at, the
+          // other emails the ORGANIZER — and the buyer's own confirmation fires
+          // only when an organizer manually approves. So on a normal presale
+          // somebody handed over their name, phone and answers, pressed submit,
+          // and heard silence until an on-sale email weeks later that they had
+          // no reason to expect.
+          //
+          // Why through the queue rather than net.http_post straight from the
+          // trigger: send-registration-email runs with verify_jwt = true, so a
+          // direct call would need the service-role key stored in a database
+          // setting. Coming through here, the key never leaves the edge runtime
+          // — and the retries, dead-lettering and logging are already built.
+          const d = payload.data ?? {}
+          if (!d.to || !d.subject || !d.html) {
+            console.warn(`⚠️ Archiving malformed send_simple_email msg ${msg.msg_id}`)
+            await supabase.rpc('pgmq_archive', { queue_name: QUEUE_NAME, msg_id: msg.msg_id })
+            failCount++
+            continue
+          }
+          const resp = await supabase.functions.invoke('send-registration-email', {
+            body: { to: d.to, subject: d.subject, html: d.html, sender_name: d.sender_name ?? 'HangHut' },
+          })
+          if (resp.error) throw new Error(`send-registration-email failed: ${resp.error.message}`)
+          console.log(`✅ Simple email sent to ${d.to}`)
+          break
+        }
+
         case 'send_ticket_email': {
           // Attach the hosted ticket page link (/t/{access_token}) so the email's
           // primary CTA opens the buyer's tickets. The queued payload carries the

@@ -101,7 +101,7 @@ serve(async (req) => {
         )
 
         // Parse request body
-        const { event_id, quantity, tier_id, seat_ids, seat_session_id, section_id, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution, source, terms, email_confirmed } = await req.json()
+        const { event_id, quantity, tier_id, seat_ids, seat_session_id, section_id, promo_code, channel_code, guest_details, success_url, failure_url, subscribed_to_newsletter, registration_id, metadata: clientMetadata, attribution, source, terms, email_confirmed, presale_token } = await req.json()
 
         // Which client created this order. Whitelisted rather than stored raw so the column
         // can't drift into 'App'/'ios'/'mobile-web' variants; anything unrecognised is stored
@@ -210,7 +210,7 @@ serve(async (req) => {
         // --- APPROVAL GATE (server-side enforcement) ---
         const { data: gateEvent, error: gateError } = await supabaseClient
             .from('events')
-            .select('require_approval, invite_only, custom_tos, status, sales_end_datetime, one_ticket_per_email')
+            .select('require_approval, invite_only, custom_tos, status, sales_end_datetime, one_ticket_per_email, presale_starts_at, public_sale_starts_at')
             .eq('id', event_id)
             .single()
 
@@ -269,6 +269,44 @@ serve(async (req) => {
                     JSON.stringify({
                         success: false,
                         error: { code: 'EVENT_SALES_CLOSED', message: 'Online sales for this event have closed.' },
+                    }),
+                    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+        }
+
+        // --- PRESALE: NOT OPEN YET (opt-in, per event) ---
+        //
+        // The first half of the presale gate, and the only half that applies to
+        // everybody. Before presale_starts_at NOBODY buys -- not the list, not
+        // the public, not a logged-in organizer's own test purchase.
+        //
+        // Sits here, immediately under the sales window, because it IS a sales
+        // window: this is the start the platform has never had. "Tickets are not
+        // on sale yet" has to outrank every other refusal below, exactly as
+        // "sales have closed" does -- being told to go and pre-register for
+        // something that is not purchasable by anyone yet is the worse answer.
+        //
+        // The second half ("you are not on the list") is a question about a
+        // PERSON, so it lives with the other person-shaped gates further down,
+        // beside the approval check.
+        //
+        // An unparseable date must never close an otherwise open event, the
+        // same call the sales_end block above makes. A typo should not stop a
+        // sale -- and here it would stop EVERY sale on the event.
+        {
+            const presaleStartMs = gateEvent.presale_starts_at
+                ? new Date(gateEvent.presale_starts_at).getTime()
+                : NaN
+            if (!Number.isNaN(presaleStartMs) && presaleStartMs > Date.now()) {
+                return new Response(
+                    JSON.stringify({
+                        success: false,
+                        error: {
+                            code: 'EVENT_NOT_YET_ON_SALE',
+                            message: 'Tickets for this event are not on sale yet.',
+                            opens_at: gateEvent.presale_starts_at,
+                        },
                     }),
                     { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
                 )
@@ -385,6 +423,78 @@ serve(async (req) => {
                     JSON.stringify({
                         success: false,
                         error: { code, message: `Registration is ${reg.status}. Payment is only allowed after the organizer approves.` }
+                    }),
+                    { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+        }
+
+        // --- PRESALE: ARE YOU ON THE LIST? (opt-in, per event) ---
+        //
+        // The second half of the presale gate. The first half (above, with the
+        // sales window) already refused everyone if the presale has not opened,
+        // so by here the presale is open and the only question left is WHO.
+        //
+        // Placed BELOW the approval gate on purpose. An unreviewed
+        // pre-registrant on an approval event is not "missing from the list" --
+        // they are on it and waiting -- so they must hear REGISTRATION_PENDING,
+        // which is true and actionable, rather than being told to go and
+        // pre-register for something they already pre-registered for. The two
+        // gates are independent and both must pass: presale clearance can never
+        // satisfy an approval requirement, because this block cannot be reached
+        // without the block above having already said yes.
+        //
+        // The rule lives in SQL for the same reason one_ticket_per_email does:
+        // this function, the browser and the mobile app must not be able to
+        // disagree about who may buy, and a Deno copy would drift from the SQL
+        // the rest of the platform reads.
+        //
+        // ADMIN client, like check_one_ticket_per_email: "is this person on the
+        // guest list" is an enumeration oracle, so check_presale_access is
+        // granted to service_role alone.
+        if (gateEvent.presale_starts_at) {
+            const presaleEmail = (guest_details?.email ?? user?.email ?? '').trim()
+            // Shape-check before it reaches Postgres. The parameter is uuid, so
+            // a junk string raises 22P02 inside the RPC, which the fail-closed
+            // branch below would turn into a 503 "try again" -- telling a buyer
+            // with a mangled link to retry forever instead of falling back to
+            // the email match that would have let them in.
+            const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+            const presaleToken = typeof presale_token === 'string' && UUID_RE.test(presale_token.trim())
+                ? presale_token.trim()
+                : null
+            const { data: presale, error: presaleErr } = await supabaseAdmin.rpc('check_presale_access', {
+                p_event_id: event_id,
+                p_user_id: user?.id ?? null,
+                p_email: presaleEmail || null,
+                p_access_token: presaleToken,
+            })
+
+            // FAIL CLOSED, matching one_ticket_per_email rather than the email
+            // typo check. A presale that silently opens to everyone when a
+            // lookup hiccups is not a presale, and the organizer promised their
+            // list first access. 503 so the client can retry rather than treat
+            // it as a refusal.
+            if (presaleErr) {
+                console.error('check_presale_access failed', presaleErr)
+                return new Response(
+                    JSON.stringify({
+                        success: false,
+                        error: { code: 'PRESALE_CHECK_UNAVAILABLE', message: 'Could not confirm early access just now. Please try again.' },
+                    }),
+                    { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+
+            if (presale?.blocked === true) {
+                return new Response(
+                    JSON.stringify({
+                        success: false,
+                        error: {
+                            code: presale.code ?? 'PRESALE_REGISTRATION_REQUIRED',
+                            message: presale.message ?? 'Tickets are open to people who pre-registered.',
+                            opens_at: presale.opens_at ?? null,
+                        },
                     }),
                     { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
                 )

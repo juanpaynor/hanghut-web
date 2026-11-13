@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     // Verify the event belongs to this partner
     const { data: event, error: eventError } = await supabase
         .from('events')
-        .select('id, organizer_id, status, capacity, ticket_price, ticket_tiers(id, price, quantity_total, is_active, sales_start, sales_end)')
+        .select('id, organizer_id, status, capacity, ticket_price, presale_starts_at, public_sale_starts_at, ticket_tiers(id, price, quantity_total, is_active, sales_start, sales_end)')
         .eq('id', event_id)
         .single()
 
@@ -51,6 +51,49 @@ export async function POST(request: Request) {
 
     if (event.status !== 'active') {
         return apiError('Event is not currently active', 400)
+    }
+
+    // --- PRESALE WINDOW ---
+    //
+    // The same rule the web checkout enforces, read from the same SQL function,
+    // because a window honoured on one checkout path and ignored on the other
+    // is not a window -- it is a documented bypass. That is exactly what
+    // subscriber_early_access_hours is today: enforced in the event page's JSX
+    // and nowhere else.
+    //
+    // This path is the partner's OWN key on their OWN event (checked above), so
+    // the argument for exempting it is the box-office argument. It does not
+    // hold: the box office is a human at a door taking cash, while this is an
+    // automated storefront selling to the public. An organizer who announced a
+    // 10am on-sale and whose own integration sells at 9 has a bug, not a
+    // feature.
+    //
+    // Matching is by customer email, which this path already requires. There is
+    // no registration_id here and no browser to carry a link, so a CLOSED
+    // presale will refuse an API sale unless the buyer pre-registered with the
+    // address the partner sends. That is the correct, conservative answer; it
+    // is called out in the API error text so an integrator is not left guessing.
+    if (event.presale_starts_at) {
+        const { data: presale, error: presaleErr } = await supabase.rpc('check_presale_access', {
+            p_event_id: event_id,
+            p_user_id: null,
+            p_email: String(customer.email).trim() || null,
+            p_access_token: null,
+        })
+        // Fail closed. The organizer promised their list first access; an
+        // outage must not quietly open the doors.
+        if (presaleErr) {
+            console.error('check_presale_access failed (api/v1/checkouts)', presaleErr)
+            return apiError('Could not confirm presale access right now. Please retry.', 503)
+        }
+        if (presale?.blocked === true) {
+            return apiError(
+                presale.code === 'EVENT_NOT_YET_ON_SALE'
+                    ? `Tickets are not on sale yet (opens ${presale.opens_at}).`
+                    : 'This event is in a presale. Only pre-registered email addresses can buy right now.',
+                presale.code === 'EVENT_NOT_YET_ON_SALE' ? 400 : 403
+            )
+        }
     }
 
     // Reserved-seating events: the caller names a section and we seat the party
