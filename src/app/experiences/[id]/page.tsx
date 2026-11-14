@@ -42,6 +42,18 @@ async function getExperience(id: string) {
         `)
         .eq('id', id)
         .eq('is_experience', true)
+        // ⚠ LOAD-BEARING, THOUGH IT CHANGES NOTHING TODAY. All 7 experiences on
+        // prod are visibility='public', so this filter currently removes no row.
+        //
+        // It is here because the app team narrowed the `tables` RLS policy on
+        // 2026-11-14 (team_comms #383): anon may now read visibility='public'
+        // only. This page uses the cookie client, which for a LOGGED-OUT visitor
+        // resolves to anon — so without this line, the first non-public
+        // experience anyone creates would make its own public page 404 while the
+        // query still looked perfectly correct. Stating the rule here means the
+        // next person reads it in our code instead of discovering it in their
+        // policy. See #386.
+        .eq('visibility', 'public')
         .single()
 
     if (error || !data) return null

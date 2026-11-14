@@ -75,7 +75,13 @@ async function EventsList() {
                 experience_schedules(start_time, end_time, status)
             `)
             .eq('is_experience', true)
-            .eq('is_featured', true),
+            .eq('is_featured', true)
+            // Same reason as /experiences/[id]: this page reads through
+            // createPublicClient (the anon key), and anon may only see
+            // visibility='public' since team_comms #383. Removes no row today —
+            // it stops a non-public experience from silently vanishing out of
+            // the carousel later with nothing to explain it.
+            .eq('visibility', 'public'),
     ])
 
     // Normalise a starred experience into the shape the hero renders. Only ones
