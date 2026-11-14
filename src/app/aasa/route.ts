@@ -20,9 +20,14 @@ import { NextResponse } from 'next/server'
  * visibility='public' AND is_story=false server-side on every request, so a claimed
  * /posts/* URL always resolves to a real page or an honest 404 — never a leak.
  *
- * Still NOT claimed, deliberately:
- *   /hangouts/* — no web route, and `tables` stores hangouts AND experiences behind
- *                 an is_experience flag, so the route must disambiguate first.
+ * v4 (#380): added /hangouts/*, now that src/app/hangouts/[id] exists. The
+ * is_experience ambiguity that held this back is resolved there — the route renders
+ * a hangout and 308s an experience to /experiences/{id}, so every id resolves under
+ * either slug. It enforces visibility='public' per request, treating `mystery` as
+ * non-public. Shipped as live breakage, not a feature: the app has been minting
+ * these links since August and every one returned 404.
+ *
+ * Nothing is currently unclaimed on purpose.
  *
  * NOTE: this file governs iOS only. Android has no path scoping — assetlinks.json
  * delegates handle_all_urls, and path filtering lives in the app's manifest intent
@@ -41,6 +46,7 @@ const AASA = {
                     { '/': '/events/*', comment: 'Event detail pages' },
                     { '/': '/experiences/*', comment: 'Experience detail pages' },
                     { '/': '/posts/*', comment: 'Shared post pages (public, non-story only)' },
+                    { '/': '/hangouts/*', comment: 'Shared hangout pages (public only; experiences redirect)' },
                 ],
             },
         ],

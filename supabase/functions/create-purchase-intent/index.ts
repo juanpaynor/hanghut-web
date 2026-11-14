@@ -897,6 +897,68 @@ serve(async (req) => {
 
         const intentId = intentData
 
+        // --- ATOMIC TIER CAPACITY CLAIM (GA only) ---
+        //
+        // The check at the top of this function is a read-then-compare with no
+        // lock, and tier.quantity_sold counts only ISSUED tickets -- so a buyer
+        // on the GCash screen counts as zero. With 1 ticket left and 10
+        // simultaneous clicks, all 10 passed that check and all 10 were sent to
+        // pay.
+        //
+        // It never oversold, because ticket_tiers_check1 holds. That is the
+        // worse outcome: the money is taken first and the CHECK fires later
+        // inside issue_tickets, so the buyer is charged and gets nothing. Retry
+        // cannot fix it either -- reconcile_paid_missing_tickets would hit the
+        // same CHECK every 2 minutes forever.
+        //
+        // Placed HERE, not at the earlier check: the intent must exist before it
+        // can be counted, and this still runs before Xendit is contacted, so a
+        // refusal costs the buyer nothing. The earlier check stays as a cheap
+        // early-out for an obviously sold-out tier.
+        //
+        // ⚠ SEATED EVENTS ARE UNTOUCHED -- the RPC returns ok=true for them
+        // without writing anything. There the seat is the real inventory and
+        // assign_seats_to_intent already claims it atomically, and that path is
+        // frozen until TRESPASSING SA MUSIC MUSEUM runs on 19 Dec 2026.
+        if (effectiveTierId) {
+            const { data: claim, error: claimError } = await supabaseAdmin.rpc(
+                'claim_tier_capacity',
+                { p_intent_id: intentId, p_tier_id: effectiveTierId, p_quantity: quantity }
+            )
+
+            // Fail CLOSED. A capacity check that cannot run must not wave the
+            // sale through -- that is the exact failure it exists to prevent.
+            if (claimError || !claim || (claim as any).ok !== true) {
+                await supabaseAdmin.from('purchase_intents').update({ status: 'failed' }).eq('id', intentId)
+                await supabaseAdmin.from('tickets').update({ status: 'available' })
+                    .eq('purchase_intent_id', intentId).eq('status', 'reserved')
+
+                if (claimError) {
+                    console.error('Tier capacity claim failed:', claimError)
+                    return new Response(
+                        JSON.stringify({ success: false, error: { code: 'CAPACITY_CHECK_UNAVAILABLE', message: 'We could not confirm availability. Please try again.' } }),
+                        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                    )
+                }
+
+                const left = Number((claim as any)?.available ?? 0)
+                console.log(`Tier ${effectiveTierId} sold out under lock:`, claim)
+                return new Response(
+                    JSON.stringify({
+                        success: false,
+                        error: {
+                            code: 'SOLD_OUT',
+                            message: left > 0
+                                ? `Only ${left} left of this ticket type — someone else just took the rest.`
+                                : 'Sorry, this ticket type just sold out.',
+                            available: left,
+                        },
+                    }),
+                    { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+        }
+
         // --- SEAT ASSIGNMENT (seated events) ---
         let assignedSeats = null
         if (effectiveTierId) {
@@ -1104,6 +1166,43 @@ serve(async (req) => {
             if (issueError) {
                 console.error('Failed to issue free tickets:', issueError)
                 throw new Error(`Failed to issue free tickets: ${issueError.message}`)
+            }
+
+            // ==========================================
+            // 💺 BOOK ASSIGNED SEATS
+            // ==========================================
+            // ⚠ THE FREE PATH USED TO SKIP THIS ENTIRELY, AND THAT SOLD SEATS TWICE.
+            //
+            // book_seats_for_intent is what flips a seat to 'booked' and drops
+            // its hold. It was called in exactly two places -- the Xendit
+            // webhook and create_box_office_order -- and a free order reaches
+            // NEITHER, because there is no payment and therefore no webhook.
+            //
+            // So a free seated ticket was issued, emailed, and scannable, while
+            // its seat stayed 'available' on the map for anyone else to buy.
+            // On TRESPASSING SA MUSIC MUSEUM that left 16 sold seats on sale
+            // (100% of its free tickets; 0% of its 158 paid ones). Nobody had
+            // taken a duplicate yet, which is luck, not design.
+            //
+            // Placed here rather than inside issue_tickets because that RPC is
+            // shared with paths which already book seats themselves -- doing it
+            // there would be a second write on every paid order.
+            //
+            // Returns 0 and does nothing on a GA intent, so this is inert for
+            // every event without a seat map.
+            //
+            // Logged but NOT thrown, matching the webhook: the buyer already
+            // holds a valid ticket by this point, and failing the request would
+            // tell them their free RSVP broke when it did not. The watch query
+            // is tickets JOIN seats WHERE seats.status <> 'booked'.
+            const { data: bookedCount, error: bookError } = await supabaseAdmin.rpc(
+                'book_seats_for_intent',
+                { p_intent_id: intentId }
+            )
+            if (bookError) {
+                console.error('⚠️ Failed to book seats for free intent:', bookError)
+            } else if (bookedCount > 0) {
+                console.log(`💺 Booked ${bookedCount} seats for free intent ${intentId}`)
             }
 
             const recipientEmail = user?.email || guest_details?.email
