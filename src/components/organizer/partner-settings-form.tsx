@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { DesignCodeAssist } from '@/components/organizer/design-code-assist'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -990,13 +991,29 @@ export function PartnerSettingsForm({ initialData }: PartnerSettingsFormProps) {
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-3">
-                                    <Textarea
+                                    {/*
+                                      * Was a naked <Textarea>. The event page's
+                                      * CSS box has had the AI assistant, the
+                                      * snippet library and the list of what is
+                                      * targetable for a while; the brand page
+                                      * had none of it, so an organizer here had
+                                      * no way to discover that [data-hh-hero] or
+                                      * [data-hh-section="events"] exist.
+                                      *
+                                      * surface="storefront" is what makes this
+                                      * safe to share: it swaps BOTH the hook
+                                      * list shown to the organizer and the one
+                                      * given to the model, so neither offers an
+                                      * event-page selector that matches nothing
+                                      * here.
+                                      */}
+                                    <DesignCodeAssist
+                                        mode="css"
+                                        surface="storefront"
                                         value={brandCustomCss}
-                                        onChange={(e) => handleBrandingRootChange('custom_css', e.target.value)}
-                                        rows={10}
-                                        spellCheck={false}
-                                        className="font-mono text-xs leading-relaxed"
+                                        onChange={(next) => handleBrandingRootChange('custom_css', next)}
                                         placeholder={"[data-hh-storefront] {\n  /* your styles */\n}"}
+                                        minHeight="min-h-[220px]"
                                     />
                                     <div className="flex flex-wrap gap-2">
                                         <Button type="button" variant="outline" size="sm" onClick={() => handleBrandingRootChange('custom_css', MAXIMALIST_PRESET_CSS)}>

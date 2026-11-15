@@ -90,7 +90,7 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
     // ─── Minimal: Text-only hero ───
     if (variant === 'minimal') {
         return (
-            <section className="relative w-full py-16 md:py-24 overflow-hidden">
+            <section data-hh-hero className="relative w-full py-16 md:py-24 overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-background" />
                 <div className="container mx-auto px-4 relative z-10 text-center">
                     {partner.profile_photo_url && (
@@ -130,7 +130,7 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
     // ─── Split: Left image, right text ───
     if (variant === 'split') {
         return (
-            <section className="relative w-full overflow-hidden">
+            <section data-hh-hero className="relative w-full overflow-hidden">
                 <div className="container mx-auto px-4 py-12 md:py-20">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 items-center">
                         {/* Image side */}
@@ -208,7 +208,7 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
     const overlayClass = overlayClasses[opacityMode] || overlayClasses.gradient
 
     return (
-        <section className={cn('relative w-full overflow-hidden group', height)}>
+        <section data-hh-hero className={cn('relative w-full overflow-hidden group', height)}>
             {/* Media */}
             {videoUrl ? (
                 <>

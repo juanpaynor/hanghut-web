@@ -27,7 +27,7 @@ export function MerchStorefrontSection({
     if (products.length === 0) return null
 
     return (
-        <section id="merch" className="container mx-auto px-4 py-12">
+        <section id="merch" data-hh-section="merch" className="container mx-auto px-4 py-12">
             <div className="mb-6">
                 <h2 data-hh-section-title className="text-2xl md:text-3xl font-bold tracking-tight">
                     {config?.heading || 'Merch'}

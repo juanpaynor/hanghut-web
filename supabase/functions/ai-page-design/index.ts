@@ -100,6 +100,17 @@ THESE ARE THE ONLY HOOKS THAT EXIST ON THE PAGE. A selector that is not built fr
 - [data-hh-event] img      poster, gallery photos, avatar
 - [data-hh-event] p, [data-hh-event] li, [data-hh-event] h1, [data-hh-event] h2, [data-hh-event] h3, [data-hh-event] h4
 - [data-hh-event] #tickets the ticket panel; use #tickets button to change checkout buttons only
+- [data-hh-poster]        the cover image ONLY (not avatars or gallery shots)
+- [data-hh-tier]          one selectable ticket card. The chosen one is [data-hh-tier][aria-pressed="true"]; [data-hh-tier-state="sold-out" | "locked" | "selected" | "available"] is also available
+- [data-hh-price]         every price, including the order total
+- [data-hh-total]         the Total row under the tickets
+- [data-hh-qty]           the quantity number between the minus and plus buttons
+- [data-hh-cta]           the Proceed to Checkout button ONLY
+- [data-hh-seatmap]       seated events: the panel around the seat map
+- [data-hh-seat-summary]  seated events: the "2 seats, total, Continue" bar
+- [data-hh-mixed-panel]   events selling BOTH general admission and seats; its halves are [data-hh-mixed-part="ga"] and [data-hh-mixed-part="seated"]
+
+A SEAT MAP IS A CANVAS. The seats, sections and stage are drawn with Konva, and their colours come from the event's tier palette and each seat's status. NO stylesheet can repaint them, so never claim to have recoloured seats. Style the panel, the summary bar and the buttons around the map instead.
 - [data-hh-event] [data-hh-surface="light"] or [data-hh-event] [data-hh-surface="dark"] content panels with their own light/dark ground
 
 PAGE STRUCTURE AND CASCADE:
@@ -121,21 +132,87 @@ RULES:
 - When existing CSS is supplied, make the smallest edit that satisfies the request and preserve every unrelated rule, media query, animation, and comment. Return the COMPLETE stylesheet, not a fragment or diff. Do not append a second conflicting copy of a rule: edit that rule.
 - Distinguish a narrow request ("gold headings") from a whole-page redesign ("dark and moody"). A narrow request must not replace backgrounds, fonts, image crops, spacing, or button shapes.
 - Scope EVERY selector under one of the hooks above. Never write bare \`body\`, \`html\`, \`:root\`, \`header\`, \`.card\` or a Tailwind class name.
-- No @import and no web-font URLs; the font pickers handle fonts.
+- YOU MAY IMPORT GOOGLE FONTS, and for a distinctive look you usually should. Write the @import as the FIRST line: @import url('https://fonts.googleapis.com/css2?family=Anton&display=swap'); The page extracts that URL and loads it as a real stylesheet link, so it works. fonts.googleapis.com is the ONLY host allowed — an import from anywhere else is silently dropped and your font will not load. Keep it to one or two families, and always give a fallback in the font stack. If the organizer has clearly chosen fonts in their pickers and the brief does not ask for a new look, prefer var(--font-heading) and var(--font-body) instead.
+- A display face used only for the title and section headings is the cheapest way to make a page look art-directed rather than templated. Body text should stay in something readable.
 - Use !important only where you are overriding a built-in style (colours, radii and backgrounds on buttons, cards and badges usually need it).
-- For a new skin aim for under 60 lines. When editing a longer existing stylesheet, preserving unrelated work takes priority over the line limit.
+- Size the answer to the ask. A narrow request is a few lines. A whole-page skin is typically 60-120 lines, because a real skin has to move background, type, headings, cards and buttons together. When editing a longer existing stylesheet, preserving unrelated work takes priority over any budget.
 - Readability is not optional: never put text on a background it cannot be read against, and never set a text colour without also controlling the surface behind it.
 - Never hide the ticket box, the price, the buy button or the event date. The page exists to sell tickets.
 - Comment each block with one short line so the organizer can learn from it and edit it later.
 - Mobile matters more than desktop here; avoid fixed widths, oversized text, overflow, and fixed heights that clip content. Use clamp() for large titles and media queries when needed.
 
+DESIGN QUALITY. The rules above stop you breaking the page; these are what make the result look designed rather than merely valid.
+
+- START FROM THE POSTER. When THE POSTER'S ACTUAL COLOURS are supplied, they are the palette. Build the skin from those measured values instead of inventing colours, and instead of defaulting to the organizer's accent when the poster disagrees with it. A page that matches the poster is the single biggest difference between a page that looks made for this event and one that looks like a template. If no palette is supplied, use var(--hh-accent).
+- COMMIT. A whole-page request ("dark and moody", "retro", "make it feel premium") means the page background, the title, the section headings, the cards and the buttons all move together. Changing only the heading colour and calling it a redesign is the most common way this feature disappoints.
+- ONE ACCENT, USED TWO OR THREE TIMES. Pick a single colour to carry emphasis and spend it on the title, the buy button and one more place. An accent on everything is an accent on nothing.
+- TYPE IS THE DESIGN, NOT JUST THE COLOUR. Give the title a real scale with clamp(), pull its line-height down near 1.0-1.1 so a big title reads as one shape, tighten its letter-spacing slightly, and give small uppercase labels positive letter-spacing. Most pages that look cheap look cheap because every piece of text is the same size and weight.
+- SURFACES BEFORE TEXT COLOUR. Decide what each panel sits on, then choose text to suit it. Never set a text colour without setting the background behind it in the same block.
+- CONTRAST IS A HARD FLOOR. Body text must stay clearly legible against its own surface. If the poster's colours are too close to each other to do this, darken or lighten one of them rather than shipping grey-on-grey.
+- RHYTHM. Use a consistent spacing step and a consistent corner radius, and let one element break the pattern on purpose. Mixed arbitrary paddings read as an accident.
+- DEPTH SPARINGLY. A soft shadow or a hairline border on the ticket panel earns attention. The same shadow on every card flattens the page again.
+- AVOID THE DEFAULT AI LOOK. Do not reach for pure #000000 on pure #ffffff, a purple-to-blue gradient, a 12px radius on absolutely everything, or neon-on-near-black unless the brief or the poster actually asks for it.
+
 WORKING EXAMPLES (patterns to adapt, not rules to add to every response):
+NARROW REQUESTS stay narrow:
 - "Gold headings only": [data-hh-title], [data-hh-section-title] { color: #d4af37 !important; }
 - "Softer checkout buttons": [data-hh-event] #tickets button { border-radius: 999px !important; }
 - "Bigger title": [data-hh-title] { font-size: clamp(2rem, 7vw, 5rem); line-height: 1.05; }
 - "Now make those headings blue" with existing gold headings: change their colour and keep all other existing rules.
 
+A WHOLE-PAGE SKIN looks like this. It imports one display face, defines its palette as tokens once, then moves ground, type, poster, ticket cards, price and the buy button together. This is the standard to aim at:
+@import url('https://fonts.googleapis.com/css2?family=Anton&display=swap');
+/* Palette lifted from the poster, named once so it is easy to retune */
+[data-hh-event] { --skin-ink: #111111; --skin-accent: #e7a91c; --skin-paper: #f3f0e8; }
+/* Ground */
+[data-hh-event] { background: var(--skin-paper) !important; color: var(--skin-ink) !important; }
+/* Display face on the title only, with a hard offset shadow in the accent */
+[data-hh-title] { font-family: 'Anton', Impact, sans-serif !important; font-size: clamp(2rem, 7vw, 5rem); line-height: 1.05; letter-spacing: -0.02em; text-transform: uppercase; color: var(--skin-ink) !important; text-shadow: 3px 3px 0 var(--skin-accent); }
+[data-hh-section-title] { font-family: 'Anton', Impact, sans-serif !important; text-transform: uppercase; letter-spacing: 0.01em; }
+/* Poster framed rather than floating */
+[data-hh-poster] { border: 2px solid var(--skin-ink) !important; box-shadow: 7px 7px 0 var(--skin-accent) !important; }
+/* Cards and ticket tiers share one border and radius language */
+[data-hh-card], [data-hh-tier] { background: #fffefa !important; color: var(--skin-ink) !important; border: 2px solid #c9c3b7 !important; border-radius: 6px !important; }
+/* The chosen tier is unmistakable. aria-pressed already carries the state */
+[data-hh-tier][aria-pressed="true"] { border-color: var(--skin-ink) !important; background: #fff6df !important; box-shadow: 5px 5px 0 var(--skin-accent) !important; }
+[data-hh-tier-state="sold-out"] { opacity: 0.55; }
+/* Price in the display face so it reads as part of the identity */
+[data-hh-price] { font-family: 'Anton', Impact, sans-serif !important; letter-spacing: -0.01em; }
+/* One element allowed to shout */
+[data-hh-cta] { background: var(--skin-accent) !important; color: var(--skin-ink) !important; border: 2px solid var(--skin-ink) !important; border-radius: 4px !important; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 800; box-shadow: 4px 4px 0 var(--skin-ink) !important; }
+/* Light panels keep dark text rather than inheriting a pale ground */
+[data-hh-event] [data-hh-surface="light"] { color: var(--skin-ink) !important; }
+/* Phones get a smaller title and a shallower shadow */
+@media (max-width: 640px) { [data-hh-title] { text-shadow: 2px 2px 0 var(--skin-accent); } }
+
 BEFORE RETURNING: check that every selector uses a real hook, every requested change is represented, unrelated existing styles survive, and both mobile and light/dark panels remain readable. Notes must describe only the change you made, never promise a screenshot-verified result.`
+
+/**
+ * The brand page at /<slug> is a DIFFERENT document from the event page: its
+ * root is [data-hh-storefront], it has no tickets, and its sections are named.
+ * Handing it the event hook list produced selectors that matched nothing, which
+ * an organizer reads as "the AI is broken" rather than "wrong page".
+ */
+const STOREFRONT_HOOKS = `
+
+YOU ARE STYLING THE BRAND PAGE (/<slug>), NOT AN EVENT PAGE. IGNORE every hook named above and use ONLY these. There is no ticket box, no tier, no checkout button on this page:
+- [data-hh-storefront]        the whole page (background, default text colour)
+- [data-hh-hero]              the banner block at the top
+- [data-hh-title]             the brand name in the hero
+- [data-hh-section]           any section. Target one by name: [data-hh-section="events"]. Names are hero, about, events, past-events, stats, badges, cta, gallery, merch, newsletter, divider
+- [data-hh-eyebrow]           the small uppercase label above a section heading
+- [data-hh-section-title]     section headings
+- [data-hh-section-desc]      the line under a section heading
+- [data-hh-event-card]        one event tile in the listing
+- [data-hh-price]             the price chip on an event card
+- [data-hh-card]              generic panels, including the call-to-action box
+- [data-hh-signup]            the newsletter form row
+- [data-hh-divider]           the divider between sections; ="line", ="dots" or ="space"
+- [data-hh-storefront] button / a / img / p / h1 / h2 / h3
+
+Scope EVERY selector under one of these. [data-hh-event], [data-hh-tier], [data-hh-cta] and #tickets DO NOT EXIST here.
+Giving each section its own treatment is the point of this page: a brand page where every section looks identical is the thing organizers complain about. Vary ground, spacing and heading weight between [data-hh-section="events"] and the quieter ones.
+`
 
 const HTML_SYSTEM = `You write the "About this event" content block for event pages on HangHut, a Philippine ticketing platform. The organizer describes their event; you return finished HTML.
 
@@ -177,6 +254,39 @@ const DESIGN_KEYS = [
     'font_body', 'theme_color', 'text_color', 'heading_color', 'has_background_image',
 ] as const
 
+const HEX_RE = /^#[0-9a-f]{6}$/i
+
+/**
+ * The poster palette, sanitised.
+ *
+ * This arrives from the browser and goes STRAIGHT INTO A PROMPT, so every
+ * field is validated rather than trusted: anything that is not a 6-digit hex
+ * is dropped. Without this, "vibrant" is an arbitrary string an organizer's
+ * client could set, and prompt text is the one place where arbitrary strings
+ * are most expensive to be wrong about.
+ *
+ * Returns '' when there is nothing usable, so the caller can simply skip the
+ * whole section instead of telling the model about a palette of nothing.
+ */
+function paletteLine(value: unknown): string {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
+    const p = value as Record<string, unknown>
+    const hex = (v: unknown) => (typeof v === 'string' && HEX_RE.test(v) ? v.toLowerCase() : '')
+    const vibrant = hex(p.vibrant), dark = hex(p.dark), light = hex(p.light)
+    if (!vibrant && !dark && !light) return ''
+    const swatches = Array.isArray(p.swatches)
+        ? p.swatches.filter((c): c is string => typeof c === 'string' && HEX_RE.test(c)).slice(0, 5).map(c => c.toLowerCase())
+        : []
+    const bits = [
+        vibrant ? `strongest colour ${vibrant}` : '',
+        dark ? `darkest ${dark}` : '',
+        light ? `lightest ${light}` : '',
+        swatches.length ? `most of the poster is ${swatches.join(', ')}` : '',
+        typeof p.isDark === 'boolean' ? (p.isDark ? 'the poster is mostly DARK' : 'the poster is mostly LIGHT') : '',
+    ].filter(Boolean)
+    return `\n\nTHE POSTER'S ACTUAL COLOURS (sampled from the event's own cover image — these are real measurements, not guesses):\n- ${bits.join('\n- ')}`
+}
+
 function designValues(value: unknown): Record<string, string | boolean> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
     const input = value as Record<string, unknown>
@@ -204,8 +314,9 @@ serve(async (req) => {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return json({ error: 'Unauthorized' }, 401)
 
-        const { mode, brief, event_id, current, design } = await req.json() as {
+        const { mode, surface, brief, event_id, current, design } = await req.json() as {
             mode?: string
+            surface?: string
             brief?: string
             event_id?: string
             /** What is already in the box, so "make it darker" has something to
@@ -253,12 +364,25 @@ serve(async (req) => {
             ? `\n\nCURRENT DESIGN SETTINGS (JSON data; unsaved editor choices take priority; empty colours mean automatic):\n${JSON.stringify(currentDesign)}`
             : ''
 
+        // The poster is the ONE design asset every event has — all 460 live
+        // events have a cover, while three quarters have never changed the
+        // default theme colour. Handing the model its real palette is the
+        // difference between designing for this event and designing for a
+        // title string.
+        const palette = paletteLine((design as Record<string, unknown>)?.poster_palette)
+
         const existing = current?.trim()
             ? `\n\nWHAT IS ALREADY IN THE BOX (preserve unrelated rules/content and return the COMPLETE new version, not a patch):\n${current.trim().slice(0, mode === 'css' ? 40_000 : 6000)}`
             : ''
 
-        const systemPrompt = mode === 'css' ? CSS_SYSTEM : HTML_SYSTEM
-        const userContent = `${brief.trim()}${context}${designContext}${existing}`
+        // Appended rather than branched into a second full prompt: everything in
+        // CSS_SYSTEM about cascade, readability, design quality and fonts is
+        // true on both pages. Only the hook sheet differs, and the appended
+        // block explicitly overrides the list above it.
+        const systemPrompt = mode === 'css'
+            ? (surface === 'storefront' ? CSS_SYSTEM + STOREFRONT_HOOKS : CSS_SYSTEM)
+            : HTML_SYSTEM
+        const userContent = `${brief.trim()}${context}${designContext}${palette}${existing}`
 
         const complete = (model: string) => fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',

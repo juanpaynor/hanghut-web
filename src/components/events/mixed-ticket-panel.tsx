@@ -37,9 +37,9 @@ export function MixedTicketPanel({
         Number(n) === 0 ? 'Free' : `₱${Number(n).toLocaleString()}`
 
     return (
-        <div className="space-y-5">
+        <div data-hh-mixed-panel className="space-y-5">
             {gaSlot && (
-                <section>
+                <section data-hh-mixed-part="ga">
                     {/* The heading only earns its space when there is a second
                         option to tell it apart from. */}
                     {both && (
@@ -58,7 +58,7 @@ export function MixedTicketPanel({
             )}
 
             {both && (
-                <div className="flex items-center gap-3" aria-hidden="true">
+                <div data-hh-mixed-divider className="flex items-center gap-3" aria-hidden="true">
                     <span className="h-px flex-1 bg-border" />
                     <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                         or
@@ -68,7 +68,7 @@ export function MixedTicketPanel({
             )}
 
             {seatSlot && (
-                <section>
+                <section data-hh-mixed-part="seated">
                     {both && (
                         <header className="mb-3 flex items-center gap-2">
                             <Armchair className="h-4 w-4 shrink-0 text-muted-foreground" />

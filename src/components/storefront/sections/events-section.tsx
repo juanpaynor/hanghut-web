@@ -33,7 +33,7 @@ export function EventsSection({ config, events, sortBy }: EventsSectionProps) {
     return (
         // Generous rhythm: on almost every storefront this is the reason the page
         // exists, and it was previously given exactly the same air as the divider.
-        <SectionShell rhythm="generous" width="wide" id="events">
+        <SectionShell name="events" rhythm="generous" width="wide" id="events">
             <SectionHeading
                 eyebrow="What's on"
                 title="Upcoming events"

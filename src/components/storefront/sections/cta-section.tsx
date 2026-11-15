@@ -27,7 +27,7 @@ export function CTASection({ config, primaryColor }: CTASectionProps) {
     if (!heading) return null
 
     return (
-        <SectionShell rhythm="tight" width="default">
+        <SectionShell name="cta" rhythm="tight" width="default">
             <div
                 data-hh-card
                 className="relative overflow-hidden rounded-3xl border border-border/60 px-6 py-14 text-center md:px-12 md:py-20"

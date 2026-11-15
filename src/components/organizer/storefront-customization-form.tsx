@@ -27,6 +27,7 @@ import type { EventDesign } from "@/lib/organizer/event-design-actions"
 import { BgPreview, LayoutPreview } from "@/components/organizer/design-option-preview"
 import { DesignOptionGrid, type DesignOption } from "@/components/organizer/design-option-grid"
 import { cn } from "@/lib/utils"
+import { extractVibrantColor, extractPosterPalette, type PosterPalette } from '@/lib/design/poster-palette'
 
 /**
  * The nav, written as a flow rather than a parts bin.
@@ -109,58 +110,6 @@ interface StorefrontCustomizationFormProps {
     }
 }
 
-/**
- * Client-side vibrant-color extraction from the event cover: downsample to a
- * small canvas, bucket pixels by hue, and pick the most saturated dominant
- * bucket. Powers "Match my cover" so pages theme themselves from the poster.
- */
-async function extractVibrantColor(imageUrl: string): Promise<string | null> {
-    try {
-        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-            const el = document.createElement('img')
-            el.crossOrigin = 'anonymous'
-            el.onload = () => resolve(el)
-            el.onerror = reject
-            el.src = imageUrl
-        })
-        const size = 48
-        const canvas = document.createElement('canvas')
-        canvas.width = size
-        canvas.height = size
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return null
-        ctx.drawImage(img, 0, 0, size, size)
-        const { data } = ctx.getImageData(0, 0, size, size)
-
-        // 12 hue buckets, scored by saturation × mid-tone weight
-        const buckets = Array.from({ length: 12 }, () => ({ score: 0, r: 0, g: 0, b: 0, n: 0 }))
-        for (let i = 0; i < data.length; i += 4) {
-            const r = data[i], g = data[i + 1], b = data[i + 2]
-            const max = Math.max(r, g, b), min = Math.min(r, g, b)
-            const sat = max === 0 ? 0 : (max - min) / max
-            const light = (max + min) / 510
-            if (sat < 0.25 || light < 0.12 || light > 0.92) continue // skip greys/extremes
-            let h = 0
-            const d = max - min
-            if (d > 0) {
-                if (max === r) h = ((g - b) / d + 6) % 6
-                else if (max === g) h = (b - r) / d + 2
-                else h = (r - g) / d + 4
-            }
-            const bucket = buckets[Math.floor(h * 2) % 12]
-            const score = sat * (1 - Math.abs(light - 0.5))
-            bucket.score += score
-            bucket.r += r * score; bucket.g += g * score; bucket.b += b * score
-            bucket.n += score
-        }
-        const best = buckets.reduce((a, c) => (c.score > a.score ? c : a))
-        if (!best.n) return null
-        const hex = (v: number) => Math.round(v / best.n).toString(16).padStart(2, '0')
-        return `#${hex(best.r)}${hex(best.g)}${hex(best.b)}`
-    } catch {
-        return null // CORS or decode failure — non-fatal
-    }
-}
 
 const SECTION_LABELS: Record<string, string> = {
     hero: "Hero Section (Image/Video)",
@@ -299,6 +248,28 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
     const previewRef = useRef<HTMLIFrameElement>(null)
     const [previewNonce, setPreviewNonce] = useState(0)
     const watchedThemeColor = form.watch('theme_color')
+
+    /**
+     * The poster's real colours, for the AI.
+     *
+     * Read ONCE per cover image, not per request: the extraction is cheap but
+     * it is also async and CORS-dependent, and firing it on every keystroke in
+     * the brief box would mean the assistant sometimes has a palette and
+     * sometimes does not, for reasons the organizer cannot see.
+     *
+     * null is a perfectly good outcome — a poster on a host that sends no CORS
+     * header cannot be read, and the assistant then behaves exactly as it did
+     * before this existed.
+     */
+    const [posterPalette, setPosterPalette] = useState<PosterPalette | null>(null)
+    const coverUrl = initialData.cover_image_url || null
+    useEffect(() => {
+        let cancelled = false
+        if (!coverUrl) { setPosterPalette(null); return }
+        extractPosterPalette(coverUrl).then(p => { if (!cancelled) setPosterPalette(p) })
+        return () => { cancelled = true }
+    }, [coverUrl])
+
     const aiDesignContext = {
         theme: pageThemeId,
         page_layout: pageLayout,
@@ -310,6 +281,7 @@ export function StorefrontCustomizationForm({ eventId, merchEnabled = false, ini
         text_color: textColor,
         heading_color: headingColor,
         has_background_image: !!bgImageUrl,
+        poster_palette: posterPalette,
     }
     const previewPayloadRef = useRef<Record<string, unknown>>({})
     previewPayloadRef.current = {

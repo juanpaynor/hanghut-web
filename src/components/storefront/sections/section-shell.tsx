@@ -34,6 +34,21 @@ interface SectionShellProps {
     width?: keyof typeof WIDTH
     className?: string
     id?: string
+    /**
+     * Styling hook for organizer custom CSS: renders as
+     * data-hh-section="events" and so on.
+     *
+     * Added because a storefront skin could previously reach the page root,
+     * the title and section headings and almost nothing else -- so every
+     * section was forced to look identical. Two hand-written skins we were
+     * sent both invented their own attribute names for exactly this, then
+     * styled nothing, because the attributes did not exist.
+     *
+     * Named rather than numbered: [data-hh-section="events"] still means the
+     * events section after an organizer reorders the page, which nth-child
+     * does not.
+     */
+    name?: string
 }
 
 export function SectionShell({
@@ -42,9 +57,10 @@ export function SectionShell({
     width = 'default',
     className,
     id,
+    name,
 }: SectionShellProps) {
     return (
-        <section id={id} className={cn(RHYTHM[rhythm], className)}>
+        <section id={id} data-hh-section={name} className={cn(RHYTHM[rhythm], className)}>
             <div className={cn('container mx-auto px-4 sm:px-6', WIDTH[width])}>
                 {children}
             </div>
@@ -88,7 +104,7 @@ export function SectionHeading({
         >
             <div className={centered ? '' : 'min-w-0'}>
                 {eyebrow && (
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-2.5">
+                    <p data-hh-eyebrow className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-2.5">
                         {eyebrow}
                     </p>
                 )}
@@ -100,6 +116,7 @@ export function SectionHeading({
                 </h2>
                 {description && (
                     <p
+                        data-hh-section-desc
                         className={cn(
                             'mt-3 text-[0.9375rem] leading-relaxed text-muted-foreground',
                             centered ? 'mx-auto max-w-xl' : 'max-w-xl',

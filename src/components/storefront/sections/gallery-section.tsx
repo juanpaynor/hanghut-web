@@ -32,7 +32,7 @@ export function GallerySection({
                 : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
 
     return (
-        <section className="container mx-auto px-4 sm:px-6 max-w-7xl py-12 md:py-16">
+        <section data-hh-section="gallery" className="container mx-auto px-4 sm:px-6 max-w-7xl py-12 md:py-16">
             {config.heading && (
                 <div className="mb-8 md:mb-10">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-2.5">

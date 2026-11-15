@@ -964,6 +964,12 @@ export default async function PublicEventPage({
                 ) : event.cover_image_url ? (
                     <>
                         <Image
+                            // Styling hook: lets a skin frame the poster (border,
+                            // hard shadow, object-fit: contain to stop a portrait
+                            // poster being cropped). [data-hh-event] img hits every
+                            // image on the page including avatars, which is why a
+                            // poster-specific hook is needed.
+                            data-hh-poster
                             src={event.cover_image_url}
                             alt={event.title}
                             fill

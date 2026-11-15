@@ -66,7 +66,7 @@ export function NewsletterSection({ config, partnerId, partnerName }: Newsletter
     // ─── Inline variant: simple row ───
     if (variant === 'inline') {
         return (
-            <section className="py-12">
+            <section data-hh-section="newsletter" className="py-12">
                 <div className="container mx-auto px-4 max-w-2xl">
                     <div className="flex flex-col sm:flex-row items-center gap-4 p-6 rounded-2xl border bg-card/50">
                         <div className="flex-1 text-center sm:text-left">
@@ -79,7 +79,7 @@ export function NewsletterSection({ config, partnerId, partnerName }: Newsletter
                                 {message}
                             </div>
                         ) : (
-                            <form onSubmit={handleSubmit} className="flex gap-2 w-full sm:w-auto">
+                            <form data-hh-signup onSubmit={handleSubmit} className="flex gap-2 w-full sm:w-auto">
                                 <input
                                     type="email"
                                     value={email}
@@ -109,7 +109,7 @@ export function NewsletterSection({ config, partnerId, partnerName }: Newsletter
     // rather than a design; a single hairline-bounded panel states the same
     // "this is a different kind of block" without the smear.
     return (
-        <section id="newsletter" className="py-16 md:py-24">
+        <section id="newsletter" data-hh-section="newsletter" className="py-16 md:py-24">
             <div className="container mx-auto px-4 sm:px-6 max-w-3xl">
                 <div className="rounded-3xl border border-border/60 bg-muted/30 px-6 py-12 text-center md:px-12 md:py-16">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-2.5">
@@ -124,7 +124,7 @@ export function NewsletterSection({ config, partnerId, partnerName }: Newsletter
                         {message}
                     </div>
                 ) : (
-                    <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
+                    <form data-hh-signup onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
                         <input
                             type="email"
                             value={email}

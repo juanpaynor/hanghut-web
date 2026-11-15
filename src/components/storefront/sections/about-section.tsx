@@ -19,7 +19,7 @@ export function AboutSection({ config, description, descriptionHtml }: AboutSect
     return (
         // Tight rhythm: this is context for the events below, not a destination of
         // its own, so it sits close rather than claiming a full screen.
-        <SectionShell rhythm="tight" width={centered ? 'narrow' : 'default'}>
+        <SectionShell name="about" rhythm="tight" width={centered ? 'narrow' : 'default'}>
             <SectionHeading
                 eyebrow="About"
                 // The heading used to be "About Us" set in a foreground-to-60%

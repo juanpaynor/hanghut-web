@@ -1607,7 +1607,16 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
     const sheetOpen = !!autoSheet || !!gaSection
 
     return (
-        <div className="flex flex-col min-h-0 h-full gap-3 min-w-0">
+        /*
+         * data-hh-seatmap and friends are styling hooks for organizer custom
+         * CSS. NOTE WHAT THEY CANNOT DO: the map itself is drawn with Konva on
+         * a <canvas>, so no stylesheet can repaint a seat, a section or the
+         * stage -- those colours come from the tier palette and seat status.
+         * These hooks cover the CHROME around the canvas (the panel, the
+         * summary bar, the totals, the continue button), which is the part a
+         * skin can actually reach.
+         */
+        <div data-hh-seatmap className="flex flex-col min-h-0 h-full gap-3 min-w-0">
             {isPreview && (
                 <div className="shrink-0 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-900 px-3 py-1.5 text-xs dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
                     <span className="font-semibold uppercase tracking-wide">Preview</span>
@@ -2196,7 +2205,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                     : 'Best seats available, not together'
                 const close = leaveSheet
                 return (
-                    <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3 shrink-0">
+                    <div data-hh-seat-summary className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3 shrink-0">
                         <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                                 <p className="font-semibold">{sh.section.label}</p>
@@ -2276,7 +2285,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                                 </div>
                                 <div className="flex items-center justify-between gap-3">
                                     <div className="font-bold text-lg tabular-nums">₱{total.toLocaleString()}</div>
-                                    <Button onClick={handleContinue} disabled={navigating || selectedSeatIds.length !== sh.qty} className="h-11 px-6 font-semibold">
+                                    <Button data-hh-cta onClick={handleContinue} disabled={navigating || selectedSeatIds.length !== sh.qty} className="h-11 px-6 font-semibold">
                                         {navigating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Continue to checkout'}
                                     </Button>
                                 </div>
@@ -2337,7 +2346,7 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                 const gaMax = Math.max(1, Math.min(gaSection.available_count, maxPerOrder))
                 const gaTotal = gaTier ? Number(gaTier.price) * gaQty : 0
                 return (
-                    <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3 shrink-0">
+                    <div data-hh-seat-summary className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3 shrink-0">
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <p className="font-semibold">{gaSection.label}</p>
@@ -2370,8 +2379,8 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                                 </Button>
                             </div>
                             <div className="flex items-center gap-3">
-                                <div className="font-bold text-lg">₱{gaTotal.toLocaleString()}</div>
-                                <Button onClick={handleGAContinue} disabled={navigating || !gaTier} className="h-11 px-6 font-semibold">
+                                <div data-hh-price className="font-bold text-lg">₱{gaTotal.toLocaleString()}</div>
+                                <Button data-hh-cta onClick={handleGAContinue} disabled={navigating || !gaTier} className="h-11 px-6 font-semibold">
                                     {navigating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Continue'}
                                 </Button>
                             </div>
@@ -2436,9 +2445,9 @@ export function SeatMapPicker({ eventId, maxPerOrder = 10, legendTierIds, previe
                                 {selectedTier && (
                                     <span className="text-muted-foreground"> · {selectedTier.name}</span>
                                 )}
-                                <div className="font-bold text-lg">₱{totalPrice.toLocaleString()}</div>
+                                <div data-hh-price className="font-bold text-lg">₱{totalPrice.toLocaleString()}</div>
                             </div>
-                            <Button onClick={handleContinue} disabled={navigating} className="h-11 px-6 font-semibold">
+                            <Button data-hh-cta onClick={handleContinue} disabled={navigating} className="h-11 px-6 font-semibold">
                                 {navigating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Continue'}
                             </Button>
                         </div>

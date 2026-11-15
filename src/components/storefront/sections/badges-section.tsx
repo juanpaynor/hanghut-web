@@ -59,7 +59,7 @@ export function BadgesSection({ config, badges, partnerName }: BadgesSectionProp
     const showCount = config.show_holder_count !== false
 
     return (
-        <SectionShell rhythm="default" id="badges">
+        <SectionShell name="badges" rhythm="default" id="badges">
             <SectionHeading
                 eyebrow="Rewards"
                 title={config.heading || 'Badges to collect'}

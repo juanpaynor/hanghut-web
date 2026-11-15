@@ -26,7 +26,7 @@ export function PastEventsSection({ config, events }: PastEventsSectionProps) {
     const columns = config.columns || 2
 
     return (
-        <SectionShell rhythm="tight" width="wide">
+        <SectionShell name="past-events" rhythm="tight" width="wide">
             <div className="border-t border-border/70 pt-12">
                 <SectionHeading
                     eyebrow="Archive"

@@ -18,7 +18,7 @@ export function StatsSection({ config }: StatsSectionProps) {
     if (items.length === 0) return null
 
     return (
-        <SectionShell rhythm="tight" width="default">
+        <SectionShell name="stats" rhythm="tight" width="default">
             <dl
                 className={cn(
                     'grid divide-y divide-border/70 sm:divide-y-0 sm:divide-x',

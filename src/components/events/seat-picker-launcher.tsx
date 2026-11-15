@@ -70,6 +70,7 @@ export function SeatPickerLauncher({ eventId, fullWidth = false, maxPerOrder, le
     return (
         <>
             <Button
+                data-hh-cta
                 size="lg"
                 className={`${fullWidth ? 'w-full' : 'w-full md:w-auto'} bg-primary text-primary-foreground hover:bg-primary/90 font-semibold`}
                 onClick={() => { trackEventInteraction(eventId, 'pick_seats'); setOpen(true) }}

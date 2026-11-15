@@ -151,6 +151,21 @@ export function InlineTierList({
                         const remaining = Math.max(Number(tier.quantity_total) - Number(tier.quantity_sold), 0)
                         const perks: string[] = Array.isArray(tier.perks) ? tier.perks : []
                         return (
+                            /*
+                             * data-hh-tier / data-hh-price / data-hh-cta are
+                             * STYLING HOOKS for organizer custom CSS. They were
+                             * missing, which is why a hand-written skin could
+                             * restyle the headline and the page ground but never
+                             * the ticket cards, the price or the buy button —
+                             * the part of the page that actually sells.
+                             *
+                             * Selected state deliberately rides on the existing
+                             * aria-pressed rather than a second attribute:
+                             * [data-hh-tier][aria-pressed="true"] already works,
+                             * and one source of truth cannot drift from itself.
+                             * data-hh-tier-state is the readable sibling for the
+                             * three states aria-pressed cannot express.
+                             */
                             <motion.button
                                 type="button"
                                 key={tier.id}
@@ -158,6 +173,8 @@ export function InlineTierList({
                                 whileTap={reduce || tOff ? undefined : { scale: 0.985 }}
                                 onClick={() => selectTier(tier)}
                                 disabled={tOff}
+                                data-hh-tier
+                                data-hh-tier-state={tSoldOut ? 'sold-out' : tLocked ? 'locked' : selected ? 'selected' : 'available'}
                                 aria-pressed={selected}
                                 style={selected && accent ? { borderColor: accent } : undefined}
                                 className={cn(
@@ -231,7 +248,7 @@ export function InlineTierList({
                                 </div>
 
                                 <div className={cn('mt-3', asList && 'mt-0 order-3 text-right shrink-0')}>
-                                    <span className="text-lg font-extrabold" style={accent && selected ? { color: accent } : undefined}>
+                                    <span data-hh-price className="text-lg font-extrabold" style={accent && selected ? { color: accent } : undefined}>
                                         {money(Number(tier.price))}
                                     </span>
                                     {/* Selected check */}
@@ -253,7 +270,7 @@ export function InlineTierList({
             ) : (
                 <div className="flex items-center justify-between rounded-xl border p-4">
                     <span className="font-semibold">General Admission</span>
-                    <span className="text-lg font-extrabold">{money(ticketPrice)}</span>
+                    <span data-hh-price className="text-lg font-extrabold">{money(ticketPrice)}</span>
                 </div>
             )}
 
@@ -285,7 +302,7 @@ export function InlineTierList({
                         >
                             <Minus className="h-3 w-3" />
                         </Button>
-                        <span className="font-bold w-4 text-center">{quantity}</span>
+                        <span data-hh-qty className="font-bold w-4 text-center">{quantity}</span>
                         <Button
                             variant="outline"
                             size="icon"
@@ -298,12 +315,13 @@ export function InlineTierList({
                     </div>
                 </div>
 
-                <div className="flex items-center justify-between border-t pt-3 font-bold">
+                <div data-hh-total className="flex items-center justify-between border-t pt-3 font-bold">
                     <span>Total</span>
-                    <span className="text-lg">{money(effectivePrice * quantity)}</span>
+                    <span data-hh-price className="text-lg">{money(effectivePrice * quantity)}</span>
                 </div>
 
                 <Button
+                    data-hh-cta
                     className={cn('bg-primary', fullWidth ? 'w-full' : 'w-full')}
                     size="lg"
                     onClick={handleCheckout}

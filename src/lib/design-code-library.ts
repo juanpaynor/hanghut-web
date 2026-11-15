@@ -44,7 +44,47 @@ export const STYLE_TARGETS: StyleTarget[] = [
     { selector: '[data-hh-event] a', label: 'Links', hint: 'Text links anywhere on the page.' },
     { selector: '[data-hh-event]', label: 'The whole page', hint: 'Use for page background and default text colour.' },
     { selector: '[data-hh-event] img', label: 'Images', hint: 'Poster, gallery photos, organizer avatar.' },
+    // Added after a hand-written skin turned out to be able to restyle the
+    // headline and the page ground but nothing in the ticket box -- the part
+    // that sells. Everything below is new.
+    { selector: '[data-hh-poster]', label: 'The poster', hint: 'Just the cover image, not avatars or gallery shots.' },
+    { selector: '[data-hh-tier]', label: 'Ticket cards', hint: 'Each selectable ticket tier. Add [aria-pressed="true"] for the chosen one.' },
+    { selector: '[data-hh-price]', label: 'Prices', hint: 'Every price, including the order total.' },
+    { selector: '[data-hh-total]', label: 'Order total row', hint: 'The "Total" line under the tickets.' },
+    { selector: '[data-hh-qty]', label: 'Quantity number', hint: 'The number between the minus and plus buttons.' },
+    { selector: '[data-hh-cta]', label: 'The buy button', hint: 'Proceed to Checkout only — not every button on the page.' },
+    // Seated events. The map itself is a <canvas>, so CSS cannot repaint seats —
+    // these reach the panel around it.
+    { selector: '[data-hh-seatmap]', label: 'Seat map area', hint: 'The panel around the map. Seat colours come from your tiers, not CSS.' },
+    { selector: '[data-hh-seat-summary]', label: 'Seat summary bar', hint: 'The "2 seats · ₱3,000 · Continue" panel.' },
+    { selector: '[data-hh-mixed-panel]', label: 'Mixed ticket panel', hint: 'Events selling both GA and seats. [data-hh-mixed-part="ga"] or ="seated".' },
 ]
+
+/**
+ * The same list for the BRAND PAGE at /<slug>, which is a different document
+ * with different hooks. Showing an organizer the event list while they style
+ * their storefront is worse than showing nothing: every selector they copy
+ * matches zero elements and the feature looks broken.
+ */
+export const STOREFRONT_TARGETS: StyleTarget[] = [
+    { selector: '[data-hh-storefront]', label: 'The whole page', hint: 'Use for page background and default text colour.' },
+    { selector: '[data-hh-hero]', label: 'The hero', hint: 'The banner block at the very top, whichever layout you picked.' },
+    { selector: '[data-hh-title]', label: 'Your brand name', hint: 'The big heading in the hero.' },
+    { selector: '[data-hh-section]', label: 'Any section', hint: 'Add a name to target one: [data-hh-section="events"].' },
+    { selector: '[data-hh-eyebrow]', label: 'Section eyebrows', hint: 'The small uppercase label above a section heading.' },
+    { selector: '[data-hh-section-title]', label: 'Section headings', hint: 'Upcoming Events, About, and the rest.' },
+    { selector: '[data-hh-section-desc]', label: 'Section intro text', hint: 'The line under a section heading.' },
+    { selector: '[data-hh-event-card]', label: 'Event cards', hint: 'Each event tile in the listing.' },
+    { selector: '[data-hh-price]', label: 'Price chips', hint: 'The price badge on an event card.' },
+    { selector: '[data-hh-card]', label: 'Panels & cards', hint: 'Generic boxes, including the call-to-action panel.' },
+    { selector: '[data-hh-signup]', label: 'Newsletter form', hint: 'The email signup row.' },
+    { selector: '[data-hh-storefront] button', label: 'Buttons', hint: 'Every button on the page.' },
+    { selector: '[data-hh-storefront] img', label: 'Images', hint: 'Logo, cover, gallery photos.' },
+    { selector: '[data-hh-divider]', label: 'Dividers', hint: 'The line, dots or gap between sections. ="line", ="dots" or ="space".' },
+]
+
+/** Section names available to [data-hh-section="..."]. */
+export const STOREFRONT_SECTIONS = ['hero', 'about', 'events', 'past-events', 'stats', 'badges', 'cta', 'gallery', 'merch', 'newsletter', 'divider'] as const
 
 /** Variables the page sets for you — reading them keeps a skin in step with the
  *  colour and font pickers above instead of hard-coding a second palette. */

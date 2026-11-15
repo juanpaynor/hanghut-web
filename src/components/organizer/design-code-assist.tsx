@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import {
     CSS_SNIPPETS, CSS_PRESETS, HTML_BLOCKS, STARTER_CSS, HTML_STARTER,
-    STYLE_TARGETS, STYLE_VARIABLES, HTML_RULES,
+    STYLE_TARGETS, STOREFRONT_TARGETS, STYLE_VARIABLES, HTML_RULES,
     type CodeSnippet,
 } from '@/lib/design-code-library'
 
@@ -47,6 +47,19 @@ export type DesignContext = {
     text_color: string
     heading_color: string
     has_background_image: boolean
+    /**
+     * Colours read off the event poster in the browser. null when there is no
+     * cover, or when its host blocks cross-origin reads — the assistant then
+     * works exactly as it did before posters were readable.
+     */
+    poster_palette?: {
+        vibrant: string
+        /** null when the poster is a flat tone with no usable contrast pair. */
+        dark: string | null
+        light: string | null
+        isDark: boolean
+        swatches: string[]
+    } | null
 }
 
 const COPY: Record<Mode, {
@@ -89,6 +102,7 @@ const COPY: Record<Mode, {
 
 export function DesignCodeAssist({
     mode,
+    surface = 'event',
     value,
     onChange,
     eventId,
@@ -105,6 +119,14 @@ export function DesignCodeAssist({
     getPreviewDocument?: () => Document | null
     placeholder?: string
     minHeight?: string
+    /**
+     * Which document is being styled. The event page and the brand page share
+     * this component but have DIFFERENT hooks, so this picks both the list the
+     * organizer reads and the hook list the model is given. Getting it wrong
+     * produces selectors that match nothing, which reads as a broken feature
+     * rather than a wrong answer.
+     */
+    surface?: 'event' | 'storefront'
 }) {
     const copy = COPY[mode]
     const { toast } = useToast()
@@ -143,7 +165,7 @@ export function DesignCodeAssist({
             const { data, error } = await supabase.functions.invoke('ai-page-design', {
                 // `current` lets a follow-up like "now make it darker" edit what
                 // is there instead of starting from nothing.
-                body: { mode, brief: brief.trim(), event_id: eventId, current: value || undefined, design: designContext },
+                body: { mode, surface, brief: brief.trim(), event_id: eventId, current: value || undefined, design: designContext },
             })
             if (error) throw new Error(error.message || 'Could not reach the AI assistant.')
             if (data?.error) throw new Error(data.error)
@@ -324,7 +346,7 @@ export function DesignCodeAssist({
                                 event page.
                             </p>
                             <ul className="space-y-1">
-                                {STYLE_TARGETS.map(t => (
+                                {(surface === 'storefront' ? STOREFRONT_TARGETS : STYLE_TARGETS).map(t => (
                                     <li key={t.selector}>
                                         <button
                                             type="button"
