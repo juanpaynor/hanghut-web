@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -12,7 +13,6 @@ import { Label } from '@/components/ui/label'
 import { Briefcase, Mail, Lock, ArrowRight, Loader2, Eye, EyeOff, Check } from 'lucide-react'
 import { useLoading } from '@/providers/loading-provider'
 import { OAuthButtons } from '@/components/auth/oauth-buttons'
-import { StageArt } from '@/components/auth/stage-art'
 import {
     Dialog,
     DialogContent,
@@ -189,15 +189,48 @@ export default function OrganizerLoginPage() {
         <div className="min-h-screen flex">
             {/* ── Left: branded panel (desktop only) ───────────────────── */}
             <div className="hidden lg:flex lg:w-[44%] relative overflow-hidden flex-col justify-between p-12 bg-primary text-primary-foreground">
-                <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary to-purple-700" />
-                <div className="absolute inset-0 bg-noise opacity-20" />
+                {/* The artwork IS the panel now.
+                  *
+                  * It replaced the primary→purple-700 gradient, the noise layer and
+                  * StageArt. The gradient and noise are gone because the painting
+                  * supplies both the colour field and the texture — stacking an
+                  * impasto canvas under procedural noise only muddies it — and
+                  * StageArt because it was decoration competing with a detailed
+                  * image rather than adding to it. Its component file is kept; this
+                  * was the only page that rendered it.
+                  *
+                  * `bg-primary` stays on the parent as the colour behind this while
+                  * it decodes, so the panel never flashes white.
+                  *
+                  * sizes is 44vw to match lg:w-[44%], and 0px below that breakpoint
+                  * because the whole panel is `hidden lg:flex` — without the second
+                  * clause a phone downloads a desktop-width image to render nothing.
+                  * priority because this is the panel's LCP element.
+                  */}
+                <Image
+                    src="/login_screen/festival-friends-purple-dusk.png"
+                    alt=""
+                    fill
+                    priority
+                    sizes="(min-width: 1024px) 44vw, 0px"
+                    className="object-cover object-center"
+                />
 
-                {/* The art carries the panel's colour now. The three blurred
-                    aurora blobs that used to sit here were both redundant against
-                    its screen-blended colour field and the most expensive thing on
-                    the page — blur-3xl on large elements is a real cost on low-end
-                    phones, for a layer nobody could see once this went in front. */}
-                <StageArt reduce={reduce} />
+                {/* Legibility scrim, weighted to the BOTTOM on purpose.
+                  *
+                  * The top of the image is open lavender sky, which white type
+                  * already sits on reasonably; the bottom is a crowd lit by warm
+                  * stage lights and string bulbs, where unprotected white text
+                  * disappears into the highlights. So this ramps 20% → 45% → 80%
+                  * downward, which is also the order the three text blocks run in:
+                  * logo (strongest on its own white chip), headline + value props,
+                  * then the small footer line over the busiest part of the scene.
+                  *
+                  * Deliberately black rather than a purple tint: the painting is
+                  * already brand-purple, and tinting purple-on-purple flattened the
+                  * sunset without buying any contrast.
+                  */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/45 to-black/20" />
 
                 <Rise reduce={reduce} className="relative z-10">
                     <Link href="/" className="inline-block bg-white px-5 py-2.5 rounded transform -rotate-1 shadow-lg transition-transform hover:scale-105 hover:-rotate-2">
