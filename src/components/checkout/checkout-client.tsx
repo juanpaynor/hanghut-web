@@ -379,7 +379,10 @@ export function CheckoutClient({ event, quantity, user, tier, customTos, termsDo
     const applyPromo = async () => {
         setPromoError('')
         setIsLoading(true)
-        const result = await validatePromoCode(event.id, promoCodeInput, subtotal)
+        // Pass the tier: a code scoped to specific tiers cannot be judged
+        // without it, and the server will refuse at the gate anyway. Telling
+        // them here means they can switch ticket instead of hitting a 400.
+        const result = await validatePromoCode(event.id, promoCodeInput, subtotal, tier.id || null)
         setIsLoading(false)
 
         if (result.error) {

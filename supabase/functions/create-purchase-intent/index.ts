@@ -848,8 +848,93 @@ serve(async (req) => {
                 if (promo.expires_at && new Date(promo.expires_at) < now) {
                     return new Response(JSON.stringify({ success: false, error: { message: 'Promo code expired' } }), { status: 400, headers: corsHeaders })
                 }
-                if (promo.usage_limit && promo.usage_count >= promo.usage_limit) {
-                    return new Response(JSON.stringify({ success: false, error: { message: 'Promo code usage limit reached' } }), { status: 400, headers: corsHeaders })
+
+                // NOT YET STARTED. promo_codes.starts_at has existed since the table
+                // was created and has NEVER been enforced anywhere -- not here, not in
+                // validatePromoCode -- so a code scheduled for next month worked the
+                // moment it was saved. Latent rather than exploited: 0 codes are
+                // future-dated today, which is also why enforcing it now breaks nothing.
+                //
+                // Unparseable dates must not block a sale, the same call the presale
+                // and sales_end blocks make above: a typo should not refuse a discount
+                // the organizer meant to give.
+                if (promo.starts_at) {
+                    const startsMs = new Date(promo.starts_at).getTime()
+                    if (!Number.isNaN(startsMs) && startsMs > now.getTime()) {
+                        return new Response(JSON.stringify({
+                            success: false,
+                            error: { code: 'PROMO_NOT_STARTED', message: 'This promo code is not active yet.', starts_at: promo.starts_at },
+                        }), { status: 400, headers: corsHeaders })
+                    }
+                }
+
+                // APP ONLY. validatePromoCode (the buyer-facing preview) has always
+                // returned APP_ONLY for these and checkout-client shows "download the
+                // app to use it" -- but THIS function never checked, so the rule was
+                // UI-only and anyone posting straight to the endpoint got the discount.
+                // The same shape as subscriber_early_access_hours and tier is_active
+                // before they were fixed.
+                //
+                // Safe to start enforcing: all 26 completed redemptions of an app_only
+                // code across prod carry source='app', so no working flow is refused.
+                // 5 active app_only codes exist, one of them 100 off.
+                //
+                // STRICT on a MISSING source, on purpose. `source` is null on 266
+                // intents, but only ONE of those completed in the last 90 days -- real
+                // clients set it. And the semantics favour strictness anyway: the
+                // organizer said app-only, so a caller that will not identify itself as
+                // the app has not met the condition. Being lenient here would make the
+                // rule bypassable by simply omitting a field, which is no rule at all.
+                // 'app' is the only app-side value in use (the others are web,
+                // box_office, embed) -- do not add aliases without checking that query.
+                //
+                // AND BE HONEST ABOUT WHAT THIS IS: `source` is declared by the caller,
+                // so anyone who can read this code can post source='app' and get the
+                // discount. This is a speed bump, not a lock. It is still worth having
+                // -- it closes the accidental path, where a code leaks out of the app
+                // and gets pasted into web checkout by ordinary buyers, which is the
+                // only way these 5 codes have ever actually escaped. A real lock needs
+                // something the client cannot assert, e.g. requiring an app-issued
+                // token; nobody has asked for that and it is not built.
+                if (promo.app_only === true && source !== 'app') {
+                    return new Response(JSON.stringify({
+                        success: false,
+                        error: { code: 'PROMO_APP_ONLY', message: 'This promo code can only be used in the HangHut app.' },
+                    }), { status: 400, headers: corsHeaders })
+                }
+
+                // TIER SCOPE. NULL / non-array / empty array all mean "every tier",
+                // which is what every pre-existing code reads, so they are unchanged.
+                //
+                // Matched against effectiveTierId, NOT the tier_id off the request: a
+                // buyer who sends no tier gets one auto-picked above, and a seated
+                // order derives its tier. Checking the raw param would let a scoped
+                // code through on whatever tier the server actually charged for.
+                //
+                // REFUSES rather than silently dropping the discount. Someone who
+                // types a code expecting money off and is billed in full has been
+                // quietly overcharged; being told "this code is only for VIP" lets
+                // them change tier.
+                const scope = promo.tier_ids
+                const isScoped = Array.isArray(scope) && scope.length > 0
+                if (isScoped && !scope.map(String).includes(String(effectiveTierId ?? ''))) {
+                    // Name the tiers it DOES work on. The organizer wrote the code for
+                    // a reason and the buyer cannot guess which ticket to pick.
+                    const { data: scopeTiers } = await supabaseClient
+                        .from('ticket_tiers')
+                        .select('name')
+                        .in('id', scope.map(String))
+                    const names = (scopeTiers ?? []).map((t: { name: string }) => t.name).filter(Boolean)
+                    return new Response(JSON.stringify({
+                        success: false,
+                        error: {
+                            code: 'PROMO_WRONG_TIER',
+                            message: names.length
+                                ? `This promo code only applies to: ${names.join(', ')}.`
+                                : 'This promo code does not apply to the ticket you selected.',
+                            tier_ids: scope,
+                        },
+                    }), { status: 400, headers: corsHeaders })
                 }
 
                 promoCodeId = promo.id

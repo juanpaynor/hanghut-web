@@ -35,7 +35,7 @@ export async function GET(request: Request) {
 
     const { data: codes, error } = await supabase
         .from('promo_codes')
-        .select('id, code, discount_type, discount_amount, usage_limit, usage_count, starts_at, expires_at, is_active, created_at')
+        .select('id, code, discount_type, discount_amount, usage_limit, usage_count, starts_at, expires_at, is_active, created_at, tier_ids')
         .eq('event_id', eventId)
         .order('created_at', { ascending: false })
 
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
         return apiError('Invalid JSON body', 400)
     }
 
-    const { event_id, code, discount_type, discount_amount, usage_limit, expires_at } = body
+    const { event_id, code, discount_type, discount_amount, usage_limit, expires_at, tier_ids } = body
 
     if (!event_id) return apiError('event_id is required', 400)
     if (!code || typeof code !== 'string' || code.length < 3) return apiError('code must be at least 3 characters', 400)
@@ -73,6 +73,21 @@ export async function POST(request: Request) {
     }
     if (discount_type === 'percentage' && discount_amount > 100) {
         return apiError('percentage discount cannot exceed 100', 400)
+    }
+
+    // tier_ids limits the code to some of the event's tiers. Omitted or empty
+    // means every tier -- how every code created before this field behaves.
+    // Validated as uuid strings here rather than left to the CHECK constraint,
+    // which only enforces array-ness: a partner posting {"tier_ids": "VIP"}
+    // would store happily and then match nothing, producing a code that looks
+    // scoped and silently discounts nobody.
+    const TIER_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    let tierScope: string[] | null = null
+    if (tier_ids !== undefined && tier_ids !== null) {
+        if (!Array.isArray(tier_ids) || tier_ids.some((t: unknown) => typeof t !== 'string' || !TIER_UUID_RE.test(t))) {
+            return apiError('tier_ids must be an array of ticket tier ids', 400)
+        }
+        tierScope = tier_ids.length > 0 ? Array.from(new Set(tier_ids as string[])) : null
     }
 
     const supabase = createAdminClient()
@@ -89,6 +104,23 @@ export async function POST(request: Request) {
         return apiError('Event not found', 404)
     }
 
+    // Every named tier must belong to THIS event. Otherwise a partner can scope
+    // a code to an id that is not theirs: harmless to the other organizer, but
+    // it silently makes the code apply to nothing, and "my code does not work"
+    // costs far more to debug than a 400 here.
+    if (tierScope) {
+        const { data: ownTiers } = await supabase
+            .from('ticket_tiers')
+            .select('id')
+            .eq('event_id', event_id)
+            .in('id', tierScope)
+        const found = new Set((ownTiers ?? []).map((t) => t.id))
+        const strays = tierScope.filter((id) => !found.has(id))
+        if (strays.length > 0) {
+            return apiError(`tier_ids do not belong to this event: ${strays.join(', ')}`, 400)
+        }
+    }
+
     const { data: promo, error } = await supabase
         .from('promo_codes')
         .insert({
@@ -99,8 +131,9 @@ export async function POST(request: Request) {
             usage_limit: usage_limit || null,
             expires_at: expires_at || null,
             is_active: true,
+            tier_ids: tierScope,
         })
-        .select('id, code, discount_type, discount_amount, usage_limit, usage_count, expires_at, is_active, created_at')
+        .select('id, code, discount_type, discount_amount, usage_limit, usage_count, expires_at, is_active, created_at, tier_ids')
         .single()
 
     if (error) {

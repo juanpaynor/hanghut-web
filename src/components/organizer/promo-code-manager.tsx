@@ -29,9 +29,16 @@ interface PromoCodeManagerProps {
     eventId?: string
     experienceId?: string
     initialCodes: PromoCode[]
+    /**
+     * The event's tiers, so a code can be limited to some of them. Events only —
+     * experiences have no tiers. Omitted or fewer than two and the picker is
+     * hidden: scoping a code to the only tier there is means nothing, and an
+     * extra control that cannot change the outcome is worse than no control.
+     */
+    tiers?: { id: string; name: string }[]
 }
 
-export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoCodeManagerProps) {
+export function PromoCodeManager({ eventId, experienceId, initialCodes, tiers = [] }: PromoCodeManagerProps) {
     // Resolved once so the handlers below read identically for both targets —
     // the alternative is a ternary at four separate call sites, which is exactly
     // where a copy-paste sends an experience's code to an event.
@@ -66,6 +73,8 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
     const [usageLimit, setUsageLimit] = useState('')
     const [expiresAt, setExpiresAt] = useState('')
     const [appOnly, setAppOnly] = useState(false)
+    // [] means "every tier", which is also what the server stores as NULL.
+    const [tierIds, setTierIds] = useState<string[]>([])
 
     // The code currently being edited, when any. Carried as the row rather than
     // just the id because usage_count decides whether the name is editable.
@@ -78,6 +87,7 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
         setUsageLimit('')
         setExpiresAt('')
         setAppOnly(false)
+        setTierIds([])
         setIsCreating(false)
         setEditingId(null)
     }
@@ -94,6 +104,9 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
         // input renders empty and a silent save would wipe the expiry.
         setExpiresAt(code.expires_at ? format(new Date(code.expires_at), "yyyy-MM-dd'T'HH:mm") : '')
         setAppOnly(code.app_only)
+        // Defensive: the column is jsonb, so a hand-written row could hold
+        // something that is not an array of strings.
+        setTierIds(Array.isArray(code.tier_ids) ? code.tier_ids.map(String) : [])
     }
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -107,6 +120,9 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
         if (usageLimit) formData.append('usage_limit', usageLimit)
         if (expiresAt) formData.append('expires_at', expiresAt)
         formData.append('app_only', appOnly ? 'true' : 'false')
+        // Repeated key, read back with getAll(). Appending nothing leaves the
+        // scope empty, which the action stores as NULL = every tier.
+        tierIds.forEach(id => formData.append('tier_ids', id))
 
         const result = editingId
             ? await actions.update(editingId, targetId, formData)
@@ -254,6 +270,44 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
                         <Switch checked={appOnly} onCheckedChange={setAppOnly} />
                     </div>
                 </div>
+
+                {/* Tier scope. Events with 2+ tiers only — see the prop comment. */}
+                {!isExperience && tiers.length > 1 && (
+                    <div className="rounded-lg border p-3">
+                        <p className="text-sm font-medium">Which tickets?</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                            Leave all unticked and the code works on every ticket. Tick some to
+                            limit it — buyers on any other ticket are told the code doesn&apos;t apply.
+                        </p>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {tiers.map(t => {
+                                const on = tierIds.includes(t.id)
+                                return (
+                                    <label
+                                        key={t.id}
+                                        className="flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm cursor-pointer hover:bg-accent"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            className="h-4 w-4 accent-primary"
+                                            checked={on}
+                                            onChange={() => setTierIds(prev =>
+                                                on ? prev.filter(id => id !== t.id) : [...prev, t.id]
+                                            )}
+                                        />
+                                        <span className="truncate">{t.name}</span>
+                                    </label>
+                                )
+                            })}
+                        </div>
+                        {tierIds.length > 0 && (
+                            <p className="mt-2 text-xs font-medium">
+                                Limited to {tierIds.length} of {tiers.length} tickets.
+                            </p>
+                        )}
+                    </div>
+                )}
+
                 <div className="flex justify-end gap-2">
                     <Button type="button" variant="ghost" onClick={resetForm}>
                         Cancel
@@ -355,6 +409,17 @@ export function PromoCodeManager({ eventId, experienceId, initialCodes }: PromoC
                                                 {code.app_only && (
                                                     <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-100">
                                                         <Smartphone className="h-3 w-3 mr-1" />App Only
+                                                    </Badge>
+                                                )}
+                                                {/* Names the tiers rather than a count: "2 tiers"
+                                                    tells an organizer nothing they can act on. */}
+                                                {Array.isArray(code.tier_ids) && code.tier_ids.length > 0 && (
+                                                    <Badge variant="outline" className="text-xs">
+                                                        <Tag className="h-3 w-3 mr-1" />
+                                                        {code.tier_ids
+                                                            .map(id => tiers.find(t => t.id === id)?.name)
+                                                            .filter(Boolean)
+                                                            .join(', ') || `${code.tier_ids.length} tickets only`}
                                                     </Badge>
                                                 )}
                                             </div>

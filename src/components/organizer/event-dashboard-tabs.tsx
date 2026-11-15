@@ -278,7 +278,7 @@ export function EventDashboardTabs({
                         </div>
                         <div className="border-t pt-8">
                             <h3 className="text-xl font-semibold mb-4">Promo Codes</h3>
-                            <PromoCodeManager eventId={eventId} initialCodes={promoCodes} />
+                            <PromoCodeManager eventId={eventId} initialCodes={promoCodes} tiers={tiers ?? []} />
                         </div>
                     </div>
                 )}

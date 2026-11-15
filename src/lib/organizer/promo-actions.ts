@@ -16,6 +16,12 @@ export interface PromoCode {
     expires_at: string | null
     is_active: boolean
     app_only: boolean
+    /**
+     * Tiers this code applies to. NULL, a non-array, or an empty array all mean
+     * EVERY tier — the same semantics as registration_questions.tier_ids, and
+     * why every code that predates the column needs no backfill.
+     */
+    tier_ids: string[] | null
 }
 
 export async function getPromoCodes(eventId: string) {
@@ -38,6 +44,34 @@ export async function getPromoCodes(eventId: string) {
     return { data: data as PromoCode[] }
 }
 
+const PROMO_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Tier scope off the form. The tier checkboxes all share the name `tier_ids`,
+ * so getAll() returns every ticked one.
+ *
+ * Two deliberate choices:
+ *
+ * 1. An empty selection is stored as NULL, never []. Both mean "all tiers" to
+ *    every reader, but NULL is what every code predating this column carries,
+ *    so "applies to everything" has ONE representation in the table instead of
+ *    two that must be kept in sync.
+ *
+ * 2. Non-uuid values are dropped. The CHECK constraint only enforces that the
+ *    column is an array, so junk would store happily and then silently never
+ *    match a tier -- a code that looks scoped and discounts nothing.
+ *
+ * Event codes only. Experiences have no tiers, so the experience variants below
+ * deliberately never call this.
+ */
+function parseTierIds(formData: FormData): string[] | null {
+    const ids = formData
+        .getAll('tier_ids')
+        .map((v) => String(v).trim())
+        .filter((v) => PROMO_UUID_RE.test(v))
+    return ids.length > 0 ? Array.from(new Set(ids)) : null
+}
+
 export async function createPromoCode(eventId: string, formData: FormData) {
     const supabase = await createClient()
 
@@ -47,6 +81,7 @@ export async function createPromoCode(eventId: string, formData: FormData) {
     const usage_limit_raw = formData.get('usage_limit') as string
     const expires_at_raw = formData.get('expires_at') as string
     const app_only = formData.get('app_only') === 'true'
+    const tier_ids = parseTierIds(formData)
 
     if (!code || code.length < 3) {
         return { error: 'Code must be at least 3 characters' }
@@ -69,6 +104,7 @@ export async function createPromoCode(eventId: string, formData: FormData) {
             expires_at: expires_at_raw || null,
             is_active: true,
             app_only,
+            tier_ids,
         })
 
     if (error) {
@@ -169,6 +205,7 @@ export async function updatePromoCode(codeId: string, eventId: string, formData:
             usage_limit,
             expires_at: expires_at_raw || null,
             app_only,
+            tier_ids: parseTierIds(formData),
         })
         .eq('id', codeId)
         .eq('event_id', eventId)
@@ -216,7 +253,21 @@ export async function deletePromoCode(codeId: string, eventId: string) {
     return { success: true }
 }
 
-export async function validatePromoCode(eventId: string, code: string, subtotal: number) {
+/**
+ * Buyer-facing preview of a code, before they pay.
+ *
+ * This MIRRORS the gate in create-purchase-intent and is not the gate itself --
+ * it runs with the caller's own client and anything it decides can be skipped by
+ * posting straight to the edge function. Every refusal here must exist there
+ * too; the point of this function is to tell someone the code is wrong while
+ * they can still do something about it.
+ *
+ * `tierId` is optional so existing callers keep compiling, but checkout always
+ * knows its tier and must pass it: without it a tier-scoped code cannot be
+ * judged, and we deliberately let it through here rather than guess, because
+ * the server has the final say and the real tier.
+ */
+export async function validatePromoCode(eventId: string, code: string, subtotal: number, tierId?: string | null) {
     const supabase = await createClient()
 
     // 1. Fetch code (we can use our RLS or restricted query)
@@ -244,9 +295,41 @@ export async function validatePromoCode(eventId: string, code: string, subtotal:
         return { error: 'Promo code has expired' }
     }
 
+    // 1c. Not started yet. starts_at had never been checked on either side —
+    // a code scheduled for next month discounted from the moment it was saved.
+    if (promo.starts_at && new Date(promo.starts_at) > new Date()) {
+        return { error: 'This promo code is not active yet' }
+    }
+
     // 3. Check Usage Limit
     if (promo.usage_limit && promo.usage_count >= promo.usage_limit) {
         return { error: 'Promo code usage limit reached' }
+    }
+
+    // 3b. Tier scope. NULL / non-array / empty array all mean every tier, so
+    // every code that predates this column behaves exactly as before.
+    //
+    // A scoped code with NO tierId passed falls through to success here. That
+    // is deliberate: the server re-checks against the tier it actually charges
+    // for, so guessing would only produce a wrong answer earlier. Checkout
+    // passes the tier, so in practice the buyer still finds out before paying.
+    const tierScope: unknown = (promo as { tier_ids?: unknown }).tier_ids
+    if (Array.isArray(tierScope) && tierScope.length > 0 && tierId) {
+        if (!tierScope.map(String).includes(String(tierId))) {
+            // Name the tiers it works on — the buyer cannot guess, and the fix
+            // is for them to pick a different ticket.
+            const { data: scopeTiers } = await supabase
+                .from('ticket_tiers')
+                .select('name')
+                .in('id', tierScope.map(String))
+            const names = (scopeTiers ?? []).map((t) => t.name).filter(Boolean)
+            return {
+                error: names.length
+                    ? `This code only applies to: ${names.join(', ')}`
+                    : 'This code does not apply to the ticket you selected',
+                wrongTier: true,
+            }
+        }
     }
 
     // 4. Calculate Discount
