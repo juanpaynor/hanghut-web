@@ -210,7 +210,19 @@ serve(async () => {
 
             await supabase.from("email_automation_runs").update({ campaign_id: camp.id }).eq("id", runRow.id)
 
-            if (recipients.length === 0) return true // nothing to send, keep the claim
+            // Nothing to send — keep the claim, but CLOSE THE CAMPAIGN. Without this
+            // the row inserted above sits in 'sending' forever: no queue message means
+            // process-email-queue never runs, so nothing ever calls finalize_email_batch.
+            // 10 rows were stranded that way between 2026-09-22 and 2026-11-07, which
+            // made 'sending' useless as an alarm — a campaign that died mid-delivery
+            // looked identical. finalize_email_batch(id, 0, 0) with recipient_count = 0
+            // takes its (sent+failed >= recipient) branch and lands on 'sent'.
+            if (recipients.length === 0) {
+                await supabase.rpc('finalize_email_batch', {
+                    p_campaign_id: camp.id, p_sent: 0, p_failed: 0,
+                })
+                return true
+            }
 
             // 4. Enqueue batches (tokens ride along for per-recipient resolution)
             for (let i = 0; i < recipients.length; i += BATCH_SIZE) {

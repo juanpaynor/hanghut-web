@@ -1,6 +1,7 @@
 import { TicketQR } from '@/components/tickets/ticket-qr'
 import { TicketPdfButton } from '@/components/tickets/ticket-pdf-button'
 import { TicketBadges, type TicketBadge } from '@/components/tickets/ticket-badges'
+import { TicketAppPromo } from '@/components/tickets/ticket-app-promo'
 import { CalendarClock, MapPin, Ticket as TicketIcon, Armchair, CheckCircle2, ExternalLink, Globe, Video } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatEventDateTimeWithEnd, formatEventDate, formatEventTime, isMultiDayEvent } from '@/lib/datetime'
@@ -532,6 +533,13 @@ export function TicketOrderView({
                                 />
                             </div>
                         )}
+
+                        {/* Platform CTA, placed AFTER everything the organizer
+                            controls (their note, their links, their PDF) and
+                            before the fine print. The organizer's own words get
+                            the buyer's attention first; this is the last
+                            substantive block rather than an interruption. */}
+                        <TicketAppPromo accent={accent} />
 
                         {footer ? (
                             <p className="px-1 text-center text-xs text-muted-foreground whitespace-pre-line">{footer}</p>
