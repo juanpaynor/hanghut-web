@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { ConsentedAnalytics } from '@/components/analytics/consented-analytics';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
@@ -67,6 +67,27 @@ const jsonLd = {
   ],
   description: 'HangHut is a social marketplace connecting people through real-world events and experiences.'
 };
+
+/**
+ * Keep the PUBLIC site light, whatever the phone wants.
+ *
+ * Chrome on Android ("Auto Dark Theme") and Samsung Internet ("Dark mode")
+ * will algorithmically repaint a page that does not say what it is -- they
+ * darken surfaces and flip text colours by guesswork. On an event page wearing
+ * an organizer's custom CSS, which sets `color: #fffef5 !important` on
+ * everything, that guesswork puts text and its background at the same colour
+ * and the copy simply vanishes. Reported by real buyers on TEN122's page; iOS
+ * Safari never does this, which is why it only ever hit "some" phones.
+ *
+ * `only light` is the real opt-out. Plain `light` only says the page SUPPORTS
+ * light and Chrome may still repaint it.
+ *
+ * `.dark` on <html> (the organizer dashboard) still wins, because a CSS
+ * `color-scheme` on the root element beats this meta tag -- and the dashboard
+ * layout also declares its own viewport, so the intent is written down in both
+ * places rather than relying on that precedence.
+ */
+export const viewport: Viewport = { colorScheme: 'only light' };
 
 export default function RootLayout({
   children,

@@ -9,6 +9,7 @@ import { OrganizerSidebar } from '@/components/organizer/organizer-sidebar'
 import { SupportWidget } from '@/components/support/support-widget'
 import { OrganizerThemeProvider, ORGANIZER_THEME_SCRIPT } from '@/components/organizer/organizer-theme'
 import { storefrontUrl } from '@/lib/events/urls'
+import type { Viewport } from 'next'
 // Role-based nav visibility matrix
 const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
     dashboard:    ['owner', 'manager', 'finance', 'marketing'],
@@ -23,6 +24,17 @@ const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
     embed:        ['owner', 'marketing'],
     verification: ['owner'],
 }
+
+
+/**
+ * The ONE place that opts back out of the root's `only light`.
+ *
+ * The dashboard has a real dark mode (own provider, `.dark` on <html>), so it
+ * must declare both schemes or the browser renders native scrollbars, form
+ * controls and autofill light-on-dark. Everything else under the root stays
+ * `only light` -- see src/app/layout.tsx for why.
+ */
+export const viewport: Viewport = { colorScheme: 'light dark' }
 
 export function hasAccess(section: string, role: UserRole['role']): boolean {
     return NAV_PERMISSIONS[section]?.includes(role) ?? false

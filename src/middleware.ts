@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 import { createClient as createServerClient } from '@/lib/supabase/server'
-import { isAppPath } from '@/lib/routing/app-routes'
+import { isAppPath, isDiscoveryIndex } from '@/lib/routing/app-routes'
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'
 /**
@@ -89,9 +89,20 @@ export async function middleware(request: NextRequest) {
     // so that the code which BUILDS partner-domain links reads the same answer.
     // See that file for why a bare startsWith was a trap ('/m' vs '/membership').
 
+    // A partner host must never serve HangHut's own catalogue: it lists other
+    // organizers' events, on the domain this partner pays for. Their storefront
+    // root already IS their event listing, so send them there. The query string
+    // rides along so ?ref= / utm_* attribution is not dropped by the hop.
+    const discoveryRedirect = () => {
+        const home = new URL('/', request.url)
+        home.search = url.search
+        return NextResponse.redirect(home)
+    }
+
     // 1a. Custom domain → look up partner slug and rewrite to storefront
     const isHanghutDomain = hostname === ROOT_DOMAIN || hostname.endsWith(`.${ROOT_DOMAIN}`) || hostname.endsWith('.localhost') || hostname === 'localhost'
     if (!isHanghutDomain) {
+        if (isDiscoveryIndex(url.pathname)) return discoveryRedirect()
         if (isAppPath(url.pathname)) return NextResponse.next()
 
         const slug = await getPartnerSlugForCustomDomain(hostname)
@@ -105,6 +116,7 @@ export async function middleware(request: NextRequest) {
 
     // 1b. Partner subdomain → rewrite to storefront (no auth needed)
     if (subdomain) {
+        if (isDiscoveryIndex(url.pathname)) return discoveryRedirect()
         if (isAppPath(url.pathname)) {
             // Let it pass through to the normal app route
             return NextResponse.next()

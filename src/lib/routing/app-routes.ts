@@ -79,3 +79,28 @@ export const APP_ROUTE_PREFIXES = [
 export function isAppPath(pathname: string): boolean {
     return APP_ROUTE_PREFIXES.some(p => pathname === p || pathname.startsWith(`${p}/`))
 }
+
+/**
+ * Platform-wide DISCOVERY INDEXES — the listing pages, not the detail pages.
+ *
+ * These are an app route (so /events/<slug> resolves on a partner domain, which
+ * is the whole point of the custom-domain feature) but the bare INDEX has no
+ * business being there: it renders HangHut's catalogue of everyone's events.
+ *
+ * VERIFIED on prod 2026-11-16: games.mimicmanila.com/events returned the apex
+ * page byte for byte (409,942 bytes both), listing 30 events, most of them other
+ * organizers' -- Comedy Manila's and BeatBridge's among them. A competitor's
+ * event page rendered and was buyable on Mimic's own paid domain. /experiences
+ * leaked identically (20,022 bytes both).
+ *
+ * The partner's storefront ROOT already is their event listing, so the index
+ * redirects there. Detail pages are deliberately untouched: those links are in
+ * sent emails, printed QR codes and the sitemap, and must never break.
+ */
+const DISCOVERY_INDEXES = ['/events', '/experiences']
+
+export function isDiscoveryIndex(pathname: string): boolean {
+    // Normalise a trailing slash; '/' itself must never match.
+    const p = pathname.replace(/\/+$/, '')
+    return DISCOVERY_INDEXES.includes(p)
+}

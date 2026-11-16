@@ -10,7 +10,8 @@ import { TicketOrderView, type TicketOrder } from '@/components/tickets/ticket-o
 export const revalidate = 300
 
 /**
- * Emits <meta name="color-scheme" content="light">.
+ * Emits <meta name="color-scheme" content="only light">. Plain 'light' only
+ * says the page SUPPORTS light; Android force-dark may still repaint it.
  *
  * Without it, Chrome and Samsung Internet on Android apply "force dark" to this
  * page — inverting the white ticket surfaces and lifting the QR's black modules
@@ -19,7 +20,7 @@ export const revalidate = 300
  * code: the card, the seat, the ticket number and the event name all read as
  * designed. Scoped to this route, so nothing else in the app is affected.
  */
-export const viewport: Viewport = { colorScheme: 'light' }
+export const viewport: Viewport = { colorScheme: 'only light' }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
