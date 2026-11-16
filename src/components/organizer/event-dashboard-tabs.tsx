@@ -213,11 +213,12 @@ export function EventDashboardTabs({
                 {/* Above the list on purpose: an attendee with no details of their
                     own is indistinguishable from any other row in the table, and
                     on one event 55% of tickets were in that state. */}
-                <MissingDetailsPanel eventId={eventId} />
+                <MissingDetailsPanel eventId={eventId} publicBaseUrl={baseUrl || undefined} />
                 <CheckInStats eventId={eventId} />
                 <div className="border-t pt-8">
                     <h3 className="text-xl font-semibold mb-4">Attendee List</h3>
                     <AttendeeManager
+                        publicBaseUrl={baseUrl || undefined}
                         eventId={eventId}
                         initialAttendees={initialAttendees}
                         initialTotal={initialAttendeeTotal}
@@ -296,6 +297,7 @@ export function EventDashboardTabs({
                     subscriptionTiers={subscriptionTiers}
                     existingDiscounts={existingDiscounts}
                     subscriptionsEnabled={subscriptionsEnabled}
+                    publicBaseUrl={baseUrl || undefined}
                 />
             </TabsContent>
 

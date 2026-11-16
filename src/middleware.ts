@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { isAppPath } from '@/lib/routing/app-routes'
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'
 /**
@@ -80,27 +81,18 @@ export async function middleware(request: NextRequest) {
     }
 
     // Paths that are the APP, not the storefront, on every host. Anything not
-    // listed here is rewritten to /<slug><path> for the partner storefront — and
-    // since src/app/[slug] only defines /membership, an unlisted app path 404s on
+    // matched is rewritten to /<slug><path> for the partner storefront — and
+    // since src/app/[slug] only defines /membership, an unmatched app path 404s on
     // a partner subdomain or custom domain while working fine on the apex.
     //
-    // '/monitoring' is Sentry's tunnel. Without it here, an error on a partner
-    // subdomain or custom domain would be rewritten to /<slug>/monitoring and
-    // 404 — so the reports that matter most, from a partner's own storefront,
-    // would be the ones silently lost.
-    //
-    // The consumer auth routes belong here: a buyer on a storefront who hits
-    // "Sign in" from an event page goes to /account/login?next=..., which without
-    // this list became /<slug>/account/login and 404'd. Auth cookies are already
-    // scoped to `.{ROOT_DOMAIN}` (see src/lib/supabase/*.ts), so a session created
-    // on a subdomain is valid on the apex too — only the routing was missing.
-    const appRoutePrefixes = ['/events', '/checkout', '/experiences', '/delete-account', '/privacy-policy', '/terms-of-service', '/terms', '/auth', '/api', '/download', '/scan', '/box-office', '/checkin', '/embed', '/t', '/account', '/login', '/reset-password', '/monitoring', '/unsubscribe']
+    // The list, and the segment-wise matcher, now live in @/lib/routing/app-routes
+    // so that the code which BUILDS partner-domain links reads the same answer.
+    // See that file for why a bare startsWith was a trap ('/m' vs '/membership').
 
     // 1a. Custom domain → look up partner slug and rewrite to storefront
     const isHanghutDomain = hostname === ROOT_DOMAIN || hostname.endsWith(`.${ROOT_DOMAIN}`) || hostname.endsWith('.localhost') || hostname === 'localhost'
     if (!isHanghutDomain) {
-        const isAppRoute = appRoutePrefixes.some(prefix => url.pathname.startsWith(prefix))
-        if (isAppRoute) return NextResponse.next()
+        if (isAppPath(url.pathname)) return NextResponse.next()
 
         const slug = await getPartnerSlugForCustomDomain(hostname)
         if (slug) {
@@ -113,9 +105,7 @@ export async function middleware(request: NextRequest) {
 
     // 1b. Partner subdomain → rewrite to storefront (no auth needed)
     if (subdomain) {
-        const isAppRoute = appRoutePrefixes.some(prefix => url.pathname.startsWith(prefix))
-
-        if (isAppRoute) {
+        if (isAppPath(url.pathname)) {
             // Let it pass through to the normal app route
             return NextResponse.next()
         }
@@ -129,7 +119,7 @@ export async function middleware(request: NextRequest) {
     //
     // docs.hanghut.com/          → /docs
     // docs.hanghut.com/api       → /docs/api
-    // docs.hanghut.com/api/v1/…  → left alone: /api is in appRoutePrefixes and the
+    // docs.hanghut.com/api/v1/…  → left alone: /api is an app route (see @/lib/routing/app-routes) and the
     //                              real API must stay reachable on this host, or
     //                              the sandbox console on the docs page would have
     //                              to call across an origin it does not control.
@@ -162,7 +152,7 @@ export async function middleware(request: NextRequest) {
     // subdomain already returned above; this stops the canonical path paying for
     // a session lookup it never reads.
     // '/unsubscribe' is reached from an email, never from a session. Listing it
-    // in appRoutePrefixes above keeps it working on a partner subdomain or custom
+    // in APP_ROUTE_PREFIXES keeps it working on a partner subdomain or custom
     // domain -- unlisted, it was rewritten to /<slug>/unsubscribe and 404'd, so
     // the moment a campaign goes out from a partner domain its unsubscribe link
     // is dead. Listing it here also drops a session round trip it never reads.
@@ -191,7 +181,7 @@ export const config = {
          * became /hexfest/manifest.webmanifest and 404'd on every storefront.
          * Same for robots.txt and sitemap.xml. These are host-independent and
          * should always serve from the app root, so exclude them here rather
-         * than threading them through appRoutePrefixes.
+         * than threading them through APP_ROUTE_PREFIXES.
          */
         '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest|txt|xml)$).*)',
     ],

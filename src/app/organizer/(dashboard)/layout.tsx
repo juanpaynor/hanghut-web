@@ -8,7 +8,7 @@ import type { UserRole } from '@/lib/auth/cached'
 import { OrganizerSidebar } from '@/components/organizer/organizer-sidebar'
 import { SupportWidget } from '@/components/support/support-widget'
 import { OrganizerThemeProvider, ORGANIZER_THEME_SCRIPT } from '@/components/organizer/organizer-theme'
-
+import { storefrontUrl } from '@/lib/events/urls'
 // Role-based nav visibility matrix
 const NAV_PERMISSIONS: Record<string, UserRole['role'][]> = {
     dashboard:    ['owner', 'manager', 'finance', 'marketing'],
@@ -70,10 +70,11 @@ export default async function OrganizerLayout({
     const isVerified = true
 
     // Storefront link derives from partner fields fetched above (no extra query).
+    // This was the ONE place in the product that already preferred the custom
+    // domain -- the logic now lives in @/lib/events/urls so every other link
+    // builder reads the same answer instead of reinventing it wrongly.
     const pf = partner as any
-    const storefrontUrl = pf.custom_domain && pf.custom_domain_verified
-        ? `https://${pf.custom_domain}`
-        : partner.slug ? `https://${partner.slug}.hanghut.com` : null
+    const storefrontLink = storefrontUrl(partner)
 
     const capabilities: string[] = pf.capabilities ?? ['organizer']
 
@@ -90,7 +91,7 @@ export default async function OrganizerLayout({
                 isVerified={isVerified}
                 businessName={partner.business_name}
                 partnerSlug={partner.slug ?? null}
-                storefrontUrl={storefrontUrl}
+                storefrontUrl={storefrontLink}
                 capabilities={capabilities}
                 subscriptionsEnabled={pf.subscriptions_enabled === true}
                 merchEnabled={pf.merch_enabled === true}

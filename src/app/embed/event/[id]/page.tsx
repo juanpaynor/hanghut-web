@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { format } from 'date-fns'
 import { EmbedThemeWrapper, type EmbedTheme } from '@/components/embed/embed-theme-wrapper'
 import { resolveFont } from '@/lib/event-fonts'
-import { eventHref } from '@/lib/events/urls'
+import { eventHref, partnerUrl } from '@/lib/events/urls'
 import { EmbedTicketButton } from '@/components/embed/embed-ticket-button'
 import { EmbedTierSelector } from '@/components/embed/embed-tier-selector'
 import { isTierOnSale, isTierVisible } from '@/lib/tickets/tier-availability'
@@ -48,7 +48,9 @@ export default async function EmbedEventPage({
             organizer:partners!events_organizer_id_fkey(
                 business_name,
                 profile_photo_url,
-                slug
+                slug,
+                custom_domain,
+                custom_domain_verified
             ),
             ticket_tiers(
                 id,
@@ -274,7 +276,7 @@ export default async function EmbedEventPage({
                         has room to work. */}
                     {seatedCount > 0 && (
                         <a
-                            href={`https://hanghut.com${eventHref(event as any)}`}
+                            href={partnerUrl((event as any).organizer, eventHref(event as any))}
                             target="_blank"
                             rel="noopener"
                             style={{

@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { BrandingProvider } from '@/components/storefront/branding-provider'
 import { StorefrontHeroVideo } from '@/components/storefront/storefront-hero-video'
 import { ProfileActions } from '@/components/storefront/profile-actions'
+import { storefrontUrl, platformOrigin } from '@/lib/events/urls'
 import { cn, hexToHsl } from '@/lib/utils'
 import { sanitize } from '@/lib/sanitize'
 import { SectionRenderer } from '@/components/storefront/section-renderer'
@@ -36,7 +37,7 @@ const getPartnerAndEvents = cache(async (slug: string) => {
     const supabase = await createClient()
     const { data: partner, error } = await supabase
         .from('partners')
-        .select('id, business_name, slug, description, profile_photo_url, cover_image_url, social_links, branding, verified, show_membership_tab, subscriptions_enabled')
+        .select('id, business_name, slug, description, profile_photo_url, cover_image_url, social_links, branding, verified, show_membership_tab, subscriptions_enabled, custom_domain, custom_domain_verified')
         .eq('slug', slug)
         .single()
 
@@ -141,10 +142,17 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     const { slug } = await params
     const data = await getPartnerAndEvents(slug)
     if (!data) return { title: 'Organizer Not Found' }
+    // The brand page had NO canonical at all, so a storefront reachable on the
+    // apex, a subdomain and a custom domain gave search engines three equal
+    // copies and no hint which one the organizer actually wanted. Name it, and
+    // name their own domain where they have one.
+    const canonical = storefrontUrl(data.partner) ?? undefined
     return {
         title: `${data.partner.business_name} - HangHut`,
         description: data.partner.description || `Browse events by ${data.partner.business_name}`,
+        ...(canonical ? { alternates: { canonical } } : {}),
         openGraph: {
+            ...(canonical ? { url: canonical } : {}),
             images: data.partner.cover_image_url ? [data.partner.cover_image_url] : [],
         },
         icons: {
@@ -465,7 +473,7 @@ export default async function StorefrontPage({
                                             <SocialButtons />
 
                                             <div className="w-full space-y-2">
-                                                <ProfileActions shareUrl={`https://hanghut.com/${partner.slug}`} partnerId={partner.id} partnerName={partner.business_name} />
+                                                <ProfileActions shareUrl={storefrontUrl(partner) ?? platformOrigin()} partnerId={partner.id} partnerName={partner.business_name} />
                                             </div>
                                         </div>
                                     </div>

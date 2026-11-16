@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { EventForm } from '@/components/organizer/event-form'
 import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
 import { getAuthUser, getUserRole } from '@/lib/auth/cached'
+import { partnerOrigin } from '@/lib/events/urls'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +24,7 @@ export default async function CreateEventPage() {
 
     const { data: partner } = await supabase
         .from('partners')
-        .select('id, custom_percentage, pricing_model, status, pass_fixed_to_customer, pass_percentage_to_customer, fixed_fee_per_ticket')
+        .select('id, slug, custom_domain, custom_domain_verified, custom_percentage, pricing_model, status, pass_fixed_to_customer, pass_percentage_to_customer, fixed_fee_per_ticket')
         .eq('id', userRole.partnerId)
         .single()
 
@@ -50,6 +51,7 @@ export default async function CreateEventPage() {
                 fixedFeePerTicket={resolveFixedFee(
                     partner.fixed_fee_per_ticket != null ? Number(partner.fixed_fee_per_ticket) : null
                 )}
+                publicBaseUrl={partnerOrigin(partner)}
             />
         </div>
     )

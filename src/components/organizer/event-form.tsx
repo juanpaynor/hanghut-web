@@ -135,6 +135,15 @@ interface EventFormProps {
     subscriptionTiers?: SubscriptionTierBasic[]
     existingDiscounts?: ExistingDiscount[]
     subscriptionsEnabled?: boolean
+    /**
+     * Origin for the "share link" on the success screen.
+     *
+     * Passed in rather than read from absoluteUrl() because only the server
+     * knows whether this partner has a verified custom domain, and handing an
+     * organizer a hanghut.com link to the event they just created -- on the one
+     * screen built for sharing it -- is the complaint this prop exists to fix.
+     */
+    publicBaseUrl?: string
 }
 
 /** Poster upload ceiling. Mirrors the event-covers storage bucket, which is the
@@ -156,6 +165,7 @@ export function EventForm({
     subscriptionTiers = [],
     existingDiscounts = [],
     subscriptionsEnabled = false,
+    publicBaseUrl,
 }: EventFormProps) {
     const router = useRouter()
     const { toast } = useToast()
@@ -892,7 +902,9 @@ export function EventForm({
     }
 
     if (published) {
-        const publicUrl = absoluteUrl(eventHref(published))
+        const publicUrl = publicBaseUrl
+            ? `${publicBaseUrl.replace(/\/$/, '')}${eventHref(published)}`
+            : absoluteUrl(eventHref(published))
         const heading = published.status === 'active'
             ? 'Your event is live!'
             : published.status === 'hidden'

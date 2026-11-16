@@ -80,7 +80,7 @@ function withinCooldown(iso: string | null): boolean {
     return Date.now() - new Date(iso).getTime() < COOLDOWN_HOURS * 3600_000
 }
 
-export function MissingDetailsPanel({ eventId }: { eventId: string }) {
+export function MissingDetailsPanel({ eventId, publicBaseUrl }: { eventId: string; publicBaseUrl?: string }) {
     const { toast } = useToast()
     const [report, setReport] = useState<MissingDetailsReport | null>(null)
     const [loading, setLoading] = useState(true)
@@ -129,7 +129,7 @@ export function MissingDetailsPanel({ eventId }: { eventId: string }) {
     const goto = (next: number) => { setOffset(next); void load(next, query) }
 
     const linkFor = (b: MissingDetailBuyer) =>
-        b.token ? `${window.location.origin}/d/${b.token}` : null
+        b.token ? `${publicBaseUrl || window.location.origin}/d/${b.token}` : null
 
     const copyLink = async (b: MissingDetailBuyer) => {
         const url = linkFor(b)

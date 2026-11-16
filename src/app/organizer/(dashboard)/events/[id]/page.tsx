@@ -7,6 +7,7 @@ import { EventDashboardTabs } from '@/components/organizer/event-dashboard-tabs'
 import { resolvePlatformPct, resolveFixedFee } from '@/lib/payment/platform-fees'
 import { getEventEarnings } from '@/lib/organizer/event-earnings'
 import { getAuthUser, getPartner } from '@/lib/auth/cached'
+import { partnerOrigin } from '@/lib/events/urls'
 
 export const dynamic = 'force-dynamic'
 
@@ -199,7 +200,12 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         Number((event as { ticket_price?: number | string | null }).ticket_price ?? 0) === 0
 
     const statusLinks = statusLinksResult.links ?? []
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://hanghut.com'
+    // Every public link on this page -- event link, QR, tagged links, status
+    // pages -- is built from this. It used to be hardcoded to the platform
+    // origin, so an organizer with a verified custom domain was handed
+    // hanghut.com links by their own dashboard. partnerOrigin() prefers their
+    // domain, then their subdomain, and only then ours.
+    const baseUrl = partnerOrigin(partner)
 
     return (
         <div className="p-8 pb-20">

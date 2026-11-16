@@ -1,6 +1,6 @@
 import { createPublicClient } from '@/lib/supabase/public'
 import { resolveFont } from '@/lib/event-fonts'
-import { eventHref, absoluteUrl } from '@/lib/events/urls'
+import { eventHref, absoluteUrl, storefrontUrl, platformOrigin, partnerOrigin } from '@/lib/events/urls'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -74,7 +74,9 @@ const getEvent = cache(async (idOrSlug: string, allowAnyStatus = false) => {
         profile_photo_url,
         slug,
         contact_number,
-        branding
+        branding,
+        custom_domain,
+        custom_domain_verified
       ),
       ticket_tiers(*),
       registration_questions(*)
@@ -134,7 +136,17 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
     // Always canonicalise to the slug, so a visitor arriving on the legacy UUID
     // link doesn't cause the page to be indexed twice.
-    const url = `/events/${(event as any).slug || id}`
+    //
+    // ABSOLUTE, and on the ORGANIZER'S origin where they have one. This was a
+    // relative path, which metadataBase resolved against hanghut.com -- so an
+    // event served from tickets.conyomanila.com still told Google and every
+    // link preview that it really lived on hanghut.com. The organizer paid for
+    // that domain to be the address of their show; the canonical should say so.
+    //
+    // Still exactly ONE canonical per event regardless of which of the three
+    // hosts (apex, subdomain, custom domain) the visitor arrived on, so this
+    // consolidates duplicates rather than creating them.
+    const url = `${partnerOrigin(organizer)}/events/${(event as any).slug || id}`
     const ogImages = event.cover_image_url
         ? [{ url: event.cover_image_url, width: 1200, height: 630, alt: event.title }]
         : []
@@ -253,6 +265,16 @@ export default async function PublicEventPage({
     }
 
     if (!event) notFound()
+
+    // The organizer's storefront link, resolved ONCE.
+    //
+    // Every one of these used to be a hardcoded `${organizer.slug}.hanghut.com`,
+    // which ignored a verified custom domain entirely -- so an event page on
+    // tickets.conyomanila.com still pointed its own header back at us. Seven of
+    // the nine call sites also only guarded on `event.organizer`, not on
+    // `.slug`, so a slugless partner rendered href="https://undefined.hanghut.com".
+    // Falling back to the platform origin keeps that case a working link.
+    const orgHref = storefrontUrl(event.organizer) ?? platformOrigin()
 
     // Canonicalise: a UUID link still resolves (they are in sent emails, printed
     // QR codes, the sitemap and referral redirects, so they must never break) but
@@ -1157,7 +1179,7 @@ export default async function PublicEventPage({
                     )}
                 </h3>
                 {event.organizer?.slug && (
-                    <a href={`https://${event.organizer.slug}.hanghut.com`} className="text-sm text-primary hover:underline">
+                    <a href={orgHref} className="text-sm text-primary hover:underline">
                         View Profile
                     </a>
                 )}
@@ -1824,7 +1846,7 @@ export default async function PublicEventPage({
     const OrganizerHeaderLink = ({ dark }: { dark?: boolean }) =>
         event.organizer ? (
             <a
-                href={`https://${event.organizer.slug}.hanghut.com`}
+                href={orgHref}
                 className={cn('flex items-center gap-3 font-bold transition-opacity hover:opacity-80', dark ? 'text-white/85' : 'text-foreground')}
             >
                 {event.organizer.profile_photo_url ? (
@@ -2129,7 +2151,7 @@ export default async function PublicEventPage({
                 <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4">
                     {event.organizer ? (
                         <a
-                            href={`https://${event.organizer.slug}.hanghut.com`}
+                            href={orgHref}
                             className={cn("flex items-center gap-3 font-bold transition-colors", pc.hdr)}
                         >
                             {event.organizer.profile_photo_url ? (
@@ -2268,7 +2290,7 @@ export default async function PublicEventPage({
             )}>
                 <div className="container mx-auto px-4 flex h-16 items-center justify-between">
                     {event.organizer ? (
-                        <a href={`https://${event.organizer.slug}.hanghut.com`} className="flex items-center gap-3 font-bold hover:opacity-80 transition-opacity">
+                        <a href={orgHref} className="flex items-center gap-3 font-bold hover:opacity-80 transition-opacity">
                             {event.organizer.profile_photo_url ? (
                                 <div className={cn('relative w-8 h-8 rounded-full overflow-hidden border', onDark ? 'border-white/30' : 'border-border')}>
                                     <Image src={event.organizer.profile_photo_url} alt={event.organizer.business_name} fill className="object-cover" />
@@ -2520,7 +2542,7 @@ export default async function PublicEventPage({
                                 <div className="min-w-0 space-y-6">
                                     {event.organizer && (
                                         <a
-                                            href={`https://${event.organizer.slug}.hanghut.com`}
+                                            href={orgHref}
                                             className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-white/55 hover:text-white/80 transition-colors"
                                         >
                                             {event.organizer.business_name} presents
@@ -2635,7 +2657,7 @@ export default async function PublicEventPage({
                 <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-sm supports-[backdrop-filter]:bg-background/60">
                     <div className="container mx-auto px-4 flex h-16 items-center justify-between">
                         {event.organizer ? (
-                            <a href={`https://${event.organizer.slug}.hanghut.com`} className="flex items-center gap-3 font-bold text-xl hover:opacity-80 transition-opacity">
+                            <a href={orgHref} className="flex items-center gap-3 font-bold text-xl hover:opacity-80 transition-opacity">
                                 {event.organizer.profile_photo_url ? (
                                     <div className="relative w-8 h-8 rounded-full overflow-hidden border border-border">
                                         <Image src={event.organizer.profile_photo_url} alt={event.organizer.business_name} fill className="object-cover" />
@@ -2777,7 +2799,7 @@ export default async function PublicEventPage({
                                       organizer: {
                                           '@type': 'Organization',
                                           name: event.organizer.business_name,
-                                          ...(event.organizer.slug ? { url: `https://${event.organizer.slug}.hanghut.com` } : {}),
+                                          ...(event.organizer.slug ? { url: orgHref } : {}),
                                       },
                                   }
                                 : {}),
@@ -2858,7 +2880,7 @@ export default async function PublicEventPage({
             <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-sm supports-[backdrop-filter]:bg-background/60 relative z-50">
                 <div className="container mx-auto px-4 flex h-16 items-center justify-between">
                     {event.organizer ? (
-                        <a href={`https://${event.organizer.slug}.hanghut.com`} className="flex items-center gap-3 font-bold text-xl hover:opacity-80 transition-opacity">
+                        <a href={orgHref} className="flex items-center gap-3 font-bold text-xl hover:opacity-80 transition-opacity">
                             {event.organizer.profile_photo_url ? (
                                 <div className="relative w-10 h-10 rounded-full overflow-hidden border border-border">
                                     <Image
@@ -2952,7 +2974,7 @@ export default async function PublicEventPage({
                         <div className="min-w-0 space-y-6">
                             {event.organizer && (
                                 <a
-                                    href={`https://${event.organizer.slug}.hanghut.com`}
+                                    href={orgHref}
                                     className="inline-flex items-center gap-3 hover:opacity-80 transition-opacity"
                                 >
                                     {event.organizer.profile_photo_url ? (

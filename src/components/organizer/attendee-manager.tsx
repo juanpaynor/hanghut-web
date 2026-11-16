@@ -67,9 +67,16 @@ interface AttendeeManagerProps {
     eventTitle: string
     eventDate: string
     eventVenue: string
+    /**
+     * Origin for copied ticket links. The dashboard runs on hanghut.com, so
+     * window.location.origin handed buyers OUR domain even when the organizer
+     * had their own. '/t' is an app route on every host, so the partner domain
+     * serves the same page. Falls back to the current origin when absent.
+     */
+    publicBaseUrl?: string
 }
 
-export function AttendeeManager({ eventId, initialAttendees, initialTotal, eventTitle, eventDate, eventVenue }: AttendeeManagerProps) {
+export function AttendeeManager({ eventId, initialAttendees, initialTotal, eventTitle, eventDate, eventVenue, publicBaseUrl }: AttendeeManagerProps) {
     const { toast } = useToast()
     const [attendees, setAttendees] = useState<Attendee[]>(initialAttendees)
     const [total, setTotal] = useState(initialTotal)
@@ -1195,7 +1202,7 @@ export function AttendeeManager({ eventId, initialAttendees, initialTotal, event
                                                     {attendee.order_token && (
                                                         <DropdownMenuItem
                                                             onClick={() => {
-                                                                const url = `${window.location.origin}/t/${attendee.order_token}`
+                                                                const url = `${publicBaseUrl || window.location.origin}/t/${attendee.order_token}`
                                                                 navigator.clipboard.writeText(url).then(
                                                                     () => toast({
                                                                         title: 'Ticket link copied',

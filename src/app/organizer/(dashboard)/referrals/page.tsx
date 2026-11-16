@@ -3,6 +3,7 @@ import { getAuthUser, getPartner } from '@/lib/auth/cached'
 import { createClient } from '@/lib/supabase/server'
 import { getReferralLinkStats, type ReferralLinkStat } from '@/lib/organizer/referral-actions'
 import { ReferralLinksManager } from '@/components/organizer/referral-links-manager'
+import { partnerOrigin } from '@/lib/events/urls'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +27,10 @@ export default async function ReferralsPage() {
         .order('created_at', { ascending: false })
 
     const stats = await getReferralLinkStats({ organizerId: partner.id })
-    const baseUrl = `https://${process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'hanghut.com'}`
+    // /r/<code> links go on posters and into influencers' bios, so they should
+    // carry the organizer's own domain where there is one. /r is now an app route
+    // on every host (it used to 404 on a partner domain), so this is safe.
+    const baseUrl = partnerOrigin(partner)
 
     // A failed load used to fall through to an EMPTY list, which is indistinguishable
     // from "you have no links" — so a broken read looked like the organizer's saved

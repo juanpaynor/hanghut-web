@@ -2,6 +2,7 @@ import Image from 'next/image'
 import { toSocialHref } from '@/lib/social-links'
 import { StorefrontHeroVideo } from '../storefront-hero-video'
 import { ProfileActions } from '../profile-actions'
+import { storefrontUrl, platformOrigin } from '@/lib/events/urls'
 import { Globe, Instagram, Facebook, Twitter } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -26,6 +27,9 @@ interface HeroSectionProps {
         slug?: string
         description?: string | null
         social_links?: Record<string, string>
+        /** Needed so Share offers the organizer's own domain, not hanghut.com. */
+        custom_domain?: string | null
+        custom_domain_verified?: boolean | null
     }
     branding: Record<string, any>
 }
@@ -112,7 +116,7 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
                         <SocialButtons social={social} />
                     </div>
                     <div className="max-w-xs mx-auto">
-                        <ProfileActions shareUrl={`https://hanghut.com/${partner.slug}`} partnerId={partner.id} partnerName={partner.business_name} />
+                        <ProfileActions shareUrl={storefrontUrl(partner) ?? platformOrigin()} partnerId={partner.id} partnerName={partner.business_name} />
                     </div>
                     {ctaText && ctaLink && (
                         <a
@@ -176,7 +180,7 @@ export function HeroSection({ config, partner, branding }: HeroSectionProps) {
                             )}
                             <SocialButtons social={social} />
                             <div className="max-w-xs">
-                                <ProfileActions shareUrl={`https://hanghut.com/${partner.slug}`} partnerId={partner.id} partnerName={partner.business_name} />
+                                <ProfileActions shareUrl={storefrontUrl(partner) ?? platformOrigin()} partnerId={partner.id} partnerName={partner.business_name} />
                             </div>
                             {ctaText && ctaLink && (
                                 <a
